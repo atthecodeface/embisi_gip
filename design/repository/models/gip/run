@@ -1,0 +1,4 @@
+#!/bin/csh -f
+./arm -b -t 10000 -f ../../regressions/arm/bin/pass.bin
+./arm -b -t 100000 -f ../../regressions/arm/bin/alu.bin
+./arm -b -t 10000 -f ../../regressions/arm/bin/factorial.bin

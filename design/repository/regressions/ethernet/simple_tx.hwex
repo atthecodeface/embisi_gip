@@ -15,9 +15,9 @@ option_string "clock" "system_clock"
 option_string "inputs" "cmd_fifo_read data_fifo_read"
 option_string "outputs" "test_reset cmd_fifo_empty cmd_fifo_read_data[32] data_fifo_read_data[32]"
 option_string "filename" "simple_tx.th"
-module se_test_harness th
+module se_test_harness "th"
 
-module ethernet_tx etx
+module ethernet_tx "etx"
 
 clock system_clock 0 1 1
 drive th.system_clock system_clock

@@ -1,0 +1,120 @@
+#a Copyright
+#  
+#  This file 'rx_simple_fifo.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add MII monitor
+option_string "monitor_level" "15"
+option_string "sources" env_string("sources")
+module mii_testbench "mii"
+
+#b Add io_fifos
+option_string "cmd_fifos" "(16 0 0)"
+option_string "status_fifos" "(16 0 0)"
+option_string "tx_data_fifos" "(2048 0 0)"
+option_string "rx_data_fifos" "(2048 0 0)"
+option_int "verbose_level" 0
+option_string "exec_file" env_string("fifo_exec")
+option_string "total_packets" env_string("total_packets")
+module io_fifos "iof"
+
+#b Add test harness
+option_string "clock" "system_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset"
+option_string "filename" "rx_simple_fifo.th"
+module se_test_harness "th"
+
+#b Add ethernet RX module
+module ethernet_rx "erx"
+
+#a Wire them up
+#b Drive clocks
+clock system_clock 0 1 1
+drive th.system_clock system_clock
+drive mii.int_clock system_clock
+drive iof.int_clock system_clock
+drive erx.io_clock system_clock
+
+#b Add wires
+wire system_reset
+wire cmd_fifo_empty cmd_fifo_cmd_toggle cmd_fifo_cmd[4] cmd_fifo_read_data[32]
+wire data_fifo_cmd_toggle data_fifo_cmd[4] data_fifo_read_data[32]
+wire rx_data_fifo_cmd_toggle rx_data_fifo_cmd[4] rx_data_fifo_write_data[32] rx_data_fifo_full
+wire status_fifo_cmd_toggle status_fifo_cmd[4] status_fifo_write_data[32]
+wire mii_rxdv mii_rxd[4] mii_rxerr
+wire rx_data_fifo_to_access[4]  tx_data_fifo_to_access[4] cmd_fifo_to_access[4] status_fifo_to_access[4]
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+
+#b Wire up IO fifos
+drive iof.int_reset         system_reset        
+
+#drive cmd_fifo_empty        iof.cmd_fifo_empty 
+#drive cmd_fifo_read_data    iof.cmd_fifo_read_data
+drive iof.cmd_fifo_cmd_toggle     cmd_fifo_cmd_toggle
+drive iof.cmd_fifo_cmd     cmd_fifo_cmd
+assign cmd_fifo_cmd_toggle 0
+assign cmd_fifo_cmd 0
+
+#drive data_fifo_read_data   iof.tx_data_fifo_read_data
+drive iof.tx_data_fifo_cmd data_fifo_cmd
+drive iof.tx_data_fifo_cmd_toggle data_fifo_cmd_toggle
+assign data_fifo_cmd 0
+assign data_fifo_cmd_toggle 0
+
+drive iof.status_fifo_write_data    status_fifo_write_data
+drive iof.status_fifo_cmd_toggle     status_fifo_cmd_toggle
+drive iof.status_fifo_cmd     status_fifo_cmd
+
+drive rx_data_fifo_full iof.rx_data_fifo_full
+drive iof.rx_data_fifo_write_data   rx_data_fifo_write_data
+drive iof.rx_data_fifo_cmd rx_data_fifo_cmd
+drive iof.rx_data_fifo_cmd_toggle rx_data_fifo_cmd_toggle
+
+drive iof.rx_data_fifo_to_access  rx_data_fifo_to_access
+drive iof.tx_data_fifo_to_access  tx_data_fifo_to_access
+drive iof.cmd_fifo_to_access  cmd_fifo_to_access
+drive iof.status_fifo_to_access  status_fifo_to_access
+
+assign cmd_fifo_to_access 0
+assign tx_data_fifo_to_access 0
+assign rx_data_fifo_to_access 0
+assign status_fifo_to_access 0
+
+#b Wire up Ethernet RX
+drive erx.io_reset system_reset
+
+drive erx.data_fifo_full    rx_data_fifo_full
+drive rx_data_fifo_write_data  erx.data_fifo_data
+drive rx_data_fifo_cmd         erx.data_fifo_cmd
+drive rx_data_fifo_cmd_toggle  erx.data_fifo_toggle
+
+drive status_fifo_write_data   erx.status_fifo_data
+drive status_fifo_cmd_toggle   erx.status_fifo_toggle
+drive status_fifo_cmd          erx.status_fifo_cmd
+
+drive erx.mii_dv            mii_rxdv
+drive erx.mii_err           mii_rxerr
+drive erx.mii_data          mii_rxd
+
+#b MII testbench
+drive mii.int_reset          system_reset
+drive mii.mon_mii_col        mii_rxerr
+drive mii.mon_mii_crs        mii_rxdv
+drive mii.mon_mii_data       mii_rxd
+drive mii.mon_mii_enable     mii_rxdv
+drive mii_rxd                mii.rx_mii_data
+drive mii_rxdv               mii.rx_mii_dv
+drive mii_rxerr              mii.rx_mii_err
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

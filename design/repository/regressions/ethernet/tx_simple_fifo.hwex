@@ -1,0 +1,114 @@
+#a Copyright
+#  
+#  This file 'simple.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add MII monitor
+option_string "monitor_level" "15"
+option_string "sinks" env_string("sinks")
+module mii_testbench "mii"
+
+#b Add io_fifos
+option_string "cmd_fifos" "(16 0 0)"
+option_string "status_fifos" "(16 0 0)"
+option_string "tx_data_fifos" "(2048 0 0)"
+option_string "rx_data_fifos" "(2048 0 0)"
+option_int "verbose_level" 0
+option_string "exec_file" env_string("fifo_exec")
+option_string "total_packets" env_string("total_packets")
+module io_fifos "iof"
+
+#b Add test harness
+option_string "clock" "system_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset"
+option_string "filename" "tx_simple_fifo.th"
+module se_test_harness "th"
+
+#b Add ethernet TX module
+module ethernet_tx "etx"
+
+#a Wire them up
+#b Drive clocks
+clock system_clock 0 1 1
+drive th.system_clock system_clock
+drive mii.int_clock system_clock
+drive iof.int_clock system_clock
+drive etx.io_clock system_clock
+
+#b Add wires
+wire system_reset
+wire cmd_fifo_empty cmd_fifo_cmd_toggle cmd_fifo_cmd[4] cmd_fifo_read_data[32]
+wire data_fifo_cmd_toggle data_fifo_cmd[4] data_fifo_read_data[32]
+wire status_fifo_cmd_toggle status_fifo_cmd[4] status_fifo_write_data[32]
+wire mii_col mii_crs mii_txen mii_txd[4]
+wire tx_data_fifo_to_access[4] cmd_fifo_to_access[4] status_fifo_to_access[4]
+#wire mii_rxdv mii_rxer mii_rxd[4]
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+
+#b Wire up IO fifos
+drive iof.int_reset         system_reset        
+
+drive cmd_fifo_empty        iof.cmd_fifo_empty 
+drive cmd_fifo_read_data    iof.cmd_fifo_read_data
+drive iof.cmd_fifo_cmd_toggle     cmd_fifo_cmd_toggle
+drive iof.cmd_fifo_cmd     cmd_fifo_cmd
+
+drive data_fifo_read_data   iof.tx_data_fifo_read_data
+drive iof.tx_data_fifo_cmd data_fifo_cmd
+drive iof.tx_data_fifo_cmd_toggle data_fifo_cmd_toggle
+
+drive iof.status_fifo_write_data    status_fifo_write_data
+drive iof.status_fifo_cmd_toggle     status_fifo_cmd_toggle
+drive iof.status_fifo_cmd     status_fifo_cmd
+
+drive iof.tx_data_fifo_to_access  tx_data_fifo_to_access
+drive iof.cmd_fifo_to_access  cmd_fifo_to_access
+drive iof.status_fifo_to_access  status_fifo_to_access
+assign cmd_fifo_to_access 0
+assign tx_data_fifo_to_access 0
+assign status_fifo_to_access 0
+
+#b Wire up Ethernet TX
+drive etx.io_reset system_reset
+
+drive etx.data_fifo_data     data_fifo_read_data
+drive data_fifo_cmd          etx.data_fifo_cmd
+drive data_fifo_cmd_toggle   etx.data_fifo_toggle
+
+drive etx.cmd_fifo_empty     cmd_fifo_empty
+drive etx.cmd_fifo_data      cmd_fifo_read_data
+drive cmd_fifo_cmd_toggle    etx.cmd_fifo_toggle
+drive cmd_fifo_cmd           etx.cmd_fifo_cmd
+
+drive status_fifo_write_data  etx.status_fifo_data
+drive status_fifo_cmd_toggle  etx.status_fifo_toggle
+drive status_fifo_cmd         etx.status_fifo_cmd
+
+drive etx.mii_crs            mii_crs
+drive etx.mii_col            mii_col
+drive mii_txen               etx.mii_enable
+drive mii_txd                etx.mii_data
+
+#b MII testbench
+drive mii.int_reset          system_reset
+drive mii.mon_mii_col        mii_col
+drive mii.mon_mii_crs        mii_crs
+drive mii.mon_mii_data       mii_txd
+drive mii.mon_mii_enable     mii_txen
+drive mii.tx_mii_data        mii_txd
+drive mii.tx_mii_enable      mii_txen
+drive mii_crs                mii.tx_mii_crs
+drive mii_col                mii.tx_mii_col
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

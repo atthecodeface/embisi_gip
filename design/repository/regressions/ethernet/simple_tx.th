@@ -1,21 +1,53 @@
 #a Copyright
 #  
-#  This file '_test_harness.th' copyright Gavin J Stark 2003, 2004
+#  This file 'simple_tx.th' copyright Gavin J Stark 2003, 2004
 #  
+
+int data_value
+int packet
 
 printf "Ethernet tx test harness starting"
 
 reset "test_reset" 1
-drive "cmd_fifo_empty" 1
+reset "cmd_fifo_empty" 1
 
 wait 1
 
 reset "test_reset" 0
 
-drive "cmd_fifo_empty" 1
 
 wait 11
 
+drive "cmd_fifo_empty" 0
+#length    16;0
+#maxretry  4;16
+#deferral  8;20 - clocks to wait after CRS or MII_ENABLE for next TX
+#halfdup   1;28
+#xmitfcs   1;29
+#So to transmit a 16-byte packet with FCS, we need bit 29 set and bits 0 thru 15 to be '16'; no IPG
+drive "cmd_fifo_read_data" 0x20000010
+
+set data_value 1
+set packet 1
+
+while 1
+wait 1
+bne input("cmd_fifo_read") 1 no_cmd_fifo_read
+# Max IPG, no CRC, 32 byte packet
+drive "cmd_fifo_read_data" 0x0ff00020
+bne packet 5 no_cmd_fifo_read
+add packet packet 1
+drive "cmd_fifo_empty" 1
+no_cmd_fifo_read:
+
+bne input("data_fifo_read") 1 no_data_fifo_read
+drive "data_fifo_read_data" data_value
+#add data_value data_value 0x01000000
+add data_value data_value 1
+#set data_value 0
+no_data_fifo_read:
+
+endwhile
 printf "Output value %d0%" input("result")
 #bne input("result") 210 test_fail
 

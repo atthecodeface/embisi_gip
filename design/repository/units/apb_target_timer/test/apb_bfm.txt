@@ -1,0 +1,75 @@
+event test_event
+int timer_address
+int timer_counter_address
+int timer_counter
+int timer_comparator_address
+int timer_comparator
+int difference
+
+event monitor_0
+global_monitor_event address monitor_0
+spawn thrd_0 thread_code_0 2
+
+    set timer_address 0x1000
+    add timer_counter_address    timer_address 0
+    add timer_comparator_address timer_address 4
+
+    set test_thread 0
+
+    set last_counter -1
+
+    spawn test_thread thread_start 10
+
+    for count 1 10 1
+
+    message "Starting loop at cycle %d0%" global_cycle()
+
+    read_var timer_counter_address timer_counter
+    read_var timer_comparator_address timer_comparator
+
+    message "Timer counter value %d0% comparator %d1%" timer_counter timer_comparator
+
+    beq last_counter -1 skip_test
+
+    sub difference timer_counter last_counter
+    event_fire test_event
+
+    message "difference %d0%" difference
+    bne difference 100 test_fail
+
+skip_test:
+    nop 95
+
+    set last_counter timer_counter
+    next count
+
+    goto test_pass
+
+test_fail:
+    fail 1 "APB target timer did not count at expected rate"
+    end
+
+
+test_pass:
+    pass 0 "Timer counter test pass"
+    end
+
+thread_start:
+    while 1
+
+    event_wait test_event
+
+    message "difference %d0%" difference
+
+    endwhile
+
+    message "Test thread done %d0%" test_thread
+    add test_thread test_thread 1
+    die
+
+
+thread_code_0:
+    while 1
+    event_wait monitor_0
+    message "Signal changed at cycle %d0%" global_cycle() 
+    endwhile

@@ -1,0 +1,50 @@
+// Instantiate the bus master and the timer target
+// Decode top 4 bits of address - 1 means the timer
+
+module apb_master_bfm apbm
+module apb_target_timer apbt1
+
+option clock clock
+option inputs "enable address[16] data[32]"
+option outputs "trigger trigger2"
+module test_harness test1
+
+clock system_clock 20 1 1
+drive apbm.main_clock system_clock
+drive apbt1.apb_clock system_clock
+drive test1.clock system_clock
+
+wire enable select read_not_write
+wire write_data[32] read_data[32]
+wire address[16] address_top[4] address_decode[16]
+wire address_decode_1
+wire select_apbt1 read_data_1[32]
+
+extract address_top address 12 4
+
+decode address_decode address_top
+extract address_decode_1 address_decode 1 1
+logic and select_apbt1 select address_decode_1
+
+mux read_data address_top read_data_1
+
+drive select         apbm.apb.pselect
+drive enable         apbm.apb.penable
+drive read_not_write apbm.apb.prnw
+drive address        apbm.apb.paddr
+drive write_data     apbm.apb.pwdata
+drive apbm.prdata    read_data
+
+drive apbt1.enable          enable
+drive apbt1.select          select_apbt1
+drive apbt1.read_not_write  read_not_write
+drive apbt1.write_data      write_data
+drive apbt1.address         address
+drive read_data_1           apbt1.read_data
+
+
+drive test1.enable enable
+drive test1.address address
+drive test1.data write_data
+
+end

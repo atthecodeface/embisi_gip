@@ -1,0 +1,42 @@
+
+module io_fifo_cmd_req_ctl(
+	 clock in_clock "main system clck",
+	 input bit in_reset "main system reset",
+	 input bit io_cmd_toggle "Something here",
+	 output bit io_arb_request "request to arbiter",
+	 input bit arb_io_ack "combinatorial acknowledge of request" )
+	"This module synchronizes a request for a command execution and requests that of the arbiter, removing the request when it has been acknowledged"
+{
+	 default clock in_clock;
+	 default reset in_reset;
+	 clocked bit sync1 = 0;
+	 clocked bit sync2 = 0;
+	 clocked bit osync = 0;
+	 clocked bit request_pending=0;
+	 comb bit request_just_arrived;
+
+	sync1 <= io_cmd_toggle;
+	sync2 <= sync1;
+	osync <= sync2;
+
+	request_just_arrived = 0;
+	if (osync != sync2)
+	{
+		request_just_arrived = 1;
+	}
+
+	if (request_just_arrived)
+	{
+		request_pending <= 1;
+	}
+	elsif (arb_io_ack)
+	{
+		request_pending <= 0;
+	}
+
+	io_arb_request = 0;
+	if ( request_just_arrived || request_pending )
+	{
+		io_arb_request = 1;
+	}
+}

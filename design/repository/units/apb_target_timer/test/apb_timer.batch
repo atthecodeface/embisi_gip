@@ -1,0 +1,12 @@
+message 0 "Running APB target timer test"
+message 4 env("testname")
+
+setenv       apb_master_file   apb_bfm.txt
+read_hw_file apb_timer.hw
+reset
+step 10000
+
+
+pass 1 "All tests run"
+end
+

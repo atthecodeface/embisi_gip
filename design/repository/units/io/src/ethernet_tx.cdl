@@ -1,0 +1,651 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+  Add packet FSM
+  Add collision handling
+ */
+
+/*a Constants
+ */
+// We break out the command FIFO data
+// We need a packet length, a retry count, FCS required, full-duplex (ignore collisions), and possibly deferral time; deferral time is 9.6us at 100Mbps/25MHz/40ns, or 240 bits, so we need 8-bits for deferral.
+constant integer max_packet_byte_length_bits = 16;
+constant integer packet_retry_count_bits = 4;
+constant integer deferral_value_bits = 8;
+constant integer cfd_packet_length_start_bit    = 0;
+constant integer cfd_packet_retry_count         = cfd_packet_length_start_bit    + max_packet_byte_length_bits;
+constant integer cfd_deferral_restart_value_bit = cfd_packet_retry_count         + packet_retry_count_bits;
+constant integer cfd_half_duplex_bit            = cfd_deferral_restart_value_bit + deferral_value_bits;
+constant integer cfd_transmit_fcs_bit           = cfd_half_duplex_bit + 1;
+
+constant integer max_counter_for_permitted_collision = 64;
+
+/*a Types
+ */
+/*t t_data_fsm
+ */
+typedef fsm {
+    data_fsm_idle "Idle data state, waiting for transmit start indication from packet FSM",
+        data_fsm_output_preamble "Drive out the 7 octet preamble, and read first word from the FIFO",
+        data_fsm_output_sfd "Drive out the start-of-frame delimeter",
+        data_fsm_output_first_two_bytes_of_word "Drive out first four nybbles, i.e. first two bytes, of a word",
+        data_fsm_output_last_two_bytes_of_word "Drive out last four nybbles, i.e. last two bytes, of a word and fetch next word",
+        data_fsm_permitted_collision_occurred "Indicate to packet FSM a collision occurred that was permitted, and that a backoff and retry is expected (packet FSM is responsible for reverting the data FIFO; the jam sequence will be transmitted",
+        data_fsm_late_collision_occurred "Indicate to packet FSM that a late collision occurred; transmission is aborted with the jam sequence, but the data FIFO is left inconsistent",
+        data_fsm_output_fcs "Drive out the 8 nybbles that make up the FCS",
+        data_fsm_complete_transmission "Indicate to the packet FSM that transmission is complete and then finish by heading to Idle"
+} t_data_fsm;
+
+/*t t_packet_fsm
+ */
+typedef fsm {
+    packet_fsm_idle "Idle packet state, waiting for a command in the command FIFO",
+        packet_fsm_reading_command "Waiting for command to come from the FIFO",
+        packet_fsm_ensure_deferral_met "Waiting for DEFERRAL timer to complete",
+        packet_fsm_transmit "Waiting for the data FSM to return some form of completion",
+        packet_fsm_return_status,
+        packet_fsm_start_retry,
+        packet_fsm_wait_for_backoff,
+        packet_fsm_discard
+} t_packet_fsm;
+
+/*t t_sync
+ */
+typedef struct {
+    bit regs;
+    bit value;
+} t_sync;
+
+/*a ethernet_tx module
+ */
+module ethernet_tx( clock io_clock,
+                    input bit io_reset,
+
+                    input bit[32] data_fifo_data,
+                    output bit data_fifo_read,
+
+                    input bit cmd_fifo_empty,
+                    input bit[32] cmd_fifo_data,
+                    output bit cmd_fifo_read,
+
+                    output bit mii_enable,
+                    output bit[4] mii_data,
+                    input bit mii_crs,
+                    input bit mii_col
+ )
+
+    /*b Documentation
+     */
+"
+NOTE: See page 8 of section 2 of 802.3 spec (page 585 of pdf) for MII timings. 16 bits max from COL assert to TXD=jam; 
+
+This module implements an I/O target to ethernet MII/RMII transmit conversion. It utilizes a single command FIFO whose data it interprets as packet lengths, FCS request, collision ignoring (full duplex), number of retries; it utilizes a single status FIFO whose data is an indication of a packet's transmission success; it utilizes a single data FIFO whose contents is packet data.
+
+This module implements exponential backoff, half-duplex transmission through collision detection, 32-bit FCS generation and transmission, start-of-frame generation, preamble generation, and inter-packet gap (aka inter-frame spacing).
+The module does not implement padding. Padding can be implemented by just setting the packet size appropriately and padding prior to the FIFO.
+
+Note that the smallest address/payload packet size in the 802.3 spec is 60 bytes, with a 4-byte FCS making that a 64-byte packet (preamble and SFD are no included). With half-duplex operation a collision indication during any of the first 64-66 bytes will cause a collision detection in this code; any later collision indication will be deemed 'late'. Late collisions are not retried. Whenever any collision occurs the jam sequence is transmitted.
+
+The basic structure is two state machines. One handles the actual data transmission; it reads data from the data FIFO, calculates the FCS, and sends the preamble, start-of-frame delimiter, packet data, FCS and jam signals; it communicates with the main state machine with a 'start' signal and a set of three 'completion' signals, only one of which will be asserted for each single 'start': transmission okay; late collision; permitted collision. The second state machine then handles the packet timing, retries and backoff: when a command arrives in the command FIFO it is read and interpreted; it will cause the data transmission FIFO to start, then it waits for the response, and either retries the data (using the data FIFO revert pointer) with backoff or it indicates a failure back through the status FIFO or it indicates a success through the status FIFO.
+
+Because of the nature of the FIFO command mechanism, when in half-duplex mode (i.e. when packet transmissions may fail as collisions may occur) only ONE packet should be given to the command/data FIFOs at once. The command FIFO should only be told of the packet when the first 64+ bytes of packet data are in the data FIFO. The response to the packet should be taken from the status FIFO when it arrives; this may occur before all of the data for the packet is in the data FIFO, if a collision occurs causing a failure; in which case the data FIFO will have to be reset with some external mechanism, before another packet may be transmitted.
+
+In full-duplex mode there is no need for these interlocks; data may be placed in the data FIFO for many packets, and the command FIFO may contain more than one packets' requests at a time; there will never be a need to flush the data FIFO.
+
+Note that the mechanism in half-duplex mode need not drop performance; the status indication is returned at the start of the inter-packet gap, so provided the next packet is presented within the IPG time there will be no performance drop.
+However, note that if a flush is issued for collisions, then the IPG may need to be met through some other mechanism; particularly if a flush invokes a reset of the DEFERRAL counter.
+
+There is a counter in the packet FSM area which counts backoff, basically operating as a timer. The backoff mechanism utilzizes an exponential backoff mechanism, and has a store for the current range of backoff which is used combinatorially to set any required random backoff.
+
+Interpacket gap (deferral) is implemented with another counter, that is set to the deferral value whenever either this block transmits or the carrier is sensed (if in half-duplex mode). This counter decrements, stopping at zero; if it is zero, then the correct deferral has been achieved.
+
+There is a length counter in the data FSM area which decrements as bytes are transmitted from the packet. There is also a 132-count (max) counter that is used to count cycles within a state; it counts the nybbles of preamble; it determines if a collision is 'late' or 'permitted' by counting nybbles of data.
+
+The command FIFO data interface is responsible for holding the transmit command for a packet throughout that packet's transmission time; its length and other details are not stored within this module.
+
+The data FIFO must holds its data until a new request is given. The data FSM contains a 16-bit buffer for data to be transmitted, and it also maintains the 32-bit FCS. The data in the FIFO is treated as big-endian; that is, bits[31:24] contain the first octet to be transmitted.
+
+The basic data FSM flow is:
+
+1. Idle
+2. Output preamble (counter = 0 to 7, read data FIFO in counter==0)
+3. Output SFD (counter = 0 to 1; copy first half of data FIFO data to holding register; clear FCS to all 1's)
+4. Output first two bytes of word (counter = 0 to 3; at end of cycle where counter==3 copy last half of data FIFO data to holding register, and read data FIFO by presenting request in next cycle; calculate FCS)
+5. Output last two bytes of word (counter = 0 to 3; at end of cycle where counter==3 copy first half of data FIFO data to holding register; calculate FCS)
+6. Repeat 4/5 until packet data all sent
+7. Output FCS
+8. Complete transmission, indicating to packet FSM all is done (correctly or with collisions; note collisions follow a different path to the above)
+
+This flow then expects a maximum of 4 ethernet transmit clocks between a request to the data FIFO for a read and the data to be ready for storing in the holding register. The request is synchronized in to the internal clock domain by the FIFO logic, and the access is performed based on some prioritization, with a guarantee of (currently) 10 internal clocks to provide the data ready for registering. This, then, means the guarantee is 10 internal clocks is less than 4 ethernet clocks; at 100Mbps an ethernet clock is 25MHz, or 40ns; thus 4 ethernet clocks are 160ns, and so 10 internal clocks must be shorter than 160ns, so the internal clock speed must exceed 60MHz for 100Mbps operation to succeed.
+
+The packet FSM flow is:
+1. Idle; reset retry counter
+2. Read command FIFO
+3. Ensure deferral
+4. Start data FSM
+     If good transmission, return status to FIFO, return to idle
+     If late collision, return status to FIFO, return to idle
+     If permitted collision, go to retry
+8. Decrement retry counter; if zero, go to discard else backoff. Max 15 retries supported, so a 4-bit retry count is needed.
+9. Backoff for 512 bit times * random(0 to (2^retry #)-1 inclusive); return to ensure IPG; retry number capped at 10, so this is a 19-bit counter, set using an LFSR for the random number.
+10. If discard, return status to FIFO and return to idle
+
+Deferral counting is easy in full duplex mode: the deferral counter is set to the IPG amount (9.6us for 100Mbps, 96us for 10MHz, which is 240 clocks) when transmitting goes low, and decrement to 0. When it is 0, deferral is over.
+For half-duplex mode, the counter is intially zero.
+ If CRS goes high then start the counter at the IPG amount; keep it at that until CRS goes away, then count down. When it hits zero, deferral is over.
+ If transmitting goes high, then start the counter at the IPG amount; keep it that way until transmission is completed, then count down. When it hits zero, deferral is over.
+ The optional deference described in section 4.2.3.2.1(a) is not supported, as half-duplex is sufficiently unusual now to not warrant it (and it protects only for quite some unusualities).
+
+For backoff we need a random number up to 10 bits long, with a long-term average equal to half the required backoff power of 2, with a value from 0 to (2^n)-1. We could use a 10-bit LFSR, with a cycle of 1023; note that this never hits zero, so the minimum backoff is 1 slot time. We can improve that by using an 11 bit LFSR, and using ten of its bits; with a cycle of 2047, any non-zero value in the backoff will keep the LFSR going
+
+"
+
+// #include <stdio.h>
+
+// extern int main( int argc, char **argv )
+// {
+//     int i, j, k;
+//     unsigned int lfsr, taps, mask, start_value, masked_value;
+
+//     taps = 0x240; or 0x500
+//     mask = 0x3ff; or 0x7ff
+
+//     for (i=0, start_value=1, lfsr=start_value; (i==0) || (lfsr!=start_value); i++)
+//     {
+//         masked_value = lfsr & taps;
+//         for (j=k=0; masked_value!=0; j++)
+//         {
+//             if (masked_value&1)
+//                 k ^= 1;
+//             masked_value>>=1;
+//         }
+//         lfsr = ((lfsr<<1)&mask) | k;
+//     }
+//     printf( LFSR length %d\n , i );
+// }
+
+{
+
+    /*b Clock and reset
+     */
+    default clock io_clock;
+    default reset io_reset;
+
+    /*b Synchronizers and combinatorials for collision detection and carrier sense
+     */
+    clocked t_sync          sync_mii_crs = {regs=0, value=0} "Synchronizer for MII CRS signal";
+    clocked t_sync          sync_mii_col = {regs=0, value=0} "Synchronizer for MII COL signal";
+    comb bit collision_detected "Collision detected indication; asserted if half-duplex and synchronized collision indication is seen";
+    comb bit carrier_detected "Carrier detected indication; asserted if half-duplex and synchronized carrier sense indication is seen";
+
+    /*b State and combinatorials for the data FSM
+     */
+    comb      bit               start_data_fsm "Asserted to start the data FSM; command FIFO data must give correct packet length";
+    clocked   t_data_fsm    data_fsm_state = data_fsm_idle "Actual FSM state the transmit data FSM is in";
+    comb      t_data_fsm    next_data_fsm_state "Next state the transmit data FSM will transition too - can be decoded in conjunction with current state to make reading the code easier";
+    clocked   bit[7]        data_fsm_counter = 0 "Counts the number of cycles the transmit data FSM has been in a particular state, usually used for counting nybbles transmitted and to determine when to move on to another state";
+    comb      bit[7]        next_data_fsm_counter "Next value for the data_fsm_counter";
+
+    clocked   bit[max_packet_byte_length_bits]    data_fsm_bytes_left_in_packet = 0 "Counts down from the initial value given in a command, to give the number of bytes left to be transmitted from a packet";
+    comb      bit[max_packet_byte_length_bits]    next_data_fsm_bytes_left_in_packet "Next value for data_fsm_bytes_left_in_packet";
+    comb bit data_transmission_will_be_complete "Combinatorial decode of bytes left in packet, which indicates that currently the last byte will be being transmitted";
+
+    /*b State and combinatorials for the data path, including FCS
+     */
+    clocked   bit[16]       data_tx_buffer = 0 "Data holding register for data to be transmitted";
+    comb      bit[4]        data_tx_nybble "Nybble of data_tx_buffer to be transmitted, combinatorial selection of bits from data_tx_buffer";
+    comb      bit[4]        data_for_fcs "Data nybble XOR FCS bits that are the effective feedback into the FCS calculation";
+
+    clocked   bit[32]       fcs = 32hffffffff "FCS store, initialized to all 1's, and transmitted top 4 nybbles first";
+    comb      bit[32]       next_fcs "Combinatorial value for next FCS, particularly during calculation: may be overridden by initialization or shift-register values";
+
+    /*b State and combinatorials for the deferral counter
+     */
+    clocked   bit[deferral_value_bits]       deferral_counter = 0 "Deferral counter to count 240 slot ticks (or whatever is given in the command) between packets";
+    comb bit deferral_complete "Deferral has completed; asserted if deferral_counter is 0";
+
+    /*b State and combinatorials for the backoff LFSR and counter
+     */
+    clocked   bit[11]           backoff_lfsr = 1 "Backoff LFSR";
+    clocked   bit[19]           backoff_counter = 0 "Backoff counter";
+    comb      bit               start_backoff "Start random backoff; use some bits of LFSR (given by retry count) and 9 zeros";
+    comb      bit               backoff_complete "Backoff complete indication, asserted if backoff_counter is zero";
+
+    /*b State and combinatorials for the packet FSM, including retry counter
+     */
+    clocked   t_packet_fsm      packet_fsm_state = packet_fsm_idle "Actual state the transmit packet FSM is in";
+    comb      t_packet_fsm      next_packet_fsm_state;
+    clocked   bit[3]            packet_fsm_counter=0;
+    comb      bit[3]            next_packet_fsm_counter;
+    clocked   bit[packet_retry_count_bits] retry_counter = 0 "Current retry number";
+
+    /*b Combinatorials to break out of cmd_fifo
+     */
+    comb bit[max_packet_byte_length_bits] packet_length;
+    comb bit[deferral_value_bits] deferral_restart_value;
+    comb bit[packet_retry_count_bits] packet_retry_count;
+    comb bit half_duplex;
+    comb bit transmit_fcs;
+
+    /*b Synchronizers
+     */
+    synchronizers "Synchronizers":
+        {
+            sync_mii_crs <= { value=regs, regs=mii_crs };
+            sync_mii_col <= { value=regs, regs=mii_col };
+        }
+
+    /*b Carrier and collision detection
+     */
+    carrier_and_collision_detection "Carrier and collision detection; only assert these if in half_duplex mode":
+        {
+            collision_detected = sync_mii_col.value && half_duplex;
+            carrier_detected = sync_mii_crs.value && half_duplex;
+        }
+
+    /*b Break out cmd_fifo_data
+     */
+    breakout_cmd_fifo_data "Breakout cmd_fifo_data to give packet_length, half_duplex, deferral_count":
+        {
+            packet_length           = cmd_fifo_data[ max_packet_byte_length_bits; cfd_packet_length_start_bit ];
+            deferral_restart_value       = cmd_fifo_data[ deferral_value_bits; cfd_deferral_restart_value_bit ];
+            packet_retry_count      = cmd_fifo_data[ packet_retry_count_bits; cfd_packet_retry_count ];
+            half_duplex             = cmd_fifo_data[ cfd_half_duplex_bit ];
+        }
+
+    /*b Data FSM machine - data_fsm_state, data_fsm_counter, data_fsm_bytes_left_in_packet
+     */
+    data_fsm "Data FSM state machine":
+        {
+
+            next_data_fsm_state = data_fsm_state;
+            next_data_fsm_counter = data_fsm_counter+1;
+            next_data_fsm_bytes_left_in_packet = data_fsm_bytes_left_in_packet-1;
+            data_transmission_will_be_complete = (next_data_fsm_bytes_left_in_packet==0);
+
+            fullswitch (data_fsm_state)
+                {
+                case data_fsm_idle:
+                    if (start_data_fsm)
+                    {
+                        next_data_fsm_bytes_left_in_packet = packet_length;
+                        if (packet_length!=0)
+                        {
+                            next_data_fsm_state = data_fsm_output_preamble;
+                        }
+                        else
+                        {
+                            next_data_fsm_state = data_fsm_complete_transmission; // If the packet length is zero, assume we are just configuring the ethernet interface by setting the cmd fifo output
+                        }
+                    }
+                    next_data_fsm_counter = 0;
+                    break;
+                case data_fsm_output_preamble:
+                    if (collision_detected)
+                    {
+                        next_data_fsm_state = data_fsm_permitted_collision_occurred;
+                        next_data_fsm_counter = 0;
+                    }
+                    elsif (data_fsm_counter[4;0]==13) // Preamble is 7 octets, or 14 nybbles
+                    {
+                        next_data_fsm_state = data_fsm_output_sfd;
+                        next_data_fsm_counter = 0;
+                    }
+                    break;
+                case data_fsm_output_sfd:
+                    if (collision_detected)
+                    {
+                        next_data_fsm_state = data_fsm_permitted_collision_occurred;
+                        next_data_fsm_counter = 0;
+                    }
+                    elsif (data_fsm_counter[1;0]==1) // SFD is 1 octets, or 2 nybbles
+                    {
+                        next_data_fsm_state = data_fsm_output_first_two_bytes_of_word;
+                        next_data_fsm_counter = 0;
+                    }
+                    break;
+                case data_fsm_output_first_two_bytes_of_word:
+                    if (collision_detected)
+                    {
+                        if (data_fsm_counter > max_counter_for_permitted_collision)
+                        {
+                            next_data_fsm_state = data_fsm_late_collision_occurred;
+                        }
+                        else
+                        {
+                            next_data_fsm_state = data_fsm_permitted_collision_occurred;
+                        }
+                        next_data_fsm_counter = 0;
+                    }
+                    elsif ((data_fsm_counter[2;0]==0) || (data_fsm_counter[2;0]==2)) // first nybble of either byte
+                        {
+                            next_data_fsm_state = data_fsm_output_first_two_bytes_of_word;
+                            next_data_fsm_bytes_left_in_packet = data_fsm_bytes_left_in_packet;
+                        }
+                    elsif ( data_transmission_will_be_complete ) // completing last byte of packet
+                        {
+                            next_data_fsm_state = data_fsm_output_fcs;
+                            next_data_fsm_counter = 0;
+                        }
+                    elsif (data_fsm_counter[2;0]==3) // End of both bytes, more data to come
+                        {
+                            next_data_fsm_state = data_fsm_output_last_two_bytes_of_word;
+                        }
+                    break;
+                case data_fsm_output_last_two_bytes_of_word:
+                    if (collision_detected)
+                    {
+                        if (data_fsm_counter > max_counter_for_permitted_collision)
+                        {
+                            next_data_fsm_state = data_fsm_late_collision_occurred;
+                        }
+                        else
+                        {
+                            next_data_fsm_state = data_fsm_permitted_collision_occurred;
+                        }
+                        next_data_fsm_counter = 0;
+                    }
+                    elsif ((data_fsm_counter[2;0]==0) || (data_fsm_counter[2;0]==2)) // first nybble of either byte
+                    {
+                        next_data_fsm_state = data_fsm_output_last_two_bytes_of_word;
+                        next_data_fsm_bytes_left_in_packet = data_fsm_bytes_left_in_packet;
+                    }
+                    elsif ( data_transmission_will_be_complete ) // completing last byte of packet
+                        {
+                            next_data_fsm_state = data_fsm_output_fcs;
+                            next_data_fsm_counter = 0;
+                        }
+                    elsif (data_fsm_counter[2;0]==3) // End of both bytes, more data to come
+                        {
+                            next_data_fsm_state = data_fsm_output_first_two_bytes_of_word;
+                        }
+                    break;
+                case data_fsm_output_fcs:
+                    if (collision_detected) // Collisions during FCS are explicitly late, even for minimal sized packets (check? - collision must occur in slot time of 512 bits for normal, and slot time starts with preamble)
+                    {
+                        next_data_fsm_state = data_fsm_late_collision_occurred;
+                    }
+                    elsif (data_fsm_counter[3;0]==7) // FCS is 4 octets, or 8 nybbles
+                    {
+                        next_data_fsm_state = data_fsm_complete_transmission;
+                        next_data_fsm_counter = 0;
+                    }
+                    break;
+                case data_fsm_late_collision_occurred:
+                case data_fsm_permitted_collision_occurred:
+                    if (data_fsm_counter[3;0]==7) // JAM is 32 bits, or 4 octets, or 8 nybbles
+                    {
+                        next_data_fsm_state = data_fsm_complete_transmission;
+                        next_data_fsm_counter = 0;
+                    }
+                    break;
+                case data_fsm_complete_transmission:
+                    next_data_fsm_state = data_fsm_idle;
+                    next_data_fsm_counter = 0;
+                    break;
+                }
+            data_fsm_state <= next_data_fsm_state;
+            data_fsm_counter <= next_data_fsm_counter;
+            data_fsm_bytes_left_in_packet <= next_data_fsm_bytes_left_in_packet;
+        }
+
+    /*b Data flow through FIFO and holding register - data_fifo_read, data_tx_buffer, data_tx_nybble
+     */
+    data_flow "Get data from data FIFO, and record 16-bits of data from the data FIFO when it is ready, and when we don't need the previous data":
+        {
+            // Default values
+            data_fifo_read = 0;
+
+            partswitch (data_fsm_state)
+                {
+                case data_fsm_output_preamble:
+                    if (data_fsm_counter==0) // Read data FIFO on first cycle of preamble
+                    {
+                        data_fifo_read = 1;
+                    }
+                    break;
+                case data_fsm_output_sfd:
+                    data_tx_buffer <= data_fifo_data[16;16]; // Get first two bytes to transmit from data FIFO data
+                    break;
+                case data_fsm_output_first_two_bytes_of_word:
+                    if (next_data_fsm_state==data_fsm_output_last_two_bytes_of_word)
+                    {
+                        data_tx_buffer <= data_fifo_data[16;0]; // Get last two bytes to transmit from data FIFO data, and we'll request another word if we may (and if there is one)
+                        data_fifo_read = (data_fsm_bytes_left_in_packet[max_packet_byte_length_bits-2;2]!=0); // bytes_left would be 4 for a 4-byte packet during first byte, 3 in second byte (which is where we are now). Any more and we need to read the FIFO.
+                    }
+                    break;
+                case data_fsm_output_last_two_bytes_of_word:
+                    if (next_data_fsm_state==data_fsm_output_first_two_bytes_of_word)
+                    {
+                        data_tx_buffer <= data_fifo_data[16;16]; // Get first two bytes to transmit from data FIFO data
+                    }
+                    break;
+                }
+            fullswitch (data_fsm_counter[2;0])
+                {
+                case 0:
+                    data_tx_nybble = data_tx_buffer[4;8];
+                    break;
+                case 1:
+                    data_tx_nybble = data_tx_buffer[4;12];
+                    break;
+                case 2:
+                    data_tx_nybble = data_tx_buffer[4;0];
+                    break;
+                case 3:
+                    data_tx_nybble = data_tx_buffer[4;4];
+                    break;
+                }
+        }
+
+    /*b FCS calculation - fcs, next_fcs, data_for_fcs
+     */
+    fcs "Calculate FCS from transmit nybbles":
+        {
+            next_fcs[4;0] = 0;
+            next_fcs[28;4] = fcs[28;0];
+            data_for_fcs = fcs[4;28] ^ data_tx_nybble;
+            if (data_for_fcs[0])
+            {
+                next_fcs = next_fcs ^ 32b00000100110000010001110110110111; // poly is 32.26.23.22.16.12.11.10.8.7.5.4.2.1.0
+            }
+            if (data_for_fcs[1])
+            {
+                next_fcs = next_fcs ^ 32b00001001100000100011101101101110; // rotate in one bit
+            }
+            if (data_for_fcs[2])
+            {
+                next_fcs = next_fcs ^ 32b00010011000001000111011011011100; // rotate in two bits
+            }
+            if (data_for_fcs[3])
+            {
+                next_fcs = next_fcs ^ 32b00100110000010001110110110111000; // rotate in three bits
+            }
+
+            fcs <= 32hffffffff;
+            partswitch (data_fsm_state)
+                {
+                case data_fsm_output_first_two_bytes_of_word:
+                case data_fsm_output_last_two_bytes_of_word:
+                    fcs <= next_fcs;
+                    break;
+                case data_fsm_output_fcs:
+                    fcs[28;4] <= fcs[28;0]; // Rotate up the FCS as we transmit it so that the data to transmit is always ready in the top 4 bits
+                    break;
+                }
+        }
+
+    /*b MII data and enable generation - mii_enable, mii_data
+     */
+    mii_data_and_enable "MII data and enable generation":
+        {
+            fullswitch (data_fsm_state)
+                {
+                case data_fsm_idle:
+                    mii_enable = 0;
+                    mii_data = 0;
+                    break;
+                case data_fsm_output_preamble:
+                    mii_enable = 1;
+                    mii_data = 4h5; // Preamble is 0101
+                    break;
+                case data_fsm_output_sfd:
+                    mii_enable = 1;
+                    mii_data = 4hd; // SFD is 1101
+                    break;
+                case data_fsm_output_first_two_bytes_of_word:
+                case data_fsm_output_last_two_bytes_of_word:
+                    mii_enable = 1;
+                    mii_data = data_tx_nybble;
+                    break;
+                case data_fsm_output_fcs:
+                    mii_enable = 1;
+                    mii_data[31] = ~fcs[28]; // FCS is transmitted this way round, inverted
+                    mii_data[30] = ~fcs[29]; // FCS is transmitted this way round, inverted
+                    mii_data[29] = ~fcs[30]; // FCS is transmitted this way round, inverted
+                    mii_data[28] = ~fcs[31]; // FCS is transmitted this way round, inverted
+                    break;
+                case data_fsm_complete_transmission:
+                    mii_enable = 0;
+                    mii_data = 0;
+                    break;
+                case data_fsm_late_collision_occurred:
+                case data_fsm_permitted_collision_occurred:
+                    mii_enable = 1;
+                    mii_data = 9; // Jam with anything that is not the actual CRC, and so this will do
+                    break;
+                }
+        }
+
+    /*b DEFERRAL counter - deferral_counter
+     */
+    deferral_counter "DEFERRAL counter: set to max value if carrier detected of if we transmit, else decremented to zero; when ==0, can transmit":
+        {
+            if (deferral_counter==0)
+            {
+                deferral_counter <= 0;
+            }
+            else
+            {
+                deferral_counter <= deferral_counter-1;
+            }
+            if ( mii_enable || carrier_detected )
+            {
+                deferral_counter <= deferral_restart_value;
+            }
+            deferral_complete = (deferral_counter==0);
+        }
+
+    /*b Backoff LFSR
+    */
+    backoff_lfsr "Backoff LFSR; 11 bits, and we use ten of them so that zero may be returned; polynomial is x^11+x^9+1":
+        {
+            backoff_lfsr[10;1] <= backoff_lfsr[10;0];
+            backoff_lfsr[0] <= backoff_lfsr[10] ^ backoff_lfsr[0];
+        }
+
+    /*b Backoff counter
+    */
+    backoff_counter "Backoff counter; count down to 0, but set if 'start_backoff' is valid; backoff is complete if it is 0":
+        {
+            if (start_backoff)
+            {
+                backoff_counter[9;0] <= 0; // Backoff by 512*random number( 1 bit for first retry, 10 bits for tenth retry )
+                backoff_counter[ 9] <= backoff_lfsr[ 0];
+                backoff_counter[10] <= backoff_lfsr[ 1] & (retry_counter>=1);
+                backoff_counter[11] <= backoff_lfsr[ 2] & (retry_counter>=2);
+                backoff_counter[12] <= backoff_lfsr[ 3] & (retry_counter>=3);
+                backoff_counter[13] <= backoff_lfsr[ 4] & (retry_counter>=4);
+                backoff_counter[14] <= backoff_lfsr[ 5] & (retry_counter>=5);
+                backoff_counter[15] <= backoff_lfsr[ 6] & (retry_counter>=6);
+                backoff_counter[16] <= backoff_lfsr[ 7] & (retry_counter>=7);
+                backoff_counter[17] <= backoff_lfsr[ 8] & (retry_counter>=8);
+                backoff_counter[18] <= backoff_lfsr[ 9] & (retry_counter>=9);
+            }
+            elsif (backoff_counter==0)
+                {
+                    backoff_counter <= 0;
+                }
+            else
+            {
+                backoff_counter <= backoff_counter-1;
+            }
+            backoff_complete = (backoff_counter==0);
+        }
+
+    /*b Packet FSM machine - packet_fsm_state, packet_fsm_counter, retry_counter
+     */
+    packet_fsm "Packet FSM state machine":
+        {
+            next_packet_fsm_state = packet_fsm_state;
+            next_packet_fsm_counter = packet_fsm_counter+1;
+
+            fullswitch (packet_fsm_state)
+                {
+                case packet_fsm_idle:
+                    if (!cmd_fifo_empty)
+                    {
+                        next_packet_fsm_state = packet_fsm_reading_command;
+                        next_packet_fsm_counter = 0;
+                        retry_counter <= 0;
+                    }
+                    break;
+                case packet_fsm_reading_command:
+                    if (packet_fsm_counter==4)
+                    {
+                        next_packet_fsm_state = packet_fsm_ensure_deferral_met;
+                    }
+                    break;
+                case packet_fsm_ensure_deferral_met:
+                    if (deferral_complete)
+                    {
+                        next_packet_fsm_state = packet_fsm_transmit;
+                    }
+                    break;
+                case packet_fsm_transmit:
+                    partswitch ( data_fsm_state )
+                    {
+                    case data_fsm_late_collision_occurred:
+                        next_packet_fsm_state = packet_fsm_return_status;
+                        break;
+                    case data_fsm_permitted_collision_occurred:
+                        next_packet_fsm_state = packet_fsm_start_retry;
+                        break;
+                    case data_fsm_complete_transmission:
+                        next_packet_fsm_state = packet_fsm_return_status;
+                        break;
+                    }
+                    break;
+                case packet_fsm_return_status:
+                    next_packet_fsm_state = packet_fsm_idle;
+                    break;
+                case packet_fsm_start_retry:
+                    retry_counter <= retry_counter+1;
+                    if (retry_counter==packet_retry_count)
+                    {
+                        next_packet_fsm_state = packet_fsm_discard;
+                    }
+                    else
+                    {
+                        next_packet_fsm_state = packet_fsm_wait_for_backoff;
+                        start_backoff = 1;
+                    }
+                    break;
+                case packet_fsm_wait_for_backoff:
+                    if (backoff_complete)
+                    {
+                        next_packet_fsm_state = packet_fsm_ensure_deferral_met;
+                    }
+                    break;
+                case packet_fsm_discard:
+                    next_packet_fsm_state = packet_fsm_idle;
+                    break;
+                }
+            packet_fsm_state <= next_packet_fsm_state;
+            packet_fsm_counter <= next_packet_fsm_counter;
+        }
+
+    /*b All done
+     */
+}

@@ -1,0 +1,60 @@
+//monitor_display apbt1.enable "Enable changed at cycle %d0% counter %s1% enable %d2% read_data %s3% input %d4%" cycle() signal_value_string("apbt1.counter") signal_value("apbt1.enable") signal_value_string("apbt1.read_data") input("enable")
+//monitor_display apbt1.counter "%d0%:Counter now %d1% %s2%" cycle() signal_value("apbt1.counter") signal_value_string("apbt1.counter")
+
+int tim
+//message "address %s0%" signal_value_string("address")
+//message "apbt1 %s0%" signal_value_string("apbt1")
+//message "apbt1.reset %s0%" signal_value_string("apbt1.reset")
+//message "apbt1.select %s0%" signal_value_string("apbt1.select")
+//message "apbt1.counter %s0%" signal_value_string("apbt1.counter")
+
+vcd_file_open fred /tmp/a.vcd
+vcd_file_add fred test1
+vcd_file_add fred apbm
+vcd_file_add fred apbt1
+vcd_file_add fred enable select address
+vcd_file_enable fred
+
+reset trigger 0
+reset trigger2 0
+
+global_monitor_display test1.trigger "%d0%:Trigger value %d1%" global_cycle() global_signal_value(test1.trigger)
+global_monitor_display test1.trigger2 "%d0%:Trigger2 value %d1%" global_cycle() global_signal_value(test1.trigger2)
+
+spawn drive_trigger drive_trigger 3
+spawn drive_trigger2 drive_trigger2 3
+
+for i 1 10 1
+      wait_until_change enable
+      message "Input enable changed to %d0%" input(enable)
+next i
+
+vcd_file_close fred
+
+end
+
+
+drive_trigger:
+
+while 1
+wait 10
+drive trigger 1
+wait 10
+drive trigger 0
+
+endwhile
+die
+
+
+
+drive_trigger2:
+
+while 1
+wait 15
+drive trigger2 1
+wait 10
+drive trigger2 0
+
+endwhile
+die
+

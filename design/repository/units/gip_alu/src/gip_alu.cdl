@@ -1,0 +1,134 @@
+
+include "apb_target.h"
+
+typedef bit[32] word;
+
+typedef struct
+{
+     bit carry;
+     bit zero;
+     bit overflow;
+     bit negative
+} t_alu_shift_flags;
+
+typedef enum [4] {
+     alu_op_pass,   // result = a, vc preserved
+     alu_op_not,    // result = ~a, vc preserved
+     alu_op_and,    // result = a&b, vc preserved
+     alu_op_bic     // result = ~a&b, vc preserved
+     alu_op_or,     // result = a|b, vc preserved
+     alu_op_or_not, // result = ~a|b, vc preserved
+     alu_op_xor,    // result = a^b, vc preserved
+     alu_op_add,    // result = a+b
+     alu_op_adc,    // result = a+b+c
+     alu_op_sub,    // result = -a+b
+     alu_op_subc,   // result = -a+b-!c
+     alu_op_rsub,   // result = a-b
+     alu_op_rsubc,  // result = a-b-!c
+} t_alu_op;
+
+typedef enum [3] {
+     shift_op_pass,
+     shift_op_lsl,
+     shift_op_lsr,
+     shift_op_asr,
+     shift_op_ror,
+     shift_op_rrx
+} t_shift_op;
+
+typedef bit[4] t_shift_by;
+
+module gip_alu_shift ( clock clk,
+                       input bit gip_reset,
+                       input bit alu_stall,
+                       input word alu_shift_a_in,
+                       input word alu_shift_b_in,
+                       input t_alu_op alu_op_in,
+                       input t_shift_op shift_op_in,
+                       input t_shift_by shift_by_in,
+                       input t_alu_shift_flags alu_shift_flags_in,
+                       output word result,
+                       output t_alu_shift_flags alu_shift_flags_out )
+"This module implements the ALU and shift stage of the GIP data pipeline.
+ It registers its inputs directly, provided the stall input is not asserted"
+{
+     default clock clk;
+     default reset gip_reset;
+
+     clocked r_alu_shift_a = 0;
+     clocked r_alu_shift_b = 0;
+     clocked r_alu_shift_flags = ( z=0, c=0, v=0, n=0 );
+     clocked r_alu_op = alu_op_pass;
+     clocked r_shift_op = shift_op_pass;
+     clocked r_shift_by = 0;
+     
+     input_registers "Register the inputs unless stalled":
+          {
+               if (!alu_stall)
+               {
+                    r_alu_shift_a = alu_shift_a_in;
+                    r_alu_shift_b = alu_shift_b_in;
+                    r_alu_shift_flags = alu_shift_flags_in;
+                    r_alu_op = alu_op_in;
+                    r_shift_op = shift_op_in;
+                    r_shift_by = shift_by_in;
+               }
+          }
+
+     alu_preparation "Prepare ALU inputs with appropriate inverters, select carry in":
+          {
+               fullswitch (r_alu_op)
+               {
+               case alu_op_not, alu_op_bic, alu_op_or_not, alu_op_sub, alu_op_subc:
+                    alu_a = ~r_alu_shift_a;
+                    break;
+               default:
+                    alu_a = ~r_alu_shift_a;
+                    break;
+               }
+               fullswitch (r_alu_op)
+               {
+               case alu_op_rsub, alu_op_rsubc:
+                    alu_b = ~r_alu_shift_b;
+                    break;
+               default:
+                    alu_b = ~r_alu_shift_b;
+                    break;
+               }
+               fullswitch (r_alu_op)
+               {
+               case alu_op_add:
+                    alu_c = 0;
+                    break;
+               case alu_op_sub, alu_op_rsub:
+                    alu_c = 1;
+                    break;
+               case alu_op_addc, alu_op_subc, alu_op_rsubc:
+                    alu_c = r_alu_shift_flags.c;
+                    break;
+               default:
+                    alu_c = r_alu_shift_flags.c;
+                    break;
+               }
+          }
+
+     alu_adders "Instantiate four carry select adders":
+          {
+          }
+
+     alu_logic "Instantiate the logic functions":
+          {
+          }
+
+     shifter "Simple barrel shifter":
+          {
+          }
+
+     result_mux "Multiplex results":
+          {
+          }
+
+     flags "Flag determination":
+          {
+          }
+}

@@ -1,0 +1,159 @@
+module toplevel
+toplevel toplevel
+
+clock apb_clock
+input reset 1
+input select 1
+input enable 1
+input read_not_write 1
+input write_data 32
+input address 16
+output read_data 32
+output interrupt 1
+
+comb interrupt 1
+comb write_reg 1
+comb write_counter 1
+comb write_comparator 1
+comb read_counter 1
+
+
+// Counter is read/write at address offset 0
+// Comparator is read/write at address offset 4
+state counter    32 apb_clock 1 reset 1 0
+state comparator 32 apb_clock 1 reset 1 0
+state passed      1 apb_clock 1 reset 1 0
+
+state read_data  32 apb_clock 1 reset 1 0
+
+
+comb read_data_mux 32
+
+
+code decode_controls
+
+// write_reg = select & enable &~read_not_write
+pushvar select
+pushvar enable
+expr and
+pushvar read_not_write
+expr not
+expr and
+lvar write_reg
+assign_comb
+addcode 1 decode_controls
+
+
+// write_counter=0
+// if address[4:2]==0 then write_counter=write_reg
+pushint 1 0
+lvar write_counter
+assign_comb
+
+pushvar address
+subscript 4 2
+pushint 3 0
+expr eq
+pushvar write_reg
+lvar write_counter
+assign_comb
+if
+addcode 2 decode_controls
+
+// write_comparator=0
+// if address[4:2]==1 then write_comparator=write_reg
+pushint 1 0
+lvar write_comparator
+assign_comb
+
+pushvar address
+subscript 4 2
+pushint 3 1
+expr eq
+pushvar write_reg
+lvar write_comparator
+assign_comb
+if
+addcode 2 decode_controls
+
+
+
+code comparator
+// if (write_comparator) comparator <= write_data
+pushvar write_comparator
+pushvar write_data
+lvar comparator
+assign_state
+if
+addcode 1 comparator
+
+
+code counter_and_passed
+// counter<=counter+1
+// if (write_counter) {counter <= write_data; passed=0}
+// if (counter==comparator) passed=1
+pushvar counter
+pushint 32 1
+expr add
+lvar counter
+assign_state
+
+pushvar write_data
+lvar counter
+assign_state
+pushint 1 0
+lvar passed
+assign_state
+group 2
+pushvar write_counter
+if
+
+pushvar counter
+pushvar comparator
+expr eq
+pushint 1 1
+lvar passed
+assign_state
+if
+
+addcode 3 counter_and_passed
+
+
+code read_mux
+// switch (address[4:2])
+//  case 0: read_data_mux = counter;
+//  case 1: read_data_mux = comparator;
+//  case 2: read_data_mux = {31'b0, passed}
+// if (select) read_data <= read_data_mux
+// else read_data <= 0
+pushvar counter
+lvar read_data_mux
+assign_comb
+case 3 0
+pushvar comparator
+lvar read_data_mux
+assign_comb
+case 3 1
+pushvar address
+subscript 4 2
+switch 2
+
+pushvar read_data_mux
+lvar read_data
+assign_state
+pushint 32 0
+lvar read_data
+assign_state
+pushvar select
+ifelse
+
+addcode 2 read_mux
+
+
+code interrupt
+pushvar passed
+lvar interrupt
+assign_comb
+addcode 1 interrupt
+
+end

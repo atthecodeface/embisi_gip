@@ -295,6 +295,51 @@ function site_set_location( $markers )
     $site_position = ".".$markers;
 }
 
+/*a Code formatting
+ */
+function code_format( $language, $file )
+{
+    global $code_styles;
+    $handle = fopen( $file, "r" );
+    if (!$handle)
+    {
+        echo "<pre><em>BUG IN PAGE - UNABLE TO LOAD FILE $file</em></pre>\n";
+        return;
+    }
+    echo "<pre>\n";
+    while (!feof($handle))
+    {
+        $line = fgets($handle, 8192);
+        $line = preg_replace( $code_styles[$language]["patterns"], $code_styles[$language]["replacements"], $line );
+        echo "$line";
+    }
+    echo "</pre>\n";
+    fclose($handle);
+}
+$code_styles["general"]["replacements"]["keyword"]  = "<font color=blue>\$1</font>";
+$code_styles["general"]["replacements"]["type"]     = "<font color=blue>\$1</font>";
+$code_styles["general"]["replacements"]["usertype"] = "<font color=red>\$1</font>";
+$code_styles["general"]["replacements"]["modifier"] = "<font color=green>\$1</font>";
+$code_styles["general"]["replacements"]["operator"] = "<font color=blue>\$1</font>";
+$code_styles["cdl"]["patterns"][]      = "/</";
+$code_styles["cdl"]["replacements"][]  = "&lt;";
+$code_styles["cdl"]["patterns"][]      = "/>/";
+$code_styles["cdl"]["replacements"][]  = "&gt;";
+$code_styles["cdl"]["patterns"][]      = "/\\b(constant|typedef|extern|module|clock|input|output|clocked|comb|net|default|reset|timing|full_switch|part_switch|case|if|else)\\b/";
+$code_styles["cdl"]["replacements"][]  = $code_styles["general"]["replacements"]["keyword"];
+$code_styles["cdl"]["patterns"][]      = "/\\b(fsm|enum|struct|bit|string|integer)\\b/";
+$code_styles["cdl"]["replacements"][]  = $code_styles["general"]["replacements"]["type"];
+$code_styles["cdl"]["patterns"][]      = "/\\b(t_\\S*)\\b/";
+$code_styles["cdl"]["replacements"][]  = $code_styles["general"]["replacements"]["usertype"];
+$code_styles["cdl"]["patterns"][]      = "/\\b(active_low|active_high|rising|falling)\\b/";
+$code_styles["cdl"]["replacements"][]  = $code_styles["general"]["replacements"]["modifier"];
+$code_styles["cdl"]["patterns"][]      = "/(&lt;=|&gt;=|=&gt;)/";
+$code_styles["cdl"]["replacements"][]  = $code_styles["general"]["replacements"]["operator"];
+$code_styles["gip"]["patterns"][]      = "/</";
+$code_styles["gip"]["replacements"][]  = "&lt;";
+$code_styles["gip"]["patterns"][]      = "/>/";
+$code_styles["gip"]["replacements"][]  = "&gt;";
+
 /*a Done
  */
 ?>

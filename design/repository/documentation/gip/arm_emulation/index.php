@@ -33,7 +33,7 @@ The ARM instruction classes in general are as follows:
 </tr>
 
 <tr>
-<th>Multiply</th>
+<th><a href="multiply.php">Multiply</a></th>
 <td>Multiply and multiply accumulate</td>
 <td>&nbsp;</td>
 </tr>

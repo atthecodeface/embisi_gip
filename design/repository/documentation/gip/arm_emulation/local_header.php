@@ -25,23 +25,24 @@ $differs = "<b>Differs from ARM architecture</b>";
 
 function arm_emulation_table_start( )
 {
-    echo "<table class=data border=1><tr><th>ARM instruction</th><th>Internal instruction</th></tr>\n";
+    echo "<table class=data border=1><tr><th>ARM instruction</th><th>Internal instruction</th><th>Notes</th></tr>\n";
 }
 
 function arm_emulation_table_instruction( $arm, $internal, $restrictions, $notes )
 {
     echo "<tr>\n";
     echo "<th align=left valign=top>$arm</th>\n";
-    echo "<td align=left valign=top><em>$internal</em>";
+    echo "<td align=left valign=top><em>$internal</em></td>";
+    echo "<td align=left valign=top>";
     if ($restrictions != "")
     {
-        echo "<br><font size=-1><em>$restrictions</em></font>";
+        echo "<em>$restrictions</em><br>";
     }
     if ($notes != "")
     {
-        echo "<br><font size=-1>$notes</font></td>\n";
+        echo "$notes<br>\n";
     }
-    echo "</tr>\n";
+    echo "</td></tr>\n";
 }
 
 function arm_emulation_table_end( )

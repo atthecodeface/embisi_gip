@@ -17,6 +17,11 @@ page_sp();
 <?php page_section( "summary", "Summary" ); ?>
 
 <p>
+The microkernel is effectively a state machine. In standard running
+there will be an ARM mode code thread running a user process, and
+the microkernel will be in 'user' state. From this state it may get a system call from the ARM code, and enter 'system call' state; in 'system call' state it may then receive hardware interrupts, or schedule a different user process, or a return from system call.
+
+<p>
 We wil use one internal event, and an atomic test/set bit. The event
 can be triggered or cleared with a GIP instruction. The atomic
 test/set bit can be read, set-and-read, cleared-and-read,
@@ -102,6 +107,166 @@ SWI or other system call, through an undefined instruction. This
 </ol>
 
 </p>
+
+<p>
+The microkernel is basically responsible for scheduling the ARM mode code thread, and if any
+preemption is required, or mode switching (on a system call, for example) then the microkernel is
+responsible for that. The basic communication between them is scheduling management; this is akin to interrupt
+management, except it contains more information than 'disable', 'restore', 'enter' and 'exit' from interrupt routines, which
+is what interrupt masking generally provides for.
+</p>
+
+
+<?php page_section( "microkernel_thread", "Microkernel Thread" ); ?>
+
+<p>
+The microkernel thread, which is written in GIP 16-bit code, takes requests from
+hardware threads and the ARM thread, and despatches execution of ARM
+code. The microkernel thread is responsible for ARM register 'banking': R13 and
+R14 management.
+</p>
+
+<p>
+So there are two entry points in to the microkernel thread, and as it is
+a single thread they are mutually exclusive (i.e. not reentrant). As
+the hardware only supports a single event to wake up a hardware
+thread, we will have to have a differentiating mechanism and a single
+mutex/semaphore to wake the microkernel; the suggested mechanism would
+be a register with 32 bits which provides for 31 different hardware
+interrupt sources and one software interrupt source.
+</p>
+
+<p>
+A SWI always deschedules the ARM execution thread. 
+</p>
+
+<p>
+
+Hardware interrupts occur through the messaging to the microkernel
+entry point, and the microkernel will 'deschedule' the ARM thread,
+replace it with the ARM hardware interrupt handler code, and then
+return to its entry point waiting for a SWI ONLY (as hardware
+interrupts are disabled). Note that this permits hardware interrupt
+code in the ARM mode to perform SWIs. This is not readily supported on
+the ARM, as the entry mechanism for SWIs on the ARM is not reentrant
+(if a hardware interrupt occurs simultaneously with a user mode SWI
+call then the hardware interrupt would have to preserve r14_svc prior
+to calling the SWI; also, all SWIs would have to support reentrancy)
+
+</p>
+
+<p>
+The microkernel thread wakes up on the event occurred.
+</p>
+
+<p>
+It clears the event.
+</p>
+
+<p>
+It reads and clears the 'which interrupts register' atomically.
+</p>
+
+<p>
+It then invokes the ARM thread with each interrupt vector requested
+if linux interrupts are enabled. (Question; can we do this instead
+with a mutex? We would need to have an atomic read and write
+instruction; also useful to have an atomic write. But can the
+descheduling be handled well if the requested mutex is not available?
+That should only happen for the microkernel thread, as the ARM thread
+can only run if the microkernel thread is not running, and the
+microkernel thread would then not own the mutex)
+</p>
+
+<p>
+What is the prod to the microkernel though? Sounds like a
+semaphore. No, its an event
+</p>
+
+<p>
+We will have an atomic test/set bit that can be read and written in a
+single instruction, and it will have an associated change action
+response mechanism that can be dynamically configured, such that
+particular edges on the value of the bit can be set to invoke a
+corresponding event (which may also be forced to occur by other
+sources too including from other processors).
+</p>
+
+<p>
+Microkernel on entry from SWI from kernel mode occurs only, we
+believe, from init to do an exec; from user mode for all other SWI
+calls (probably). From user mode code the portable kernel code has to
+be able to modify r13/r14, and visibility of them so that preemptive
+code can do a task switch.
+Currently the ARM Linux layer, on entry to a SWI or on an interrupt,
+pushes all sixteen uesr mode registers (inc PC) on to the kernel
+stack. We may want to change that from the kernel stack to save
+accesses to SDRAM.
+</p>
+
+<?php page_section( "arm_code_thread", "ARM Mode Code Thread" ); ?>
+
+<p>
+ARM execution thread, which runs OS code, application code, etc. All
+the ARM code.
+</p>
+
+<?php page_section( "interrupt_threads", "Hardware interrupt threads" ); ?>
+
+<p>
+The basic operation of a hardware interrupt thread is:
+
+<ol>
+<li>Wait for stuff on a register or something from an external device (or
+other GIP)
+
+<li>Get stuff from that register; if it has enough, or a packet, or something
+then notify the microkernel that there is something to do by setting
+a bit in the which interrupts register and the microkernel event occurred thing.
+
+<li>Return, but keep giving it stuff.
+
+</ol>
+
+
+</p>
+
+<?php page_section( "system_calls", "System calls" ); ?>
+
+<p>
+Software interrupts are explicit communications between the ARm thread
+then microkernel thread.  Hardware interrupts as far as the OS is
+concerned are effectively internally generated within the microkernel,
+using messages from the hardware threads.
+</p>
+
+<?php page_section( "thread_priorities", "Thread priorities" ); ?>
+
+<p>
+Hardware threads should be equal top priority, nonpreemptable.
+Microkernel thread should be second priority, preemptable by hardware
+threads.
+ARM thread should be lowest priority, preemptable by any of the above.
+</p>
+
+<?php page_section( "communication_primitives", "Communication primitives" ); ?>
+
+
+
+
+----------------------------------------------------------------------------
+Thunking dynamic libraries
+We can use r17 or some other register to contain a base address of
+dynamic library thunking table assists; the dynamic mapping of
+registers to support this in this particular way is patentable.
+
+Best method is to have a small table of static data pointers whose
+base address is in r17 indexed by local library number, and a global
+table of entry points for functions in the libraries indexed by global
+entry point number whose base is in r18
+We can have one instruction that loads 'r12' with 'r17, #...' and pc
+with 'r18, #entryptr<<2' - we can use a quarter of the SWI instruction
+decode.
 
 <?php
 page_ep();

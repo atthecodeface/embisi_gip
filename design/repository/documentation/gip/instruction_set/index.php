@@ -179,38 +179,68 @@ Note that there are no flow control instructions; in fact, there is no specific 
 
 <tr>
 <th>Add</th>
-<td>000</td>
+<td>0000</td>
 <td>Add</td>
 </tr>
 
 <tr>
 <th>Adc</th>
-<td>001</td>
+<td>0001</td>
 <td>Add with carry in from current C flag</td>
 </tr>
 
 <tr>
 <th>Sub</th>
-<td>010</td>
+<td>0010</td>
 <td>Subtract</td>
 </tr>
 
 <tr>
 <th>Sbc</th>
-<td>011</td>
+<td>0011</td>
 <td>Subtract with carry in from current C flag</td>
 </tr>
 
 <tr>
 <th>Rsb</th>
-<td>100</td>
+<td>0100</td>
 <td>Reverse subtract</td>
 </tr>
 
 <tr>
 <th>Rsc</th>
-<td>101</td>
+<td>0101</td>
 <td>Reverse subtract with carry in from current C flag</td>
+</tr>
+
+<tr>
+<th>Init</th>
+<td>1000</td>
+<td>Clear carry, Acc=Rm/Imm, SHF=Rn</td>
+</tr>
+
+<tr>
+<th>Mla</th>
+<td>1010</td>
+<td>Acc+=2/1/0/-1*Rm/Imm; B=Rm/Imm LSL 2; SHF=SHF LSR 2; P=0/1</td>
+</tr>
+
+<tr>
+<th>Mlb</th>
+<td>1011</td>
+<td>Acc+=2/1/0/-1*B; B=B LSL 2; SHF=SHF LSR 2; P=0/1</td>
+</tr>
+
+<tr>
+<th>Dva</th>
+<td>1100</td>
+<td>Acc=Acc-?Rm/Imm; SHF=SHF|?Rn; B=Rm/Imm LSR 1; A=Rn LSR 1</td>
+</tr>
+
+<tr>
+<th>Dvb</th>
+<td>1101</td>
+<td>Acc=Acc-?B; SHF=SHF|?A; B=Rm/Imm LSR 1; A=Rn LSR 1</td>
 </tr>
 
 </table>
@@ -635,6 +665,58 @@ IRSC[CC][S][A][F] Rn, Rm/Imm -> Rd
 </th>
 <td>Arith</td>
 <td>RSC</td>
+<td>S0</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+INIT[CC][S][A][F] Rn, Rm/Imm -> Rd
+</th>
+<td>Arith</td>
+<td>INIT</td>
+<td>S0</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IMLA[CC][S][A][F] Rn, Rm/Imm -> Rd
+</th>
+<td>Arith</td>
+<td>INIT</td>
+<td>S0</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IMLB[CC][S][A][F] -> Rd
+</th>
+<td>Arith</td>
+<td>INIT</td>
+<td>S0</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IDIV[CC][S][A][F] -> Rd
+</th>
+<td>Arith</td>
+<td>INIT</td>
 <td>S0</td>
 <td>CC</td>
 <td>Rd</td>
@@ -1536,7 +1618,7 @@ ISTR[CC]H[A][S] #k (Rn, #-SHF) <- Rm/Imm [-> Rd]
 </table>
 
 Still missing:
-XMC (word, block), XCM (word, block), EORFIRSTONE, EORLASTONE, INIT, MULFIRST, MULSTEP, DIVSTEP, BITCOUNT, TESTALLSET, TESTANYCLEAR, MEMCMD (prefetch, writeback, writeback_and_invalidate, flush, fill buffer from address, write buffer to address,
+XMC (word, block), XCM (word, block), EORFIRSTONE, EORLASTONE, BITCOUNT, TESTALLSET, TESTANYCLEAR, MEMCMD (prefetch, writeback, writeback_and_invalidate, flush, fill buffer from address, write buffer to address,
 Sticky flags
 
 

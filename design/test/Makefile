@@ -3,9 +3,12 @@
 #  This file 'Makefile' copyright Embisi Inc., 2004
 
 #a Targets
-all: simulation
+all: simulation regressions
 
 .PHONY: simulation
+
+regressions:
+	cd ../repository/regressions/gip && make
 
 simulation:
 	cd ../build && make sim

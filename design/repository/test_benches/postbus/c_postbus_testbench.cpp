@@ -778,39 +778,11 @@ t_sl_error_level c_postbus_testbench::evaluate_combinatorials( void )
 */
 t_sl_error_level c_postbus_testbench::preclock_posedge_int_clock( void )
 {
-    t_postbus_testbench_event_data *event, **last_event_ptr;
     int src, chan;
 
     memcpy( &next_posedge_int_clock_state, &posedge_int_clock_state, sizeof(posedge_int_clock_state) );
 
     evaluate_combinatorials();
-
-    /*b Fire any events that should, er, fire
-     */
-    for (event=event_list; event; event=event->next_in_list)
-    {
-        if (!event->fired)
-        {
-            if  ( (event->timeout!=-1) && (event->timeout==cycle_number) )
-            {
-                event->fired = 1;
-            }
-            if ( event->wait_for_complete &&
-                 (!source_exec_file_transaction_pending) &&
-                 (posedge_int_clock_state.src_fsm == src_fsm_idle) )
-            {
-                event->fired = 1;
-            }
-            if ( event->fired )
-            {
-                event->timeout = cycle_number; // record the time at which it fired
-                if (event->event)
-                {
-                    sl_exec_file_event_fire( source_exec_file_data, event->event );
-                }
-            }
-        }
-    }
 
     /*b mon_fsm
     */
@@ -868,11 +840,6 @@ t_sl_error_level c_postbus_testbench::preclock_posedge_int_clock( void )
 
     /*b src_fsm
     */
-    if (source_exec_file_data)
-    {
-        run_exec_file();
-    }
-
     if ((num_sources>0) || (source_exec_file_data))
     {
         for (src=0; src<num_sources; src++)
@@ -1081,6 +1048,61 @@ t_sl_error_level c_postbus_testbench::preclock_posedge_int_clock( void )
         }
     }
 
+    /*b Done
+     */
+    return error_level_okay;
+}
+
+/*f c_postbus_testbench::clock_posedge_int_clock
+*/
+t_sl_error_level c_postbus_testbench::clock_posedge_int_clock( void )
+{
+    t_postbus_testbench_event_data *event, **last_event_ptr;
+    int i;
+
+    /*b Copy next state to current
+     */
+    memcpy( &posedge_int_clock_state, &next_posedge_int_clock_state, sizeof(posedge_int_clock_state) );
+    cycle_number++;
+    for (i=0; i<MAX_SOURCES; i++)
+    {
+        sources[i].ready_to_clock = 1;
+    }
+
+    /*b Fire any events that should, er, fire
+     */
+    for (event=event_list; event; event=event->next_in_list)
+    {
+        if (!event->fired)
+        {
+            if  ( (event->timeout!=-1) && (event->timeout==cycle_number) )
+            {
+                event->fired = 1;
+            }
+            if ( event->wait_for_complete &&
+                 (!source_exec_file_transaction_pending) &&
+                 (posedge_int_clock_state.src_fsm == src_fsm_idle) )
+            {
+                event->fired = 1;
+            }
+            if ( event->fired )
+            {
+                event->timeout = cycle_number; // record the time at which it fired
+                if (event->event)
+                {
+                    sl_exec_file_event_fire( source_exec_file_data, event->event );
+                }
+            }
+        }
+    }
+
+    /*b Run exec file if requires
+     */
+    if (source_exec_file_data)
+    {
+        run_exec_file();
+    }
+
     /*b Now we can free any old fired events
      */
     last_event_ptr = &event_list;
@@ -1100,26 +1122,6 @@ t_sl_error_level c_postbus_testbench::preclock_posedge_int_clock( void )
             last_event_ptr = &event->next_in_list;
         }
      }
-
-    /*b Done
-     */
-    return error_level_okay;
-}
-
-/*f c_postbus_testbench::clock_posedge_int_clock
-*/
-t_sl_error_level c_postbus_testbench::clock_posedge_int_clock( void )
-{
-    int i;
-
-    /*b Copy next state to current
-     */
-    memcpy( &posedge_int_clock_state, &next_posedge_int_clock_state, sizeof(posedge_int_clock_state) );
-    cycle_number++;
-    for (i=0; i<MAX_SOURCES; i++)
-    {
-        sources[i].ready_to_clock = 1;
-    }
 
     /*b Monitor the bus with a message if required
     */

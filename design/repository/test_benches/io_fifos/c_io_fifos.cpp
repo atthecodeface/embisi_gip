@@ -876,11 +876,48 @@ t_sl_error_level c_io_fifos::evaluate_combinatorials( void )
 */
 t_sl_error_level c_io_fifos::preclock_posedge_int_clock( void )
 {
-    t_io_fifos_event_data *event, **last_event_ptr;
-
     /*b Copy current state to next
      */
     memcpy( &next_posedge_int_clock_state, &posedge_int_clock_state, sizeof(posedge_int_clock_state) );
+
+    /*b Handle fifo control inputs
+     */
+    if (num_cmd_fifos>0)
+    {
+        next_posedge_int_clock_state.cmd_fifo_toggle = inputs.cmd_fifo_cmd_toggle[0];
+        next_posedge_int_clock_state.cmd_fifo_do_cmd = (next_posedge_int_clock_state.cmd_fifo_toggle != posedge_int_clock_state.cmd_fifo_toggle);
+    }
+    if (num_status_fifos>0)
+    {
+        next_posedge_int_clock_state.status_fifo_toggle = inputs.status_fifo_cmd_toggle[0];
+        next_posedge_int_clock_state.status_fifo_do_cmd = (next_posedge_int_clock_state.status_fifo_toggle != posedge_int_clock_state.status_fifo_toggle);
+    }
+    if (num_tx_data_fifos>0)
+    {
+        next_posedge_int_clock_state.tx_data_fifo_toggle = inputs.tx_data_fifo_cmd_toggle[0];
+        next_posedge_int_clock_state.tx_data_fifo_do_cmd = (next_posedge_int_clock_state.tx_data_fifo_toggle != posedge_int_clock_state.tx_data_fifo_toggle);
+    }
+    if (num_rx_data_fifos>0)
+    {
+        next_posedge_int_clock_state.rx_data_fifo_toggle = inputs.rx_data_fifo_cmd_toggle[0];
+        next_posedge_int_clock_state.rx_data_fifo_do_cmd = (next_posedge_int_clock_state.rx_data_fifo_toggle != posedge_int_clock_state.rx_data_fifo_toggle);
+    }
+
+    /*b Done
+     */
+    return error_level_okay;
+}
+
+/*f c_io_fifos::clock_posedge_int_clock
+*/
+t_sl_error_level c_io_fifos::clock_posedge_int_clock( void )
+{
+    t_io_fifos_event_data *event, **last_event_ptr;
+
+    /*b Copy next state to current
+     */
+    memcpy( &posedge_int_clock_state, &next_posedge_int_clock_state, sizeof(posedge_int_clock_state) );
+    cycle_number++;
 
     /*b Fire any events that should, er, fire
      */
@@ -942,29 +979,6 @@ t_sl_error_level c_io_fifos::preclock_posedge_int_clock( void )
         run_exec_file();
     }
 
-    /*b Handle fifo control inputs
-     */
-    if (num_cmd_fifos>0)
-    {
-        next_posedge_int_clock_state.cmd_fifo_toggle = inputs.cmd_fifo_cmd_toggle[0];
-        next_posedge_int_clock_state.cmd_fifo_do_cmd = (next_posedge_int_clock_state.cmd_fifo_toggle != posedge_int_clock_state.cmd_fifo_toggle);
-    }
-    if (num_status_fifos>0)
-    {
-        next_posedge_int_clock_state.status_fifo_toggle = inputs.status_fifo_cmd_toggle[0];
-        next_posedge_int_clock_state.status_fifo_do_cmd = (next_posedge_int_clock_state.status_fifo_toggle != posedge_int_clock_state.status_fifo_toggle);
-    }
-    if (num_tx_data_fifos>0)
-    {
-        next_posedge_int_clock_state.tx_data_fifo_toggle = inputs.tx_data_fifo_cmd_toggle[0];
-        next_posedge_int_clock_state.tx_data_fifo_do_cmd = (next_posedge_int_clock_state.tx_data_fifo_toggle != posedge_int_clock_state.tx_data_fifo_toggle);
-    }
-    if (num_rx_data_fifos>0)
-    {
-        next_posedge_int_clock_state.rx_data_fifo_toggle = inputs.rx_data_fifo_cmd_toggle[0];
-        next_posedge_int_clock_state.rx_data_fifo_do_cmd = (next_posedge_int_clock_state.rx_data_fifo_toggle != posedge_int_clock_state.rx_data_fifo_toggle);
-    }
-
     /*b Now we can free any old fired events
      */
     last_event_ptr = &event_list;
@@ -984,21 +998,6 @@ t_sl_error_level c_io_fifos::preclock_posedge_int_clock( void )
             last_event_ptr = &event->next_in_list;
         }
      }
-
-    /*b Done
-     */
-    return error_level_okay;
-}
-
-/*f c_io_fifos::clock_posedge_int_clock
-*/
-t_sl_error_level c_io_fifos::clock_posedge_int_clock( void )
-{
-
-    /*b Copy next state to current
-     */
-    memcpy( &posedge_int_clock_state, &next_posedge_int_clock_state, sizeof(posedge_int_clock_state) );
-    cycle_number++;
 
     /*b Handle cmd FIFO ops directly to current output state (guaranteed to only read once per clock this way)
      */

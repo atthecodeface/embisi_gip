@@ -56,8 +56,6 @@ extern module io_postbus( clock int_clock,
                           output bit[32] write_data
     )
 {
-    timing comb input int_reset;
-
     timing to rising clock int_clock int_reset;
 
     timing to rising clock int_clock postbus_src_ack, postbus_tgt_type, postbus_tgt_data;
@@ -74,5 +72,4 @@ extern module io_postbus( clock int_clock,
     timing to rising clock int_clock read_data;
     timing from rising clock int_clock configuration_write, write_address, write_data;
 
-    timing comb input egress_ack, ingress_ack;
 }

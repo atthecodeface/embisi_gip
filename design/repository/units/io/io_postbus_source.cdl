@@ -15,10 +15,31 @@ include "io.h"
 
 /*a Types
  */
+/*t t_store_type
+ */
+typedef enum [2]
+{
+    store_type_empty,
+    store_type_first,
+    store_type_middle,
+    store_type_last,
+} t_store_type;
+
+/*t t_flow_through_fifo_stage
+ */
+typedef struct
+{
+    t_store_type store_type;
+    bit[32] data;
+} t_flow_through_fifo_stage;
+
 /*t t_op_state
  */
 typedef fsm {
     op_state_idle;
+    op_state_wait_for_first_data;
+    op_state_first_data_acked;
+    op_state_first_data_ready;
 } t_op_state;
 
 /*a io_postbus_source module
@@ -59,42 +80,381 @@ with an indication of what sort of data to gather: header only, header plus 'n' 
 
 The postbus source takes the request from the channel, starts to gather the data, and drives out a header (from the event), and keeps funnenling the data out through the postbus.
 
+The actual postbus interface is decoupled from the internal request/grant system with a flow-through FIFO.
+This FIFO is a 3 entry flow-through FIFO (data flows from one register to the next), with a final stage of output
+buffering that is used to cope with the current-cycle acknowledge system of the postbus.
+The basic mechanism is that a transaction is pushed in to the FIFO, whence it flows down. It will be pulled
+out of the FIFO in to the output buffer, and that pushes the request to the postbus. If there is an
+acknowledge from the postbus then this simply empties the output buffer, and the FIFO data is presented
+as the next word of the transaction. This transaction word is copied to the output buffer in case there
+is no acknowledge, and this allows the FIFO to always be read, thus making its read operation independent
+of the postbus acknowledge. If there is no acknowledge from the postbus then the output buffer is holding the relevant
+data for presentation in the next cycle.
+
+As the internal request system is highly pipelined we require up to 4 words of buffering so a request may be
+presented to the internal system with the pipeline of requests full (for maximum throughput).
+
 "
 {
-	 default clock int_clock;
-	 default reset int_reset;
 
-     clocked bit[10] countdown = 32;
-     clocked bit request_pending = 0;
-     comb bit request_taken;
+    /*b Default clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
 
-     a "":
-         {
-             countdown <= countdown-1;
-             if (countdown==0)
-             {
-                 countdown <= 32;
-                 request_pending <= 1;
-             }
-             if (request_taken)
-             {
-                 request_pending <= 0;
-             }
-         }
+    /*b Request generator
+     */
+    clocked bit[10] countdown = 32;
+    clocked bit request_pending = 0;
+    comb bit request_taken;
+    clocked bit[4] data_left_to_fetch = 0;
 
-     test "":
-         {
-             postbus_type = postbus_word_type_idle;
-             postbus_data = 0;
+    /*b Request pipeline
+      We can only request if fifo_space_count indicates one more buffer than we have used in pending requests
+      In particular, a request is pending if presented or current type is not idle
+      SO if both requests are oustanding, fifo_space_count needs to be 3 for another request to go
+      EXCEPT, we have the entry buffer here, so actually we get one word more leeway if that is empty.
+      i.e. fifo_space_count (+1 if buffer_store_type==empty) > 0 (+1 if current!=store_type_empty) (+1 if presented!=store_type_empty)
+      means we can present a request
+     */
+    clocked t_store_type presented_store_type = store_type_empty "Access being presented to SRAM, i.e. what we presented in previous cycle, if acked";
+    clocked t_store_type current_access_store_type = store_type_empty "Access being performed by SRAM";
+    clocked t_store_type buffer_store_type = store_type_empty "Type of data from SRAM read, unless backed up";
+    clocked bit[32] buffer_data = 0 "Data contents to push in to FIFO";
+    comb bit[2] presented_request_count "Number of presented requests pending; 2 if presented and current are full, 1 if only one is, zero if neither are";
+    comb bit room_for_new_request "Asserted if there is room in the FIFO and buffer for outstanding requests and a further request";
 
-             fifo_op = io_fifo_op_none;
-             fifo_op_to_cmd_status = 0;
-             fifo_to_access = 0;
-             fifo_address_from_read_ptr = 0;
-             sram_address_op = io_sram_address_op_fifo_ptr;
-             sram_data_op = io_sram_data_op_none;
+    /*b Flow-through FIFO
+     */
+    clocked t_flow_through_fifo_stage[3] fifo_stage = { {store_type=store_type_empty, data=0} } "The FIFO data, a flow-through FIFO";
+    comb bit[2] fifo_space_count "Count of number of empty spaces in the FIFO";
 
-             egress_req = 0;
-             ingress_req = 0;
-         }
+    /*b Postbus interface registers and combinatorials
+     */
+    clocked bit[32] output_data_register = 0 "Output data register, presented to the postbus if full";
+    clocked t_store_type output_data_store_type = store_type_empty "Status of output data register, presented to postbus if not empty";
+    clocked bit postbus_active = 0 "Asserted if we are mid-transaction on the postbus (i.e. we have presented a start";
+    comb bit using_fifo_stage_0 "Asserted if we are presenting FIFO stage 0 data and not the output data register, which is empty";
+    comb t_store_type fifo_write_store_type "The type of data we wish to write in to the FIFO";
+    comb bit[32] fifo_write_data "The data to be written to the FIFO";
+    comb bit fifo_taking_data "Asserted if the FIFO will write data if presented";
+
+    /*b Internal access state machine variables
+     */
+    clocked t_op_state op_state=op_state_idle;
+
+    /*b Request pipeline
+     */
+    request_pipeline "Request pipeline":
+        {
+            /*b fifo_write_data, fifo_write_store_type - from the buffer
+             */
+            fifo_write_data = buffer_data;
+            fifo_write_store_type = buffer_store_type;
+
+            /*b buffer_store_type, buffer_store_data; pipe the current access (and SRAM read data), and empty if the FIFO took the last lot and we did not fill it
+             */
+            if (current_access_store_type != store_type_empty) // Assume we were wise enough only to request when we could, so we can push in to the buffer
+            {
+                buffer_store_type <= current_access_store_type;
+                buffer_data <= read_data;
+            }
+            elsif (fifo_taking_data) // If the fifo takes data, it takes it from the buffer
+                {
+                    buffer_store_type <= store_type_empty;
+                }
+
+            /*b current_access_store_type - pipe the presented type
+             */
+            current_access_store_type <= presented_store_type;
+
+            /*b presented_store_type - if acked, we fill it with the data type (first, middle of last) of the current request
+             */
+            if ( (ingress_req && ingress_ack) ||
+                 (egress_req && egress_ack) )
+            {
+                presented_store_type <= store_type_something; // first, last or middle... depends on data_left_to_fetch, and whether its the first
+            }
+            else
+            {
+                presented_store_type <= store_type_empty;
+            }
+
+            /*b room_for_new_request - juggle the numbers
+             */
+            presented_request_count = 0;
+            if (presented_store_type!=store_type_empty) {presented_request_count = presented_request_count+1;}
+            if (current_access_store_type!=store_type_empty) {presented_request_count = presented_request_count+1;}
+            room_for_new_request = 0;
+            full_switch (fifo_space_count)
+                {
+                case 0:
+                {
+                    if ((buffer_store_type==store_type_empty) && (presented_request_count==0))
+                    {
+                        room_for_new_request = 1;
+                    }
+                }
+                case 1:
+                {
+                    if (presented_request_count==0)
+                    {
+                        room_for_new_request = 1;
+                    }
+                    elsif ((presented_request_count==1) && (buffer_store_type==store_type_empty))
+                        {
+                            room_for_new_request = 1;
+                        }
+                }
+                case 2:
+                {
+                    if ((presented_request_count==0) || (presented_request_count==1))
+                    {
+                        room_for_new_request = 1;
+                    }
+                    elsif ((presented_request_count==2) && (buffer_store_type==store_type_empty))
+                    {
+                        room_for_new_request = 1;
+                    }
+                }
+                case 3:
+                {
+                        room_for_new_request = 1;
+                }
+                }
+        }
+
+    /*b Flow through FIFO - fifo_stage[], fifo_space_count, fifo_taking_data
+     */
+    flowthrough_fifo "Flow-through FIFO":
+        {
+            /*b Flow-down the FIFO, and feed write data to first empty spot (if any)
+             */
+            fifo_taking_data = 0;
+            if ( (output_data_store_type==store_type_empty) ||
+                 (fifo_stage[0].store_type==store_type_empty) ) // Fifo stage 0 being eaten by someone else; fill with write data if rest is empty, else just flow through
+            {
+                fifo_taking_data = 1;
+                if ( (fifo_stage[1].store_type==store_type_empty) &&
+                     (fifo_stage[2].store_type==store_type_empty) )
+                {
+                    fifo_stage[0].data <= fifo_write_data;
+                    fifo_stage[0].store_type <= fifo_write_store_type;
+                }
+                else // Fifo stage 0 being eaten and filled by stage 1; stage 1 can be filled with incoming data or stage 2, if that is not empty
+                {
+                    fifo_stage[0] <= fifo_stage[1];
+                    if (fifo_stage[2].store_type==store_type_empty) // Fifo stage 0 being eaten and eating stage 1, and stage 1 can eat input data
+                    {
+                        fifo_stage[1].data <= fifo_write_data;
+                        fifo_stage[1].store_type <= fifo_write_store_type;
+                        fifo_stage[2].store_type <= store_type_empty;
+                    }
+                    else // Fifo stage 0 being eaten and eating stage 1, and stage 1 must eat stage 2, and stage 2 can eat input data
+                    {
+                        fifo_stage[1] <= fifo_stage[2];
+                        fifo_stage[2].data <= fifo_write_data;
+                        fifo_stage[2].store_type <= fifo_write_store_type;
+                    }
+                }
+            }
+            elsif (fifo_stage[1].store_type==store_type_empty) // Fifo stage 0 blocked and not empty, and stage 1 empty - eat stage 2 or input data
+                {
+                    fifo_taking_data = 1;
+                    if (fifo_stage[2].store_type==store_type_empty) // Fifo stage 0 blocked, stages 1 and 2 empty, so stage 1 can eat input data
+                    {
+                        fifo_stage[1].data <= fifo_write_data;
+                        fifo_stage[1].store_type <= fifo_write_store_type;
+                        fifo_stage[2].store_type <= store_type_empty;
+                    }
+                    else // Fifo stage 0 blocked, stage 1 empty, stage 2 not; stage 1 eats stage 2, stage 2 eats input data
+                    {
+                        fifo_stage[1] <= fifo_stage[2];
+                        fifo_stage[2].data <= fifo_write_data;
+                        fifo_stage[2].store_type <= fifo_write_store_type;
+                    }
+                }
+            elsif (fifo_stage[2].store_type==store_type_empty) // Fifo stages 0 and 1 blocked, and stage 2 empty - eat input
+                {
+                    fifo_taking_data = 1;
+                    fifo_stage[2].data <= fifo_write_data;
+                    fifo_stage[2].store_type <= fifo_write_store_type;
+                }
+
+            /*b Calculate spaces in FIFO
+             */
+            fifo_space_count = 0;
+            if (fifo_stage[0].store_type==store_type_empty)
+            {
+                fifo_space_count = fifo_space_count+1;
+            }
+            if (fifo_stage[1].store_type==store_type_empty)
+            {
+                fifo_space_count = fifo_space_count+1;
+            }
+            if (fifo_stage[2].store_type==store_type_empty)
+            {
+                fifo_space_count = fifo_space_count+1;
+            }
+        }
+
+    /*b Postbus interface
+     */
+    postbus_if "Postbus interface":
+        {
+            postbus_type = postbus_word_type_idle;
+            postbus_data = output_data_register;
+            using_fifo_stage_0 = 0;
+
+            full_switch (output_data_store_type)
+                {
+                case store_type_empty:
+                {
+                    if (postbus_active)
+                    {
+                        full_switch (fifo_stage[0].store_type)
+                            {
+                            case store_type_first:
+                            case store_type_empty:
+                            {
+                                postbus_type = postbus_word_type_idle;
+                            }
+                            case store_type_last:
+                            {
+                                postbus_type = postbus_word_type_last;
+                                postbus_data = fifo_stage[0].data;
+                                using_fifo_stage_0 = 1;
+                            }
+                            case store_type_middle:
+                            {
+                                postbus_type = postbus_word_type_data;
+                                postbus_data = fifo_stage[0].data;
+                                using_fifo_stage_0 = 1;
+                            }
+                            }
+                    }
+                }
+                case store_type_first:
+                {
+                    postbus_active <= 1;
+                    postbus_data = output_data_register;
+                    postbus_type = postbus_word_type_start;
+                }
+                case store_type_last:
+                {
+                    postbus_active <= 0;
+                    postbus_data = output_data_register;
+                    if (postbus_active)
+                    {
+                        postbus_type = postbus_word_type_last;
+                    }
+                    else
+                    {
+                        postbus_data[0] = 1;
+                        postbus_type = postbus_word_type_start;
+                    }
+                }
+                case store_type_middle:
+                {
+                    postbus_data = output_data_register;
+                    postbus_type = postbus_word_type_data;
+                }
+                }
+
+            if (output_data_store_type==store_type_empty)
+            {
+                if (using_fifo_stage_0 && postbus_ack)
+                {
+                    output_data_store_type <= store_type_empty;
+                }
+                else
+                {
+                    output_data_store_type <= fifo_stage[0].store_type;
+                    output_data_register <= fifo_stage[0].data;
+                }
+            }
+            else
+            {
+                if (postbus_ack)
+                {
+                    output_data_store_type <= store_type_empty;
+                }
+            }
+        }
+
+    /*b Request generator
+     */
+    a "":
+        {
+            countdown <= countdown-1;
+            if (countdown==0)
+            {
+                countdown <= 32;
+                request_pending <= 1;
+            }
+            if (request_taken)
+            {
+                request_pending <= 0;
+            }
+        }
+
+    /*b Internal request fsm
+     */
+    test "":
+        {
+            fifo_op = io_fifo_op_none;
+            fifo_op_to_cmd_status = 0;
+            fifo_to_access = 0;
+            fifo_address_from_read_ptr = 0;
+            sram_address_op = io_sram_address_op_fifo_ptr;
+            sram_data_op = io_sram_data_op_none;
+
+            egress_req = 0;
+            ingress_req = 0;
+            request_taken = 0;
+
+            full_switch (op_state)
+                {
+                case op_state_idle:
+                {
+                    if (request_pending)
+                    {
+                        data_left_to_fetch <= 2;
+                        request_taken = 1;
+                        op_state <= op_state_wait_for_first_data;
+                    }
+                }
+                case op_state_wait_for_first_data: // request from us in this cycle
+                {
+                    ingress_req = 1;
+                    fifo_op = io_fifo_op_inc_read_ptr;
+                    fifo_op_to_cmd_status = 1;
+                    fifo_to_access = 0;
+                    fifo_address_from_read_ptr = 1;
+                    sram_address_op = io_sram_address_op_fifo_ptr;
+                    sram_data_op = io_sram_data_op_read;
+
+                    if (ingress_ack)
+                    {
+                        op_state <= op_state_first_data_acked;
+                        data_left_to_fetch <= data_left_to_fetch-1;
+                    }
+                }
+                case op_state_first_data_acked: // transaction goes to SRAM in this cycle; we can request next data if holding register is not full and if we need more
+                {
+                    if (data_left_to_fetch!=0)
+                    {
+                        ingress_req = 1;
+                    }
+                    op_state <= op_state_first_data_ready;
+                }
+                case op_state_first_data_ready: // data is ready from SRAM in this cycle
+                {
+                    op_state <= op_state_idle;
+                }
+                }
+        }
+
+    /*b Done
+     */
 }

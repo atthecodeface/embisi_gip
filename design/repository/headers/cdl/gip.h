@@ -1,3 +1,7 @@
+/*a Includes
+ */
+include "postbus.h"
+
 /*a Types
  */
 /*t t_gip_word
@@ -218,7 +222,22 @@ typedef enum [2]
     gip_prefetch_op_sequential
 } t_gip_prefetch_op;
 
-/*a Modules
+/*t t_gip_mem_op
+ */
+typedef enum [3]
+{
+    gip_mem_op_none,
+    gip_mem_op_store_word,
+    gip_mem_op_store_half,
+    gip_mem_op_store_byte,
+    gip_mem_op_load_word,
+    gip_mem_op_load_half,
+    gip_mem_op_load_byte
+} t_gip_mem_op;
+
+/*a External modules
+ */
+/*m gip_prefetch
  */
 extern module gip_prefetch( clock gip_clock,
                      input bit gip_reset,
@@ -236,5 +255,56 @@ extern module gip_prefetch( clock gip_clock,
     timing from rising clock gip_clock fetch_data, fetch_data_valid;
     timing to rising clock gip_clock prefetch_op, prefetch_address;
 
+}
+
+/*a Core module
+ */
+/*m Module
+ */
+extern module gip_core( clock gip_clock,
+                        input bit gip_reset,
+
+                        output bit fetch_16,
+                        output t_gip_fetch_op fetch_op, // Early in the cycle, so data may be returned combinatorially
+                        input t_gip_word fetch_data,
+                        input bit fetch_data_valid,
+                        input bit[32] fetch_pc,
+                        output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
+                        output bit[32] prefetch_address,
+
+                        output t_gip_mem_op alu_mem_op,
+                        output t_gip_word alu_mem_address,
+                        output t_gip_word alu_mem_write_data,
+                        output bit[4] alu_mem_burst,
+
+                        input bit mem_alu_busy,
+                        input bit mem_read_data_valid,
+                        input bit[32] mem_read_data,
+
+                        output t_postbus_type postbus_tx_type,
+                        output t_postbus_data postbus_tx_data,
+                        input t_postbus_ack postbus_tx_ack,
+
+                        input t_postbus_type postbus_rx_type,
+                        input t_postbus_data postbus_rx_data,
+                        output t_postbus_ack postbus_rx_ack
+
+    )
+{
+    timing from rising clock gip_clock fetch_16, fetch_op;
+    timing to rising clock gip_clock fetch_data, fetch_data_valid, fetch_pc;
+    timing from rising clock gip_clock prefetch_op, prefetch_address;
+
+    timing from rising clock gip_clock alu_mem_op, alu_mem_address, alu_mem_write_data, alu_mem_burst;
+    timing to rising clock gip_clock mem_alu_busy, mem_read_data_valid, mem_read_data;
+
+    timing comb input mem_alu_busy;
+    timing comb output fetch_op, prefetch_op;
+
+    timing from rising clock gip_clock postbus_tx_type, postbus_tx_data;
+    timing to rising clock gip_clock postbus_tx_ack;
+
+    timing from rising clock gip_clock postbus_rx_ack;
+    timing to rising clock gip_clock postbus_rx_type, postbus_rx_data;
 }
 

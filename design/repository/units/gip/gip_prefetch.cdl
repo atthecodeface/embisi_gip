@@ -394,7 +394,12 @@ module gip_prefetch( clock gip_clock,
                     buffer_instructions <= buffer_instructions-1;
                 }
             }
-            if (data_from_sram && sram_bus_has_new)
+            if ( (sram_fetch == sram_fetch_new) ||
+                 (sram_fetch == sram_fetch_last_new) )
+            {
+                buffer_has_new <= 0;
+            }
+            elsif (data_from_sram && sram_bus_has_new)
             {
                 buffer_has_new <= 0;
             }

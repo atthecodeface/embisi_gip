@@ -158,6 +158,20 @@ static unsigned int lsls( unsigned int a, unsigned int b )
     return result;
 }
 
+/*f rrxs - assembler to perform 'MOVS result, a, rrx'
+ */
+static unsigned int rrxs_inst( unsigned int a, unsigned int b )
+{
+    unsigned int result;
+	__asm__ volatile (
+        "movs %0, %1, rrx"
+        : "=r" (result) /* Outputs, starts at %0, commma separated list, specified as =r for assigns to a register */
+        : "r" (a), "r" (b) /* Inputs, starting at %n, comma separated list, specified as r for intputs from a register */
+        : "r8", "r9" /* Clobbers r8, r9 */
+        );
+    return result;
+}
+
 /*f shift - assembler to perform an movs result, a, ror b, but with lsr, lsl, ror, rrx and asr, add
   the basic concept is to generate a ROR b; b must be 1 to 32; we always put bit 'b-1' of a in the carry, bit 31 in N, and set Z properly.
   so the operation is to use an adds operation on a to do a shift left by one, then an rrx to reverse that
@@ -206,20 +220,10 @@ static t_test_vector test_vectors[] =
     { 0, 0, 0, 0,  0x11111111, 0x00000000, logic_add, 0, 0, 0, 0, 0x00000000, "Logic_add %08x %08x result %08x\n" },
     { 1, 0, 1, 1,  0x12481248, 0xffffffff, logic_add, 1, 0, 1, 1, 0xffffffff, "Logic_add %08x %08x result %08x\n" },
 
-    { 0, 0, 0, 0,  0x00000000, 0x00000020, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x00000000, 0x00000001, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x00000000, 0x00000002, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0xffffffff, 0x00000020, shift,   0, 1, 1, 0, 0xffffffff, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0xffffffff, 0x00000001, shift,   0, 1, 1, 0, 0xffffffff, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0xffffffff, 0x00000002, shift,   0, 1, 1, 0, 0xffffffff, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x12345678, 0x00000020, shift,   0, 0, 0, 0, 0x12345678, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x12345678, 0x0000001c, shift,   0, 0, 0, 0, 0x23456781, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x12345678, 0x00000018, shift,   0, 0, 0, 0, 0x34567812, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x12345678, 0x00000014, shift,   0, 0, 0, 0, 0x45678123, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x12345678, 0x00000010, shift,   0, 0, 0, 0, 0x56781234, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x12345678, 0x0000000c, shift,   0, 0, 0, 0, 0x67812345, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x12345678, 0x00000008, shift,   0, 0, 0, 0, 0x78123456, "ROR %08x by %d (with sign) result %08x\n" },
-    { 0, 0, 0, 0,  0x12345678, 0x00000004, shift,   0, 1, 1, 0, 0x81234567, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 1, 0,  0x55555555, 0x00000020, rrxs_inst,   0, 1, 1, 0, 0xaaaaaaaa, "RRX inst %08x (by %d) (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x55555555, 0x00000001, rrxs_inst,   0, 0, 1, 0, 0x2aaaaaaa, "RRX inst %08x (by %d) (with sign) result %08x\n" },
+    { 0, 0, 1, 0,  0xaaaaaaaa, 0x00000020, rrxs_inst,   0, 1, 0, 0, 0xd5555555, "RRX inst %08x (by %d) (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0xaaaaaaaa, 0x00000001, rrxs_inst,   0, 0, 0, 0, 0x55555555, "RRX inst %08x (by %d) (with sign) result %08x\n" },
 
     { 0, 0, 0, 0,  0x00000000, 0x00000020, rors_inst,   1, 0, 0, 0, 0x00000000, "ROR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000001, rors_inst,   1, 0, 0, 0, 0x00000000, "ROR inst %08x by %d (with sign) result %08x\n" },
@@ -289,6 +293,21 @@ static t_test_vector test_vectors[] =
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x0000000c, asrs_inst,   0, 1, 0, 0, 0xffff0e1d, "ASR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x00000008, asrs_inst,   0, 1, 1, 0, 0xfff0e1d2, "ASR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x00000004, asrs_inst,   0, 1, 0, 0, 0xff0e1d2c, "ASR inst %08x by %d (with sign) result %08x\n" },
+
+    { 0, 0, 0, 0,  0x00000000, 0x00000020, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x00000000, 0x00000001, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x00000000, 0x00000002, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0xffffffff, 0x00000020, shift,   0, 1, 1, 0, 0xffffffff, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0xffffffff, 0x00000001, shift,   0, 1, 1, 0, 0xffffffff, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0xffffffff, 0x00000002, shift,   0, 1, 1, 0, 0xffffffff, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x12345678, 0x00000020, shift,   0, 0, 0, 0, 0x12345678, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x12345678, 0x0000001c, shift,   0, 0, 0, 0, 0x23456781, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x12345678, 0x00000018, shift,   0, 0, 0, 0, 0x34567812, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x12345678, 0x00000014, shift,   0, 0, 0, 0, 0x45678123, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x12345678, 0x00000010, shift,   0, 0, 0, 0, 0x56781234, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x12345678, 0x0000000c, shift,   0, 0, 0, 0, 0x67812345, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x12345678, 0x00000008, shift,   0, 0, 0, 0, 0x78123456, "ROR %08x by %d (with sign) result %08x\n" },
+    { 0, 0, 0, 0,  0x12345678, 0x00000004, shift,   0, 1, 1, 0, 0x81234567, "ROR %08x by %d (with sign) result %08x\n" },
 
     { 0, 0, 0, 0,  0x00000000, 0x00000000, lsls,    1, 0, 0, 0, 0x00000000, "LSL %08x by %02x (with sign) result %08x\n" },
     { 0, 0, 1, 0,  0x00000000, 0x00000000, lsls,    1, 0, 1, 0, 0x00000000, "LSL %08x by %02x (with sign) result %08x\n" },

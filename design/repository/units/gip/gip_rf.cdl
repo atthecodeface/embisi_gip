@@ -97,7 +97,7 @@ module gip_rf( clock gip_clock,
 
     clocked t_gip_ins_r rfw_mem_rd = { type=gip_ins_r_type_none, r=0 } "Type of register file write requested for the result of memory operation";
     clocked t_gip_word  rfw_mem_result = 0 "Register result of the memory stage";
-    clocked bit         rfw_accepting_alu_rd = 0 "Asserted if the RFW stage can take an ALU register write; 0 only if the mem_rd is not-none and the alu_rd is not-none";
+// now comb    clocked bit         rfw_accepting_alu_rd = 0 "Asserted if the RFW stage can take an ALU register write; 0 only if the mem_rd is not-none and the alu_rd is not-none";
 
     comb t_gip_ins_r rfw_rd "Actual register being written in to the register file in this cycle";
     comb t_gip_word rfw_data "Write data being written in to the register file or other register in this cycle";
@@ -425,6 +425,14 @@ module gip_rf( clock gip_clock,
      */
     pipeline_rfw_stage "Pipeline results and 'rd's for RF write stage":
         {
+            rfw_accepting_alu_rd = 1;
+            if ( (rfw_alu_rd.type!=gip_ins_r_type_none) ) // If we have a write to do
+            {
+                if ( (rfw_mem_rd.type!=gip_ins_r_type_none) ) // If we are not doing it
+                {
+                    rfw_accepting_alu_rd = 0; // Then we won't be able to take another
+                }
+            }
             if (rfw_accepting_alu_rd) // If we promised to take the next ALU rd, then take it
             {
                 rfw_alu_rd <= alu_rd;
@@ -440,14 +448,6 @@ module gip_rf( clock gip_clock,
             else
             {
                 rfw_mem_rd.type <= gip_ins_r_type_none;
-            }
-            rfw_accepting_alu_rd <= 1;
-            if ( (rfw_alu_rd.type!=gip_ins_r_type_none) ) // If we have a write to do
-            {
-                if ( (rfw_mem_rd.type!=gip_ins_r_type_none) ) // If we are not doing it
-                {
-                    rfw_accepting_alu_rd <= 0; // Then we won't be able to take another
-                }
             }
         }
 

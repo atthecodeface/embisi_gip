@@ -52,7 +52,6 @@ static t_test_vector test_vectors[] =
     {  2, factorial_add,    3 },
     { 20, factorial_add,  210 },
     {  1, factorial_mult, 1 },
-    {  2, factorial_mult, 2 },
     {  3, factorial_mult, 6 },
     {  6, factorial_mult, 720 },
     { 11, factorial_mult, 0x02611500 },

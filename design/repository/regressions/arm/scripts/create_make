@@ -111,7 +111,7 @@ foreach $i (@tests) {
         }
     }
     print make "\t\tscripts/build.script\n";
-    print make "\t\${ARM_LD} -T scripts/build.script --Map bin/$test.map -o obj/tmp.elf \\\n";
+    print make "\t\${ARM_LD} -T scripts/build.script --Map bin/$test.map -o obj/$test.elf \\\n";
     foreach $obj (split(/@@@/,$objs)) {
         next if ($obj=~/^\s*$/);
         if ($obj=~/^([^:]*):(.*)/) {
@@ -119,7 +119,7 @@ foreach $i (@tests) {
         }
     }
     print make "\n";
-    print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.bin obj/tmp.elf";
+    print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.bin obj/$test.elf";
     print make "\n";
     print make "\n";
     print make "bin/$test.mif: bin/$test.bin\n";

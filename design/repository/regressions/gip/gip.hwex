@@ -18,6 +18,8 @@ option_int "verbose" 1
 option_int "size" 65536
 option_int "width" 32
 option_int "bits_per_enable" 8
+option_int "dprintf_action_address" 0xf000
+option_int "dprintf_data_address" 0xf004
 option_string "filename" env_string("gip_iram_mif")
 printf "GIP Shared filename %s0%" env_string("gip_iram_mif")
 module se_sram_srw "shared_sram"

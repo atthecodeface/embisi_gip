@@ -93,6 +93,7 @@ module gip_alu( clock gip_clock,
     net t_gip_word arith_result;
     net bit shf_carry_override_value;
     net bit shf_carry_override;
+    comb bit shf_carry_overridden;
 
     net bit logic_z;
     net bit logic_n;
@@ -120,6 +121,7 @@ module gip_alu( clock gip_clock,
             pc=0,
             tag=0
         };
+    clocked bit first_cycle_of_instruction = 0;
 
     clocked t_gip_word alu_a_in=0;
     clocked t_gip_word alu_b_in=0;
@@ -205,10 +207,10 @@ module gip_alu( clock gip_clock,
                     case gip_ins_subclass_arith_mlb:
                     {
                         gip_arith_op = gip_arith_op_mlb;
-                        shf_carry_in = 0;
+                        shf_carry_in = flags.c;
                         gip_shift_op = gip_shift_op_lsr;
-                        shf_value_in = alu_op1;
-                        shf_amount_in = 0;
+                        shf_value_in = shf;
+                        shf_amount_in = 2;
                     }
                     }
             }
@@ -245,7 +247,7 @@ module gip_alu( clock gip_clock,
                     case gip_ins_subclass_shift_lsr:
                     {
                         shf_carry_in = flags.c;
-                        gip_shift_op = gip_shift_op_lsl;
+                        gip_shift_op = gip_shift_op_lsr;
                         shf_value_in = alu_op1;
                         shf_amount_in = alu_op2[8;0];
                     }
@@ -477,9 +479,15 @@ module gip_alu( clock gip_clock,
             next_acc = acc;
             next_shf = shf;
             alu_arith_logic_result = arith_result;
+            alu_shifter_result = shf_result;
             set_zcvn = alu_inst.s_or_stack;
             set_p = alu_inst.p_or_offset_is_shift;
             set_acc = alu_inst.a;
+            shf_carry_overridden = shf_carry;
+            if (shf_carry_override)
+            {
+                shf_carry_overridden = shf_carry_override_value;
+            }
             if (!condition_passed)
             {
                 set_acc = 0;
@@ -502,9 +510,15 @@ module gip_alu( clock gip_clock,
                 {
                     next_acc = arith_result;
                 }
-                next_shf = 0; // should only be with the 'C' flag, but have not defined that yet; not for init, mla, mlb
-                next_shf = shf_result; // only for init, mla, mlb
-                next_flags.p = shf_carry; // only for init, mla, mlb
+                if (set_p)
+                {
+                    next_shf = shf_result; // Use SHF result if P is not set - this is for init, mla, mlb
+                    next_flags.p = shf_carry_overridden; // only for init, mla, mlb
+                }
+                else
+                {
+                    next_shf = 0; // Clear SHF if P is set
+                }
             }
             case gip_ins_class_logic:
             {
@@ -655,8 +669,8 @@ module gip_alu( clock gip_clock,
      */
     determine_pipeline_results "Determine pipeline results":
         {
-            gip_pipeline_flush = alu_inst.f;
-            gip_pipeline_executing = 1;
+            gip_pipeline_flush = alu_inst.f && first_cycle_of_instruction;
+            gip_pipeline_executing = first_cycle_of_instruction;
             gip_pipeline_tag = alu_inst.tag;
             if (!condition_passed) // Also kills flush if the instruction is invalid
             {
@@ -674,13 +688,15 @@ module gip_alu( clock gip_clock,
      */
     pipeline_instruction "Pipeline instruction":
         {
+            first_cycle_of_instruction <= 0;
             if (alu_accepting_rfr_instruction)
             {
                 alu_inst <= rfr_inst;
-            }
-            if (gip_pipeline_flush) // How do we cope with delay slots with this!!!
-            {
-                alu_inst.valid <= 0;
+                if (gip_pipeline_flush) // How do we cope with delay slots with this!!! - note that the rfr_inst may have the 'd' bit set...
+                {
+                    alu_inst.valid <= 0;
+                }
+                first_cycle_of_instruction <= 1;
             }
         }
 

@@ -18,12 +18,16 @@ cdl units/gip         gip_alu_barrel_shift        inc:units/gip inc:headers/cdl
 cdl units/gip         gip_alu                     inc:units/gip inc:headers/cdl
 cdl units/gip         gip_special                 inc:units/gip inc:headers/cdl
 cdl units/gip         gip_decode_native           inc:units/gip inc:headers/cdl
+cdl units/gip         gip_decode_arm              inc:units/gip inc:headers/cdl
 cdl units/gip         gip_decode                  inc:units/gip inc:headers/cdl
 cdl units/gip         gip_scheduler               inc:units/gip inc:headers/cdl
 cdl units/gip         gip_postbus                 inc:units/gip inc:headers/cdl
 cdl units/gip         gip_rf                      inc:units/gip inc:headers/cdl
+cdl units/gip         gip_memory                  inc:units/gip inc:headers/cdl
 cdl units/gip         gip_core                    inc:units/gip inc:headers/cdl
+
 cdl units/gip         gip_prefetch                inc:units/gip inc:headers/cdl
+cdl units/gip         gip_data_ram                inc:units/gip inc:headers/cdl
 
 cdl units/postbus     postbus_led_target          inc:headers/cdl
 cdl units/postbus     postbus_uart_target         inc:headers/cdl

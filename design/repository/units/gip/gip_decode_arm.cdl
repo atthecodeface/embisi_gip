@@ -1,3 +1,8 @@
+/*a To do
+  Reduce gate count
+  make ldm and stm use CP for non-zero cycles
+ */
+
 /*a Includes
  */
 include "gip.h"
@@ -23,11 +28,12 @@ module gip_decode_arm( input bit[32] opcode,
                        input t_gip_ins_r extended_rd,
                        input t_gip_ins_r extended_rn,
                        input t_gip_ins_r extended_rm,
-                       input t_gip_ext_cmd extended_cmd
+                       input t_gip_ext_cmd extended_cmd,
 
+                       input bit[16] stored_reg_set,
+                       output bit[16] next_stored_reg_set
                        )
 {
-    comb bit sign;
     comb bit[4] cc;
     comb bit conditional;
     comb bit[4] alu_op;
@@ -56,6 +62,11 @@ module gip_decode_arm( input bit[32] opcode,
     comb bit ld_st_wb;
     comb bit[12] ld_st_offset;
 
+    comb bit[16] ldm_stm_reg_set;
+    comb bit[5] ldm_stm_num_regs;
+    comb bit[16] sel_reg_set;
+    comb bit[4] ldm_stm_bottom_bit_set;
+
     comb t_gip_ins_cc ins_cc;
     comb t_gip_ins_cc inv_cc;
 
@@ -63,6 +74,7 @@ module gip_decode_arm( input bit[32] opcode,
     comb t_gip_ins_r arm_mapped_rd;
     comb t_gip_ins_r arm_mapped_rm;
     comb t_gip_ins_r arm_mapped_rs;
+    comb t_gip_ins_r arm_mapped_bottom_bit_set;
 
     comb t_arm_ins_class ins_class;
 
@@ -125,8 +137,8 @@ module gip_decode_arm( input bit[32] opcode,
 
             /*b Registers
              */
-            alu_rn = opcode[4;16]; // and loads/stores
-            alu_rd = opcode[4;12]; // and loads/stores
+            alu_rn = opcode[4;16]; // and loads/stores, ldm/stm - destination for multiplies!
+            alu_rd = opcode[4;12]; // and loads/stores - rn for multiplies
             alu_rs = opcode[4;8];
             alu_rm = opcode[4;0];
 
@@ -146,11 +158,117 @@ module gip_decode_arm( input bit[32] opcode,
             /*b Load/store data
              */
             ld_st_imm = !opcode[25];
-            ld_st_pre = opcode[24];
-            ld_st_up = opcode[23];
-            ld_st_byte = opcode[22];
-            ld_st_wb = opcode[21];
+            ld_st_pre = opcode[24]; // also ldm/stm
+            ld_st_up = opcode[23]; // also ldm/stm
+            ld_st_byte = opcode[22]; // psr in ldm/stm
+            ld_st_wb = opcode[21]; // also in ldm/stm
             ld_st_offset = opcode[12;0];
+
+            /*b LDM/STM
+             */
+            ldm_stm_reg_set = opcode[16;0];
+            ldm_stm_num_regs = 0;
+            full_switch (ldm_stm_reg_set[4;0])
+                {
+                case 0: {ldm_stm_num_regs = ldm_stm_num_regs+0;}
+                case 1:
+                case 2:
+                case 4:
+                case 8: {ldm_stm_num_regs = ldm_stm_num_regs+1;}
+                case 3:
+                case 5:
+                case 6:
+                case 9:
+                case 10:
+                case 12: {ldm_stm_num_regs = ldm_stm_num_regs+2;}
+                case 7:
+                case 11:
+                case 13:
+                case 14: {ldm_stm_num_regs = ldm_stm_num_regs+3;}
+                case 15: {ldm_stm_num_regs = ldm_stm_num_regs+4;}
+                }
+            full_switch (ldm_stm_reg_set[4;4])
+                {
+                case 0: {ldm_stm_num_regs = ldm_stm_num_regs+0;}
+                case 1:
+                case 2:
+                case 4:
+                case 8: {ldm_stm_num_regs = ldm_stm_num_regs+1;}
+                case 3:
+                case 5:
+                case 6:
+                case 9:
+                case 10:
+                case 12: {ldm_stm_num_regs = ldm_stm_num_regs+2;}
+                case 7:
+                case 11:
+                case 13:
+                case 14: {ldm_stm_num_regs = ldm_stm_num_regs+3;}
+                case 15: {ldm_stm_num_regs = ldm_stm_num_regs+4;}
+                }
+            full_switch (ldm_stm_reg_set[4;8])
+                {
+                case 0: {ldm_stm_num_regs = ldm_stm_num_regs+0;}
+                case 1:
+                case 2:
+                case 4:
+                case 8: {ldm_stm_num_regs = ldm_stm_num_regs+1;}
+                case 3:
+                case 5:
+                case 6:
+                case 9:
+                case 10:
+                case 12: {ldm_stm_num_regs = ldm_stm_num_regs+2;}
+                case 7:
+                case 11:
+                case 13:
+                case 14: {ldm_stm_num_regs = ldm_stm_num_regs+3;}
+                case 15: {ldm_stm_num_regs = ldm_stm_num_regs+4;}
+                }
+            full_switch (ldm_stm_reg_set[4;12])
+                {
+                case 0: {ldm_stm_num_regs = ldm_stm_num_regs+0;}
+                case 1:
+                case 2:
+                case 4:
+                case 8: {ldm_stm_num_regs = ldm_stm_num_regs+1;}
+                case 3:
+                case 5:
+                case 6:
+                case 9:
+                case 10:
+                case 12: {ldm_stm_num_regs = ldm_stm_num_regs+2;}
+                case 7:
+                case 11:
+                case 13:
+                case 14: {ldm_stm_num_regs = ldm_stm_num_regs+3;}
+                case 15: {ldm_stm_num_regs = ldm_stm_num_regs+4;}
+                }
+            if (cycle_of_opcode[4]==0)
+            {
+                sel_reg_set = ldm_stm_reg_set;
+            }
+            else
+            {
+                sel_reg_set = stored_reg_set;
+            }
+            ldm_stm_bottom_bit_set = 0;
+            if (sel_reg_set[15]) {ldm_stm_bottom_bit_set=15;}
+            if (sel_reg_set[14]) {ldm_stm_bottom_bit_set=14;}
+            if (sel_reg_set[13]) {ldm_stm_bottom_bit_set=13;}
+            if (sel_reg_set[12]) {ldm_stm_bottom_bit_set=12;}
+            if (sel_reg_set[11]) {ldm_stm_bottom_bit_set=11;}
+            if (sel_reg_set[10]) {ldm_stm_bottom_bit_set=10;}
+            if (sel_reg_set[ 9]) {ldm_stm_bottom_bit_set= 9;}
+            if (sel_reg_set[ 8]) {ldm_stm_bottom_bit_set= 8;}
+            if (sel_reg_set[ 7]) {ldm_stm_bottom_bit_set= 7;}
+            if (sel_reg_set[ 6]) {ldm_stm_bottom_bit_set= 6;}
+            if (sel_reg_set[ 5]) {ldm_stm_bottom_bit_set= 5;}
+            if (sel_reg_set[ 4]) {ldm_stm_bottom_bit_set= 4;}
+            if (sel_reg_set[ 3]) {ldm_stm_bottom_bit_set= 3;}
+            if (sel_reg_set[ 2]) {ldm_stm_bottom_bit_set= 2;}
+            if (sel_reg_set[ 1]) {ldm_stm_bottom_bit_set= 1;}
+            if (sel_reg_set[ 0]) {ldm_stm_bottom_bit_set= 0;}
         }
 
     /*b Map registers and immediate
@@ -200,7 +318,7 @@ module gip_decode_arm( input bit[32] opcode,
             arm_mapped_rn.type = gip_ins_r_type_register;
             arm_mapped_rn.r[4] = 0;
             arm_mapped_rn.r[4;0] = alu_rn;
-            if (alu_rn==15) { arm_mapped_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
+            if (alu_rn==15) { arm_mapped_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; } // differs from native - should native match?
             if (extended_rn.type!=gip_ins_r_type_no_override) { arm_mapped_rn = extended_rn; }
 
             /*b Map rm to instruction rm; pc if that is 15; but if extended, to full given extension
@@ -208,7 +326,7 @@ module gip_decode_arm( input bit[32] opcode,
             arm_mapped_rm.type = gip_ins_r_type_register;
             arm_mapped_rm.r[4] = 0;
             arm_mapped_rm.r[4;0] = alu_rm;
-            if (alu_rm==15) { arm_mapped_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
+            if (alu_rm==15) { arm_mapped_rm = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; } // Differs from native
             if (extended_rm.type!=gip_ins_r_type_no_override)
             {
                 arm_mapped_rm.type = extended_rm.type;
@@ -221,6 +339,13 @@ module gip_decode_arm( input bit[32] opcode,
             arm_mapped_rs.type = gip_ins_r_type_register;
             arm_mapped_rs.r[4] = 0;
             arm_mapped_rs.r[4;0] = alu_rs;
+
+            /*b Map bottom bit set reg to instruction reg; no extenstions, PC allowed
+             */
+            arm_mapped_bottom_bit_set.type = gip_ins_r_type_register;
+            arm_mapped_bottom_bit_set.r[4] = 0;
+            arm_mapped_bottom_bit_set.r[4;0] = ldm_stm_bottom_bit_set;
+            if (ldm_stm_bottom_bit_set==15) { arm_mapped_bottom_bit_set = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; }
         }
 
     /*b Decode instruction class
@@ -228,25 +353,56 @@ module gip_decode_arm( input bit[32] opcode,
     decode_instruction_class "Decode instruction class":
         {
             ins_class = arm_ins_class_none;
-            if (opcode[2;26]==0)
-            {
-                ins_class = arm_ins_class_alu;
-            }
-            if (opcode[3;25]==5)
-            {
-                ins_class = arm_ins_class_branch;
-            }
-            if (opcode[2;26]==1)
-            {
-                if (opcode[20])
+            full_switch (opcode[3;25])
                 {
-                    ins_class = arm_ins_class_load; // note also that [25] must not be 1 at the same time as a [4] being one - this is a shift by register, which is not permitted, and may be decoded as something else?
-                }
-                else
+                case 0:
                 {
-                    ins_class = arm_ins_class_store;
+                    if ( (opcode[3;22]==0) &&
+                         (opcode[4;4]==9) )
+                    {
+                        ins_class = arm_ins_class_mul;
+                    }
+                    else
+                    {
+                        ins_class = arm_ins_class_alu;
+                    }
                 }
-            }
+                case 1:
+                {
+                    ins_class = arm_ins_class_alu;
+                }
+                case 2:
+                case 3:
+                {
+                    if (opcode[20])
+                    {
+                        ins_class = arm_ins_class_load; // note also that [25] must not be 1 at the same time as a [4] being one - this is a shift by register, which is not permitted, and may be decoded as something else?
+                    }
+                    else
+                    {
+                        ins_class = arm_ins_class_store;
+                    }
+                }
+                case 4:
+                {
+                    if (opcode[20])
+                    {
+                        ins_class = arm_ins_class_ldm;
+                    }
+                    else
+                    {
+                        ins_class = arm_ins_class_stm;
+                    }
+                }
+                case 5:
+                {
+                    ins_class = arm_ins_class_branch;
+                }
+                default:
+                {
+                    ins_class = arm_ins_class_none;
+                }
+                }
         }
 
     /*b ARM ALU decode
@@ -299,58 +455,58 @@ module gip_decode_arm( input bit[32] opcode,
                 {
                     alu_gip_ins_class = gip_ins_class_logic;
                     alu_gip_ins_subclass = gip_ins_subclass_logic_and;
-                    alu_gip_set_flags = sign;
-                    alu_gip_pass_p = sign;
+                    alu_gip_set_flags = alu_sign;
+                    alu_gip_pass_p = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case  1: // eor
                 {
                     alu_gip_ins_class = gip_ins_class_logic;
                     alu_gip_ins_subclass = gip_ins_subclass_logic_xor;
-                    alu_gip_set_flags = sign;
-                    alu_gip_pass_p = sign;
+                    alu_gip_set_flags = alu_sign;
+                    alu_gip_pass_p = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case  2: // sub
                 {
                     alu_gip_ins_class = gip_ins_class_arith;
                     alu_gip_ins_subclass = gip_ins_subclass_arith_sub;
-                    alu_gip_set_flags = sign;
+                    alu_gip_set_flags = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case  3: // rsb
                 {
                     alu_gip_ins_class = gip_ins_class_arith;
                     alu_gip_ins_subclass = gip_ins_subclass_arith_rsb;
-                    alu_gip_set_flags = sign;
+                    alu_gip_set_flags = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case  4: // add
                 {
                     alu_gip_ins_class = gip_ins_class_arith;
                     alu_gip_ins_subclass = gip_ins_subclass_arith_add;
-                    alu_gip_set_flags = sign;
+                    alu_gip_set_flags = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case  5: // adc
                 {
                     alu_gip_ins_class = gip_ins_class_arith;
                     alu_gip_ins_subclass = gip_ins_subclass_arith_adc;
-                    alu_gip_set_flags = sign;
+                    alu_gip_set_flags = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case  6: // sbc
                 {
                     alu_gip_ins_class = gip_ins_class_arith;
                     alu_gip_ins_subclass = gip_ins_subclass_arith_sbc;
-                    alu_gip_set_flags = sign;
+                    alu_gip_set_flags = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case  7: // rsc
                 {
                     alu_gip_ins_class = gip_ins_class_arith;
                     alu_gip_ins_subclass = gip_ins_subclass_arith_rsc;
-                    alu_gip_set_flags = sign;
+                    alu_gip_set_flags = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case  8: // tst
@@ -358,7 +514,7 @@ module gip_decode_arm( input bit[32] opcode,
                     alu_gip_ins_class = gip_ins_class_logic;
                     alu_gip_ins_subclass = gip_ins_subclass_logic_and;
                     alu_gip_set_flags = 1;
-                    alu_gip_pass_p = sign;
+                    alu_gip_pass_p = alu_sign;
                     alu_gip_set_acc = 0;
                     alu_gip_set_rd = 0;
                 }
@@ -367,7 +523,7 @@ module gip_decode_arm( input bit[32] opcode,
                     alu_gip_ins_class = gip_ins_class_logic;
                     alu_gip_ins_subclass = gip_ins_subclass_logic_xor;
                     alu_gip_set_flags = 1;
-                    alu_gip_pass_p = sign;
+                    alu_gip_pass_p = alu_sign;
                     alu_gip_set_acc = 0;
                     alu_gip_set_rd = 0;
                 }
@@ -391,32 +547,32 @@ module gip_decode_arm( input bit[32] opcode,
                 {
                     alu_gip_ins_class = gip_ins_class_logic;
                     alu_gip_ins_subclass = gip_ins_subclass_logic_or;
-                    alu_gip_set_flags = sign;
-                    alu_gip_pass_p = sign;
+                    alu_gip_set_flags = alu_sign;
+                    alu_gip_pass_p = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case 13: // mov
                 {
                     alu_gip_ins_class = gip_ins_class_logic;
                     alu_gip_ins_subclass = gip_ins_subclass_logic_mov;
-                    alu_gip_set_flags = sign;
-                    alu_gip_pass_p = sign;
+                    alu_gip_set_flags = alu_sign;
+                    alu_gip_pass_p = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case 14: // bic
                 {
                     alu_gip_ins_class = gip_ins_class_logic;
                     alu_gip_ins_subclass = gip_ins_subclass_logic_bic;
-                    alu_gip_set_flags = sign;
-                    alu_gip_pass_p = sign;
+                    alu_gip_set_flags = alu_sign;
+                    alu_gip_pass_p = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 case 15: // mvn
                 {
                     alu_gip_ins_class = gip_ins_class_logic;
                     alu_gip_ins_subclass = gip_ins_subclass_logic_mvn;
-                    alu_gip_set_flags = sign;
-                    alu_gip_pass_p = sign;
+                    alu_gip_set_flags = alu_sign;
+                    alu_gip_pass_p = alu_sign;
                     alu_gip_set_acc = !conditional;
                 }
                 }
@@ -447,6 +603,7 @@ module gip_decode_arm( input bit[32] opcode,
             inst.rm_is_imm = 0;
             inst.immediate = alu_immediate;
             inst.valid = 0;
+            next_stored_reg_set = sel_reg_set;
 
             /*b Decode instruction according to class
              */
@@ -535,6 +692,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rm = arm_mapped_rs;
                             }
 
+                            inst.valid = 1;
                             next_cycle_of_opcode = 1;
                             pc_op = gip_pc_op_hold;
                         }
@@ -542,6 +700,8 @@ module gip_decode_arm( input bit[32] opcode,
                         {
                             inst.gip_ins_class =  alu_gip_ins_class;
                             inst.gip_ins_subclass =  alu_gip_ins_subclass;
+                            inst.gip_ins_cc = gip_ins_cc_cp;
+
                             inst.a = alu_gip_set_acc;
                             inst.s_or_stack = alu_gip_set_flags;
                             inst.p_or_offset_is_shift = alu_gip_pass_p;
@@ -553,6 +713,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rd.type = gip_ins_r_type_none;
                             }
 
+                            inst.valid = 1;
                             next_cycle_of_opcode = 0;
                             pc_op = gip_pc_op_sequential;
                         }
@@ -578,7 +739,7 @@ module gip_decode_arm( input bit[32] opcode,
                         if (ld_st_pre && !ld_st_wb) // preindexed immediate/reg: ILDR[CC]A[F] #0 (Rn, #+/-imm or +/-Rm) -> Rd
                         {
                             inst.gip_ins_class = gip_ins_class_load;
-                            inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                            inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) |
                                                       (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
                                                       (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
                             inst.a = 1;
@@ -601,6 +762,7 @@ module gip_decode_arm( input bit[32] opcode,
 
                             inst.f = rd_is_pc;
 
+                            inst.valid = 1;
                             next_cycle_of_opcode = 0;
                             pc_op = gip_pc_op_sequential;
                         }
@@ -629,13 +791,14 @@ module gip_decode_arm( input bit[32] opcode,
                                 {
                                     inst.rm_is_imm = 0;
                                 }
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 1;
                                 pc_op = gip_pc_op_hold;
                             }
                             default:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
                                                           (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
                                                           (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
                                 inst.gip_ins_cc = gip_ins_cc_cp;
@@ -648,6 +811,7 @@ module gip_decode_arm( input bit[32] opcode,
 
                                 inst.f = rd_is_pc;
 
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 0;
                                 pc_op = gip_pc_op_sequential;
                             }
@@ -662,7 +826,7 @@ module gip_decode_arm( input bit[32] opcode,
                             case 0:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
                                                           (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
                                                           (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
                                 inst.a = 1;
@@ -682,6 +846,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 {
                                     inst.rm_is_imm = 0;
                                 }
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 1;
                                 pc_op = gip_pc_op_hold;
                             }
@@ -694,10 +859,12 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.s_or_stack = 0;
                                 inst.p_or_offset_is_shift = 0;
                                 inst.gip_ins_rd = arm_mapped_rn; // writeback address register
-                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+                                inst.rm_is_imm = 0;
+                                inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
 
                                 inst.f = rd_is_pc;
 
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 0;
                                 pc_op = gip_pc_op_sequential;
                             }
@@ -732,13 +899,14 @@ module gip_decode_arm( input bit[32] opcode,
                                 {
                                     inst.immediate[5] = 1;
                                 }
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 1;
                                 pc_op = gip_pc_op_hold;
                             }
                             default:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
                                                           (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
                                                           (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
                                 inst.gip_ins_cc = gip_ins_cc_cp;
@@ -751,6 +919,7 @@ module gip_decode_arm( input bit[32] opcode,
 
                                 inst.f = rd_is_pc;
 
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 0;
                                 pc_op = gip_pc_op_sequential;
                             }
@@ -780,6 +949,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 {
                                     inst.immediate[5] = 1;
                                 }
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 1;
                                 pc_op = gip_pc_op_hold;
                             }
@@ -795,13 +965,14 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rn = arm_mapped_rn;
                                 inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_shf};
                                 inst.rm_is_imm = 0;
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 1;
                                 pc_op = gip_pc_op_hold;
                             }
                             default:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
                                                           (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
                                                           (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
                                 inst.gip_ins_cc = gip_ins_cc_cp;
@@ -814,6 +985,7 @@ module gip_decode_arm( input bit[32] opcode,
 
                                 inst.f = rd_is_pc;
 
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 0;
                                 pc_op = gip_pc_op_sequential;
                             }
@@ -843,14 +1015,14 @@ module gip_decode_arm( input bit[32] opcode,
                                 {
                                     inst.immediate[5] = 1;
                                 }
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 1;
                                 pc_op = gip_pc_op_hold;
                             }
                             case 1:
                             {
-                                inst.gip_ins_cc = gip_ins_cc_cp;
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
                                                           (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
                                                           (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
                                 inst.gip_ins_cc = gip_ins_cc_cp;
@@ -861,6 +1033,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_shf};
                                 inst.rm_is_imm = 0;
 
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 2;
                                 pc_op = gip_pc_op_hold;
 
@@ -874,16 +1047,669 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.s_or_stack = 0;
                                 inst.p_or_offset_is_shift = 0;
                                 inst.gip_ins_rd = arm_mapped_rn; // writeback address register
-                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+                                inst.rm_is_imm = 0;
+                                inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
 
                                 inst.f = rd_is_pc;
 
+                                inst.valid = 1;
                                 next_cycle_of_opcode = 0;
                                 pc_op = gip_pc_op_sequential;
                             }
                             }
                         }
                     }
+
+                }
+                /*b Store - no offset, preindexed immediate, preindexed reg, preindexed reg with shift, postindexed immediate, postindexed reg, postindexed reg with shift
+                 */
+                case arm_ins_class_store:
+                {
+                    /*b Immediate offset of zero
+                     */
+                    if ( ld_st_imm && (ld_st_offset==0) ) // no offset (hence no writeback, none needed); ISTR[CC] #0 (Rn) <- Rd
+                    {
+                        inst.gip_ins_class = gip_ins_class_store;
+                        inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
+                                                  gip_ins_subclass_memory_postindex |
+                                                  (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                        inst.a = 0;
+                        inst.s_or_stack = (alu_rn==13);
+                        inst.p_or_offset_is_shift = 0; // with postindex means we don't care what we add; we don't store accumulator anyway
+
+                        inst.gip_ins_rm = arm_mapped_rd;
+                        inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                        inst.gip_ins_rn = arm_mapped_rn;
+
+                        inst.valid = 1;
+                        next_cycle_of_opcode = 0;
+                        pc_op = gip_pc_op_sequential;
+                    }
+                    /*b Preindexed store
+                     */
+                    elsif (ld_st_pre)
+                        {
+                            /*b preindexed immediate or rm no shift: IADD[CC]AC/ISUB[CC]AC Rn, #imm/Rm; ISTRCPA[S] #0, (ACC, +/-SHF) <- Rd [-> Rn]
+                             */
+                            if ( ld_st_imm || alu_lsl_by_imm_0 )
+                            {
+                                full_switch (cycle_of_opcode)
+                                    {
+                                    case 0: // Ensure SHF gets cleared!
+                                    {
+                                        inst.gip_ins_class = gip_ins_class_arith;
+                                        inst.gip_ins_subclass = ld_st_up ? gip_ins_subclass_arith_add : gip_ins_subclass_arith_sub;
+                                        inst.a = 1;
+                                        inst.s_or_stack = 0;
+                                        inst.p_or_offset_is_shift = 0;
+                                        inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                                        inst.gip_ins_rn = arm_mapped_rn;
+                                        if (ld_st_imm)
+                                        {
+                                            inst.rm_is_imm = 1;
+                                            inst.immediate = 0;
+                                            inst.immediate[12;0] = ld_st_offset;
+                                        }
+                                        else
+                                        {
+                                            inst.rm_is_imm = 0;
+                                        }
+                                        inst.valid = 1;
+                                        next_cycle_of_opcode = 1;
+                                        pc_op = gip_pc_op_hold;
+                                    }
+                                    default:
+                                    {
+                                        inst.gip_ins_class = gip_ins_class_store;
+                                        inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
+                                                                  (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                                  (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                        inst.gip_ins_cc = gip_ins_cc_cp;
+                                        inst.a = 1;
+                                        inst.s_or_stack = (alu_rn==13);
+                                        inst.p_or_offset_is_shift = 1;
+
+                                        inst.gip_ins_rm = arm_mapped_rd;
+                                        inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                                        if (ld_st_wb)
+                                        {
+                                            inst.gip_ins_rd = arm_mapped_rn;
+                                        }
+                                        inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+
+                                        inst.valid = 1;
+                                        next_cycle_of_opcode = 0;
+                                        pc_op = gip_pc_op_sequential;
+                                    }
+                                    }
+                            }
+                            /*b Preindexed Rm with shift: ISHF[CC] Rm, #imm; ISTRCPA[S] #0, (Rn, +/-SHF) <- Rd [-> Rn]
+                             */
+                            else
+                            {
+                                full_switch (cycle_of_opcode)
+                                    {
+                                    case 0:
+                                    {
+                                        inst.gip_ins_class = gip_ins_class_shift;
+                                        inst.gip_ins_subclass = alu_gip_shf;
+                                        inst.a = 0;
+                                        inst.s_or_stack = 0;
+                                        inst.p_or_offset_is_shift = 0;
+                                        inst.gip_ins_rn = arm_mapped_rm; // Yes, rm
+                                        inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                                        inst.valid = 1;
+
+                                        inst.rm_is_imm = 1;
+                                        inst.immediate = 0;
+                                        inst.immediate[5;0] = alu_shf_imm_amt;
+                                        if (alu_shf_imm_amt==0)
+                                        {
+                                            inst.immediate[5] = 1;
+                                        }
+
+                                        inst.valid = 1;
+
+                                        next_cycle_of_opcode = 1;
+                                        pc_op = gip_pc_op_hold;
+                                    }
+                                    default:
+                                    {
+                                        inst.gip_ins_class = gip_ins_class_store;
+                                        inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
+                                                                  (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                                  (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                        inst.gip_ins_cc = gip_ins_cc_cp;
+                                        inst.a = 1;
+                                        inst.s_or_stack = (alu_rn==13);
+                                        inst.p_or_offset_is_shift = 1;
+
+                                        inst.gip_ins_rm = arm_mapped_rd;
+                                        inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                                        if (ld_st_wb)
+                                        {
+                                            inst.gip_ins_rd = arm_mapped_rn;
+                                        }
+                                        inst.gip_ins_rn = arm_mapped_rn;
+
+                                        inst.valid = 1;
+
+                                        next_cycle_of_opcode = 0;
+                                        pc_op = gip_pc_op_sequential;
+                                    }
+                                    }
+                            }
+                        }
+                    /*b Postindexed
+                     */
+                    else // if (!pre) - must be postindexed:
+                    {
+                        /*b Postindexed immediate or reg without shift;  ISTR[CC][S] #0 (Rn) <-Rd; IADDCPA/ISUBCPA Rn, #Imm/Rm -> Rn
+                         */
+                        if ( ld_st_imm || alu_lsl_by_imm_0 )
+                        {
+                            full_switch (cycle_of_opcode)
+                                {
+                                case 0:
+                                {
+                                    inst.gip_ins_class = gip_ins_class_store;
+                                    inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
+                                                              (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                    inst.a = 0;
+                                    inst.s_or_stack = (alu_rn==13);
+                                    inst.p_or_offset_is_shift = 0; // with postindex means we don't care what we add; we don't store accumulator anyway
+
+                                    inst.gip_ins_rm = arm_mapped_rd;
+                                    inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                                    inst.gip_ins_rn = arm_mapped_rn;
+
+                                    inst.valid = 1;
+                                    next_cycle_of_opcode = 1;
+                                    pc_op = gip_pc_op_hold;
+                                }
+                                default:
+                                {
+                                    inst.gip_ins_class = gip_ins_class_arith;
+                                    inst.gip_ins_subclass = ld_st_up ? gip_ins_subclass_arith_add : gip_ins_subclass_arith_sub;
+                                    inst.gip_ins_cc = gip_ins_cc_cp;
+                                    inst.a = 1;
+                                    inst.s_or_stack = 0;
+                                    inst.p_or_offset_is_shift = 0;
+                                    inst.gip_ins_rd = arm_mapped_rn;
+                                    inst.gip_ins_rn = arm_mapped_rn;
+                                    if (ld_st_imm)
+                                    {
+                                        inst.rm_is_imm = 1;
+                                        inst.immediate = 0;
+                                        inst.immediate[12;0] = ld_st_offset;
+                                    }
+                                    else
+                                    {
+                                        inst.rm_is_imm = 0;
+                                    }
+
+                                    inst.valid = 1;
+
+                                    next_cycle_of_opcode = 0;
+                                    pc_op = gip_pc_op_sequential;
+                                }
+                                }
+                        }
+                        /*b Postindexed reg with shift
+                         */
+                        else //  ISHF[CC] Rm, #imm; ISTRCPA[S] #0 (Rn), +/-SHF) <-Rd -> Rn
+                        {
+                            full_switch (cycle_of_opcode)
+                                {
+                                case 0:
+                                {
+                                    inst.gip_ins_class = gip_ins_class_shift;
+                                    inst.gip_ins_subclass = alu_gip_shf;
+                                    inst.a = 0;
+                                    inst.s_or_stack = 0;
+                                    inst.p_or_offset_is_shift = 0;
+                                    inst.gip_ins_rn = arm_mapped_rm; // Yes, rm
+                                    inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                                    inst.valid = 1;
+
+                                    inst.rm_is_imm = 1;
+                                    inst.immediate = 0;
+                                    inst.immediate[5;0] = alu_shf_imm_amt;
+                                    if (alu_shf_imm_amt==0)
+                                    {
+                                        inst.immediate[5] = 1;
+                                    }
+
+                                    inst.valid = 1;
+
+                                    next_cycle_of_opcode = 1;
+                                    pc_op = gip_pc_op_hold;
+
+                                }
+                                default:
+                                {
+                                    inst.gip_ins_class = gip_ins_class_store;
+                                    inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
+                                                              (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                              (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                    inst.gip_ins_cc = gip_ins_cc_cp;
+                                    inst.a = 1;
+                                    inst.s_or_stack = (alu_rn==13);
+                                    inst.p_or_offset_is_shift = 1;
+
+                                    inst.gip_ins_rm = arm_mapped_rd;
+                                    inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                                    if (ld_st_wb)
+                                    {
+                                        inst.gip_ins_rd = arm_mapped_rn;
+                                    }
+                                    inst.gip_ins_rn = arm_mapped_rn;
+
+                                    inst.valid = 1;
+
+                                    next_cycle_of_opcode = 0;
+                                    pc_op = gip_pc_op_sequential;
+                                }
+                                }
+                        }
+                    }
+                }
+                /*b Load multiple
+                 */
+                case arm_ins_class_ldm:
+                {
+
+                    /*b Handle first cycle, or others
+                     */
+                    full_switch (cycle_of_opcode)
+                    {
+                    case 0:
+                    {
+                        /*b If DB/DA, do first instruction to generate base address: ISUB[CC]A Rn, #num_regs*4 [-> Rn]
+                         */
+                        if (!ld_st_up)
+                        {
+                            inst.gip_ins_class = gip_ins_class_arith;
+                            inst.gip_ins_subclass = gip_ins_subclass_arith_sub;
+                            inst.a = 1;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+
+                            inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                            if (ld_st_wb)
+                            {
+                                inst.gip_ins_rd = arm_mapped_rn;
+                            }
+                            inst.gip_ins_rn = arm_mapped_rn;
+
+                            inst.rm_is_imm = 1;
+                            inst.immediate = 0;
+                            inst.immediate[5;2] = ldm_stm_num_regs;
+
+                            inst.valid = 1;
+
+                            next_cycle_of_opcode[5;0] = ldm_stm_num_regs-1;
+                            next_cycle_of_opcode[4] = 1;
+                            pc_op = gip_pc_op_hold;
+                        }
+                        /*b Else generate a 'ILDR[CC]A[S][F] #i Rn, #+4 [->Rn] or preindexed version
+                         */
+                        else
+                        {
+                            inst.gip_ins_class = gip_ins_class_load;
+                            inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                      ((ld_st_pre^ld_st_up) ? gip_ins_subclass_memory_postindex : gip_ins_subclass_memory_preindex ) |
+                                                      gip_ins_subclass_memory_up );
+                            inst.a = 1;
+                            inst.s_or_stack = (alu_rn==13);
+                            inst.p_or_offset_is_shift = 0;
+
+                            inst.gip_ins_rd = arm_mapped_bottom_bit_set;
+                            inst.gip_ins_rn = arm_mapped_rn;
+                            inst.k = ldm_stm_num_regs[4;0]-1;
+                            inst.rm_is_imm = 1;
+                            inst.immediate = 4;
+
+                            inst.valid = 1;
+
+                            if (ldm_stm_num_regs==1)
+                            {
+                                if (ld_st_wb)
+                                {
+                                    next_cycle_of_opcode = 1;
+                                    pc_op = gip_pc_op_hold;
+                                }
+                                else
+                                {
+                                    inst.f = opcode[15];
+                                    next_cycle_of_opcode = 0;
+                                    pc_op = gip_pc_op_sequential;
+                                }
+                            }
+                            else
+                            {
+                                next_cycle_of_opcode[5;0] = ldm_stm_num_regs-2;
+                                next_cycle_of_opcode[4] = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+
+                            next_stored_reg_set[ldm_stm_bottom_bit_set] = 0;
+
+                        }
+                    }
+                    /*b If IB/IA with writeback then do final MOVCP[F] Acc -> Rn; F if PC was read in the list
+                     */
+                    case 1:
+                    {
+                        inst.gip_ins_class = gip_ins_class_logic;
+                        inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                        inst.gip_ins_cc = gip_ins_cc_cp;
+                        inst.a = 0;
+                        inst.s_or_stack = 0;
+                        inst.p_or_offset_is_shift = 0;
+                        inst.gip_ins_rd = arm_mapped_rn; // writeback address register
+                        inst.rm_is_imm = 0;
+                        inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+
+                        inst.f = opcode[15];
+
+                        inst.valid = 1;
+                        next_cycle_of_opcode = 0;
+                        pc_op = gip_pc_op_sequential;
+                    }
+                    /*b Handle intermediate cycles - generate a 'ILDRCPA[S][F] #i (Acc), #+4 -> reg or preindexed version
+                     */
+                    default:
+                    {
+                        inst.gip_ins_class = gip_ins_class_load;
+                        inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                  ((ld_st_pre^ld_st_up) ? gip_ins_subclass_memory_postindex : gip_ins_subclass_memory_preindex ) |
+                                                  gip_ins_subclass_memory_up );
+                        inst.gip_ins_cc = gip_ins_cc_cp;
+                        inst.a = 1;
+                        inst.s_or_stack = (alu_rn==13);
+                        inst.p_or_offset_is_shift = 0;
+
+                        inst.gip_ins_rd = arm_mapped_bottom_bit_set;
+                        inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+
+                        inst.rm_is_imm = 1;
+                        inst.immediate = 4;
+
+                        inst.k = cycle_of_opcode[4;0];
+
+                        inst.valid = 1;
+
+                        if (cycle_of_opcode[4;0]==0) // No more to do after this one
+                        {
+                            if (ld_st_up && ld_st_wb)
+                            {
+                                next_cycle_of_opcode = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+                            else
+                            {
+                                if (opcode[15])
+                                {
+                                    inst.f = 1;
+                                }
+                                next_cycle_of_opcode = 0;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                        }
+                        else
+                        {
+                            next_cycle_of_opcode[4] = 1;
+                            next_cycle_of_opcode[4;0] = cycle_of_opcode[4;0]-1;
+                            pc_op = gip_pc_op_hold;
+                        }
+
+                        next_stored_reg_set[ldm_stm_bottom_bit_set] = 0;
+
+                    }
+                    }
+
+                    /*b However, if there are no registers in the original list, just ditch everything
+                     */
+                    if (ldm_stm_num_regs==0)
+                    {
+                        inst.valid = 0;
+                        next_cycle_of_opcode = 0;
+                        pc_op = gip_pc_op_sequential;
+                    }
+                }
+                /*b Store multiple
+                 */
+                case arm_ins_class_stm:
+                {
+                    /*b Handle first cycle, or others
+                     */
+                    if (cycle_of_opcode==0)
+                    {
+                        /*b If DB/DA, do first instruction to generate base address: ISUB[CC]A Rn, #num_regs*4 [-> Rn]
+                         */
+                        if (!ld_st_up)
+                        {
+                            inst.gip_ins_class = gip_ins_class_arith;
+                            inst.gip_ins_subclass = gip_ins_subclass_arith_sub;
+                            inst.a = 1;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+
+                            inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                            if (ld_st_wb)
+                            {
+                                inst.gip_ins_rd = arm_mapped_rn;
+                            }
+                            inst.gip_ins_rn = arm_mapped_rn;
+
+                            inst.rm_is_imm = 1;
+                            inst.immediate = 0;
+                            inst.immediate[5;2] = ldm_stm_num_regs;
+
+                            inst.valid = 1;
+
+                            next_cycle_of_opcode[5;0] = ldm_stm_num_regs-1;
+                            next_cycle_of_opcode[4] = 1;
+                            pc_op = gip_pc_op_hold;
+                        }
+                        /*b Else generate a 'ISTR[CC]A[S][F] #i Rn, #+4 [->Rn] or preindexed version
+                         */
+                        else
+                        {
+                            inst.gip_ins_class = gip_ins_class_store;
+                            inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                      ((ld_st_pre^ld_st_up) ? gip_ins_subclass_memory_postindex : gip_ins_subclass_memory_preindex ) |
+                                                      gip_ins_subclass_memory_up );
+                            inst.a = 1;
+                            inst.s_or_stack = (alu_rn==13);
+                            inst.p_or_offset_is_shift = 0;
+
+                            inst.gip_ins_rm = arm_mapped_bottom_bit_set;
+                            inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                            inst.gip_ins_rn = arm_mapped_rn;
+                            inst.k = ldm_stm_num_regs[4;0]-1;
+
+                            inst.valid = 1;
+
+                            if (ldm_stm_num_regs==1)
+                            {
+                                next_cycle_of_opcode = 0;
+                                pc_op = gip_pc_op_sequential;
+                                if (ld_st_wb)
+                                {
+                                    inst.gip_ins_rd = arm_mapped_rn;
+                                }
+                            }
+                            else
+                            {
+                                next_cycle_of_opcode[5;0] = ldm_stm_num_regs-2;
+                                next_cycle_of_opcode[4] = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+
+                            next_stored_reg_set[ldm_stm_bottom_bit_set] = 0;
+
+                        }
+                    }
+                    /*b Handle later cycles - generate a 'ISTRCPA[S][F] #i (Acc), #+4 [->Rn] or preindexed version
+                     */
+                    else
+                    {
+                        inst.gip_ins_class = gip_ins_class_store;
+                        inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                  ((ld_st_pre^ld_st_up) ? gip_ins_subclass_memory_postindex : gip_ins_subclass_memory_preindex ) |
+                                                  gip_ins_subclass_memory_up );
+                        inst.gip_ins_cc = gip_ins_cc_cp;
+                        inst.a = 1;
+                        inst.s_or_stack = (alu_rn==13);
+                        inst.p_or_offset_is_shift = 0;
+
+                        inst.gip_ins_rm = arm_mapped_bottom_bit_set;
+                        inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                        inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+                        inst.k = cycle_of_opcode[4;0];
+
+                        inst.valid = 1;
+
+                        if (cycle_of_opcode[4;0]==0) // No more to do after this one
+                        {
+                            next_cycle_of_opcode = 0;
+                            pc_op = gip_pc_op_sequential;
+                            if (ld_st_wb && ld_st_up)
+                            {
+                                inst.gip_ins_rd = arm_mapped_rn;
+                            }
+                        }
+                        else
+                        {
+                            next_cycle_of_opcode[4] = 1;
+                            next_cycle_of_opcode[4;0] = cycle_of_opcode[4;0]-1;
+                            pc_op = gip_pc_op_hold;
+                        }
+
+                        next_stored_reg_set[ldm_stm_bottom_bit_set] = 0;
+
+                    }
+
+                    /*b However, if there are no registers in the original list, just ditch everything
+                     */
+                    if (ldm_stm_num_regs==0)
+                    {
+                        inst.valid = 0;
+                        next_cycle_of_opcode = 0;
+                        pc_op = gip_pc_op_sequential;
+                    }
+                }
+                /*b Multiply
+                 */
+                case arm_ins_class_mul:
+                {
+                    full_switch (cycle_of_opcode)
+                        {
+                        case 0: /*b First the INIT instruction
+                                 */
+                        {
+                            inst.gip_ins_class = gip_ins_class_arith;
+                            inst.gip_ins_subclass = gip_ins_subclass_arith_init;
+                            inst.a = 1;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 1; // P required for INIT instruction
+
+                            inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                            inst.gip_ins_rn = arm_mapped_rm; // Note reversal of rn and rm, and rn comes from rd!
+                            inst.gip_ins_rm = arm_mapped_rd; // Note reversal of rn and rm, and rn comes from rd!
+                            inst.immediate = 0;
+                            if (opcode[21]) // Accumulate
+                            {
+                                inst.rm_is_imm = 0;
+                            }
+                            else
+                            {
+                                inst.rm_is_imm = 1;
+                            }
+
+                            inst.valid = 1;
+
+                            next_cycle_of_opcode = 31;
+                            pc_op = gip_pc_op_hold;
+                        }
+                        case 31: /*b Then the MLA instruction to get the ALU inputs ready, and do the first step
+                                  */
+                        {
+                            inst.gip_ins_class = gip_ins_class_arith;
+                            inst.gip_ins_subclass = gip_ins_subclass_arith_mla;
+                            inst.gip_ins_cc = gip_ins_cc_cp;
+                            inst.a = 1;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 1; // P required for MLA instruction
+
+                            inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                            inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+                            inst.gip_ins_rm = arm_mapped_rs;
+                            inst.rm_is_imm = 0;
+
+                            inst.valid = 1;
+
+                            next_cycle_of_opcode = 30;
+                            pc_op = gip_pc_op_hold;
+                        }
+                        case 30: /*b Then 14 MLB instruction to churn
+                                  */
+                        case 29:
+                        case 28:
+                        case 27:
+                        case 26:
+                        case 25:
+                        case 24:
+                        case 23:
+                        case 22:
+                        case 21:
+                        case 20:
+                        case 19:
+                        case 18:
+                        case 17:
+                        {
+                            inst.gip_ins_class = gip_ins_class_arith;
+                            inst.gip_ins_subclass = gip_ins_subclass_arith_mlb;
+                            inst.gip_ins_cc = gip_ins_cc_cp;
+                            inst.a = 1;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 1; // P required for MLA instruction
+
+                            inst.gip_ins_rd = {type=gip_ins_r_type_none};
+                            inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+                            inst.gip_ins_rm = arm_mapped_rs;
+                            inst.immediate = 0;
+                            inst.rm_is_imm = 1;
+
+                            inst.valid = 1;
+
+                            next_cycle_of_opcode = cycle_of_opcode-1;
+                            pc_op = gip_pc_op_hold;
+                        }
+                        case 16: /*b Then the last MLB instruction to write the result
+                                  */
+                        {
+                            inst.gip_ins_class = gip_ins_class_arith;
+                            inst.gip_ins_subclass = gip_ins_subclass_arith_mlb;
+                            inst.gip_ins_cc = gip_ins_cc_cp;
+                            inst.a = 1;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 1; // P required (?) for MLB instruction
+
+                            inst.gip_ins_rd = arm_mapped_rn; // Note that rn contains rn... weird
+                            inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+                            inst.gip_ins_rm = arm_mapped_rs;
+                            inst.immediate = 0;
+                            inst.rm_is_imm = 1;
+
+                            inst.valid = 1;
+
+                            next_cycle_of_opcode = 0;
+                            pc_op = gip_pc_op_sequential;
+                        }
+                        }
 
                 }
                 /*b Branch
@@ -896,6 +1722,7 @@ module gip_decode_arm( input bit[32] opcode,
                     {
                         if (!conditional) // guaranteed branch
                         {
+                            inst.valid = 0;
                             pc_op = gip_pc_op_branch;
                             next_cycle_of_opcode = 0;
                         }
@@ -914,15 +1741,16 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
                                 inst.rm_is_imm = 1;
                                 inst.immediate = 4;
+
                                 inst.valid = 1;
 
                                 pc_op = gip_pc_op_branch;
                                 next_cycle_of_opcode = 0;
                             }
-                            else // forward conditional branch; add[cc]f pc, #target -> pc
+                            else // forward conditional branch; add[cc]f pc, #branch_offset -> pc
                             {
-                                inst.gip_ins_class = gip_ins_class_logic;
-                                inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                                inst.gip_ins_class = gip_ins_class_arith;
+                                inst.gip_ins_subclass = gip_ins_subclass_arith_add;
                                 inst.a = 0;
                                 inst.s_or_stack = 0;
                                 inst.p_or_offset_is_shift = 0;
@@ -931,6 +1759,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
                                 inst.rm_is_imm = 1;
                                 inst.immediate = arm_branch_offset;
+
                                 inst.valid = 1;
 
                                 pc_op = gip_pc_op_sequential;
@@ -952,7 +1781,9 @@ module gip_decode_arm( input bit[32] opcode,
                             inst.gip_ins_rd = {type=gip_ins_r_type_register, r=14}; // Should map this
                             inst.rm_is_imm = 1;
                             inst.immediate = 4;
+
                             inst.valid = 1;
+
                             pc_op = gip_pc_op_branch;
                             next_cycle_of_opcode = 0;
                         }
@@ -973,6 +1804,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
                                 inst.rm_is_imm = 1;
                                 inst.immediate = 4;
+
                                 inst.valid = 1;
 
                                 pc_op = gip_pc_op_hold;
@@ -990,7 +1822,9 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rd = {type=gip_ins_r_type_register, r=14}; // Should map this
                                 inst.rm_is_imm = 1;
                                 inst.immediate = 4;
+
                                 inst.valid = 1;
+
                                 pc_op = gip_pc_op_branch;
                                 next_cycle_of_opcode = 0;
                             }

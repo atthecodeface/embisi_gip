@@ -4,26 +4,16 @@ include "gip.h"
 
 /*a Types
  */
-/*t t_prefetch_requested
- */
-typedef enum [2]
-{
-    prefetch_request_none,
-    prefetch_request_new,
-    prefetch_request_last_new,
-    prefetch_request_sequential,
-} t_prefetch_requested;
-
-/*t t_sram_fetch
+/*t t_sram_data_op
  */
 typedef enum [3]
 {
-    sram_fetch_none,
-    sram_fetch_new,
-    sram_fetch_last_new,
-    sram_fetch_sequential,
-    sram_fetch_current,
-} t_sram_fetch;
+    sram_data_op_word,
+    sram_data_op_byte_0,
+    sram_data_op_byte_1,
+    sram_data_op_byte_2,
+    sram_data_op_byte_3
+} t_sram_data_op;
 
 /*a Module
  */
@@ -78,6 +68,7 @@ module gip_data_ram( clock gip_clock,
     clocked bit[4] sram_write_byte_enables = 0;
     clocked bit[32] sram_address = 0;
     clocked bit[32] sram_write_data = 0;
+    clocked t_sram_data_op sram_data_op = sram_data_op_word;
 
     /*b SRAM interface code
      */
@@ -100,12 +91,36 @@ module gip_data_ram( clock gip_clock,
                     sram_write_data <= alu_mem_write_data;
                     sram_address <= alu_mem_address;
                 }
+                case gip_mem_op_store_byte:
+                {
+                    sram_not_in_use <= 0;
+                    sram_read_not_write <= 0;
+                    sram_write_byte_enables <= 0;
+                    sram_write_byte_enables[alu_mem_address[2;0]] <= 1; // little endian
+                    sram_write_data[8;0] <= alu_mem_write_data[8;0];
+                    sram_write_data[8;8] <= alu_mem_write_data[8;0];
+                    sram_write_data[8;16] <= alu_mem_write_data[8;0];
+                    sram_write_data[8;24] <= alu_mem_write_data[8;0];
+                    sram_address <= alu_mem_address;
+                }
                 case gip_mem_op_load_word:
+                case gip_mem_op_load_byte:
                 {
                     sram_not_in_use <= 0;
                     sram_read_not_write <= 1;
                     sram_write_byte_enables <= 0;
                     sram_address <= alu_mem_address;
+                    sram_data_op <= sram_data_op_word;
+                    if (alu_mem_op==gip_mem_op_load_byte)
+                    {
+                        full_switch (alu_mem_address[2;0])
+                            {
+                            case 0: {sram_data_op <= sram_data_op_byte_0; } // little endian
+                            case 1: {sram_data_op <= sram_data_op_byte_1; } // little endian
+                            case 2: {sram_data_op <= sram_data_op_byte_2; } // little endian
+                            case 3: {sram_data_op <= sram_data_op_byte_3; } // little endian
+                            }
+                    }
                 }
                 }
         }
@@ -114,7 +129,30 @@ module gip_data_ram( clock gip_clock,
      */
     gip_interface "GIP interface code":
         {
-            mem_read_data = sram_read_data;
+            mem_read_data = 0;
+            full_switch (sram_data_op)
+                {
+                case sram_data_op_word:
+                {
+                    mem_read_data = sram_read_data;
+                }
+                case sram_data_op_byte_0:
+                {
+                    mem_read_data[8;0] = sram_read_data[8;0];
+                }
+                case sram_data_op_byte_1:
+                {
+                    mem_read_data[8;0] = sram_read_data[8;8];
+                }
+                case sram_data_op_byte_2:
+                {
+                    mem_read_data[8;0] = sram_read_data[8;16];
+                }
+                case sram_data_op_byte_3:
+                {
+                    mem_read_data[8;0] = sram_read_data[8;24];
+                }
+                }
             mem_read_data_valid <= sram_read_not_write;
         }
 }

@@ -2,6 +2,10 @@
  */
 
 /*a To do
+  postbus and special register writeback does not use Rd register value at present!
+
+  should bit reverse reverse the bottom two bytes separately, so a 16-bit bit reverse is 3 cycles, 32-bit is 3 cycles, 8-bit is one cycle (else anything but one byte is awful)
+
   Hold of writing ALU acc and flags and shf and A/B (for mults) if RF will not take its result - treat it as not condition passed?
 
   Add the register file write buffer (single reg number, single data) for peripheral accesses.
@@ -4520,6 +4524,7 @@ int c_gip_full::decode_native_ldr( unsigned int opcode )
     {
         /*b Decode mode and operation, rd
          */
+        fprintf(stderr,"LOADS ARE DECODED DIFFERENTLY IN THE HARDWARE - FIX THE MODEL\n");
         gip_ins_a = 1;
         gip_ins_s = 0;
         gip_ins_burst = 0;

@@ -1,4 +1,6 @@
 common wrapper asm:wrapper
+test simple asm:simple common:wrapper
 test pass asm:pass common:wrapper
 test factorial cc:factorial common:wrapper
 test alu cc:alu asm:alu_call common:wrapper
+test memory cc:memory common:wrapper

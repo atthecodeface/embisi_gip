@@ -22,11 +22,48 @@ and produces a 32-bit result with carry out.
 
 The amount of the shift is a value from 0 to 255; a shift of 0 is deemed
 to be no shift at all, and the carry out is the same as the carry in.
+
+Now, imagine we are shifting not a 32-bit number, but a 4-bit number 'abcd'
+We create an 8-bit number (SR) as follows:
+abcd 0000 (amount of 0)
+0abc d000 (amount of 1)
+00ab cd00 (amount of 2)
+000a bcd0 (amount of 3)
+0000 abcd (amount of 4)
+And another 8-bit number (SG) as follows:
+a0000000 (amount of 0)
+aa000000 (amount of 1)
+aaa00000 (amount of 2)
+aaaa0000 (amount of 3)
+Now:
+ LSR is SR[4;4]           c=SR[3]
+ ASR is SR[4;4] | SG[4;4] c=SR[3]
+ ROR is SR[4;4] | SR[4;0] c=SR[3]
+ LSL is SR[4;3]           c=SR[7] (where amount shifted is !amount required)
+
+Now, we can do it 32 bits wide...
+   top of SR is then in >> x
+bottom of SR is then in << 32-x
+
 "
 {
     comb t_gip_word top_bit_rotate_down;
-    comb t_gip_word value_rotate_down;
-    comb t_gip_word value_rotate_up;
+    comb bit[8] rot_amount;
+    comb t_gip_word value_shift_top;
+    comb t_gip_word value_shift_bottom;
+
+    rot_amount "Calculate rotate amount":
+        {
+            rot_amount = amount;
+            if (gip_shift_op==gip_shift_op_lsl)
+            {
+                rot_amount = ~amount;
+            }
+            if (gip_shift_op==gip_shift_op_rrx)
+            {
+                rot_amount[0] = 1;
+            }
+        }
 
     carry_out "Carry out determination":
         {
@@ -42,7 +79,7 @@ to be no shift at all, and the carry out is the same as the carry in.
                         case gip_shift_op_lsl: {carry_out = value[0];}
                         case gip_shift_op_lsr: {carry_out = value[31];}
                         case gip_shift_op_asr: {carry_out = value[31];}
-                        case gip_shift_op_ror: {carry_out = value[amount[5;0]-1];}
+                        case gip_shift_op_ror: {carry_out = value[31];}
                         case gip_shift_op_rrx: {carry_out = value[0];}
                         }
                 }
@@ -75,30 +112,30 @@ to be no shift at all, and the carry out is the same as the carry in.
             top_bit_rotate_down = 0;
             for (i; 32)
             {
-                if (amount[5;0]>i)
+                if (rot_amount[5;0]>i)
                 {
                     top_bit_rotate_down[31;0] = top_bit_rotate_down[31;1];
                     top_bit_rotate_down[31] = value[31];
                 }
             }
 
-            value_rotate_down = value;
+            value_shift_top = value;
             for (i; 32)
             {
-                if (amount[5;0]>i)
+                if (rot_amount[5;0]>i)
                 {
-                    value_rotate_down[31;0] = value_rotate_down[31;1];
-                    value_rotate_down[31] = 0;
+                    value_shift_top[31;0] = value_shift_top[31;1];
+                    value_shift_top[31] = 0;
                 }
             }
 
-            value_rotate_up = value;
+            value_shift_bottom = value;
             for (i; 32)
             {
-                if (amount[5;0]>=31-i)
+                if (rot_amount[5;0]<=i) // shift left by 1 thru 32
                 {
-                    value_rotate_up[31;1] = value_rotate_up[31;0];
-                    value_rotate_up[0] = 0;
+                    value_shift_bottom[31;1] = value_shift_bottom[31;0];
+                    value_shift_bottom[1;0] = 0;
                 }
             }
         }
@@ -118,7 +155,7 @@ to be no shift at all, and the carry out is the same as the carry in.
                         case gip_shift_op_lsr: {result = 0;}
                         case gip_shift_op_asr: {result = value[31]?-1:0;}
                         case gip_shift_op_ror: {result = value;}
-                        case gip_shift_op_rrx: {result = value_rotate_down | (carry_in?32h80000000:0);}
+                        case gip_shift_op_rrx: {result = value_shift_top | (carry_in?32h80000000:0);}
                         }
                 }
             elsif (amount[3;5]!=0)
@@ -128,19 +165,19 @@ to be no shift at all, and the carry out is the same as the carry in.
                         case gip_shift_op_lsl: {result = 0;}
                         case gip_shift_op_lsr: {result = 0;}
                         case gip_shift_op_asr: {result = value[31]?-1:0;}
-                        case gip_shift_op_ror: {result = value_rotate_down | value_rotate_up;}
-                        case gip_shift_op_rrx: {result = value_rotate_down | (carry_in?32h80000000:0);}
+                        case gip_shift_op_ror: {result = value_shift_top | value_shift_bottom;}
+                        case gip_shift_op_rrx: {result = value_shift_top | (carry_in?32h80000000:0);}
                         }
                 }
             else
             {
                 full_switch (gip_shift_op)
                     {
-                    case gip_shift_op_lsl: {result = value_rotate_up; }
-                    case gip_shift_op_lsr: {result = value_rotate_down; }
-                    case gip_shift_op_asr: {result = value_rotate_down | top_bit_rotate_down; }
-                    case gip_shift_op_ror: {result = value_rotate_down | value_rotate_up; }
-                    case gip_shift_op_rrx: {result = value_rotate_down | (carry_in?32h80000000:0);}
+                    case gip_shift_op_lsl: {result[31] = value_shift_top[0]; result[31;0] = value_shift_bottom[31;1]; }
+                    case gip_shift_op_lsr: {result = value_shift_top; }
+                    case gip_shift_op_asr: {result = value_shift_top | top_bit_rotate_down; }
+                    case gip_shift_op_ror: {result = value_shift_top | value_shift_bottom; }
+                    case gip_shift_op_rrx: {result = value_shift_top | (carry_in?32h80000000:0);}
                     }
             }
         }

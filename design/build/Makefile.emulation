@@ -1,0 +1,22 @@
+#a Copyright
+#  
+#  This file 'Makefile' copyright Embisi Inc., 2004
+#  
+
+#a Global variables
+CYCLICITY := ${CYCLICITY_ROOT}
+SRC_ROOT := ${TNBT_CVS_ROOT}/hardware/design/repository
+MODEL_LIST := $(SRC_ROOT)/scripts/model_list
+PREFIX_OBJ_DIR := emulation/
+
+#a Include standard build makefile
+include ${CYCLICITY}/scripts/simulation_build_make
+
+verilog: ${VERILOG_FILES}
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: Makefile ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

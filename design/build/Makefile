@@ -9,6 +9,8 @@ clean: docclean simclean toolsclean
 
 sim: simulation
 
+em: emulation
+
 doc: documentation
 
 .PHONY: simulation
@@ -18,6 +20,14 @@ simulation:
 
 simclean:
 	$(MAKE) -f Makefile.simulation clean
+
+.PHONY: emulation
+
+emulation:
+	$(MAKE) -f Makefile.emulation verilog
+
+emclean:
+	$(MAKE) -f Makefile.emulation clean
 
 .PHONY: documentation
 

@@ -29,4 +29,6 @@ extern module io_baud_rate_generator( clock io_clock           "Clock for the mo
 
     timing to rising clock io_clock set_clock_config;
     timing to rising clock io_clock config_baud_addition_value, config_baud_addition_value;
+
+    timing comb input io_reset; // For async reset
 }

@@ -167,7 +167,7 @@ public:
     c_io_fifos::c_io_fifos( class c_engine *eng, void *eng_handle );
     c_io_fifos::~c_io_fifos();
     t_sl_error_level c_io_fifos::delete_instance( void );
-    t_sl_error_level c_io_fifos::reset( void );
+    t_sl_error_level c_io_fifos::reset( int pass );
     t_sl_error_level c_io_fifos::evaluate_combinatorials( void );
     t_sl_error_level c_io_fifos::preclock_posedge_int_clock( void );
     t_sl_error_level c_io_fifos::clock_posedge_int_clock( void );
@@ -274,11 +274,11 @@ static t_sl_error_level io_fifos_delete_fn( void *handle )
 
 /*f io_fifos_reset_fn
 */
-static t_sl_error_level io_fifos_reset_fn( void *handle )
+static t_sl_error_level io_fifos_reset_fn( void *handle, int pass )
 {
     c_io_fifos *mod;
     mod = (c_io_fifos *)handle;
-    return mod->reset();
+    return mod->reset( pass );
 }
 
 /*f io_fifos_combinatorial_fn
@@ -797,21 +797,28 @@ t_sl_error_level c_io_fifos::delete_instance( void )
 */
 /*f c_io_fifos::reset
 */
-t_sl_error_level c_io_fifos::reset( void )
+t_sl_error_level c_io_fifos::reset( int pass )
 {
     int i;
-    if (exec_file_data)
+    if (pass==0)
     {
-        sl_exec_file_reset( exec_file_data );
+        if (exec_file_data)
+        {
+            sl_exec_file_reset( exec_file_data );
+        }
+        cycle_number = -1;
+        for (i=0; i<num_cmd_fifos; i++)     sl_fifo_reset( cmd_fifos[i] );
+        for (i=0; i<num_status_fifos; i++)  sl_fifo_reset( status_fifos[i] );
+        for (i=0; i<num_tx_data_fifos; i++) sl_fifo_reset( tx_data_fifos[i] );
+        for (i=0; i<num_rx_data_fifos; i++) sl_fifo_reset( rx_data_fifos[i] );
+        reset_active_high_int_reset();
+        run_exec_file();
+        cycle_number = 0;
     }
-    cycle_number = 0;
-    for (i=0; i<num_cmd_fifos; i++)     sl_fifo_reset( cmd_fifos[i] );
-    for (i=0; i<num_status_fifos; i++)  sl_fifo_reset( status_fifos[i] );
-    for (i=0; i<num_tx_data_fifos; i++) sl_fifo_reset( tx_data_fifos[i] );
-    for (i=0; i<num_rx_data_fifos; i++) sl_fifo_reset( rx_data_fifos[i] );
-    reset_active_high_int_reset();
-    run_exec_file();
-    evaluate_combinatorials();
+    else
+    {
+        evaluate_combinatorials();
+    }
     return error_level_okay;
 }
 

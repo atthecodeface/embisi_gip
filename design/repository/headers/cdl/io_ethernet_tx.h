@@ -26,3 +26,39 @@ typedef enum [io_eth_tx_packet_status_bits]
     io_eth_tx_status_retries_exceeded = 2,
 } t_io_eth_tx_status;
 
+/*a Modules
+ */
+extern module ethernet_tx( clock io_clock,
+                           input bit io_reset,
+
+                           input bit[32] data_fifo_data,
+                           output t_io_tx_data_fifo_cmd data_fifo_cmd,
+                           output bit data_fifo_toggle,
+
+                           input bit cmd_fifo_empty,
+                           input bit[32] cmd_fifo_data,
+                           output bit cmd_fifo_toggle,
+
+                           output bit status_fifo_toggle,
+                           output bit[32] status_fifo_data,
+
+                           output bit mii_enable,
+                           output bit[4] mii_data,
+                           input bit mii_crs,
+                           input bit mii_col )
+{
+    timing to rising clock io_clock io_reset;
+
+    timing to rising clock io_clock data_fifo_data;
+    timing from rising clock io_clock data_fifo_cmd, data_fifo_toggle;
+
+    timing to rising clock io_clock cmd_fifo_empty, cmd_fifo_data;
+    timing from rising clock io_clock cmd_fifo_toggle;
+
+    timing from rising clock io_clock status_fifo_toggle, status_fifo_data;
+
+    timing to rising clock io_clock mii_crs, mii_col;
+    timing from rising clock io_clock mii_enable, mii_data;
+
+    timing comb input io_reset;
+}

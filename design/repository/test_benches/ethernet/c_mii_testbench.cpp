@@ -194,7 +194,7 @@ public:
     c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle );
     c_mii_testbench::~c_mii_testbench();
     t_sl_error_level c_mii_testbench::delete_instance( void );
-    t_sl_error_level c_mii_testbench::reset( void );
+    t_sl_error_level c_mii_testbench::reset( int pass );
     t_sl_error_level c_mii_testbench::evaluate_combinatorials( void );
     t_sl_error_level c_mii_testbench::preclock_posedge_int_clock( void );
     t_sl_error_level c_mii_testbench::clock_posedge_int_clock( void );
@@ -420,11 +420,11 @@ static t_sl_error_level mii_testbench_delete_fn( void *handle )
 
 /*f mii_testbench_reset_fn
 */
-static t_sl_error_level mii_testbench_reset_fn( void *handle )
+static t_sl_error_level mii_testbench_reset_fn( void *handle, int pass )
 {
     c_mii_testbench *mod;
     mod = (c_mii_testbench *)handle;
-    return mod->reset();
+    return mod->reset( pass );
 }
 
 /*f mii_testbench_combinatorial_fn
@@ -635,10 +635,13 @@ t_sl_error_level c_mii_testbench::delete_instance( void )
 */
 /*f c_mii_testbench::reset
 */
-t_sl_error_level c_mii_testbench::reset( void )
+t_sl_error_level c_mii_testbench::reset( int pass )
 {
     reset_active_high_int_reset();
-    evaluate_combinatorials();
+    if (pass>0)
+    {
+        evaluate_combinatorials();
+    }
     return error_level_okay;
 }
 
@@ -1037,7 +1040,7 @@ t_sl_error_level c_mii_testbench::clock_posedge_int_clock( void )
      */
     if (num_sinks>0)
     {
-        eth_packet_receive_clock( &tgt_packet, 0 );
+        eth_packet_receive_clock( &tgt_packet, 1 );
         if (tgt_packet.complete)
         {
             sl_data_stream_start_packet( sinks[0].data_stream );

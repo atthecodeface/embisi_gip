@@ -1,0 +1,164 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "postbus_rom_source.h"
+include "postbus_led_target.h"
+include "postbus_uart_target.h"
+include "postbus_simple_router.h"
+
+/*a Types
+ */
+
+/*a External modules required
+ */
+extern module postbus_test_rom_contents( clock int_clock, input bit int_reset, input bit read, input bit[8] address, output bit[32] data )
+{
+    timing to rising clock int_clock int_reset, read, address;
+    timing from rising clock int_clock data;
+    timing comb input int_reset;
+}
+
+/*a Modules
+ */
+module postbus_test_rom( clock int_clock,
+                         input bit int_reset,
+                         output bit[8] leds,
+                         output bit txd
+    )
+{
+    default clock int_clock;
+    default reset int_reset;
+
+    net bit[8] leds;
+    net bit txd;
+
+    clocked bit[24] clock_divider=0;
+    comb bit clock_enable;
+
+    net bit rom_read;
+    net bit[8] rom_address;
+    net bit[32] rom_data;
+    net t_postbus_type postbus_type;
+    net t_postbus_data postbus_data;
+    net t_postbus_ack postbus_ack;
+
+    net t_postbus_type postbus_led_type;
+    net t_postbus_ack postbus_led_ack;
+    net t_postbus_type postbus_uart_type;
+    net t_postbus_ack postbus_uart_ack;
+
+    net t_postbus_ack src_ack_0;
+    net t_postbus_ack src_ack_1;
+    net t_postbus_ack src_ack_2;
+
+    net t_postbus_type tgt_type_2;
+    net t_postbus_type tgt_type_3;
+    net t_postbus_type tgt_type_4;
+    net t_postbus_type tgt_type_5;
+    net t_postbus_type tgt_type_6;
+    net t_postbus_type tgt_type_7;
+
+    net t_postbus_data tgt_data;
+
+    divider "Clock divider for LED":
+        {
+            clock_divider <= clock_divider+1;
+            clock_enable = 0;
+            if (clock_divider[20;0]==0)
+//            if (clock_divider[10;0]==0)
+            {
+                clock_enable = 1;
+            }
+        }
+
+    instances "Instances":
+        {
+            postbus_rom_source prs( int_clock <- int_clock,
+                                    int_reset <= int_reset,
+
+                                    rom_read => rom_read,
+                                    rom_address => rom_address,
+                                    rom_data <= rom_data,
+
+                                    postbus_type => postbus_type,
+                                    postbus_data => postbus_data,
+                                    postbus_ack <= postbus_ack );
+
+            postbus_test_rom_contents rom( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           read <= rom_read,
+                                           address <= rom_address,
+                                           data => rom_data );
+
+
+
+            postbus_simple_router psr( int_clock <- int_clock,
+                                       int_reset <= int_reset,
+
+                                       src_type_0 <= postbus_word_type_idle,
+                                       src_data_0 <= 0,
+                                       src_ack_0 => src_ack_0,
+                                       
+                                       src_type_1 <= postbus_word_type_idle,
+                                       src_data_1 <= 1,
+                                       src_ack_1 => src_ack_1,
+
+                                       src_type_2 <= postbus_word_type_idle,
+                                       src_data_2 <= 2,
+                                       src_ack_2 => src_ack_2,
+
+                                       src_type_3 <= postbus_type,
+                                       src_data_3 <= postbus_data,
+                                       src_ack_3 => postbus_ack,
+
+                                       tgt_ack_0 <= postbus_led_ack,
+                                       tgt_type_0 => postbus_led_type,
+
+                                       tgt_ack_1 <= postbus_uart_ack,
+                                       tgt_type_1 => postbus_uart_type,
+
+                                       tgt_ack_2 <= 1,
+                                       tgt_type_2 => tgt_type_2,
+
+                                       tgt_ack_3 <= 1,
+                                       tgt_type_3 => tgt_type_3,
+
+                                       tgt_ack_4 <= 1,
+                                       tgt_type_4 => tgt_type_4,
+
+                                       tgt_ack_5 <= 1,
+                                       tgt_type_5 => tgt_type_5,
+
+                                       tgt_ack_6 <= 1,
+                                       tgt_type_6 => tgt_type_6,
+
+                                       tgt_ack_7 <= 1,
+                                       tgt_type_7 => tgt_type_7,
+
+                                       tgt_data => tgt_data );
+
+            postbus_led_target plt( int_clock <- int_clock,
+                                    int_reset <= int_reset,
+
+                                    clock_enable <= clock_enable,
+                                    postbus_type <= postbus_led_type,
+                                    postbus_data <= tgt_data,
+                                    postbus_ack => postbus_led_ack,
+
+                                    leds => leds );
+
+            postbus_uart_target put( int_clock <- int_clock,
+                                     int_reset <= int_reset,
+
+                                     postbus_type <= postbus_uart_type,
+                                     postbus_data <= tgt_data,
+                                     postbus_ack => postbus_uart_ack,
+
+                                     txd => txd );
+
+        }
+}
+

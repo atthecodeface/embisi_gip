@@ -23,5 +23,7 @@ extern module io_sync_request(
     timing to rising clock int_clock io_cmd_toggle;
     timing to rising clock int_clock arb_io_ack;
     timing from rising clock int_clock io_arb_request;
+
+    timing comb input int_reset; // For async reset
 }
 

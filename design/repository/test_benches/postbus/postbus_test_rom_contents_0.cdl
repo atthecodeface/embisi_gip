@@ -1,0 +1,136 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+
+/*a Types
+ */
+
+/*a Modules
+ */
+module postbus_test_rom_contents_0( clock int_clock,
+                                    input bit int_reset,
+                                    input bit read,
+                                    input bit[8] address,
+                                    output bit[32] data )
+"
+We want a ROM contents of
+
+transaction 2 words, header 2, data 1_0000001__x_1047 to configure UART to 40MHz/9600 = 4167
+transaction 2 words, header 0, data 01
+transaction 2 words, header 0, data 03
+transaction 2 words, header 0, data 07
+transaction 2 words, header 0, data 0f
+transaction 2 words, header 0, data 1f
+transaction 2 words, header 0, data 3f
+transaction 2 words, header 0, data 7f
+transaction 2 words, header 0, data ff
+transaction 2 words, header 0, data fe
+transaction 2 words, header 0, data fc
+transaction 2 words, header 0, data f8
+transaction 2 words, header 0, data f0
+transaction 2 words, header 0, data e0
+transaction 2 words, header 0, data c0
+transaction 2 words, header 0, data 80
+transaction 2 words, header 0, data 00
+
+transaction 2 words, header 2, data c0c84 (12 bit uart tx, bits 0x21 plus sync bit and start bit first)
+jump beginning
+
+This is:
+2 0 01
+2 0 03
+2 0 07
+...
+2 2 c0c84
+100
+
+"
+{
+    default clock int_clock;
+    default reset int_reset;
+    clocked bit[8] r_address = 0;
+
+    do_rom "Simple ROM":
+        {
+            data = 0;
+            r_address <= address;
+            part_switch (r_address)
+                {
+                case  0: { data = 32h00000002; }
+                case  1: { data = 32h00000002; }
+                case  2: { data = 32h81001047; }
+
+                case  3: { data = 32h00000002; }
+                case  4: { data = 32h00000000; }
+                case  5: { data = 32h00000001; }
+
+                case  6: { data = 32h00000002; }
+                case  7: { data = 32h00000000; }
+                case  8: { data = 32h00000003; }
+
+                case  9: { data = 32h00000002; }
+                case 10: { data = 32h00000000; }
+                case 11: { data = 32h00000007; }
+
+                case 12: { data = 32h00000002; }
+                case 13: { data = 32h00000000; }
+                case 14: { data = 32h0000000f; }
+
+                case 15: { data = 32h00000002; }
+                case 16: { data = 32h00000000; }
+                case 17: { data = 32h0000001f; }
+
+                case 18: { data = 32h00000002; }
+                case 19: { data = 32h00000000; }
+                case 20: { data = 32h0000003f; }
+
+                case 21: { data = 32h00000002; }
+                case 22: { data = 32h00000000; }
+                case 23: { data = 32h0000007f; }
+
+                case 24: { data = 32h00000002; }
+                case 25: { data = 32h00000000; }
+                case 26: { data = 32h000000ff; }
+
+                case 27: { data = 32h00000002; }
+                case 28: { data = 32h00000000; }
+                case 29: { data = 32h000000fe; }
+
+                case 30: { data = 32h00000002; }
+                case 31: { data = 32h00000000; }
+                case 32: { data = 32h000000fc; }
+
+                case 33: { data = 32h00000002; }
+                case 34: { data = 32h00000000; }
+                case 35: { data = 32h000000f8; }
+
+                case 36: { data = 32h00000002; }
+                case 37: { data = 32h00000000; }
+                case 38: { data = 32h000000f0; }
+
+                case 39: { data = 32h00000002; }
+                case 40: { data = 32h00000000; }
+                case 41: { data = 32h000000e0; }
+
+                case 42: { data = 32h00000002; }
+                case 43: { data = 32h00000000; }
+                case 44: { data = 32h000000c0; }
+
+                case 45: { data = 32h00000002; }
+                case 46: { data = 32h00000000; }
+                case 47: { data = 32h00000080; }
+
+                case 48: { data = 32h00000002; }
+                case 49: { data = 32h00000000; }
+                case 50: { data = 32h00000000; }
+
+                case 51: { data = 32h00000002; }
+                case 52: { data = 32h00000002; }
+                case 53: { data = 32h000c0c85; }
+
+                case 54: { data = 32h00000100; }
+                }
+        }
+}

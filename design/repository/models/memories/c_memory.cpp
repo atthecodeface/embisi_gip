@@ -76,7 +76,7 @@ public:
     c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, int byte_enables );
     c_memory::~c_memory();
     t_sl_error_level c_memory::delete_instance( void );
-    t_sl_error_level c_memory::reset( void );
+    t_sl_error_level c_memory::reset( int pass );
     t_sl_error_level c_memory::preclock_posedge_int_clock( void );
     t_sl_error_level c_memory::clock_posedge_int_clock( void );
 private:
@@ -122,11 +122,11 @@ static t_sl_error_level memory_delete_fn( void *handle )
 
 /*f memory_reset_fn
 */
-static t_sl_error_level memory_reset_fn( void *handle )
+static t_sl_error_level memory_reset_fn( void *handle, int pass )
 {
     c_memory *mod;
     mod = (c_memory *)handle;
-    return mod->reset();
+    return mod->reset( pass );
 }
 
 /*f memory_preclock_posedge_int_clock_fn
@@ -171,6 +171,7 @@ c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, 
     memory_byte_width = (width+7)/8;
     memory_int_width = (width+sizeof(int)*8-1)/(sizeof(int)*8);
     memory_has_byte_enables = byte_enables;
+    data = (unsigned char *)malloc(memory_byte_width*memory_size);
     
     /*b Instantiate module
      */
@@ -191,7 +192,7 @@ c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, 
     /*b Register state then reset
      */
     //engine->register_state_desc( engine_handle, 1, state_desc_memory_posedge_int_clock, &posedge_int_clock_state, NULL );
-    reset();
+    reset( 0 );
 
     /*b Done
      */
@@ -216,7 +217,7 @@ t_sl_error_level c_memory::delete_instance( void )
 */
 /*f c_memory::reset
 */
-t_sl_error_level c_memory::reset( void )
+t_sl_error_level c_memory::reset( int pass )
 {
     int i;
     posedge_int_clock_state.writing = 0;
@@ -270,6 +271,7 @@ t_sl_error_level c_memory::clock_posedge_int_clock( void )
      */
     if (posedge_int_clock_state.writing)
     {
+        //fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:Writing address %04x data %08x\n", this, posedge_int_clock_state.sram_address, posedge_int_clock_state.sram_write_data[0] );
         if (posedge_int_clock_state.sram_address<memory_size)
         {
             if (data)
@@ -301,6 +303,7 @@ t_sl_error_level c_memory::clock_posedge_int_clock( void )
         {
             fprintf(stderr,"c_memory::Out of range read\n");
         }
+        //fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:Reading address %04x data %08x\n", this, posedge_int_clock_state.sram_address, posedge_int_clock_state.sram_read_data[0] );
     }
 
     /*b Done

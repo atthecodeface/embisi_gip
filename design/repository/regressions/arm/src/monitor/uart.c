@@ -25,12 +25,9 @@ extern int uart_rx_poll( void )
 {
     int s;
 
-//    uart_tx_hex8(rx_rdy);
-//    uart_tx_hex8(&rx_rdy);
     if (rx_rdy)
         return 1;
 
-//    uart_tx_hex8(tx_av);
     while (1)
     {
         // poll for status
@@ -47,7 +44,6 @@ extern int uart_rx_poll( void )
         {
             rx_rdy = 1;
             rx_byte = s&0xff;
-            uart_tx_hex8( s );
             return 1;
         }
         else
@@ -71,15 +67,48 @@ extern int uart_rx_byte( void )
 // (also to send data on tx we need to set bit 7)
 // This is 01_011_0 for tx at bits 0 thru 6 (0x00000096)
 // And  01_011_0 for rx at bits 24 thru 30 (0x16000000)
+/*f uart_tx
+ */
 extern void uart_tx(a)
 {
-//    if (tx_av==0)
-//        return;
+    if (tx_av==0)
+        return;
     __asm__ volatile (" mov r8, %0, lsl #8 \n orr r8, r8, #0x96 \n orr r8, r8, #0x16000000 \n .word 0xec00c40e \n mov r8, r8" :  : "r" (a) : "r8" ); // extrdrm (c): cddm rd is (3.5 type 2 reg 0) (m is top 3.1 - type of 7 for no override)
     delay_char();
     tx_av--;
 }
 
+/*f uart_tx_nl
+ */
+extern void uart_tx_nl( void )
+{
+    uart_tx( '\n' );
+    uart_tx( '\r' );
+}
+
+/*f uart_tx_string
+ */
+extern void uart_tx_string( const char *string )
+{
+    register int c;
+    c = string[0];
+    if (c)
+    {
+        uart_tx(c);
+        uart_tx_string( string+1 );
+    }
+}
+
+/*f uart_tx_string_nl
+ */
+extern void uart_tx_string_nl( const char *string )
+{
+    uart_tx_string( string );
+    uart_tx_nl();
+}
+
+/*f uart_tx_hex8
+ */
 extern void uart_tx_hex8( unsigned int a )
 {
     int c;

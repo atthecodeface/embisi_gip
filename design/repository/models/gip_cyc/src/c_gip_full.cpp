@@ -8,7 +8,7 @@
   Reading of peripherals in RFR stage
   Writing of peripherals in RFW stage
 
-  Checking instruction flow is okay and flush never occurs after write of PC - adding 'd' flag to instructions will ensure this
+  Checking instruction flow is okay and flush never occurs after write of PC - correctly using 'd' flag to instructions will ensure this
 
   Zero overhead loops - either with special register as count, or immediate count (which should be faster to use)
   For ZOLs use the repeat count above, and also have internal registers for the start and lengths
@@ -16,10 +16,10 @@
   Mapping of registers with thread-based map
 
   Preemption
-  Deschedule instruction
+  Deschedule instruction using tag and passing in rn as 'block_all' - how about isub pc, #8 (but blocking for all somehow) - actually, we don't care about the PC for cooperative deschdule anyway. Or do we? Should we be able to write that to the restart PC? Probably. Hm. So, deschedule is write PC with PC+offset, blocking for all.
 
   Thunking library call instruction
-  SWIs
+  SWIs - move stuff to registers, set semaphore, then deschedule will do it
 
   Native instruction access in ARM mode - with conditional access (break out that coproc space?)
   Add in saturated N/P and saturate instructions - how to clear them? No need for sticky V or N I think
@@ -2312,6 +2312,23 @@ void c_gip_full::rf_comb( t_gip_pipeline_results *results )
     if (pd->rf.state.inst_valid)
     {
         pd->rf.accepting_dec_instruction_if_alu_does = 1;
+        if ( (pd->rf.state.inst.gip_ins_rn.type==gip_ins_r_type_internal) &&
+             (pd->rf.state.inst.gip_ins_rn.data.rnm_internal==gip_ins_rnm_int_block_all) )
+        {
+            if (pd->rf.state.mem_rd.type!=gip_ins_r_type_none)
+            {
+                pd->rf.accepting_dec_instruction_if_alu_does = 0;
+            }
+            if (pd->rf.state.alu_rd.type!=gip_ins_r_type_none)
+            {
+                pd->rf.accepting_dec_instruction_if_alu_does = 0;
+            }
+            if ( pd->alu.state.inst_valid &&
+                 (pd->alu.state.inst.gip_ins_rd.type!=gip_ins_r_type_none) )
+            {
+                pd->rf.accepting_dec_instruction_if_alu_does = 0;
+            }
+        }
         if (pd->rf.state.inst.gip_ins_rn.type==gip_ins_r_type_register)
         {
             if ( pd->alu.state.inst_valid &&

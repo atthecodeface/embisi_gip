@@ -14,7 +14,7 @@
 setenv gip_mif "../../../../regressions/gip/bin/test_pst.gif"
 read_hw_file simple.hwex
 vcd_file_open "allsignals" "test_pst.vcd"
-vcd_file_add "allsignals" "pstmon_1" "pstmon_2" "pstmon_3" "pstsrc_1" "pim" "prd"
+vcd_file_add "allsignals" "pstmon_1" "pstmon_2" "pstmon_3" "pstmon_4" "pstsrc_1" "pim" "prd"
 vcd_file_enable "allsignals"
 #global_monitor_display "mux_data" "Mux type %0x% data %1x% source %0x%" global_signal_value("mux_type") global_signal_value("mux_data") global_signal_value("mux_ack")
 reset

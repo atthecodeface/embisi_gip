@@ -27,13 +27,22 @@ module postbus_testbench pstmon_2
 option_int "monitor_level" 14
 module postbus_testbench pstmon_3
 
+option_int "monitor_level" 14
+module postbus_testbench pstmon_4
+
 # Create a postbus source that sends incrementing data every 60 clocks
 #Source is interval, channel, stream type, stream length, stream hdr, stream seed, stream value
-option_string "sources" "(50 0 i 4 0x1234567f 0 0)"
+# To target sink 0 on testbench:      option_string "sources" "(50 0 ~c 4 0x00000102 0x1234567 0xfedcba98)"
+# To target FIFO 3, signal 2 on GIP:  option_string "sources" "(50 0  c 4 0x10000300 0x1234567 0xfedcba98)"
+# GIP should bounce the data, inverting each word, and use header 0x00000d02 (length==3, dest type 1, route 1, sink 0)
+option_string "sources" "(45 0 ~c 4 0x00000102 0x1234567 0xfedcba98) (50 0 ~r 4 0x08000102 0x1234567 0xfedcba98)"
 #Put the source on a channel with transaction flow control, credit 3
 option_string "channels" "(t 13) (d 3) (t 3)"
-#Sink is stream type, stream length, stream hdr, stream seed, stream value
-option_string "sinks" "(~i 4 0x12345678 0 0)"
+#Sink is speed, packets to pass, stream type, stream length, stream hdr, stream seed, stream value
+option_string "sinks" "(1 0 ~c 4 0x12345672 0x1234567 0xfedcba98) (5 0 ~r 4 0x12345672 0x1234567 0xfedcba98)"
+option_int "monitor_level" 14
+#Acks is source ack type (c/r) and speed (0=>no delay in acks) and then the same for the target interface
+option_string "acks" "c 0 c 0"
 module postbus_testbench pstsrc_1
 
 option_string "clock" "postbus_clock"
@@ -65,7 +74,6 @@ clock system_clock 0 1 1
 drive th.system_clock system_clock
 drive prd.int_clock system_clock
 drive pim.int_clock system_clock
-
 
 wire system_reset
 wire mux_data[32] mux_type[2] mux_ack[2]
@@ -112,6 +120,13 @@ drive pstmon_3.int_reset system_reset
 drive pstmon_3.mon_ack tgt_ack_0
 drive pstmon_3.mon_type tgt_type_0
 drive pstmon_3.mon_data tgt_data
+
+#b PSTMON_4
+drive pstmon_4.int_clock system_clock
+drive pstmon_4.int_reset system_reset
+drive pstmon_4.mon_ack tgt_ack_1
+drive pstmon_4.mon_type tgt_type_1
+drive pstmon_4.mon_data tgt_data
 
 #b PRD
 drive prd.tgt_ack_3 tgt_ack_3

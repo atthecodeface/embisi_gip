@@ -133,6 +133,7 @@ typedef enum
  */
 typedef enum
 {
+    gip_ins_rnm_int_block_all = 0x14, // Value of acc, but blocks if any register write is pending at all (to make it safe for deschedules)
     gip_ins_rnm_int_shf = 0x18,
     gip_ins_rnm_int_acc = 0x19,
     gip_ins_rnm_int_pc = 0x10,

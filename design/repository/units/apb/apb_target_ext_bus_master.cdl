@@ -1,0 +1,345 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+
+/*a Constants
+ */
+constant integer apb_addr_control = 0;
+constant integer apb_addr_data    = 1;
+constant integer apb_addr_address = 2;
+
+/*a Types
+ */
+/*t t_ext_bus_state
+ */
+typedef fsm
+{
+    ext_bus_state_idle "APB idle";
+    ext_bus_state_write_address;
+    ext_bus_state_write_strobe;
+    ext_bus_state_write_hold;
+    ext_bus_state_read_address;
+    ext_bus_state_read_strobe;
+    ext_bus_state_read_hold;
+} t_ext_bus_state;
+
+/*t t_inc
+ */
+typedef enum [2]
+{
+    inc_0,
+    inc_1,
+    inc_2,
+    inc_4,
+} t_inc;
+
+/*a Module
+ */
+module apb_target_ext_bus_master( clock apb_clock "Internal system clock",
+                                  input bit int_reset "Internal reset",
+
+                                  input bit[3] apb_paddr,
+                                  input bit apb_penable,
+                                  input bit apb_pselect,
+                                  input bit[32] apb_pwdata,
+                                  input bit apb_prnw,
+                                  output bit[32] apb_prdata,
+                                  output bit apb_pwait,
+
+                                  output bit[4]ext_bus_ce,
+                                  output bit ext_bus_oe,
+                                  output bit ext_bus_we,
+                                  output bit[24]ext_bus_address,
+                                  output bit ext_bus_write_data_enable,
+                                  output bit[32]ext_bus_write_data,
+                                  input bit[32]ext_bus_read_data
+                                  )
+"
+Simple APB interface to an external bus.
+
+We support 4 chip selects, a full 32-bit address, and 32-bit data, with controlled timing (no wait from the external targets)
+
+We should get the SRAM and Flash working through this
+
+"
+{
+    /*b Clock and reset
+     */
+    default clock apb_clock;
+    default reset int_reset;
+
+    clocked bit[12] ext_bus_config = 0;
+    clocked bit[2] ext_bus_chip_select = 0;
+    clocked bit[24] ext_bus_address = 0;
+    clocked bit[32] ext_bus_write_data = 0;
+    clocked bit ext_bus_write_buffer_full = 0;
+    comb bit ext_bus_write_done;
+    clocked bit[32] ext_bus_read_data_buffer = 0;
+    clocked bit ext_bus_read_data_valid=0 "Asserted if the read data buffer has just become valid";
+    clocked bit[4] ext_bus_counter = 0;
+
+    clocked t_ext_bus_state ext_bus_state = ext_bus_state_idle;
+    comb bit ext_bus_state_done "Asserted if this is the last cycle the FSM will be in the current state";
+    comb bit ext_bus_increment_address "Asserted if the FSM wants to increment the address; indicates completion of the use of the address bits";
+
+    comb t_inc ext_bus_config_increment_size "Increment for the address on each read/write; can be 0, 1, 2 or 4";
+    comb bit[4] ext_bus_config_address_cycles;
+    comb bit[4] ext_bus_config_strobe_cycles;
+    comb bit[2] ext_bus_config_hold_cycles;
+
+    comb bit ext_bus_read_request "Asserted if the APB wants to initiate a read transaction";
+    comb bit ext_bus_busy "Asserted if the external bus is busy, and any APB transaction should wait to start";
+    comb bit apb_pwait_for_write "Asserted if the APB write interface needs a wait state";
+    comb bit apb_pwait_for_read  "Asserted if the APB read interface needs a wait state";
+
+    /*b Break out configuration
+     */
+    ext_bus_config_breakout "Break out configuration":
+        {
+            ext_bus_config_address_cycles = ext_bus_config[4;0];
+            ext_bus_config_strobe_cycles  = ext_bus_config[4;4];
+            ext_bus_config_hold_cycles    = ext_bus_config[2;8];
+            ext_bus_config_increment_size = ext_bus_config[2;10];
+        }
+
+    /*b External bus state machine
+     */
+    external_bus_state_machine "External bus state machine":
+        {
+            if (ext_bus_counter!=0)
+            {
+                ext_bus_counter <= ext_bus_counter-1;
+            }   
+            ext_bus_state_done = (ext_bus_counter==0);
+            ext_bus_read_data_valid <= 0;
+            ext_bus_write_done = 0;
+            full_switch (ext_bus_state)
+            {
+            case ext_bus_state_idle:
+            {
+                if (ext_bus_write_buffer_full)
+                {
+                    ext_bus_state <= ext_bus_state_write_address;
+                    ext_bus_counter <= ext_bus_config_address_cycles;
+                    ext_bus_state_done = 1;
+                }
+                elsif (ext_bus_read_request)
+                    {
+                        ext_bus_state <= ext_bus_state_read_address;
+                        ext_bus_counter <= ext_bus_config_address_cycles;
+                        ext_bus_state_done = 1;
+                    }
+            }
+            case ext_bus_state_write_address:
+            {
+                if (ext_bus_state_done)
+                {
+                    ext_bus_state <= ext_bus_state_write_strobe;
+                    ext_bus_counter <= ext_bus_config_strobe_cycles;
+                }
+            }
+            case ext_bus_state_write_strobe:
+            {
+                if (ext_bus_state_done)
+                {
+                    ext_bus_state <= ext_bus_state_write_hold;
+                    ext_bus_counter[2;0] <= ext_bus_config_hold_cycles;
+                }
+            }
+            case ext_bus_state_write_hold:
+            {
+                if (ext_bus_state_done)
+                {
+                    ext_bus_state <= ext_bus_state_idle;
+                    ext_bus_write_done = 1;
+                }
+            }
+            case ext_bus_state_read_address:
+            {
+                if (ext_bus_state_done)
+                {
+                    ext_bus_state <= ext_bus_state_read_strobe;
+                    ext_bus_counter <= ext_bus_config_strobe_cycles;
+                }
+            }
+            case ext_bus_state_read_strobe:
+            {
+                if (ext_bus_state_done)
+                {
+                    ext_bus_state <= ext_bus_state_read_hold;
+                    ext_bus_counter[2;0] <= ext_bus_config_hold_cycles;
+                    ext_bus_read_data_buffer <= ext_bus_read_data;
+                    ext_bus_read_data_valid <= 1;
+                }
+            }
+            case ext_bus_state_read_hold:
+            {
+                if (ext_bus_state_done)
+                {
+                    ext_bus_state <= ext_bus_state_idle;
+                }
+            }
+        }
+    }
+
+    /*b External bus decode signals
+     */
+    external_bus_signal_decode "External bus signal decode":
+        {
+            ext_bus_write_data_enable = 0;
+            ext_bus_oe = 0;
+            ext_bus_we = 0;
+            ext_bus_ce = 0;
+            ext_bus_busy = 0;
+            ext_bus_increment_address = 0;
+            full_switch (ext_bus_state)
+            {
+            case ext_bus_state_idle:
+            {
+                if (ext_bus_write_buffer_full)
+                {
+                    ext_bus_busy = 1;
+                }
+            }
+            case ext_bus_state_write_address:
+            {
+                ext_bus_write_data_enable = 1;
+                ext_bus_ce[ext_bus_chip_select] = 1;
+                ext_bus_busy = 1;
+            }
+            case ext_bus_state_write_strobe:
+            {
+                ext_bus_we = 1;
+                ext_bus_write_data_enable = 1;
+                ext_bus_ce[ext_bus_chip_select] = 1;
+                ext_bus_busy = 1;
+            }
+            case ext_bus_state_write_hold:
+            {
+                ext_bus_write_data_enable = 1;
+                ext_bus_ce[ext_bus_chip_select] = 1;
+                ext_bus_busy = 1;
+                ext_bus_increment_address = ext_bus_state_done;
+            }
+            case ext_bus_state_read_address:
+            {
+                ext_bus_ce[ext_bus_chip_select] = 1;
+                ext_bus_busy = 1;
+            }
+            case ext_bus_state_read_strobe:
+            {
+                ext_bus_oe = 1;
+                ext_bus_ce[ext_bus_chip_select] = 1;
+                ext_bus_busy = 1;
+            }
+            case ext_bus_state_read_hold: // No strobes - hold address and chip select though
+            {
+                ext_bus_ce[ext_bus_chip_select] = 1;
+                ext_bus_busy = 1;
+                ext_bus_increment_address = ext_bus_state_done;
+            }
+            }
+        }
+
+    /*b APB write interface
+     */
+    apb_write "APB write interface":
+        {
+            apb_pwait_for_write = 0;
+            if (ext_bus_increment_address)
+            {
+                full_switch (ext_bus_config_increment_size)
+                    {
+                    case inc_0: { ext_bus_address <= ext_bus_address+0; }
+                    case inc_1: { ext_bus_address <= ext_bus_address+1; }
+                    case inc_2: { ext_bus_address <= ext_bus_address+2; }
+                    case inc_4: { ext_bus_address <= ext_bus_address+4; }
+                    }
+            }
+            if (ext_bus_write_done)
+            {
+                ext_bus_write_buffer_full <= 0;
+            }
+            if (apb_pselect && apb_penable && !apb_prnw)
+            {
+                part_switch (apb_paddr)
+                    {
+                    case apb_addr_control: // write control
+                    {
+                        ext_bus_config <= apb_pwdata[12;0];
+                    }
+                    case apb_addr_data: // write data
+                    {
+                        if (ext_bus_busy)
+                        {
+                            apb_pwait_for_write = 1;
+                        }
+                        else
+                        {
+                            ext_bus_write_buffer_full <= 1;
+                            ext_bus_write_data <= apb_pwdata;
+                        }
+                    }
+                    case apb_addr_address: // write address
+                    {
+                        if (ext_bus_busy)
+                        {
+                            apb_pwait_for_write = 1;
+                        }
+                        else
+                        {
+                            ext_bus_address <= apb_pwdata[24;0];
+                            ext_bus_chip_select <= apb_pwdata[2;30];
+                        }
+                    }
+                }
+            }
+        }
+
+    /*b APB read interface
+     */
+    apb_read "APB read interface":
+        {
+            apb_prdata = ext_bus_read_data_buffer;
+            apb_pwait_for_read = 0;
+            ext_bus_read_request = 0;
+            if (apb_pselect && apb_prnw)
+            {
+                part_switch (apb_paddr)
+                    {
+                    case apb_addr_control:
+                    {
+                        apb_prdata[12;0] = ext_bus_config;
+                    }
+                    case apb_addr_address:
+                    {
+                        apb_prdata[24;0] = ext_bus_address;
+                        apb_prdata[2;30] = ext_bus_chip_select;
+                    }
+                    case apb_addr_data:
+                    {
+                        ext_bus_read_request = 1;
+                        if (apb_penable)
+                        {
+                            if (!ext_bus_read_data_valid)
+                            {
+                                apb_pwait_for_read = 1;
+                            }
+                        }
+                    }
+                    }
+            }
+        }
+
+    /*b APB tying it up
+     */
+    apb "APB mop-up logic":
+        {
+            apb_pwait = apb_pwait_for_write | apb_pwait_for_read;
+        }
+
+    /*b Done
+     */
+}

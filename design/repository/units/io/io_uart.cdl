@@ -1,0 +1,498 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+  Add flow control, and its config
+  Add status on tx completion
+ */
+
+/*a Includes
+ */
+include "io.h"
+include "io_uart.h"
+
+/*a Constants
+ */
+
+/*a Types
+ */
+/*t t_tx_data_state
+ */
+typedef fsm {
+    tx_data_state_idle;
+    tx_data_state_start_bit;
+    tx_data_state_data;
+    tx_data_state_stop_bit;
+} t_tx_data_state;
+
+/*t t_rx_data_state
+ */
+typedef fsm {
+    rx_data_state_idle;
+    rx_data_state_start_bit;
+    rx_data_state_data;
+    rx_data_state_shift;
+    rx_data_state_stop_bits;
+    rx_data_state_done;
+} t_rx_data_state;
+
+/*t t_cmd_state
+ */
+typedef fsm {
+    cmd_state_idle;
+    cmd_state_pause;
+    cmd_state_wait_for_txd;
+} t_cmd_state;
+
+/*t t_status_state
+ */
+typedef fsm {
+    status_state_idle;
+    status_state_tx;
+    status_state_rx;
+} t_status_state;
+
+/*a Module
+ */
+module io_uart( clock int_clock "Internal system clock",
+                input bit int_reset "Internal reset",
+
+                input bit tx_baud_enable "Baud enable for transmit, 16 x bit time",
+                output bit txd "Transmit data out",
+                input bit txd_fc "Transmit flow control; assert to pause transmit",
+
+                input bit rx_baud_enable "Baud enable for receive, 16 x bit time",
+                input bit rxd "Receive data in",
+                output bit rxd_fc "Receive flow control; asserted to pause transmit",
+
+                input bit cmd_fifo_empty,
+                input bit[32] cmd_fifo_data,
+                output bit cmd_fifo_toggle,
+
+                input bit status_fifo_full,
+                output bit status_fifo_toggle,
+                output bit[32] status_fifo_data )
+    /*b Documentation
+     */
+"
+This UART utilizes a command FIFO to provide its configuration and all transmit data.
+"
+{
+
+    /*b Default clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Command fsm state
+     */
+    clocked t_cmd_state cmd_state=cmd_state_idle;
+    clocked bit cmd_fifo_toggle = 0;
+    clocked bit[2] cmd_count=0;
+
+    /*b Status fsm state
+     */
+    clocked t_status_state status_state=status_state_idle;
+    clocked bit status_fifo_toggle = 0;
+    clocked bit[4] status_count=0;
+    comb bit tx_status_pend;
+    comb bit rx_status_pend;
+    clocked bit tx_status_pending=0;
+    clocked bit rx_status_pending=0;
+
+    /*b Tx data fsm state
+     */
+    clocked t_tx_data_state tx_data_state = tx_data_state_idle;
+    clocked bit[9] tx_sr = 0;
+    clocked bit[4] tx_count = 0;
+    clocked bit[3] tx_bit = 0;
+    comb bit tx_pend_start "Asserted if the tx bit machine should start a pending bit";
+    clocked bit tx_pending=0 "Asserted if a tx data byte is pending in the shift register";
+
+    /*b Rx data fsm state
+     */
+    clocked bit[3] rxd_sync = 0 "Synchronizer for RxD input";
+    comb bit rx_data_bit;
+    clocked t_rx_data_state rx_data_state = rx_data_state_idle;
+    clocked bit[9] rx_sr = 0;
+    clocked bit[4] rx_count = 0;
+    clocked bit[3] rx_bit = 0;
+    clocked bit rx_framing_error = 0 "Asserted during receive if the framing of the rx is bad";
+
+    /*b Combinatorials for signal breakout
+     */
+    comb bit tx_cfg_one_start_bit;
+    comb bit tx_cfg_two_start_bits;
+    comb bit tx_cfg_five_data_bits;
+    comb bit tx_cfg_six_data_bits;
+    comb bit tx_cfg_seven_data_bits;
+    comb bit tx_cfg_eight_data_bits;
+    comb bit tx_cfg_nine_data_bits;
+    comb bit tx_cfg_half_stop_bit;
+    comb bit tx_cfg_one_stop_bit;
+    comb bit tx_cfg_one_half_stop_bits;
+    comb bit tx_cfg_two_stop_bits;
+
+    comb bit rx_cfg_one_start_bit;
+    comb bit rx_cfg_two_start_bits;
+    comb bit rx_cfg_five_data_bits;
+    comb bit rx_cfg_six_data_bits;
+    comb bit rx_cfg_seven_data_bits;
+    comb bit rx_cfg_eight_data_bits;
+    comb bit rx_cfg_nine_data_bits;
+    comb bit rx_cfg_half_stop_bit;
+    comb bit rx_cfg_one_stop_bit;
+    comb bit rx_cfg_one_half_stop_bits;
+    comb bit rx_cfg_two_stop_bits;
+
+    /*b Configuration breakout (cmd_fifo_data)
+     */
+    configuration_breakout "Configuration breakout":
+        {
+            tx_cfg_one_start_bit = (cmd_fifo_data[1;io_uart_cmd_bit_tx_start_bits]==0);
+            tx_cfg_two_start_bits = (cmd_fifo_data[1;io_uart_cmd_bit_tx_start_bits]==1);
+
+            tx_cfg_five_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==0);
+            tx_cfg_six_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==1);
+            tx_cfg_seven_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==2);
+            tx_cfg_eight_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==3);
+            tx_cfg_nine_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==4);
+
+            tx_cfg_half_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==0);
+            tx_cfg_one_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==1);
+            tx_cfg_one_half_stop_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==2);
+            tx_cfg_two_stop_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==3);
+
+            rx_cfg_one_start_bit = (cmd_fifo_data[1;io_uart_cmd_bit_rx_start_bits]==0);
+            rx_cfg_two_start_bits = (cmd_fifo_data[1;io_uart_cmd_bit_rx_start_bits]==1);
+
+            rx_cfg_five_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==0);
+            rx_cfg_six_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==1);
+            rx_cfg_seven_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==2);
+            rx_cfg_eight_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==3);
+            rx_cfg_nine_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==4);
+
+            rx_cfg_half_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_rx_stop_bits]==0);
+            rx_cfg_one_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_rx_stop_bits]==1);
+            rx_cfg_one_half_stop_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_stop_bits]==2);
+            rx_cfg_two_stop_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_stop_bits]==3);
+        }
+
+    /*b Rx data bit state machine
+     */
+    rx_state_fsm "Receive state machine":
+        {
+            rxd_sync[0] <= rxd;
+            rxd_sync[2;1] <= rxd_sync[2;0];
+            rx_data_bit = rxd_sync[2];
+            rx_status_pend = 0;
+            full_switch (rx_data_state)
+                {
+                case rx_data_state_idle:
+                {
+                    rx_framing_error <= 0;
+                    if ( rx_baud_enable &&
+                         (rx_data_bit==0) )
+                    {
+                        rx_count <= 0;
+                        rx_bit <= 0;
+                        rx_data_state <= rx_data_state_start_bit;
+                        rx_sr <= 0;
+                    }
+                }
+                case rx_data_state_start_bit:
+                {
+                    if (rx_baud_enable)
+                    {
+                        rx_count <= rx_count+1;
+                        if (rx_count==15)
+                        {
+                            rx_bit <= rx_bit+1;
+                            if ( rx_cfg_one_start_bit ||
+                                 (rx_cfg_two_start_bits && (rx_bit[0])) )
+                            {
+                                rx_count <= 0;
+                                rx_bit <= 0;
+                                rx_data_state <= rx_data_state_data;
+                            }
+                        }
+                        if ((rx_data_bit!=0) && (rx_count==7))
+                        {
+                            rx_framing_error <= 1;
+                        }
+                    }
+                }
+                case rx_data_state_data:
+                {
+                    if (rx_baud_enable)
+                    {
+                        rx_count <= rx_count+1;
+                        if (rx_count==15)
+                        {
+                            rx_bit <= rx_bit+1;
+                            if ( (rx_cfg_five_data_bits && (rx_bit==4)) ||
+                                 (rx_cfg_six_data_bits && (rx_bit==5)) ||
+                                 (rx_cfg_seven_data_bits && (rx_bit==6)) ||
+                                 (rx_cfg_eight_data_bits && (rx_bit==7)) ||
+                                 (rx_bit[3]) )
+                            {
+                                rx_count <= 0;
+                                rx_data_state <= rx_data_state_shift;
+                            }
+                        }
+                        if (rx_count==7)
+                        {
+                            rx_sr[8;0] <= rx_sr[8;1];
+                            rx_sr[8] <= rx_data_bit;
+                        }
+                    }
+                }
+                case rx_data_state_shift: // we will be here for up to 4 clock ticks, shifting the rx data down
+                {
+                    rx_bit <= rx_bit+1;
+                    if (rx_bit==9)
+                    {
+                        rx_bit <= 0;
+                        rx_data_state <= rx_data_state_stop_bits;
+                    }
+                    else
+                    {
+                            rx_sr[8;0] <= rx_sr[8;1];
+                            rx_sr[8] <= 0;
+                    }
+                    if (rx_baud_enable)
+                    {
+                        rx_count <= rx_count+1;
+                    }
+                }
+                case rx_data_state_stop_bits: // data shifted down, count equals number of baud_enables since last bit, which is at most 4
+                { // with 1% clock skew, from 2 start bits through 9 data bits, which is 11 bits, with 16 samples, that is 176 samples total, max drift of 2 samples; we check stop bits at 4th sample
+                    if (rx_baud_enable)
+                    {
+                        rx_count <= rx_count+1;
+                        if (rx_count==7)
+                        {
+                            rx_bit <= rx_bit+1;
+                            rx_count <= 0;
+                            if ( (rx_cfg_half_stop_bit      && (rx_bit==0)) ||
+                                 (rx_cfg_one_stop_bit       && (rx_bit==1)) ||
+                                 (rx_cfg_one_half_stop_bits && (rx_bit==2)) ||
+                                 (rx_cfg_two_stop_bits      && (rx_bit==3)) )
+                            {
+                                rx_data_state <= rx_data_state_done;
+                                rx_status_pend = 1;
+                            }
+                        }
+                        if ((rx_data_bit!=1) && (rx_count==3))
+                        {
+                            rx_framing_error <= 1;
+                        }
+                    }
+                }
+                case rx_data_state_done:
+                {
+                    if (!rx_status_pending)
+                    {
+                        rx_data_state <= rx_data_state_idle;
+                    }
+                }
+                }
+        }
+
+    /*b Tx data bit state machine
+     */
+    tx_state_fsm "Transmit state machine":
+        {
+            tx_status_pend = 0;
+            full_switch (tx_data_state)
+                {
+                case tx_data_state_idle:
+                {
+                    if (tx_pend_start)
+                    {
+                        tx_pending <= 1;
+                    }
+                    if (!tx_status_pending && tx_pending && tx_baud_enable)
+                    {
+                        tx_data_state <= tx_data_state_start_bit;
+                        tx_sr <= cmd_fifo_data[9;io_uart_cmd_bit_tx_byte_start];
+                        tx_count <= 0;
+                        tx_bit <= 0;
+                    }
+                    txd = 1;
+                }
+                case tx_data_state_start_bit:
+                {
+                    if (tx_baud_enable)
+                    {
+                        tx_count <= tx_count+1;
+                        if (tx_count==15)
+                        {
+                            tx_bit <= tx_bit+1;
+                            if ( tx_cfg_one_start_bit ||
+                                 (tx_cfg_two_start_bits && tx_bit[0]) )
+                            {
+                                tx_data_state <= tx_data_state_data;
+                                tx_bit <= 0;
+                                tx_count <= 0;
+                            }
+                        }
+                    }
+                    txd = 0;
+                }
+                case tx_data_state_data:
+                {
+                    if (tx_baud_enable)
+                    {
+                        tx_count <= tx_count+1;
+                        if (tx_count==15)
+                        {
+                            tx_bit <= tx_bit+1;
+                            tx_sr[8;0] <= tx_sr[8;1];
+                            if ( (tx_cfg_five_data_bits && (tx_bit==4)) ||
+                                 (tx_cfg_six_data_bits && (tx_bit==5)) ||
+                                 (tx_cfg_seven_data_bits && (tx_bit==6)) ||
+                                 (tx_cfg_eight_data_bits && (tx_bit==7)) ||
+                                 (tx_bit[3]) )
+                            {
+                                tx_data_state <= tx_data_state_stop_bit;
+                                tx_bit <= 0;
+                                tx_count <= 0;
+                                tx_pending <= 0;
+                            }
+                        }
+                        txd = tx_sr[0];
+                    }
+                }
+                case tx_data_state_stop_bit:
+                {
+                    if (tx_baud_enable)
+                    {
+                        tx_count <= tx_count+1;
+                        if (tx_count==7)
+                        {
+                            tx_count <= 0;
+                            tx_bit <= tx_bit+1;
+                            if ( (tx_cfg_half_stop_bit && (tx_bit==0)) ||
+                                 (tx_cfg_one_stop_bit && (tx_bit==1)) ||
+                                 (tx_cfg_one_half_stop_bits && (tx_bit==2)) ||
+                                 (tx_cfg_two_stop_bits && (tx_bit==3)) )
+                            {
+                                tx_data_state <= tx_data_state_idle;
+                                tx_status_pend = 1;
+                            }
+                        }
+                    }
+                    txd = 1;
+                    if (tx_pend_start)
+                    {
+                        tx_pending <= 1;
+                    }
+                }
+                }
+        }
+
+    /*b Command state machine
+     */
+    cmd_state_fsm "Command handling state machine":
+        {
+            tx_pend_start = 0;
+            full_switch (cmd_state)
+                {
+                case cmd_state_idle: // tx_pending must be zero for us to be here
+                {
+                    if (!cmd_fifo_empty)
+                    {
+                        if (cmd_fifo_data[io_uart_cmd_bit_tx_req])
+                        {
+                            tx_pend_start = 1;
+                            cmd_state <= cmd_state_wait_for_txd;
+                        }
+                        else // we have handled it - so go through pause before we come back
+                        {
+                            cmd_fifo_toggle <= ~cmd_fifo_toggle;
+                            cmd_count <= 0;
+                            cmd_state <= cmd_state_pause;
+                        }
+                    }
+                }
+                case cmd_state_pause:
+                {
+                    if (tx_baud_enable)
+                    {
+                        cmd_count <= cmd_count+1;
+                        if (cmd_count==3)
+                        {
+                            cmd_state <= cmd_state_idle;
+                        }
+                    }
+                }
+                case cmd_state_wait_for_txd: // we have handled it now - so go through pause before we come back
+                {
+                    if ( !tx_pending )
+                    {
+                        cmd_fifo_toggle <= ~cmd_fifo_toggle;
+                        cmd_count <= 0;
+                        cmd_state <= cmd_state_pause;
+                    }
+                }
+                }
+        }
+
+    /*b Status state machine
+     */
+    status_state_fsm "Status reporting state machine":
+        {
+            if (rx_status_pend)
+            {
+                rx_status_pending <= 1;
+            }
+            if (tx_status_pend)
+            {
+                tx_status_pending <= 1;
+            }
+            status_fifo_data = 0;
+            full_switch (status_state)
+                {
+                case status_state_idle:
+                {
+                    status_count <= 0;
+                    if (rx_status_pending)
+                    {
+                        status_state <= status_state_rx;
+                        status_fifo_toggle <= ~status_fifo_toggle;
+                    }
+                    elsif (tx_status_pending)
+                        {
+                            status_state <= status_state_tx;
+                            status_fifo_toggle <= ~status_fifo_toggle;
+                        }
+                }
+                case status_state_rx:
+                {
+                    status_fifo_data[17] = rx_framing_error;
+                    status_fifo_data[16] = 1;
+                    status_fifo_data[9;0] = rx_sr;
+                    status_count <= status_count+1;
+                    if (status_count==15)
+                    {
+                        status_state <= status_state_idle;
+                        rx_status_pending <= 0;
+                    }
+                }
+                case status_state_tx:
+                {
+                    status_fifo_data[16] = 0;
+                    status_count <= status_count+1;
+                    if (status_count==15)
+                    {
+                        status_state <= status_state_idle;
+                        tx_status_pending <= 0;
+                    }
+                }
+                }
+        }
+
+    /*b Done
+     */
+}

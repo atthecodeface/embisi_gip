@@ -1,0 +1,402 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Includes
+ */
+include "io_egress.h"
+include "io_egress_fifos.h"
+include "io_egress_control_cmd_fsm.h"
+include "io_egress_control.h"
+
+/*a Types
+ */
+/*t t_egress_state
+ */
+typedef fsm {
+    egress_state_idle;
+    egress_state_cmd_timer_read;
+    egress_state_cmd_data_read;
+    egress_state_tx_data_op;
+    egress_state_postbus_action;
+} t_egress_state;
+
+/*t t_egress_source_type
+ */
+typedef enum [3] {
+    egress_source_type_cmd_timer,
+    egress_source_type_cmd_data,
+    egress_source_type_tx_data,
+    egress_source_type_postbus,
+    egress_source_type_none
+} t_egress_source_type;
+
+/*a Module
+ */
+module io_egress_control( clock int_clock "Internal system clock",
+                          input bit int_reset "Internal system reset",
+
+                          input bit[io_cmd_timestamp_length] io_timer "Timer for stamping received status and for outgoing command timing",
+
+                          output bit[4] cmd_valid "Valid indicator for registering command and its availability",
+                          input bit[4] cmd_available "Available from external data register and indicator to client",
+
+                          input bit[4] tx_data_req "Requests from Tx data toggles",
+                          output bit[4] tx_data_ack "Acknowledges to Tx data toggles",
+                          input t_io_tx_data_fifo_cmd tx_data_cmd "Command from chosen Tx data source",
+
+                          input bit postbus_req "Request from the postbus master",
+                          output bit postbus_ack "Acknowledge to the postbus master",
+
+                          input t_io_fifo_op postbus_fifo_op "Fifo op the postbus wants to do",
+                          input bit postbus_fifo_address_from_read_ptr "Asserted if the postbus wants to use the read address of a FIFO",
+                          input bit postbus_fifo_op_to_cmd  "Assert if the postbus wants to address the command FIFO",
+                          input bit[2] postbus_fifo_to_access "Fifo the postbus wants to address",
+                          input t_io_sram_data_op postbus_sram_data_op  "SRAM data operation the postbus wants",
+                          input t_io_sram_address_op postbus_sram_address_op "SRAM address source that the postbus wants",
+
+                          output t_io_fifo_op egress_fifo_op "Operation to perform",
+                          output bit egress_fifo_op_to_cmd "Asserted for cmd FIFO operations, deasserted for Tx Data FIFO operations",
+                          output bit egress_fifo_address_from_read_ptr "Asserted if the FIFO address output should be for the read ptr of the specified FIFO, deasserted for write",
+                          output bit[2] egress_fifo_to_access "Number of FIFO to access for operations",
+                          input bit[4] egress_cmd_fifo_empty "Empty indications for command FIFOs, so their time values can be gathered",
+
+                          output t_io_sram_data_op egress_sram_data_op,
+                          output t_io_sram_data_reg_op egress_sram_data_reg_op,
+                          output t_io_sram_address_op egress_sram_address_op,
+                          input bit[32] egress_sram_read_data
+
+    )
+"
+This module takes requests from three sources, one of which is then a pair of sources.
+
+The first source is the postbus. When it requests, it has something to do. It is the lowest priority.
+
+The second set of sources is the Tx data. When one of them requests, they will be presenting their commands on their bus.
+We need to decide to service one, then get their request, then act on it. The Tx data is medium priority
+
+The last set of sources is the commands. These are actually small FSMs of their own, which start idle, and when their corresponding FIFO is not empty they request (high priority)
+a timer word from their FIFO (not incrementing the pointer), and move to a requesting state; when they receive the data, the enter a timing state. In the timing state they
+will request data (incrementing the read pointer) when their timer value is passed, or if they value has the top bit set (for immediate). While this request is presented and not acknowledged they sit in another
+wait state; when they receive the data they indicate it needs to be latched externally, and move on to idle (the FIFO flag updates should be ready by then).
+The timers for these are implemented in the io_cmd_fifo_timer submodule
+
+"
+{
+
+    /*b Default clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Record of postbus' request
+     */
+    clocked t_io_fifo_op last_postbus_fifo_op = io_fifo_op_none;
+    clocked bit last_postbus_fifo_address_from_read_ptr = 0;
+    clocked bit last_postbus_fifo_op_to_cmd = 0;
+    clocked t_io_sram_data_op last_postbus_sram_data_op = io_sram_data_op_none;
+    clocked t_io_sram_address_op last_postbus_sram_address_op = io_sram_address_op_fifo_ptr;
+
+    /*b State for a command timers
+     */
+    comb bit[2] timestamp_segment;
+    comb bit[io_cmd_timestamp_sublength] timestamp;
+    comb bit[io_cmd_timestamp_length] fifo_timestamp_data;
+
+    /*b Requests/acks from commands
+     */
+    net bit cmd_timer_req_0;
+    net bit cmd_data_req_0;
+    comb bit cmd_ack_0;
+    net bit cmd_valid_0;
+
+    net bit cmd_timer_req_1;
+    net bit cmd_data_req_1;
+    comb bit cmd_ack_1;
+    net bit cmd_valid_1;
+
+    net bit cmd_timer_req_2;
+    net bit cmd_data_req_2;
+    comb bit cmd_ack_2;
+    net bit cmd_valid_2;
+
+    comb bit[4] cmd_timer_req;
+    comb bit[4] cmd_data_req;
+    comb bit[4] cmd_ack; // same cycle as request
+
+    /*b Combinatorials for next FIFO state on an operation
+     */
+    clocked t_egress_state egress_state = egress_state_idle "State of the state machine";
+    comb    t_egress_state next_egress_state "Next state to transition to in state machine";
+    clocked t_egress_source_type egress_source_type = egress_source_type_none "Current source type of transaction occurring";
+    comb bit[2] next_egress_fifo_to_access "Next FIFO to be accessed";
+    clocked bit[2] egress_fifo_to_access = 0 "FIFO to be accessed in this cycle";
+    comb bit cmd_timer_requesting  "Asserted if a status op is not being serviced and if a status request is outstanding";
+    comb bit cmd_data_requesting  "Asserted if a status op is not being serviced and if a status request is outstanding";
+    comb bit tx_data_op_requesting "Asserted if a data op is not being serviced and if a data request is outstanding";
+
+    /*b Handle commands
+     */
+    command_fsms "Command fsms":
+        {
+            timestamp_segment = io_timer[2;0];
+            full_switch (timestamp_segment)
+                {
+                case 0:
+                {
+                    timestamp = io_timer[io_cmd_timestamp_sublength;io_cmd_timestamp_sublength*3+2];
+                }
+                case 1:
+                {
+                    timestamp = io_timer[io_cmd_timestamp_sublength;io_cmd_timestamp_sublength*2+2];
+                }
+                case 2:
+                {
+                    timestamp = io_timer[io_cmd_timestamp_sublength;io_cmd_timestamp_sublength*1+2];
+                }
+                case 3:
+                {
+                    timestamp = io_timer[io_cmd_timestamp_sublength;io_cmd_timestamp_sublength*0+2];
+                }
+                }
+
+            fifo_timestamp_data = egress_sram_read_data[io_cmd_timestamp_length;0];
+
+            io_egress_control_cmd_fsm cmd_fsm_0( int_clock <- int_clock,
+                                                 int_reset <= int_reset,
+                                                 timestamp_segment <= timestamp_segment,
+                                                 timestamp <= timestamp,
+                                                 fifo_timestamp_data <= fifo_timestamp_data,
+                                                 cmd_fifo_empty <= egress_cmd_fifo_empty[0],
+                                                 cmd_timer_req => cmd_timer_req_0,
+                                                 cmd_data_req => cmd_data_req_0,
+                                                 cmd_ack <= cmd_ack_0,
+                                                 cmd_valid => cmd_valid_0,
+                                                 cmd_available <= cmd_available[0] );
+
+            io_egress_control_cmd_fsm cmd_fsm_1( int_clock <- int_clock,
+                                                 int_reset <= int_reset,
+                                                 timestamp_segment <= timestamp_segment,
+                                                 timestamp <= timestamp,
+                                                 fifo_timestamp_data <= fifo_timestamp_data,
+                                                 cmd_fifo_empty <= egress_cmd_fifo_empty[1],
+                                                 cmd_timer_req => cmd_timer_req_1,
+                                                 cmd_data_req => cmd_data_req_1,
+                                                 cmd_ack <= cmd_ack_1,
+                                                 cmd_valid => cmd_valid_1,
+                                                 cmd_available <= cmd_available[1] );
+
+            io_egress_control_cmd_fsm cmd_fsm_2( int_clock <- int_clock,
+                                                 int_reset <= int_reset,
+                                                 timestamp_segment <= timestamp_segment,
+                                                 timestamp <= timestamp,
+                                                 fifo_timestamp_data <= fifo_timestamp_data,
+                                                 cmd_fifo_empty <= egress_cmd_fifo_empty[2],
+                                                 cmd_timer_req => cmd_timer_req_2,
+                                                 cmd_data_req => cmd_data_req_2,
+                                                 cmd_ack <= cmd_ack_2,
+                                                 cmd_valid => cmd_valid_2,
+                                                 cmd_available <= cmd_available[2] );
+            cmd_timer_req = 0;
+            cmd_data_req = 0;
+            cmd_valid = 0;
+
+            cmd_timer_req[0] = cmd_timer_req_0;
+            cmd_data_req[0] = cmd_data_req_0;
+            cmd_valid[0] = cmd_valid_0;
+            cmd_ack_0 = cmd_ack[0];
+
+            cmd_timer_req[1] = cmd_timer_req_1;
+            cmd_data_req[1] = cmd_data_req_1;
+            cmd_valid[1] = cmd_valid_1;
+            cmd_ack_1 = cmd_ack[1];
+
+            cmd_timer_req[2] = cmd_timer_req_2;
+            cmd_data_req[2] = cmd_data_req_2;
+            cmd_valid[2] = cmd_valid_2;
+            cmd_ack_2 = cmd_ack[2];
+
+        }
+
+    /*b Combine request inputs
+     */
+    combine_requests "Combine requests":
+        {
+            cmd_timer_requesting = (cmd_timer_req!=0);
+            cmd_data_requesting = (cmd_data_req!=0);
+            tx_data_op_requesting = (tx_data_req!=0);
+            part_switch( egress_state )
+                {
+                case egress_state_cmd_data_read:
+                {
+                    cmd_data_requesting = 0;
+                }
+                case egress_state_cmd_timer_read:
+                {
+                    cmd_timer_requesting = 0;
+                }
+                case egress_state_tx_data_op:
+                {
+                    tx_data_op_requesting = 0;
+                }
+                }
+        }
+
+    /*b Control state machine - egress_state, next_egress_state
+     */
+    control_state_machine "Control state machine":
+        {
+            egress_state <= next_egress_state;
+            next_egress_state = egress_state_idle;
+            if (cmd_timer_requesting)
+            {
+                next_egress_state = egress_state_cmd_timer_read;
+            }
+            elsif (cmd_data_requesting)
+            {
+                next_egress_state = egress_state_cmd_data_read;
+            }
+            elsif (tx_data_op_requesting)
+            {
+                next_egress_state = egress_state_tx_data_op;
+            }
+            elsif (postbus_req)
+            {
+                next_egress_state = egress_state_postbus_action;
+            }
+        }
+      
+
+    /*b Decode next state to generate source - egress_source
+     */
+    decode_next_state "Decode next state":
+        {
+            next_egress_fifo_to_access = 0;
+            full_switch (next_egress_state)
+                {
+                case egress_state_idle:
+                {
+                    egress_source_type <= egress_source_type_none;
+                }
+                case egress_state_cmd_timer_read:
+                {
+                    egress_source_type <= egress_source_type_cmd_timer;
+                    if (cmd_timer_req[3]) { next_egress_fifo_to_access = 3; }
+                    if (cmd_timer_req[2]) { next_egress_fifo_to_access = 2; }
+                    if (cmd_timer_req[1]) { next_egress_fifo_to_access = 1; }
+                    if (cmd_timer_req[0]) { next_egress_fifo_to_access = 0; }
+                }
+                case egress_state_cmd_data_read:
+                {
+                    egress_source_type <= egress_source_type_cmd_data;
+                    if (cmd_data_req[3]) { next_egress_fifo_to_access = 3; }
+                    if (cmd_data_req[2]) { next_egress_fifo_to_access = 2; }
+                    if (cmd_data_req[1]) { next_egress_fifo_to_access = 1; }
+                    if (cmd_data_req[0]) { next_egress_fifo_to_access = 0; }
+                }
+                case egress_state_tx_data_op:
+                {
+                    egress_source_type <= egress_source_type_tx_data;
+                    if (tx_data_req[3]) { next_egress_fifo_to_access = 3; }
+                    if (tx_data_req[2]) { next_egress_fifo_to_access = 2; }
+                    if (tx_data_req[1]) { next_egress_fifo_to_access = 1; }
+                    if (tx_data_req[0]) { next_egress_fifo_to_access = 0; }
+                }
+                case egress_state_postbus_action:
+                {
+                    egress_source_type <= egress_source_type_postbus;
+                    next_egress_fifo_to_access = postbus_fifo_to_access;
+                }
+                }
+            egress_fifo_to_access <= next_egress_fifo_to_access;
+        }
+      
+
+    /*b Decode current state to generate outputs - egress_fifo_to_access, status_ack, rx_data_ack, postbus_ack
+     */
+    decode_current_state "Decode current state":
+        {
+            egress_fifo_op = io_fifo_op_none;
+            egress_fifo_op_to_cmd = 0;
+            egress_fifo_address_from_read_ptr = 1;
+
+            egress_sram_data_op = io_sram_data_op_none;
+            egress_sram_data_reg_op = io_sram_data_reg_op_hold;
+            egress_sram_address_op = io_sram_address_op_fifo_ptr;
+
+            cmd_ack = 0;
+            tx_data_ack = 0;
+            postbus_ack = 0;
+            part_switch (next_egress_state)
+                {
+                case egress_state_cmd_timer_read:
+                case egress_state_cmd_data_read:
+                {
+                    cmd_ack[next_egress_fifo_to_access] = 1;
+                }
+                case egress_state_tx_data_op:
+                {
+                    tx_data_ack[next_egress_fifo_to_access] = 1;
+                }
+                case egress_state_postbus_action:
+                {
+                    postbus_ack = 1;
+                    last_postbus_fifo_op <= postbus_fifo_op;
+                    last_postbus_fifo_address_from_read_ptr <= postbus_fifo_address_from_read_ptr;
+                    last_postbus_fifo_op_to_cmd <= postbus_fifo_op_to_cmd;
+                    last_postbus_sram_data_op <= postbus_sram_data_op;
+                    last_postbus_sram_address_op <= postbus_sram_address_op;
+                }
+                }
+            full_switch (egress_state)
+                {
+                case egress_state_idle:
+                {
+                    egress_fifo_op = io_fifo_op_none;
+                    egress_sram_data_op = io_sram_data_op_none;
+                    egress_sram_data_reg_op = io_sram_data_reg_op_hold;
+                    egress_sram_address_op = io_sram_address_op_fifo_ptr;
+                }
+                case egress_state_cmd_timer_read:
+                {
+                    egress_fifo_op = io_fifo_op_none;
+                    egress_fifo_address_from_read_ptr = 1;
+                    egress_fifo_op_to_cmd = 1;
+                    egress_sram_data_op = io_sram_data_op_read;
+                    egress_sram_address_op = io_sram_address_op_fifo_ptr;
+                }
+                case egress_state_cmd_data_read:
+                {
+                    egress_fifo_op = io_fifo_op_inc_read_ptr;
+                    egress_fifo_address_from_read_ptr = 1;
+                    egress_fifo_op_to_cmd = 1;
+                    egress_sram_data_op = io_sram_data_op_read;
+                    egress_sram_address_op = io_sram_address_op_fifo_ptr_set_bit_0;
+                }
+                case egress_state_tx_data_op:
+                {
+                    egress_fifo_op = io_fifo_op_inc_read_ptr;
+                    egress_fifo_address_from_read_ptr = 1;
+                    egress_fifo_op_to_cmd = 0;
+                    egress_sram_data_op = io_sram_data_op_read;
+                    egress_sram_address_op = io_sram_address_op_fifo_ptr;
+                }
+                case egress_state_postbus_action:
+                {
+                    egress_fifo_op = last_postbus_fifo_op;
+                    egress_fifo_address_from_read_ptr = last_postbus_fifo_address_from_read_ptr;
+                    egress_fifo_op_to_cmd = last_postbus_fifo_op_to_cmd;
+                    egress_sram_data_op = last_postbus_sram_data_op;
+                    egress_sram_address_op = last_postbus_sram_address_op;
+                }
+                }
+
+        }
+      
+
+    /*b Done
+     */
+}
+

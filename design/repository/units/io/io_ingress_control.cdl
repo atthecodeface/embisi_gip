@@ -1,0 +1,265 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Includes
+ */
+include "io.h"
+include "io_ingress_control.h"
+
+/*a Types
+ */
+/*t t_ingress_state
+ */
+typedef fsm {
+    ingress_state_idle;
+    ingress_state_status_timer_write;
+    ingress_state_status_data_write;
+    ingress_state_rx_data_write;
+    ingress_state_postbus_action;
+} t_ingress_state;
+
+/*t t_ingress_source_type
+ */
+typedef enum [3] {
+    ingress_source_type_status,
+    ingress_source_type_rx_data,
+    ingress_source_type_postbus,
+    ingress_source_type_none
+} t_ingress_source_type;
+
+/*a Module
+ */
+module io_ingress_control( clock int_clock "Internal system clock",
+                           input bit int_reset "Internal system reset",
+
+                           input bit[4] status_req "Requests from status command toggles",
+                           output bit[4] status_ack "Acknowledges to status toggles",
+                           input bit[4] rx_data_req "Requests from Rx data toggles",
+                           output bit[4] rx_data_ack "Acknowledges to rx data toggles",
+
+                           input bit postbus_req "Request from the postbus master",
+                           output bit postbus_ack "Acknowledge to the postbus master",
+
+                           input t_io_fifo_op postbus_fifo_op "Fifo op the postbus wants to do",
+                           input bit postbus_fifo_address_from_read_ptr "Asserted if the postbus wants to use the read address of a FIFO",
+                           input bit postbus_fifo_op_to_status  "Assert if the postbus wants to address the status FIFO",
+                           input bit[2] postbus_fifo_to_access "Fifo the postbus wants to address",
+                           input t_io_sram_data_op postbus_sram_data_op  "SRAM data operation the postbus wants",
+                           input t_io_sram_address_op postbus_sram_address_op "SRAM address source that the postbus wants",
+
+                           output t_io_fifo_op ingress_fifo_op "Operation to perform",
+                           output bit ingress_fifo_op_to_status "Asserted for status FIFO operations, deasserted for Rx Data FIFO operations",
+                           output bit ingress_fifo_address_from_read_ptr "Asserted if the FIFO address output should be for the read ptr of the specified FIFO, deasserted for write",
+                           output bit[2] ingress_fifo_to_access "Number of FIFO to access for operations",
+
+                           output t_io_sram_data_op ingress_sram_data_op,
+                           output t_io_sram_data_reg_op ingress_sram_data_reg_op,
+                           output t_io_sram_address_op ingress_sram_address_op
+
+    )
+{
+
+    /*b Default clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Record of postbus' request
+     */
+    clocked t_io_fifo_op last_postbus_fifo_op = io_fifo_op_none;
+    clocked bit last_postbus_fifo_address_from_read_ptr = 0;
+    clocked bit last_postbus_fifo_op_to_status = 0;
+    clocked t_io_sram_data_op last_postbus_sram_data_op = io_sram_data_op_none;
+    clocked t_io_sram_address_op last_postbus_sram_address_op = io_sram_address_op_fifo_ptr;
+
+    /*b Combinatorials for next FIFO state on an operation
+     */
+    clocked t_ingress_state ingress_state = ingress_state_idle "State of the state machine";
+    comb    t_ingress_state next_ingress_state "Next state to transition to in state machine";
+    clocked t_ingress_source_type ingress_source_type = ingress_source_type_none "Current source of transaction occurring";
+    comb bit[2] next_ingress_fifo_to_access "Next FIFO to be accessed";
+    clocked bit[2] ingress_fifo_to_access = 0 "FIFO to be accessed in this cycle";
+    comb bit status_op_requesting  "Asserted if a status op is not being serviced and if a status request is outstanding";
+    comb bit rx_data_op_requesting "Asserted if a data op is not being serviced and if a data request is outstanding";
+
+    /*b Combine request inputs
+     */
+    combine_requests "Combine requests":
+        {
+            status_op_requesting = (status_req!=0);
+            rx_data_op_requesting = (rx_data_req!=0);
+            if ( (ingress_state==ingress_state_status_data_write) || (ingress_state == ingress_state_status_timer_write) )
+            {
+                status_op_requesting = 0;
+            }
+            if (ingress_state==ingress_state_rx_data_write)
+            {
+                rx_data_op_requesting = 0;
+            }
+        }
+
+    /*b Control state machine
+     */
+    control_state_machine "Control state machine":
+        {
+            full_switch (ingress_state)
+                {
+                case ingress_state_idle:
+                case ingress_state_status_data_write:
+                case ingress_state_rx_data_write:
+                case ingress_state_postbus_action:
+                {
+                    next_ingress_state = ingress_state_idle;
+                    if (status_op_requesting)
+                    {
+                        next_ingress_state = ingress_state_status_timer_write;
+                    }
+                    elsif (rx_data_op_requesting)
+                        {
+                            next_ingress_state = ingress_state_rx_data_write;
+                        }
+                    elsif (postbus_req)
+                        {
+                            next_ingress_state = ingress_state_postbus_action;
+                        }
+
+                }
+                case ingress_state_status_timer_write:
+                {
+                    next_ingress_state = ingress_state_status_data_write;
+                }
+                }
+            ingress_state <= next_ingress_state;
+        }
+      
+
+    /*b Decode next state to generate source - ingress_source
+     */
+    decode_next_state "Decode next state":
+        {
+            next_ingress_fifo_to_access = 0;
+            full_switch (next_ingress_state)
+                {
+                case ingress_state_idle:
+                {
+                    ingress_source_type <= ingress_source_type_none;
+                }
+                case ingress_state_rx_data_write:
+                {
+                    ingress_source_type <= ingress_source_type_rx_data;
+                    if (rx_data_req[3]) { next_ingress_fifo_to_access = 3; }
+                    if (rx_data_req[2]) { next_ingress_fifo_to_access = 2; }
+                    if (rx_data_req[1]) { next_ingress_fifo_to_access = 1; }
+                    if (rx_data_req[0]) { next_ingress_fifo_to_access = 0; }
+                }
+                case ingress_state_status_timer_write:
+                {
+                    ingress_source_type <= ingress_source_type_status;
+                    if (status_req[3]) { next_ingress_fifo_to_access = 3; }
+                    if (status_req[2]) { next_ingress_fifo_to_access = 2; }
+                    if (status_req[1]) { next_ingress_fifo_to_access = 1; }
+                    if (status_req[0]) { next_ingress_fifo_to_access = 0; }
+                }
+                case ingress_state_status_data_write:
+                {
+                    ingress_source_type <= ingress_source_type_status;
+                    next_ingress_fifo_to_access = ingress_fifo_to_access;
+                }
+                case ingress_state_postbus_action:
+                {
+                    ingress_source_type <= ingress_source_type_postbus;
+                    next_ingress_fifo_to_access = postbus_fifo_to_access;
+                }
+                }
+            ingress_fifo_to_access <= next_ingress_fifo_to_access;
+        }
+      
+
+    /*b Decode current state to generate outputs - ingress_fifo_to_access, status_ack, rx_data_ack, postbus_ack
+     */
+    decode_current_state "Decode current state":
+        {
+            ingress_fifo_op = io_fifo_op_none;
+            ingress_fifo_op_to_status = 0;
+            ingress_fifo_address_from_read_ptr = 1;
+
+            ingress_sram_data_op = io_sram_data_op_none;
+            ingress_sram_data_reg_op = io_sram_data_reg_op_hold;
+            ingress_sram_address_op = io_sram_address_op_fifo_ptr;
+
+            status_ack = 0;
+            rx_data_ack = 0;
+            postbus_ack = 0;
+            part_switch (next_ingress_state)
+                {
+                case ingress_state_status_data_write:
+                {
+                    status_ack[next_ingress_fifo_to_access] = 1;
+                }
+                case ingress_state_rx_data_write:
+                {
+                    rx_data_ack[next_ingress_fifo_to_access] = 1;
+                }
+                case ingress_state_postbus_action:
+                {
+                    postbus_ack = 1;
+                    last_postbus_fifo_op <= postbus_fifo_op;
+                    last_postbus_fifo_address_from_read_ptr <= postbus_fifo_address_from_read_ptr;
+                    last_postbus_fifo_op_to_status <= postbus_fifo_op_to_status;
+                    last_postbus_sram_data_op <= postbus_sram_data_op;
+                    last_postbus_sram_address_op <= postbus_sram_address_op;
+                }
+                }
+
+            full_switch (ingress_state)
+                {
+                case ingress_state_idle:
+                {
+                    ingress_fifo_op = io_fifo_op_none;
+                    ingress_sram_data_op = io_sram_data_op_none;
+                }
+                case ingress_state_status_timer_write:
+                {
+                    ingress_fifo_op = io_fifo_op_none;
+                    ingress_fifo_address_from_read_ptr = 0;
+                    ingress_fifo_op_to_status = 1;
+                    ingress_sram_data_op = io_sram_data_op_write_time;
+                    ingress_sram_data_reg_op = io_sram_data_reg_op_status;
+                    ingress_sram_address_op = io_sram_address_op_fifo_ptr;
+                }
+                case ingress_state_status_data_write:
+                {
+                    ingress_fifo_op = io_fifo_op_inc_write_ptr;
+                    ingress_fifo_address_from_read_ptr = 0;
+                    ingress_fifo_op_to_status = 1;
+                    ingress_sram_data_op = io_sram_data_op_write_data_reg;
+                    ingress_sram_address_op = io_sram_address_op_fifo_ptr_set_bit_0;
+                }
+                case ingress_state_rx_data_write:
+                {
+                    ingress_fifo_op = io_fifo_op_inc_write_ptr;
+                    ingress_fifo_address_from_read_ptr = 0;
+                    ingress_fifo_op_to_status = 0;
+                    ingress_sram_data_op = io_sram_data_op_write_data;
+                    ingress_sram_address_op = io_sram_address_op_fifo_ptr;
+                }
+                case ingress_state_postbus_action:
+                {
+                    ingress_fifo_op = last_postbus_fifo_op;
+                    ingress_fifo_address_from_read_ptr = last_postbus_fifo_address_from_read_ptr;
+                    ingress_fifo_op_to_status = last_postbus_fifo_op_to_status;
+                    ingress_sram_data_op = last_postbus_sram_data_op;
+                    ingress_sram_address_op = last_postbus_sram_address_op;
+                }
+                }
+
+        }
+      
+
+    /*b Done
+     */
+}
+

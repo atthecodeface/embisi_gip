@@ -1,0 +1,187 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "postbus_rom_source.h"
+
+/*a Types
+ */
+/*t t_src_fsm
+ */
+typedef fsm
+{
+    src_fsm_reset;
+    src_fsm_idle;
+    src_fsm_control_ready;
+    src_fsm_waiting;
+    src_fsm_done;
+    src_fsm_reading_header;
+    src_fsm_header_read;
+    src_fsm_output_full_data_read;
+    src_fsm_output_full_holding_register_full;
+    src_fsm_output_full_transaction_done;
+} t_src_fsm;
+
+/*a Modules
+ */
+module postbus_rom_source( clock int_clock,
+                              input bit int_reset,
+
+                              output bit rom_read "Synchronous ROM read",
+                              output bit[postbus_rom_address_log_size] rom_address "Synchronous ROM address",
+                              input bit[32] rom_data "Data from sync ROM, expected the clock after read/address",
+
+                              output t_postbus_type postbus_type,
+                              output t_postbus_data postbus_data,
+                              input t_postbus_ack postbus_ack
+    )
+"
+This is a fairly simplistic postbus source, whose data comes from a ROM
+
+The format of the ROM is a set of transactions, where each transaction consists of a control word followed by the transaction data
+
+The control word contains a delay and the size (in words) of the transaction, including header. A size of 0 indicates no more transactions.
+
+The transaction data is the header followed by the postbus payload (if any)
+
+"
+{
+
+    default clock int_clock;
+    default reset int_reset;
+
+    clocked bit[postbus_rom_address_log_size] rom_address = 0;
+    clocked bit[postbus_rom_delay_size] delay=0;
+    clocked bit[postbus_rom_address_log_size] size=0;
+    clocked bit jump=0;
+    clocked t_postbus_type postbus_type = postbus_word_type_idle;
+    clocked t_postbus_data postbus_data = 0;
+    clocked bit[32] postbus_holding_register = 0;
+
+    clocked t_src_fsm src_fsm=src_fsm_reset;
+
+    state_machine "ROM control FSM":
+        {
+            rom_read = 0;
+            full_switch (src_fsm)
+                {
+                case src_fsm_reset:
+                {
+                    src_fsm <= src_fsm_idle;
+                }
+                case src_fsm_idle:
+                {
+                    rom_read=1;
+                    src_fsm <= src_fsm_control_ready;
+                }
+                case src_fsm_control_ready:
+                {
+                    size <= rom_data[postbus_rom_address_log_size;postbus_rom_size_start_bit];
+                    jump <= rom_data[postbus_rom_jump_bit];
+                    delay <= rom_data[postbus_rom_delay_size;postbus_rom_delay_start_bit];
+                    src_fsm <= src_fsm_waiting;
+                }
+                case src_fsm_done: // All done, so stay here
+                {
+                    src_fsm <= src_fsm_done;
+                }
+                case src_fsm_waiting:
+                {
+                    delay <= delay-1;
+                    if (delay==0)
+                    {
+                        src_fsm <= src_fsm_reading_header;
+                    }
+                }
+                case src_fsm_reading_header:
+                {
+                    if (jump)
+                    {
+                        rom_address <= size;
+                        src_fsm <= src_fsm_idle;
+                    }
+                    elsif (size==0)
+                    {
+                        src_fsm <= src_fsm_done;
+                    }
+                    else
+                    {
+                        src_fsm <= src_fsm_header_read;
+                        rom_read = 1;
+                    }
+                }
+                case src_fsm_header_read: // Header data read, read more data if needed, and drive on to postbus in next cycle; if reading move to holding register full
+                {
+                    postbus_data <= rom_data;
+                    postbus_type <= postbus_word_type_start;
+                    size <= size-1;
+                    if (size!=1)
+                    {
+                        rom_read=1;
+                        src_fsm <= src_fsm_output_full_data_read;
+                    }
+                    else // no more to come, so this is the last, and next state will have postbus data and type valid waiting for ack from postbus
+                    {
+                        src_fsm <= src_fsm_output_full_transaction_done;
+                    }
+                }
+                case src_fsm_output_full_data_read: // postbus data and type are valid, a ROM read is taking place; either hold the data (if not acked) or put in holding register
+                {
+                    if (postbus_ack)
+                    {
+                        postbus_data <= rom_data;
+                        size <= size-1;
+                        if (size!=1) // more to come, so this is the middle, and next state will have postbus data and type valid with ROM taking place
+                        {
+                            rom_read=1;
+                            src_fsm <= src_fsm_output_full_data_read;
+                            postbus_type <= postbus_word_type_data;
+                        }
+                        else // no more to come, so this is the last, and next state will have postbus data and type valid waiting for ack from postbus
+                        {
+                            src_fsm <= src_fsm_output_full_transaction_done;
+                            postbus_type <= postbus_word_type_last;
+                        }
+                    }
+                    else // we have data ready, and we have read some, so store that, and try again in next cycle to get the data acked
+                    {
+                        postbus_holding_register <= rom_data;
+                        src_fsm <= src_fsm_output_full_holding_register_full;
+                    }
+                }
+                case src_fsm_output_full_holding_register_full: // data and type valid, holding register full; if not acked, just hang here, else move holding register data up, and read ROM if required
+                {
+                    if (postbus_ack)
+                    {
+                        postbus_data <= postbus_holding_register;
+                        size <= size-1;
+                        if (size!=1) // more to come, so this is the middle, and next state will have postbus data and type valid with ROM taking place
+                        {
+                            rom_read=1;
+                            src_fsm <= src_fsm_output_full_data_read;
+                            postbus_type <= postbus_word_type_data;
+                        }
+                        else // no more to come, so this is the last, and next state will have postbus data and type valid waiting for ack from postbus
+                        {
+                            src_fsm <= src_fsm_output_full_transaction_done;
+                            postbus_type <= postbus_word_type_last;
+                        }
+                    }
+                }
+                case src_fsm_output_full_transaction_done: // postbus data and type valid, holding register empty, no more data for this transaction; if not acked, hang here, else move to idle
+                {
+                    if (postbus_ack)
+                    {
+                        postbus_type <= postbus_word_type_idle;
+                        src_fsm <= src_fsm_idle;
+                    }
+                }
+                }
+            if (rom_read)
+            {
+                rom_address <= rom_address+1;
+            }
+        }
+}

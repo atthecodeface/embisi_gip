@@ -1,0 +1,298 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "io_postbus_target.h"
+include "io.h"
+
+/*a Constants
+ */
+
+/*a Types
+ */
+/*t t_op_state
+ */
+typedef fsm {
+    op_state_idle;
+    op_state_transaction_start; // Command word stored, data should be coming...
+    op_state_configuration_perform; // Commmand and data stored; be here for one cycle
+    op_state_fifo_config; // Commmand and data stored; be here until ack'd from the arbiter
+    op_state_fifo_write_first_data; // Command and first data stored: store new data in holding, and try to write stored data
+    op_state_fifo_write_first_data_holding_full; // Command and first data stored and holding full: try to write stored data
+    op_state_fifo_write_later_data; // Command and non-first data stored: store new data in holding, and try to write stored data
+    op_state_fifo_write_later_data_holding_full; // Command and non-first data stored and holding full: try to write stored data
+} t_op_state;
+
+/*a io_postbus_target module
+ */
+module io_postbus_target( clock int_clock "main system clck",
+                          input bit int_reset "Internal system reset",
+
+                          input t_postbus_type postbus_type,
+                          input t_postbus_data postbus_data,
+                          output t_postbus_ack postbus_ack,
+
+                          output t_io_fifo_op fifo_op,
+                          output bit fifo_op_to_cmd_status,
+                          output bit[2] fifo_to_access,
+                          output bit fifo_address_from_read_ptr,
+                          output t_io_sram_address_op sram_address_op,
+                          output t_io_sram_data_op sram_data_op,
+
+                          output bit egress_req,
+                          input bit egress_ack,
+
+                          output bit ingress_req,
+                          input bit ingress_ack,
+
+                          output bit configuration_write,
+
+                          output bit[5] write_address,
+                          output bit[32] write_data
+    )
+	"This module synchronizes a request for a command execution and requests that of the arbiter, removing the request when it has been acknowledged"
+{
+	 default clock int_clock;
+	 default reset int_reset;
+
+     clocked t_op_state op_state=op_state_idle;
+     clocked bit[32] postbus_command_word = 0;
+     clocked bit[32] postbus_holding_reg = 0;
+     clocked t_postbus_type last_postbus_type = postbus_word_type_idle;
+     clocked bit[32] write_data = 0;
+
+     postbus_target "Postbus target":
+         {
+             configuration_write = 0;
+             write_address = postbus_command_word[5;postbus_command_io_dest_start];
+             egress_req = 0;
+             ingress_req = 0;
+             fifo_to_access = postbus_command_word[2;30];
+             fifo_op_to_cmd_status = postbus_command_word[1;29];
+             fifo_op = io_fifo_op_write_cfg;
+             sram_data_op = io_sram_data_op_none;
+             sram_address_op = io_sram_address_op_fifo_ptr;
+             postbus_ack = 0;
+             full_switch (op_state)
+                 {
+                 case op_state_idle:
+                 {
+                     postbus_ack = 1;
+                     if ( (postbus_type==postbus_word_type_start) && (!postbus_data[postbus_command_last_bit]) ) // we discard any single word packet, or any unexpected packet continuations
+                     {
+                         op_state <= op_state_transaction_start;
+                         postbus_command_word <= postbus_data;
+                     }
+                 }
+                 case op_state_transaction_start:
+                 {
+                     postbus_ack = 1;
+                     if (postbus_type!=postbus_word_type_hold)
+                     {
+                         write_data <= postbus_data;
+                         last_postbus_type <= postbus_type;
+                         full_switch ( postbus_command_word[ 2;postbus_command_io_dest_type_start])
+                             {
+                             case 0: // channel configuration/provocation
+                             {
+                                 op_state <= op_state_idle; // not yet supported
+                             }
+                             case 1: // tx/rx data / command/status fifo config; single word access, specify FIFO number and type in top 5 bits
+                             {
+                                 op_state <= op_state_fifo_config;
+                             }
+                             case 2: // tx/rx data / command/status fifo data; arbitrary words for tx/rx, pair of words for command/status, specify FIFO number and type in top 5 bits
+                             {
+                                 op_state <= op_state_fifo_write_first_data; // these are either dual word (command/status fifo write), or arbitrary number of words (data fifo write)
+                             }
+                             case 3: // general configuration: baud rate generators, global configuration bits, clock configs, mux setups
+                             {
+                                 op_state <= op_state_configuration_perform;
+                             }
+                             }
+                     }
+                 }
+                 case op_state_configuration_perform: // Perform a configuration write with the current address/data we have recorded
+                 {
+                     postbus_ack = 0;
+                     configuration_write = 1;
+                     op_state <= op_state_idle;
+                 }
+                 case op_state_fifo_config: // Perform a FIFO configuration write, with the data we have received: we have to wait for an ack from the appropriate side (which is combinatorial on our req)
+                 {
+                     postbus_ack = 0;
+                     fifo_to_access = postbus_command_word[2;29];
+                     fifo_op_to_cmd_status = postbus_command_word[28];
+                     fifo_op = io_fifo_op_write_cfg;
+                     op_state <= op_state_fifo_config;
+                     if (postbus_command_word[27])
+                     {
+                         ingress_req = 1;
+                         if (ingress_ack)
+                         {
+                             op_state <= op_state_idle;
+                         }
+                     }
+                     else
+                     {
+                         egress_req = 1;
+                         if (egress_ack)
+                         {
+                             op_state <= op_state_idle;
+                         }
+                     }
+                 }
+                 case op_state_fifo_write_first_data: // Perform a FIFO data write, with the data we have received (first): we have to wait for an ack from the appropriate side (which is combinatorial on our req)
+                 {
+                     sram_data_op = io_sram_data_op_write_postbus; // or cmd or value, but the effect is the same I believe
+                     sram_address_op = io_sram_address_op_fifo_ptr; // for second to cmd/status use set_bit_0
+                     fifo_to_access = postbus_command_word[2;29];
+                     fifo_op_to_cmd_status = postbus_command_word[28];
+                     if (fifo_op_to_cmd_status)
+                     {
+                         fifo_op = io_fifo_op_none;
+                     }
+                     else
+                     {
+                         fifo_op = io_fifo_op_inc_write_ptr;
+                     }
+
+                     postbus_ack = 1;
+                     if (last_postbus_type==postbus_word_type_last)
+                     {
+                         postbus_ack = 0;
+                     }
+
+                     egress_req = 1;
+                     if (egress_ack)
+                     {
+                         if (last_postbus_type==postbus_word_type_last)
+                         {
+                             op_state <= op_state_idle;
+                         }
+                         elsif (postbus_type!=postbus_word_type_hold)
+                             {
+                                 last_postbus_type <= postbus_type;
+                                 write_data <= postbus_data;
+                                 op_state <= op_state_fifo_write_later_data;
+                             }
+                     }
+                     elsif (postbus_type!=postbus_word_type_hold)
+                         {
+                             last_postbus_type <= postbus_type;
+                             postbus_holding_reg <= postbus_data;
+                             op_state <= op_state_fifo_write_first_data_holding_full;
+                         }
+                     else // nothing changed - no ack, no new data, so hang in this state
+                     {
+                         op_state <= op_state_fifo_write_first_data;
+                     }
+                 }
+                 case op_state_fifo_write_first_data_holding_full: // Perform a FIFO data write, with the data we have received (first), holding register contains next data: we have to wait for an ack from the appropriate side (which is combinatorial on our req)
+                 {
+                     sram_data_op = io_sram_data_op_write_postbus; // or cmd or value, but the effect is the same I believe
+                     sram_address_op = io_sram_address_op_fifo_ptr; // for second to cmd/status use set_bit_0
+                     fifo_to_access = postbus_command_word[2;29];
+                     fifo_op_to_cmd_status = postbus_command_word[28];
+                     if (fifo_op_to_cmd_status)
+                     {
+                         fifo_op = io_fifo_op_none;
+                     }
+                     else
+                     {
+                         fifo_op = io_fifo_op_inc_write_ptr;
+                     }
+
+                     postbus_ack = 0; // holding register is full - so push back to the bus - we ignore its data
+                     egress_req = 1;
+                     if (egress_ack)
+                     {
+                         write_data <= postbus_holding_reg;
+                         op_state <= op_state_fifo_write_later_data;
+                     }
+                     else // nothing changed - no ack, no new data, so hang in this state
+                     {
+                         op_state <= op_state_fifo_write_first_data_holding_full;
+                     }
+                 }
+                 case op_state_fifo_write_later_data: // Perform a FIFO data write, with the data we have received (not first): we have to wait for an ack from the appropriate side (which is combinatorial on our req)
+                 {
+                     sram_data_op = io_sram_data_op_write_postbus; // or cmd or value, but the effect is the same I believe
+                     if (fifo_op_to_cmd_status)
+                     {
+                         sram_address_op = io_sram_address_op_fifo_ptr_set_bit_0;
+                     }
+                     else
+                     {
+                         sram_address_op = io_sram_address_op_fifo_ptr;
+                     }
+                     fifo_to_access = postbus_command_word[2;29];
+                     fifo_op_to_cmd_status = postbus_command_word[28];
+                     fifo_op = io_fifo_op_inc_write_ptr; // for data or cmd
+
+                     postbus_ack = 1; // holding register is empty, so we can take data directly or to holding
+                     if (last_postbus_type==postbus_word_type_last) // however, if we have ended a transaction, then don't start a new one
+                     {
+                         postbus_ack = 0;
+                     }
+
+                     egress_req = 1;
+                     if (egress_ack)
+                     {
+                         if (last_postbus_type==postbus_word_type_last)
+                         {
+                             op_state <= op_state_idle;
+                         }
+                         elsif (postbus_type!=postbus_word_type_hold)
+                             {
+                                 last_postbus_type <= postbus_type;
+                                 write_data <= postbus_data;
+                                 op_state <= op_state_fifo_write_later_data;
+                             }
+                     }
+                     elsif (postbus_type!=postbus_word_type_hold)
+                         {
+                             last_postbus_type <= postbus_type;
+                             postbus_holding_reg <= postbus_data;
+                             op_state <= op_state_fifo_write_later_data_holding_full;
+                         }
+                     else // nothing changed - no ack, no new data, so hang in this state
+                     {
+                         op_state <= op_state_fifo_write_first_data;
+                     }
+                 }
+                 case op_state_fifo_write_later_data_holding_full: // Perform a FIFO data write, with the data we have received (not first), holding register full: we have to wait for an ack from the appropriate side (which is combinatorial on our req)
+                 {
+                     sram_data_op = io_sram_data_op_write_postbus; // or cmd or value, but the effect is the same I believe
+                     if (fifo_op_to_cmd_status)
+                     {
+                         sram_address_op = io_sram_address_op_fifo_ptr_set_bit_0;
+                     }
+                     else
+                     {
+                         sram_address_op = io_sram_address_op_fifo_ptr;
+                     }
+                     fifo_to_access = postbus_command_word[2;29];
+                     fifo_op_to_cmd_status = postbus_command_word[28];
+                     fifo_op = io_fifo_op_inc_write_ptr; // for data or cmd
+
+                     postbus_ack = 0; // holding register is full, so we cannot take to holding
+                     egress_req = 1;
+                     if (egress_ack)
+                     {
+                         write_data <= postbus_holding_reg;
+                         op_state <= op_state_fifo_write_later_data;
+                     }
+                     else // nothing changed - no ack, no new data, so hang in this state
+                     {
+                         op_state <= op_state_fifo_write_later_data_holding_full;
+                     }
+                 }
+                 }
+         }
+}

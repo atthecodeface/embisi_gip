@@ -1,0 +1,101 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "postbus_uart_target.h"
+
+/*a Types
+ */
+
+/*a Modules
+ */
+module postbus_uart_target( clock int_clock,
+                           input bit int_reset,
+                           input t_postbus_type postbus_type,
+                           input t_postbus_data postbus_data,
+                           output t_postbus_ack postbus_ack,
+                           output bit txd )
+{
+    default clock int_clock;
+    default reset int_reset;
+
+    clocked bit[12] txsr = 12hfff;
+    clocked bit[4] transmit_count = 0;
+    clocked bit cfg_blocking = 0;
+    clocked bit[24] cfg_divider = 0;
+    clocked bit[24] divider=0;
+
+    clocked t_postbus_ack postbus_ack=0;
+    comb bit tx_start;
+    comb bit write_cfg;
+
+    postbus "Postbus interface":
+        {
+            tx_start = 0;
+            write_cfg = 0;
+            postbus_ack <= 1;
+            if (cfg_blocking && (transmit_count!=0))
+            {
+                postbus_ack <= 0;
+            }
+            if (postbus_ack)
+            {
+                if ( (postbus_type==postbus_word_type_data) ||
+                     (postbus_type==postbus_word_type_last) )
+                {
+                    if (postbus_data[31])
+                    {
+                        write_cfg = 1;
+                    }
+                    else
+                    {
+                        tx_start = 1;
+                    }
+                }
+            }
+        }
+
+    uart_txd "Uart TX":
+        {
+            txd = txsr[0];
+            if (write_cfg)
+            {
+                cfg_blocking <= postbus_data[24];
+            }
+            if (transmit_count!=0)
+            {
+                if (divider==0)
+                {
+                    transmit_count <= transmit_count-1;
+                    txsr[11;0] <= txsr[11;1];
+                }
+            }
+            elsif (tx_start)
+                {
+                    transmit_count <= postbus_data[4;16];
+                    txsr <= postbus_data[12;0];
+                }
+        }
+
+    clock_divider "Clock divider":
+        {
+            if (write_cfg)
+            {
+                divider <= 0;
+                cfg_divider <= postbus_data[24;0];
+            }
+            else
+            {
+                if (divider==0)
+                {
+                    divider <= cfg_divider;
+                }
+                else
+                {
+                    divider <= divider-1;
+                }
+            }
+        }
+}

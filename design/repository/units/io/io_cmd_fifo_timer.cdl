@@ -1,0 +1,216 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "io_cmd_fifo_timer.h"
+
+/*a Types
+ */
+typedef fsm
+{
+    timer_fsm_idle "Idle; waiting for a timestamp to be presented with new_fifo_data";
+    timer_fsm_first_comparison  "Time value valid, wait for top segment, and compare top quarter";
+    timer_fsm_second_comparison "Time value valid, wait for second segment, compare second quarter";
+    timer_fsm_third_comparison  "Time value valid, wait for third segment, compare third quarter";
+    timer_fsm_last_comparison   "Time value valid, wait for last segment, compare last quarter";
+    timer_fsm_time_passed       "Time value valid and in the past; wait here until told to reset";
+} t_timer_fsm;
+
+/*a io_cmd_fifo_timer module
+ */
+module io_cmd_fifo_timer( clock int_clock,
+                          input bit int_reset,
+
+                          input bit[2] timestamp_segment "Indicates which quarter of the timer counter value is being presented (00=top, 01=middle high, 10=middle low, 11=bottom); always follows the order [00 01 10 11 [11*]]",
+                          input bit[io_cmd_timestamp_sublength] timestamp "Portion (given by timestamp_segment) of the synchronous timer counter value, which only increments when timestamp_segment==11;",
+
+                          input bit clear_ready_indication "Asserted to indicate that a ready indication should be removed, and the state machine be idled; in fact always forces the state machine to idle",
+                          input bit load_fifo_data "Asserted to indicate that new FIFO data is ready and it should be latched",
+                          input bit[io_cmd_timestamp_length+1] fifo_timestamp "Data from the FIFO giving the time to wait until; if top bit set, return immediately",
+
+                          output bit time_reached "Asserted if the timer value has been reached"
+ )
+
+    /*b Documentation
+     */
+"
+This module implements a command FIFO timer; commands put in to the FIFOs are 64-bits long, with a timestamp when the command should become valid being held in the first 32-bits. The command should only be available to its customer after that point in time.
+
+A number of options have been considered for the timers:
+1. The gate count for one comparator per FIFO would be about 20*nFIFO*bits.
+2. The gate count for one shared comparator like this (no muxes needed, as it is on the RAM output) and one decrementer per FIFO would be about 10*nFIFO*bits+20*bits.
+3. The gate count for one shared comparator time multiplexed would be about (n-to-1 mux needeed, per ctrl logic) 20*bits+bits*(2+6)*nFIFO+100(for ctl).
+4. The gate count for one comparator per FIFO running on 1/4 the bits, and doing the comparison every 4 clocks, would be about (ctrl logic, 4-to-1 mux for loading regs) 20*nFIFO*bits/4+nFIFO*100(for ctl)+bits*(2+6).
+5. The gate count for one comparator per FIFO running on 1/4 the bits, and doing the comparison top bits down, doing the next set when those bits match, always loaded parallelly, would be about (ctrl logic) 20*nFIFO*bits/4+nFIFO*100(for ctl).
+
+For 4 FIFOS with 24bits the gate counts are:
+1. 1920
+2. 1440
+3. 1348
+4. 1072
+5. 960
+
+The chosen option is the last one.
+This mechanism requires the system timer run be incremented at most every fourth clock cycle.
+  A register for the command FIFO time is loaded directly from the RAM.
+  On the next start of the four-cycle cycle the top quarter of the FIFO time are compared with the top quarter of the current time. If they are 'older' then the timer value is passed, and the command is ready. If they are 'newer' then wait for the next cycle. If they are the same, then shift the register up by a quarter, and move on
+  Now check the second quarter: if they are older, then the command is ready; if they are newer then wait for the next cycle; if they are the same, then shift the register up by a quarter, and move on.
+  Now check the third quarter as per the second quarter
+  Now check the last quarter: if it is older or equal, then the command is ready; if it is newer then wait for the next cycle.
+  The state machine for these command timers is reset when a command is read from the FIFO, and kickstarted when the timer gets the latest timer value from the FIFO.
+
+The state machine therefore is:
+  Idle - wait for new data, and when it arrives store it (if its top bit is set, go to time_passed immediately
+  Compare first segment - If most significant segment of the timer counter value is being presented then compare with the current stored value; 'in the future' keeps this state; 'in the past' goes to 'time_passed'; a match forces the value to be shifted and a check of the next segment in the next state
+  Compare second segment - Same as previous, but comparing the second segment.
+  Compare third segment - Same as prevoius, but comparing the third segment.
+  Compare last segment - If least significant segment of the timer counter value is being presented then compare with the current stored value; 'in the future' keeps this state; otherwise go to 'time_passed'.
+  Time passed - wait until told to revert to Idle
+
+"
+
+{
+
+    /*b Clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Synchronizers and combinatorials for collision detection and carrier sense
+     */
+    clocked t_timer_fsm  state = timer_fsm_idle "Timer current state";
+    comb t_timer_fsm     next_state             "Next state to transition to";
+    clocked bit[io_cmd_timestamp_length] value = 0     "Timestamp value to pass";
+    comb bit[io_cmd_timestamp_length] next_value       "Load or shift of current timestamp value for next clock";
+
+    comb bit shift_value_register
+        "Asserted to indicate the value in the register should be shifted up; depends on the FSM state";
+    comb bit[io_cmd_timestamp_sublength] value_difference
+        "Difference between the top bits of the stored value and the current presented timer segment";
+    comb bit value_in_past
+        "Asserted if the top bits of the stored value are less than (timer comparison method) the current presented timer segment; i.e. the top bit of the difference";
+    comb bit value_in_future
+        "Asserted if the top bits of the stored value are greater than (timer comparison method) the current presented timer segment; i.e. the top bit of the difference is zero and the difference is NOT zero";
+
+    /*b Output 'time_reached'
+     */
+    output_time_reached "Output time_reached":
+        {
+            time_reached = (state == timer_fsm_time_passed);
+        }
+
+    /*b Load or shift the value register
+     */
+    load_or_shift_value "Load or shift the value register":
+        {
+            if (shift_value_register)
+            {
+                value[io_cmd_timestamp_length-io_cmd_timestamp_sublength; io_cmd_timestamp_sublength] <= value[io_cmd_timestamp_length-io_cmd_timestamp_sublength; 0];
+                value[io_cmd_timestamp_sublength;0] <= value[io_cmd_timestamp_sublength;0];
+            }
+            if (load_fifo_data)
+            {
+                value <= fifo_timestamp[io_cmd_timestamp_length;0];
+            }
+        }
+
+    /*b Comparator for the timestamp
+     */
+    timestamp_comparator "Comparator for the current value and the currently presented timer counter value segment":
+        {
+            value_difference = value[io_cmd_timestamp_sublength; io_cmd_timestamp_length-io_cmd_timestamp_sublength] - timestamp;
+            value_in_past = value_difference[ io_cmd_timestamp_sublength-1 ]; // In the past if the top bit is set, the 'negative' flag in a CPU comparison result
+            value_in_future =  ( (value_difference!=0) &&
+                                 (!value_difference[ io_cmd_timestamp_sublength-1 ]) ); // In the future if the values are not equal and if the top bit is clear, the 'NE' and 'not negative' in a CPU comparison result
+        }
+
+    /*b State machine - state, next_state, shift_value_register
+     */
+    state_machine "Implement the state machine for the timer comparator":
+        {
+            next_state = state;
+            state <= next_state;
+            shift_value_register = 0;
+            full_switch (state)
+                {
+                case timer_fsm_idle:
+                {
+                    if (load_fifo_data)
+                    {
+                        if (fifo_timestamp[io_cmd_timestamp_length]) // If its an immediate, pass immediately
+                        {
+                            next_state = timer_fsm_time_passed;
+                        }
+                        else
+                        {
+                            next_state = timer_fsm_first_comparison;
+                        }
+                    }
+                }
+                case timer_fsm_first_comparison:
+                {
+                    if (timestamp_segment==0)
+                    {
+                        if (value_in_past)
+                        {
+                            next_state = timer_fsm_time_passed;
+                        }
+                        elsif (!value_in_future)
+                            {
+                                next_state = timer_fsm_second_comparison;
+                                shift_value_register = 1;
+                            }
+                    }
+                }
+                case timer_fsm_second_comparison:
+                {
+                    if (timestamp_segment==1)
+                    {
+                        if (value_in_past)
+                        {
+                            next_state = timer_fsm_time_passed;
+                        }
+                        elsif (!value_in_future)
+                            {
+                                next_state = timer_fsm_third_comparison;
+                                shift_value_register = 1;
+                            }
+                    }
+                }
+                case timer_fsm_third_comparison:
+                {
+                    if (timestamp_segment==2)
+                    {
+                        if (value_in_past)
+                        {
+                            next_state = timer_fsm_time_passed;
+                        }
+                        elsif (!value_in_future)
+                            {
+                                next_state = timer_fsm_last_comparison;
+                                shift_value_register = 1;
+                            }
+                    }
+                }
+                case timer_fsm_last_comparison:
+                {
+                    if (timestamp_segment==3)
+                    {
+                        if (!value_in_future)
+                        {
+                            next_state = timer_fsm_time_passed;
+                        }
+                    }
+                }
+                case timer_fsm_time_passed: // Get to idle on the override signal, 'clear_ready_indication'
+                {
+                    if (clear_ready_indication)
+                    {
+                        next_state = timer_fsm_idle;
+                    }
+                }
+                }
+        }
+
+}

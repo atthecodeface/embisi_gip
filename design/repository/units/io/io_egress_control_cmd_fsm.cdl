@@ -1,0 +1,140 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Includes
+ */
+include "io.h"
+include "io_egress_control_cmd_fsm.h"
+include "io_cmd_fifo_timer.h"
+
+/*a Types
+ */
+/*t t_cmd_state
+ */
+typedef fsm {
+    cmd_state_idle;
+    cmd_state_requesting_timer;
+    cmd_state_time_access;
+    cmd_state_time_ready;
+    cmd_state_waiting_for_time;
+    cmd_state_requesting_data;
+    cmd_state_data_access;
+    cmd_state_data_ready;
+} t_cmd_state;
+
+/*a Module
+ */
+module io_egress_control_cmd_fsm( clock int_clock "Internal system clock",
+                                  input bit int_reset "Internal system reset",
+                                  input bit[2] timestamp_segment,
+                                  input bit[io_cmd_timestamp_sublength] timestamp,
+                                  input bit[io_cmd_timestamp_length] fifo_timestamp_data,
+
+                                  input bit cmd_fifo_empty,
+                                  output bit cmd_timer_req,
+                                  output bit cmd_data_req,
+                                  input bit cmd_ack,
+                                  output bit cmd_valid,
+                                  input bit cmd_available )
+{
+
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b State for a single command
+     */
+    clocked t_cmd_state cmd_state = cmd_state_idle;
+    comb t_cmd_state next_cmd_state;
+    comb bit clear_ready;
+    comb bit load_data;
+    net bit time_reached;
+
+    /*b Instantiate timer
+     */
+    timer_instance "":
+        {
+            io_cmd_fifo_timer timer[i]( int_clock <- int_clock,
+                                        int_reset <= int_reset,
+                                        timestamp_segment <= timestamp_segment,
+                                        timestamp <= timestamp,
+                                        clear_ready_indication <= clear_ready,
+                                        load_fifo_data <= load_data,
+                                        time_reached => time_reached,
+                                        fifo_timestamp <= fifo_timestamp_data );
+        }
+
+
+    /*b State machine
+     */
+    state_machine "FSM":
+        {
+            cmd_state <= next_cmd_state;
+            clear_ready = 0;
+            load_data = 0;
+
+            cmd_timer_req = 0;
+            cmd_data_req = 0;
+            cmd_valid = 0;
+            full_switch (cmd_state)
+                {
+                case cmd_state_idle:
+                {
+                    clear_ready = 1;
+                    if (!cmd_fifo_empty)
+                    {
+                        next_cmd_state = cmd_state_requesting_timer;
+                    }
+                }
+                case cmd_state_requesting_timer:
+                {
+                    cmd_timer_req = 1;
+                    if (cmd_ack)
+                    {
+                        next_cmd_state = cmd_state_time_access;
+                    }
+                }
+                case cmd_state_time_access:
+                {
+                    next_cmd_state = cmd_state_time_ready;
+                }
+                case cmd_state_time_ready:
+                {
+                    load_data = 1;
+                    next_cmd_state = cmd_state_waiting_for_time;
+                }
+                case cmd_state_waiting_for_time:
+                {
+                    if ((time_reached) && (!cmd_available))
+                    {
+                        next_cmd_state = cmd_state_requesting_data;
+                    }
+                }
+                case cmd_state_requesting_data:
+                {
+                    cmd_data_req = 1;
+                    if (cmd_ack)
+                    {
+                        next_cmd_state = cmd_state_data_access;
+                    }
+                }
+                case cmd_state_data_access:
+                {
+                    next_cmd_state = cmd_state_data_ready;
+                }
+                case cmd_state_data_ready:
+                {
+                    next_cmd_state = cmd_state_idle;
+                    cmd_valid = 1;
+                }
+                }
+            if ( (cmd_fifo_empty) &&
+                 !( (cmd_state==cmd_state_data_access) ||
+                    (cmd_state==cmd_state_data_ready) ) ) // This lets us abort on cmd fifo reset
+            {
+                next_cmd_state = cmd_state_idle;
+            }
+        }
+}

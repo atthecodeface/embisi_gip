@@ -1,0 +1,232 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+Ensure status is writing time and data to successive locations
+ */
+
+/*a Includes
+ */
+include "io.h"
+include "postbus.h"
+
+include "io_postbus.h"
+include "io_postbus_source.h"
+include "io_postbus_target.h"
+
+/*a Constants
+ */
+
+/*a Types
+ */
+
+/*a Module
+ */
+module io_postbus( clock int_clock,
+                   input bit int_reset,
+
+                   output t_postbus_type postbus_src_type,
+                   output t_postbus_data postbus_src_data,
+                   input t_postbus_ack postbus_src_ack,
+
+                   input t_postbus_type postbus_tgt_type,
+                   input t_postbus_data postbus_tgt_data,
+                   output t_postbus_ack postbus_tgt_ack,
+
+                   output bit egress_req,
+                   input bit egress_ack,
+
+                   output t_io_fifo_op egress_fifo_op,
+                   output bit egress_fifo_op_to_cmd_status,
+                   output bit[2] egress_fifo_to_access,
+                   output bit egress_fifo_address_from_read_ptr,
+
+                   output t_io_sram_address_op egress_sram_address_op,
+                   output t_io_sram_data_op egress_sram_data_op,
+
+                   output bit ingress_req,
+                   input bit ingress_ack,
+
+                   output t_io_fifo_op ingress_fifo_op,
+                   output bit ingress_fifo_op_to_cmd_status,
+                   output bit[2] ingress_fifo_to_access,
+                   output bit ingress_fifo_address_from_read_ptr,
+
+                   output t_io_sram_address_op ingress_sram_address_op,
+                   output t_io_sram_data_op ingress_sram_data_op,
+
+                   input bit[32] read_data,
+
+                   output bit configuration_write,
+                   output bit[5] write_address,
+                   output bit[32] write_data
+    )
+{
+    /*b Default clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Nets for outputs
+     */
+    net t_postbus_type postbus_src_type;
+    net t_postbus_data postbus_src_data;
+    net t_postbus_ack postbus_tgt_ack;
+
+    net bit configuration_write;
+    net bit[5] write_address;
+    net bit[32] write_data;
+
+    /*b Target nets
+     */
+    net bit tgt_egress_req;
+    net bit tgt_ingress_req;
+
+    net t_io_fifo_op tgt_fifo_op;
+    net bit tgt_fifo_op_to_cmd_status;
+    net bit[2] tgt_fifo_to_access;
+    net bit tgt_fifo_address_from_read_ptr;
+
+    net t_io_sram_address_op tgt_sram_address_op;
+    net t_io_sram_data_op tgt_sram_data_op;
+
+    /*b Source nets
+     */
+    net bit src_egress_req;
+    net bit src_ingress_req;
+
+    net t_io_fifo_op src_fifo_op;
+    net bit src_fifo_op_to_cmd_status;
+    net bit[2] src_fifo_to_access;
+    net bit src_fifo_address_from_read_ptr;
+
+    net t_io_sram_address_op src_sram_address_op;
+    net t_io_sram_data_op src_sram_data_op;
+
+    /*b Arbitration combinatorials and state
+     */
+    clocked bit egress_from_tgt=0;
+    clocked bit ingress_from_tgt=0;
+    comb bit tgt_egress_ack;
+    comb bit tgt_ingress_ack;
+    comb bit src_egress_ack;
+    comb bit src_ingress_ack;
+
+    /*b Arbiter
+     */
+    arbiter "Arbiter":
+        {
+            egress_from_tgt <= 1; // Park egress on target, as that is the normal path
+            tgt_egress_ack = 0;
+            src_egress_ack = 0;
+            if ( (src_egress_req) && (!tgt_egress_req) )
+            {
+                egress_from_tgt <= 0;
+            }
+            if (egress_from_tgt)
+            {
+                egress_req = tgt_egress_req;
+                tgt_egress_ack = egress_ack;
+                egress_fifo_op                    = tgt_fifo_op;
+                egress_fifo_op_to_cmd_status      = tgt_fifo_op_to_cmd_status;
+                egress_fifo_to_access             = tgt_fifo_to_access;
+                egress_fifo_address_from_read_ptr = tgt_fifo_address_from_read_ptr;
+                egress_sram_address_op            = tgt_sram_address_op;
+                egress_sram_data_op               = tgt_sram_data_op;
+            }
+            else
+            {
+                egress_req = src_egress_req;
+                src_egress_ack = egress_ack;
+                egress_fifo_op                    = src_fifo_op;
+                egress_fifo_op_to_cmd_status      = src_fifo_op_to_cmd_status;
+                egress_fifo_to_access             = src_fifo_to_access;
+                egress_fifo_address_from_read_ptr = src_fifo_address_from_read_ptr;
+                egress_sram_address_op            = src_sram_address_op;
+                egress_sram_data_op               = src_sram_data_op;
+            }
+
+            ingress_from_tgt <= 0; // Park ingress on source, as that is the normal path
+            tgt_ingress_ack = 0;
+            src_ingress_ack = 0;
+            if ( (tgt_ingress_req) && (!src_ingress_req) )
+            {
+                ingress_from_tgt <= 1;
+            }
+            if (ingress_from_tgt)
+            {
+                ingress_req = tgt_ingress_req;
+                tgt_ingress_ack = ingress_ack;
+                ingress_fifo_op                    = tgt_fifo_op;
+                ingress_fifo_op_to_cmd_status      = tgt_fifo_op_to_cmd_status;
+                ingress_fifo_to_access             = tgt_fifo_to_access;
+                ingress_fifo_address_from_read_ptr = tgt_fifo_address_from_read_ptr;
+                ingress_sram_address_op            = tgt_sram_address_op;
+                ingress_sram_data_op               = tgt_sram_data_op;
+            }
+            else
+            {
+                ingress_req = src_ingress_req;
+                src_ingress_ack = ingress_ack;
+                ingress_fifo_op                    = src_fifo_op;
+                ingress_fifo_op_to_cmd_status      = src_fifo_op_to_cmd_status;
+                ingress_fifo_to_access             = src_fifo_to_access;
+                ingress_fifo_address_from_read_ptr = src_fifo_address_from_read_ptr;
+                ingress_sram_address_op            = src_sram_address_op;
+                ingress_sram_data_op               = src_sram_data_op;
+            }
+        }
+
+    /*b Instantiage target and source
+     */
+    postbus_instances "Postbus target and source subinstances":
+        {
+            io_postbus_target tgt( int_clock <- int_clock,
+                                   int_reset <= int_reset,
+
+                                   postbus_type <= postbus_tgt_type,
+                                   postbus_data <= postbus_tgt_data,
+                                   postbus_ack => postbus_tgt_ack,
+
+                                   fifo_op => tgt_fifo_op,
+                                   fifo_op_to_cmd_status => tgt_fifo_op_to_cmd_status,
+                                   fifo_to_access => tgt_fifo_to_access,
+                                   fifo_address_from_read_ptr => tgt_fifo_address_from_read_ptr,
+                                   sram_address_op => tgt_sram_address_op,
+                                   sram_data_op => tgt_sram_data_op,
+
+                                   egress_req => tgt_egress_req,
+                                   egress_ack <= tgt_egress_ack,
+
+                                   ingress_req => tgt_ingress_req,
+                                   ingress_ack <= tgt_ingress_ack,
+
+                                   configuration_write => configuration_write,
+
+                                   write_address => write_address,
+                                   write_data => write_data
+                );
+            io_postbus_source src( int_clock <- int_clock,
+                                   int_reset <= int_reset,
+
+                                   postbus_type => postbus_src_type,
+                                   postbus_data => postbus_src_data,
+                                   postbus_ack <= postbus_src_ack,
+
+                                   fifo_op => src_fifo_op,
+                                   fifo_op_to_cmd_status => src_fifo_op_to_cmd_status,
+                                   fifo_to_access => src_fifo_to_access,
+                                   fifo_address_from_read_ptr => src_fifo_address_from_read_ptr,
+                                   sram_address_op => src_sram_address_op,
+                                   sram_data_op => src_sram_data_op,
+
+                                   egress_req => src_egress_req,
+                                   egress_ack <= src_egress_ack,
+
+                                   ingress_req => src_ingress_req,
+                                   ingress_ack <= src_ingress_ack,
+
+                                   read_data <= read_data
+                );
+        }
+}

@@ -1,0 +1,100 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "io_postbus_source.h"
+include "io.h"
+
+/*a Constants
+ */
+
+/*a Types
+ */
+/*t t_op_state
+ */
+typedef fsm {
+    op_state_idle;
+} t_op_state;
+
+/*a io_postbus_source module
+ */
+module io_postbus_source( clock int_clock "main system clck",
+                          input bit int_reset "Internal system reset",
+
+                          output t_postbus_type postbus_type,
+                          output t_postbus_data postbus_data,
+                          input t_postbus_ack postbus_ack,
+
+                          output t_io_fifo_op fifo_op,
+                          output bit fifo_op_to_cmd_status,
+                          output bit[2] fifo_to_access,
+                          output bit fifo_address_from_read_ptr,
+                          output t_io_sram_address_op sram_address_op,
+                          output t_io_sram_data_op sram_data_op,
+
+                          output bit egress_req,
+                          input bit egress_ack,
+
+                          output bit ingress_req,
+                          input bit ingress_ack,
+
+                          input bit[32] read_data
+    )
+
+"
+
+This module contains a number of events which can be attached to one of a number of FIFO status signals.
+
+Each event consists of a FIFO event, an output channel, and some minor args. Events are pending if their FIFO flags are currently matching the FIFO event mask.
+
+A number of channels are then supported, each with their own configurable flow control, and postbus base header.
+
+When an event is pending for a channel and the channel's flow contol indicates that it can transmit, the channel requests the postbus source FSM
+with an indication of what sort of data to gather: header only, header plus 'n' FIFO data, or header plus flag data. The header data or 
+
+The postbus source takes the request from the channel, starts to gather the data, and drives out a header (from the event), and keeps funnenling the data out through the postbus.
+
+"
+{
+	 default clock int_clock;
+	 default reset int_reset;
+
+     clocked bit[10] countdown = 32;
+     clocked bit request_pending = 0;
+     comb bit request_taken;
+
+     a "":
+         {
+             countdown <= countdown-1;
+             if (countdown==0)
+             {
+                 countdown <= 32;
+                 request_pending <= 1;
+             }
+             if (request_taken)
+             {
+                 request_pending <= 0;
+             }
+         }
+
+     test "":
+         {
+             postbus_type = postbus_word_type_idle;
+             postbus_data = 0;
+
+             fifo_op = io_fifo_op_none;
+             fifo_op_to_cmd_status = 0;
+             fifo_to_access = 0;
+             fifo_address_from_read_ptr = 0;
+             sram_address_op = io_sram_address_op_fifo_ptr;
+             sram_data_op = io_sram_data_op_none;
+
+             egress_req = 0;
+             ingress_req = 0;
+         }
+}

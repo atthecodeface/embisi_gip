@@ -1,0 +1,135 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Includes
+ */
+include "io_baud_rate_generator.h"
+
+/*a Constants
+ */
+
+/*a Types
+ */
+
+/*a Baud rate generator module
+ */
+module io_baud_rate_generator( clock io_clock           "Clock for the module",
+                            input bit io_reset       "Reset for the module",
+                            input bit counter_enable "Clock enable for clocking the counter, for additional external divide-by",
+                            input bit counter_reset  "Counter reset, so that a known phase may be achieved for the counter; makes the subtract value be written to the counter, but only if counter_enable is asserted",
+                            output bit baud_clock_enable "Clock enable output, dependent solely on the counter value, not masked by the input enable; should be ORed with the input counter reset, the result ANDed with input counter enable",
+                            input bit set_clock_config "Asserted on a clock edge (independent of counter enable) to configure the add/subtract pair, also writes the subtract value to the counter",
+                            input bit[io_baud_rate_divider_size] config_baud_addition_value "Amount to be added to the counter on each enabled clock edge when the counter value is negative",
+                            input bit[io_baud_rate_divider_size] config_baud_subtraction_value "Amount to be subtracted from the counter on each enabled clock edge when the counter value is non-negative" )
+"This is a simple-ish baud rate generator that utilizes
+an error function to generate a baud clock enable.
+It contains a current 'error' value that, on every clock tick,
+is either:
+ reduced by a number (the subtraction constant)
+ or increased by a different number (the addition constant)
+The sign of the 'error' value determines which of the two is performed.
+If the 'error' value is negative then the addition constant is used, in an
+attempt to get the 'error' value back to zero.
+If the 'error' value is positive then the subtraction constant is used.
+As a result, the 'error' value will oscillate around zero, spending
+a certain amount of its time negative, and a certain amount positive,
+with an even distribution.
+The baud_clock_enable signal is asserted if the 'error' value
+is non-negative.
+When the addition and subtraction values are written, the
+error value is also written, to the value in the subtraction constant.
+To reduce gate count there is in fact only a single adder, and the
+subtraction constant presented should actually be a two's complement
+of the value to subtract (this save two's complement logic in hardware).
+
+Note:
+The %age of the time that the error value is nonnegative is (addc)/(subc+addc)*100.
+For example, if the subtraction constant (suc) is 3, and the addition constant is 5, then
+the error value runs through the following sequence:
+-3 2 -1 4 1 -2 3 0   -3 2 -1 4 1 -2 3 0 ...
+This is nonnegative for 5 of every 8 cycles, or (5)/(3+5)
+
+To configure the baud enable as a simple clock divider, the addition constant should be 1
+and the subtraction constant should be one less than the divider required. For example, divide by 10
+with subc=9, addc=1:
+-9 -8 -7 -6 -5 -4 -3 -2 -1 0   -9 -8 -7 -6 -5 -4 -3 -2 -1 0 ...
+
+For divide by 3.3333 (or 10/3) we need subc+addc=10, addc=3 => subc=7:
+-7 -4 -1 2 -8 -5 -2 1 -6 -3 0   -7 -4 -1 2 -8 -5 -2 1 -6 -3 0  ...
+producing a non negative number after 4, 3, 3 4, 3, 3, 4, 3, 3... cycles,
+for and average of 3.333
+
+The error value needs to be able to divide 200MHz down to 16*1200 for 1200 baud UARTs,
+so we need to be able to divide by up to 2e8/1.6e1/1.2e3 = 1.1e4 (or thereabouts) = 11,000
+This implies at least 14 bits of magnitude.
+For such a divider try subc=0x2af7, addc=1.
+Becasue we need the two's complement of subc, we have two options: use an additional
+magnitude bit in the error value and the constants to support the sign, or just extend the
+error value for the sign and assume the top bit of the addition constant will be zero and the
+top bit of the subtraction constant will be 1.
+
+Now we have two additional requirements: a constant 'on' baud enable and a constant 'off' baud
+enable. The second can be achieved with a non-zero subtraction constant and a zero addition
+constant - then the error value will hold a negative value. The first can be achieved if the
+subtraction constant is zero and the addition constant is zero.
+
+With this additional constraint it is clear that we need to expand the subtraction constant
+and the error value; we will also extend the addition constant for symmetry and ease-of-comprehension.
+
+So, we need to support +-11,000 in the error value and the constants, so 15 bits of each (+-16384).
+
+Note that there are two additional bells/whistles. The whole BRG counter operation (other than configuration) may be enabled
+by an external enable input. This allows for chaining BRGs. Secondly, within that enable operation, the error value may be written
+to its subtract value by a 'counter_reset' input (synchronously, subject to the counter enable input), so that the phase of multiple BRGs may be synchronized. Effectively
+when the reset is asserted the BRG acts as if the error value at that clock tick were zero.
+"
+{
+    default clock io_clock;
+    default reset io_reset;
+
+    clocked bit[io_baud_rate_divider_size] baud_addition_value = 0;
+    clocked bit[io_baud_rate_divider_size] baud_subtraction_value = 0;
+    clocked bit[io_baud_rate_divider_size] baud_error_value = 0;
+
+    comb bit[io_baud_rate_divider_size] baud_error_value_adder_input "Selected value of either addition or subtraction constant";
+    comb bit[io_baud_rate_divider_size] next_baud_error_value "Result of error function algorithm";
+
+    output_enable "Output clock enable":
+        {
+            baud_clock_enable = !baud_error_value[io_baud_rate_divider_size-1];
+        }
+
+    next_error_value "Next error value, normal running - add either the subtraction value (if error nonnegative) or the addition value (if error negative)":
+        {
+            baud_error_value_adder_input = baud_subtraction_value;
+            if (baud_error_value[io_baud_rate_divider_size-1])
+            {
+                baud_error_value_adder_input = baud_addition_value;
+            }
+            next_baud_error_value = baud_error_value + baud_error_value_adder_input;
+        }
+
+    counter "Baud counter and enable":
+        {
+            if (set_clock_config)
+            {
+                baud_addition_value <= config_baud_addition_value;
+                baud_subtraction_value <= config_baud_subtraction_value;
+                baud_error_value <= config_baud_subtraction_value;
+            }
+            elsif (counter_enable)
+                {
+                    if (counter_reset)
+                    {
+                        baud_error_value <= baud_subtraction_value;
+                    }
+                    else
+                    {
+                        baud_error_value <= next_baud_error_value;
+                    }
+                }
+        }
+}

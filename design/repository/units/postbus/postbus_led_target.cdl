@@ -1,0 +1,48 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "postbus_led_target.h"
+
+/*a Types
+ */
+
+/*a Modules
+ */
+module postbus_led_target( clock int_clock,
+                           input bit int_reset,
+                           input bit clock_enable,
+                           input t_postbus_type postbus_type,
+                           input t_postbus_data postbus_data,
+                           output t_postbus_ack postbus_ack,
+                           output bit[8] leds )
+{
+    default clock int_clock;
+    default reset int_reset;
+
+    clocked bit[8] leds = 0;
+    clocked bit[8] store = 0;
+    clocked bit store_full = 0;
+    clocked t_postbus_ack postbus_ack=0;
+
+    leds "Main process":
+        {
+            postbus_ack[0] <= !store_full;
+            if (clock_enable)
+            {
+                leds <= store;
+                store_full <= 0;
+            }
+            if (postbus_ack)
+            {
+                if ( (postbus_type==postbus_word_type_data) ||
+                     (postbus_type==postbus_word_type_last) )
+                {
+                    store <= postbus_data[8;0];
+                    store_full <= 1;
+                }
+            }
+        }
+}

@@ -1,0 +1,830 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+Ensure status is writing time and data to successive locations
+ */
+
+/*a Includes
+ */
+include "io_cmd.h"
+include "io.h"
+include "postbus.h"
+
+include "io_ethernet_rx.h"
+include "io_ethernet_tx.h"
+include "io_uart.h"
+include "io_baud_rate_generator.h"
+
+include "io_sync_request.h"
+include "io_ingress_fifos.h"
+include "io_egress_fifos.h"
+include "io_egress_control.h"
+include "io_ingress_control.h"
+include "io_postbus.h"
+include "memories.h"
+
+/*a Constants
+ */
+
+/*a Types
+ */
+
+/*a io_block_tx module
+ */
+module io_block_tx( clock int_clock,
+                    input bit int_reset,
+
+                    input t_postbus_type postbus_tgt_type,
+                    input t_postbus_data postbus_tgt_data,
+                    output t_postbus_ack postbus_tgt_ack,
+
+                    output t_postbus_type postbus_src_type,
+                    output t_postbus_data postbus_src_data,
+                    input t_postbus_ack postbus_src_ack,
+
+                    clock erx_clock,
+                    input bit erx_reset,
+                    input bit erx_mii_dv, // goes high during the preamble OR at the latest at the start of the SFD
+                    input bit erx_mii_err, // if goes high with dv, then abort the receive; wait until dv goes low
+                    input bit[4] erx_mii_data,
+
+                    clock etx_clock,
+                    input bit etx_reset,
+                    output bit etx_mii_enable,
+                    output bit[4] etx_mii_data,
+                    input bit etx_mii_crs,
+                    input bit etx_mii_col,
+
+                    output bit uart0_txd,
+                    input bit uart0_txd_fc,
+                    input bit uart0_rxd,
+                    output bit uart0_rxd_fc
+    )
+{
+    /*b Default clock and reset - internal clock domain
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Ethernet RX wiring
+     */
+    net bit[32]               erx_data_fifo_data;
+    net bit                   erx_data_fifo_toggle;
+    net bit                   erx_rxd_req;
+    comb bit                  erx_rxd_ack;
+    comb bit                  erx_data_fifo_full;
+
+    net bit[32]               erx_status_fifo_data;
+    net bit                   erx_status_fifo_toggle;
+    net bit                   erx_status_req;
+    comb bit                  erx_status_ack;
+
+    /*b Ethernet TX wiring
+     */
+    net bit etx_mii_enable;
+    net bit[4] etx_mii_data;
+
+    net t_io_tx_data_fifo_cmd etx_data_fifo_cmd;
+    net bit                   etx_data_fifo_toggle;
+    net bit                   etx_txd_req;
+    comb bit                  etx_txd_ack;
+
+    clocked bit[32]           etx_cmd_data = 0;
+    net bit                   etx_cmd_fifo_toggle;
+    comb bit                  etx_cmd_available;
+    net bit                   etx_cmd_req;
+    comb bit                  etx_cmd_ack;
+
+    net bit[32]               etx_status_fifo_data;
+    net bit                   etx_status_fifo_toggle;
+    net bit                   etx_status_req;
+    comb bit                  etx_status_ack;
+
+    /*b UART 0 wiring
+     */
+    net bit uart0_txd;
+    net bit uart0_rxd_fc;
+
+    clocked bit[32]           uart0_cmd_data = 0;
+    net bit                   uart0_cmd_fifo_toggle;
+    comb bit                  uart0_cmd_available;
+    net bit                   uart0_cmd_req;
+    comb bit                  uart0_cmd_ack;
+
+    net bit[32]               uart0_status_fifo_data;
+    net bit                   uart0_status_fifo_toggle;
+    net bit                   uart0_status_req;
+    comb bit                  uart0_status_ack;
+    comb bit                  uart0_status_fifo_full;
+
+    /*b Ingress arbiter and controller wiring
+     */
+    comb bit[4] status_req_bus;
+    net bit[4] status_ack_bus;
+    comb bit[4] rx_data_req_bus;
+    net bit[4] rx_data_ack_bus;
+
+    net bit ingress_postbus_req;
+    net bit ingress_postbus_ack;
+
+    net t_io_sram_data_op ingress_sram_data_op;
+    net t_io_sram_data_reg_op ingress_sram_data_reg_op;
+    net t_io_sram_address_op ingress_sram_address_op;
+
+    net t_io_fifo_op ingress_fifo_op;
+    net bit ingress_fifo_op_to_status;
+    net bit[2] ingress_fifo_to_access;
+    net bit ingress_fifo_address_from_read_ptr;
+    net bit[io_sram_log_size] ingress_fifo_address;
+
+    clocked bit[32] ingress_data_reg = 0;
+
+    /*b Egress arbiter and controller wiring
+     */
+    clocked bit[4] cmd_available_bus = 0;
+    net bit[4]     cmd_valid_bus;
+
+    comb bit[4]    cmd_req_bus;
+    comb bit[4]    tx_data_req_bus;
+    net bit[4]     tx_data_ack_bus;
+
+    net bit egress_postbus_req;
+    net bit egress_postbus_ack;
+
+    net t_io_sram_data_op egress_sram_data_op;
+    net t_io_sram_data_reg_op egress_sram_data_reg_op;
+    net t_io_sram_address_op egress_sram_address_op;
+
+    net t_io_fifo_op egress_fifo_op;
+    net bit egress_fifo_op_to_cmd;
+    net bit[2] egress_fifo_to_access;
+    net bit egress_fifo_address_from_read_ptr;
+    net bit[io_sram_log_size] egress_fifo_address;
+
+    clocked bit[32] egress_data_reg = 0;
+
+    /*b Postbus registers
+     */
+    net t_postbus_ack postbus_tgt_ack;
+
+    net t_postbus_type postbus_src_type;
+    net t_postbus_data postbus_src_data;
+
+    net bit[32] postbus_write_data;
+    net bit[5] postbus_write_address;
+    net bit postbus_configuration_write;
+
+    net t_io_fifo_op         egress_postbus_fifo_op;
+    net bit                  egress_postbus_fifo_op_to_cmd_status;
+    net bit[2]               egress_postbus_fifo_to_access;
+    net bit                  egress_postbus_fifo_address_from_read_ptr;
+    net t_io_sram_address_op egress_postbus_sram_address_op;
+    net t_io_sram_data_op    egress_postbus_sram_data_op;
+
+    net t_io_fifo_op         ingress_postbus_fifo_op;
+    net bit                  ingress_postbus_fifo_op_to_cmd_status;
+    net bit[2]               ingress_postbus_fifo_to_access;
+    net bit                  ingress_postbus_fifo_address_from_read_ptr;
+    net t_io_sram_address_op ingress_postbus_sram_address_op;
+    net t_io_sram_data_op    ingress_postbus_sram_data_op;
+
+    /*b Status registers
+     */
+    clocked bit[32] status_timer = 0;
+
+    /*b Ingress SRAM control signals
+     */
+    comb bit ingress_sram_write;
+    comb bit ingress_sram_read;
+    comb bit[io_sram_log_size] ingress_sram_address;
+    comb bit[32] ingress_sram_write_data;
+    net bit[32] ingress_sram_read_data;
+
+    /*b Egress SRAM control signals
+     */
+    comb bit egress_sram_write;
+    comb bit egress_sram_read;
+    comb bit[io_sram_log_size] egress_sram_address;
+    comb bit[32] egress_sram_write_data;
+    net bit[32] egress_sram_read_data;
+
+    /*b Fifo wiring
+     */
+    net bit[4] cmd_fifo_empty       "Per-cmd FIFO, asserted if more than zero entries are present";
+    net bit[4] cmd_fifo_full        "Per-cmd FIFO, asserted if read_ptr==write_ptr and not empty";
+    net bit[4] cmd_fifo_overflowed  "Per-cmd FIFO, asserted if FIFO has overflowed since last reset or configuration write";
+    net bit[4] cmd_fifo_underflowed "Per-cmd FIFO, asserted if FIFO has underflowed since last reset or configuration write";
+
+    net bit[4] status_fifo_empty       "Per-status FIFO, asserted if more than zero entries are present";
+    net bit[4] status_fifo_full        "Per-status FIFO, asserted if read_ptr==write_ptr and not empty";
+    net bit[4] status_fifo_overflowed  "Per-status FIFO, asserted if FIFO has overflowed since last reset or configuration write";
+    net bit[4] status_fifo_underflowed "Per-status FIFO, asserted if FIFO has underflowed since last reset or configuration write";
+
+    net bit[4] tx_data_fifo_empty       "Per-tx_data FIFO, asserted if more than zero entries are present";
+    net bit[4] tx_data_fifo_watermark   "Per-tx_data FIFO, asserted if more than watermak entries are present in the FIFO";
+    net bit[4] tx_data_fifo_full        "Per-tx_data FIFO, asserted if read_ptr==write_ptr and not empty";
+    net bit[4] tx_data_fifo_overflowed  "Per-tx_data FIFO, asserted if FIFO has overflowed since last reset or configuration write";
+    net bit[4] tx_data_fifo_underflowed "Per-tx_data FIFO, asserted if FIFO has underflowed since last reset or configuration write";
+
+    net bit[4] rx_data_fifo_empty       "Per-rx_data FIFO, asserted if more than zero entries are present";
+    net bit[4] rx_data_fifo_watermark   "Per-rx_data FIFO, asserted if more than watermak entries are present in the FIFO";
+    net bit[4] rx_data_fifo_full        "Per-rx_data FIFO, asserted if read_ptr==write_ptr and not empty";
+    net bit[4] rx_data_fifo_overflowed  "Per-rx_data FIFO, asserted if FIFO has overflowed since last reset or configuration write";
+    net bit[4] rx_data_fifo_underflowed "Per-rx_data FIFO, asserted if FIFO has underflowed since last reset or configuration write";
+
+    comb bit[io_sram_log_size] cfg_base_address;
+    comb bit[io_sram_log_size] cfg_size_m_one;
+    comb bit[io_sram_log_size] cfg_watermark;
+
+    /*b Baud rate generator wiring
+     */
+    comb bit brg0_counter_enable "Assert to run BRG0";
+    comb bit brg0_counter_reset "Assert to reset BRG0 counter, to sync multiple BRGs";
+    net bit brg0_baud_enable "Output of BRG0";
+    comb bit brg0_set_config "Assert to write config data to BRG0";
+
+    comb bit brg1_counter_enable "Assert to run BRG1";
+    comb bit brg1_counter_reset "Assert to reset BRG1 counter, to sync multiple BRGs";
+    net bit brg1_baud_enable "Output of BRG1";
+    comb bit brg1_set_config "Assert to write config data to BRG1";
+
+    comb bit[io_baud_rate_divider_size] cfg_baud_addition_value;
+    comb bit[io_baud_rate_divider_size] cfg_baud_subtraction_value;
+
+    /*b Ethernet receive 0 instantiation
+     */
+    ethernet_receive "Ethernet receive module and sync interface":
+        {
+            ethernet_rx erx( io_clock <- erx_clock,
+                             io_reset <= erx_reset,
+
+                             data_fifo_data   => erx_data_fifo_data,
+                             data_fifo_toggle => erx_data_fifo_toggle,
+                             data_fifo_full   <= erx_data_fifo_full,
+
+                             status_fifo_data   => erx_status_fifo_data,
+                             status_fifo_toggle => erx_status_fifo_toggle,
+
+                             mii_dv <= erx_mii_dv,
+                             mii_err <= erx_mii_err,
+                             mii_data <= erx_mii_data );
+
+            io_sync_request erx_sr_rxd( int_clock <- int_clock,
+                                        int_reset <= int_reset,
+                                        io_cmd_toggle <= erx_data_fifo_toggle,
+                                        io_arb_request => erx_rxd_req,
+                                        arb_io_ack <= erx_rxd_ack );
+
+            io_sync_request erx_sr_status( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           io_cmd_toggle <= erx_status_fifo_toggle,
+                                           io_arb_request => erx_status_req,
+                                           arb_io_ack <= erx_status_ack );
+        }
+
+    /*b Ethernet transmit 0 instantiation
+     */
+    ethernet_transmit "Ethernet transmit module and sync interface":
+        {
+            ethernet_tx etx( io_clock <- etx_clock,
+                             io_reset <= etx_reset,
+
+                             data_fifo_data   <= egress_sram_read_data,
+                             data_fifo_cmd    => etx_data_fifo_cmd,
+                             data_fifo_toggle => etx_data_fifo_toggle,
+
+                             cmd_fifo_empty   <= !etx_cmd_available,
+                             cmd_fifo_data    <= etx_cmd_data,
+                             cmd_fifo_toggle  => etx_cmd_fifo_toggle,
+
+                             status_fifo_data   => etx_status_fifo_data,
+                             status_fifo_toggle => etx_status_fifo_toggle,
+
+                             mii_enable => etx_mii_enable,
+                             mii_data => etx_mii_data,
+                             mii_crs <= etx_mii_crs,
+                             mii_col <= etx_mii_col );
+
+            io_sync_request etx_sr_txd( int_clock <- int_clock,
+                                        int_reset <= int_reset,
+                                        io_cmd_toggle <= etx_data_fifo_toggle,
+                                        io_arb_request => etx_txd_req,
+                                        arb_io_ack <= etx_txd_ack );
+
+            io_sync_request etx_sr_cmd( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           io_cmd_toggle <= etx_cmd_fifo_toggle,
+                                           io_arb_request => etx_cmd_req,
+                                           arb_io_ack <= etx_cmd_ack );
+
+            io_sync_request etx_sr_status( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           io_cmd_toggle <= etx_status_fifo_toggle,
+                                           io_arb_request => etx_status_req,
+                                           arb_io_ack <= etx_status_ack );
+        }
+
+    /*b UART 0 instantiation
+     */
+    uart_0 "UART 0 module and sync interface":
+        {
+            io_uart uart0( int_clock <- int_clock,
+                           int_reset <= int_reset,
+
+                           tx_baud_enable <= brg0_baud_enable,
+                           txd => uart0_txd,
+                           txd_fc <= uart0_txd_fc,
+
+                           rx_baud_enable <= brg1_baud_enable,
+                           rxd <= uart0_rxd,
+                           rxd_fc => uart0_rxd_fc,
+
+                           cmd_fifo_empty   <= !uart0_cmd_available,
+                           cmd_fifo_data    <= uart0_cmd_data,
+                           cmd_fifo_toggle  => uart0_cmd_fifo_toggle,
+
+                           status_fifo_full <= uart0_status_fifo_full,
+                           status_fifo_data   => uart0_status_fifo_data,
+                           status_fifo_toggle => uart0_status_fifo_toggle );
+
+            io_sync_request uart0_sr_cmd( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           io_cmd_toggle <= uart0_cmd_fifo_toggle,
+                                           io_arb_request => uart0_cmd_req,
+                                           arb_io_ack <= uart0_cmd_ack );
+
+            io_sync_request uart0_sr_status( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           io_cmd_toggle <= uart0_status_fifo_toggle,
+                                           io_arb_request => uart0_status_req,
+                                           arb_io_ack <= uart0_status_ack );
+        }
+
+    /*b Status and RxData FIFO ptrs and their arbiter
+     */
+    status_fifos_and_arbiter "Status, Rx data fifos, and arbiter":
+        {
+            io_ingress_control ingress_control( int_clock <- int_clock,
+                                                int_reset <= int_reset,
+                                                status_req <= status_req_bus,
+                                                status_ack => status_ack_bus,
+                                                rx_data_req <= rx_data_req_bus,
+                                                rx_data_ack => rx_data_ack_bus,
+
+                                                postbus_req <= ingress_postbus_req,
+                                                postbus_ack => ingress_postbus_ack,
+
+                                                postbus_fifo_op <= ingress_postbus_fifo_op,
+                                                postbus_fifo_address_from_read_ptr <= ingress_postbus_fifo_address_from_read_ptr,
+                                                postbus_fifo_op_to_status <= ingress_postbus_fifo_op_to_cmd_status,
+                                                postbus_fifo_to_access <= ingress_postbus_fifo_to_access,
+
+                                                postbus_sram_data_op <= ingress_postbus_sram_data_op,
+                                                postbus_sram_address_op <= ingress_postbus_sram_address_op,
+
+                                                ingress_fifo_op => ingress_fifo_op,
+                                                ingress_fifo_op_to_status => ingress_fifo_op_to_status,
+                                                ingress_fifo_to_access => ingress_fifo_to_access,
+                                                ingress_fifo_address_from_read_ptr => ingress_fifo_address_from_read_ptr,
+
+                                                ingress_sram_data_op => ingress_sram_data_op,
+                                                ingress_sram_data_reg_op => ingress_sram_data_reg_op,
+                                                ingress_sram_address_op => ingress_sram_address_op );
+
+            status_req_bus = 0;
+
+            status_req_bus[0] = erx_status_req;
+            erx_status_ack = status_ack_bus[0];
+
+            status_req_bus[1] = etx_status_req;
+            etx_status_ack = status_ack_bus[1];
+
+            status_req_bus[2] = uart0_status_req;
+            uart0_status_ack = status_ack_bus[2];
+            uart0_status_fifo_full = status_fifo_full[2];
+
+            rx_data_req_bus = 0;
+            rx_data_req_bus[0] = erx_rxd_req;
+            erx_rxd_ack = rx_data_ack_bus[0];
+
+            io_ingress_fifos ingress_fifos( int_clock <- int_clock,
+                                            int_reset <= int_reset,
+                                            fifo_op <= ingress_fifo_op,
+                                            fifo_op_to_status <= ingress_fifo_op_to_status,
+                                            fifo_address_from_read_ptr <= ingress_fifo_address_from_read_ptr,
+                                            fifo_address => ingress_fifo_address,
+                                            fifo_to_access <= ingress_fifo_to_access,
+
+                                            status_fifo_empty => status_fifo_empty,
+                                            status_fifo_full => status_fifo_full,
+                                            status_fifo_overflowed => status_fifo_overflowed,
+                                            status_fifo_underflowed => status_fifo_underflowed,
+
+                                            rx_data_fifo_empty => rx_data_fifo_empty,
+                                            rx_data_fifo_watermark => rx_data_fifo_watermark,
+                                            rx_data_fifo_full => rx_data_fifo_full,
+                                            rx_data_fifo_overflowed => rx_data_fifo_overflowed,
+                                            rx_data_fifo_underflowed => rx_data_fifo_underflowed,
+
+                                            cfg_base_address <= cfg_base_address,
+                                            cfg_size_m_one <= cfg_size_m_one,
+                                            cfg_watermark <= cfg_watermark );
+
+            erx_data_fifo_full = rx_data_fifo_full[0];
+        }
+
+    /*b Ingress SRAM operation, data and address selectors
+     */
+    ingress_sram_controls "Ingress SRAM controls":
+        {
+            /*b Status timer
+             */
+            status_timer <= status_timer+1;
+
+            /*b Handle the data op
+             */
+            //   write timer value
+            //   write ingress status data value
+            //   write ingress rx data value
+            //   ?write postbus data value
+            //   read
+            ingress_sram_write = 0;
+            ingress_sram_read = 0;
+            ingress_sram_write_data = ingress_data_reg;
+            full_switch ( ingress_sram_data_op )
+                {
+                case io_sram_data_op_none:
+                {
+                    ingress_sram_write = 0;
+                    ingress_sram_read = 0;
+                    ingress_sram_write_data = ingress_data_reg;
+                }
+                case io_sram_data_op_write_time:
+                {
+                    ingress_sram_write = 1;
+                    ingress_sram_write_data = status_timer;
+                }
+                case io_sram_data_op_write_data_reg:
+                {
+                    ingress_sram_write = 1;
+                    ingress_sram_write_data = ingress_data_reg;
+                }
+                case io_sram_data_op_write_data:
+                {
+                    ingress_sram_write = 1;
+                    ingress_sram_write_data = erx_data_fifo_data;
+                }
+                case io_sram_data_op_read:
+                {
+                    ingress_sram_read = 1;
+                }
+                }
+
+            /*b Handle the data reg - should select the appropriate interface, but we have just one at present
+             */
+            full_switch ( ingress_sram_data_reg_op )
+                {
+                case io_sram_data_reg_op_hold:
+                {
+                    ingress_data_reg <= ingress_data_reg;
+                }
+                case io_sram_data_reg_op_status:
+                {
+                    if (ingress_fifo_to_access==0)
+                    {
+                        ingress_data_reg <= erx_status_fifo_data;
+                    }
+                    else
+                    {
+                        ingress_data_reg <= uart0_status_fifo_data;
+                    }
+                }
+                }
+
+            /*b Handle the SRAM address
+             */
+            full_switch ( ingress_sram_address_op )
+                {
+                case io_sram_address_op_egress_addressed:
+                {
+                    //ingress_sram_address = ingress_data_address;
+                }
+                case io_sram_address_op_postbus_addressed:
+                {
+                    //ingress_sram_address = ingress_postbus_address;
+                }
+                case io_sram_address_op_fifo_ptr:
+                {
+                    ingress_sram_address = ingress_fifo_address;
+                }
+                case io_sram_address_op_fifo_ptr_set_bit_0:
+                {
+                    ingress_sram_address = ingress_fifo_address;
+                    ingress_sram_address[0] = 1;
+                }
+                }
+        }
+
+    /*b Ingress SRAM (RxData and status)
+     */
+    ingress_sram "Ingress sram":
+        {
+            memory_s_sp_2048_x_32 ingress_sram( sram_clock <- int_clock,
+                                                sram_read <= ingress_sram_read,
+                                                sram_write <= ingress_sram_write,
+                                                sram_address <= ingress_sram_address,
+                                                sram_write_data <= ingress_sram_write_data,
+                                                sram_read_data => ingress_sram_read_data );
+        }
+
+    /*b Command and TxData FIFO ptrs and their arbiter
+     */
+    comb bit[io_cmd_timestamp_length]io_timer;
+    command_fifos_and_arbiter "Command, Tx data fifos, and arbiter":
+        {
+            io_timer = status_timer[io_cmd_timestamp_length;0];
+            io_egress_control egress_control( int_clock <- int_clock,
+                                              int_reset <= int_reset,
+
+                                              io_timer <= io_timer,
+                                              cmd_valid => cmd_valid_bus,
+                                              cmd_available <= cmd_available_bus,
+
+                                              tx_data_req <= tx_data_req_bus,
+                                              tx_data_ack => tx_data_ack_bus,
+                                              tx_data_cmd <= etx_data_fifo_cmd,
+
+                                              postbus_req <= egress_postbus_req,
+                                              postbus_ack => egress_postbus_ack,
+
+                                              postbus_fifo_op <= egress_postbus_fifo_op,
+                                              postbus_fifo_address_from_read_ptr <= egress_postbus_fifo_address_from_read_ptr,
+                                              postbus_fifo_op_to_cmd <= egress_postbus_fifo_op_to_cmd_status,
+                                              postbus_fifo_to_access <= egress_postbus_fifo_to_access,
+
+                                              postbus_sram_data_op <= egress_postbus_sram_data_op,
+                                              postbus_sram_address_op <= egress_postbus_sram_address_op,
+
+                                              egress_fifo_op => egress_fifo_op,
+                                              egress_fifo_op_to_cmd => egress_fifo_op_to_cmd,
+                                              egress_fifo_to_access => egress_fifo_to_access,
+                                              egress_fifo_address_from_read_ptr => egress_fifo_address_from_read_ptr,
+                                              egress_cmd_fifo_empty <= cmd_fifo_empty,
+
+                                              egress_sram_data_op => egress_sram_data_op,
+                                              egress_sram_data_reg_op => egress_sram_data_reg_op,
+                                              egress_sram_address_op => egress_sram_address_op,
+                                              egress_sram_read_data <= egress_sram_read_data );
+
+            cmd_req_bus = 0;
+
+            cmd_req_bus[0] = etx_cmd_req;
+            etx_cmd_ack = 0;
+            if (cmd_valid_bus[0])
+            {
+                cmd_available_bus[0] <= 1;
+                etx_cmd_data <= egress_sram_read_data;
+                etx_cmd_ack = 1;
+            }
+            elsif (etx_cmd_req)
+                {
+                    cmd_available_bus[0] <= 0;
+                }
+            etx_cmd_available = cmd_available_bus[0];
+
+            cmd_req_bus[1] = uart0_cmd_req;
+            uart0_cmd_ack = 0;
+            if (cmd_valid_bus[1])
+            {
+                cmd_available_bus[1] <= 1;
+                uart0_cmd_data <= egress_sram_read_data;
+                uart0_cmd_ack = 1;
+            }
+            elsif (uart0_cmd_req)
+                {
+                    cmd_available_bus[1] <= 0;
+                }
+            uart0_cmd_available = cmd_available_bus[1];
+
+            tx_data_req_bus = 0;
+            tx_data_req_bus[0] = etx_txd_req;
+            etx_txd_ack = tx_data_ack_bus[0];
+
+            io_egress_fifos egress_fifos( int_clock <- int_clock,
+                                          int_reset <= int_reset,
+                                          fifo_op <= egress_fifo_op,
+                                          fifo_op_to_cmd <= egress_fifo_op_to_cmd,
+                                          fifo_address_from_read_ptr <= egress_fifo_address_from_read_ptr,
+                                          fifo_address => egress_fifo_address,
+                                          fifo_to_access <= egress_fifo_to_access,
+
+                                          cmd_fifo_empty => cmd_fifo_empty,
+                                          cmd_fifo_full => cmd_fifo_full,
+                                          cmd_fifo_overflowed => cmd_fifo_overflowed,
+                                          cmd_fifo_underflowed => cmd_fifo_underflowed,
+
+                                          tx_data_fifo_empty => tx_data_fifo_empty,
+                                          tx_data_fifo_watermark => tx_data_fifo_watermark,
+                                          tx_data_fifo_full => tx_data_fifo_full,
+                                          tx_data_fifo_overflowed => tx_data_fifo_overflowed,
+                                          tx_data_fifo_underflowed => tx_data_fifo_underflowed,
+
+                                          cfg_base_address <= cfg_base_address,
+                                          cfg_size_m_one <= cfg_size_m_one,
+                                          cfg_watermark <= cfg_watermark );
+
+        }
+
+    /*b Egress SRAM operation, data and address selectors
+     */
+    clocked bit[32] last_postbus_write_data=0;
+    egress_sram_controls "Egress SRAM controls":
+        {
+            /*b Handle the data op
+             */
+            //   write from postbus
+            //   ?read to postbus
+            //   write from data reg
+            //   read data
+            //   read command time
+            //   read command value
+            egress_sram_write = 0;
+            egress_sram_read = 0;
+            egress_sram_write_data = egress_data_reg;
+            last_postbus_write_data <= postbus_write_data;
+            full_switch ( egress_sram_data_op )
+                {
+                case io_sram_data_op_none:
+                {
+                    egress_sram_write = 0;
+                    egress_sram_read = 0;
+                }
+                case io_sram_data_op_read:
+                {
+                    egress_sram_read = 1;
+                }
+                case io_sram_data_op_write_time:
+                case io_sram_data_op_write_data_reg:
+                case io_sram_data_op_write_postbus:
+                {
+                    egress_sram_write = 1;
+                    egress_sram_write_data = last_postbus_write_data;
+                }
+                }
+
+            /*b Handle the data reg - should select the appropriate interface, but we have just one at present
+             */
+            full_switch ( egress_sram_data_reg_op )
+                {
+                case io_sram_data_reg_op_hold:
+                {
+                    egress_data_reg <= egress_data_reg;
+                }
+                }
+
+            /*b Handle the SRAM address
+             */
+            full_switch ( egress_sram_address_op )
+                {
+                case io_sram_address_op_egress_addressed:
+                {
+                    //egress_sram_address = egress_data_address;
+                }
+                case io_sram_address_op_postbus_addressed:
+                {
+                    //egress_sram_address = egress_postbus_address;
+                }
+                case io_sram_address_op_fifo_ptr:
+                {
+                    egress_sram_address = egress_fifo_address;
+                }
+                case io_sram_address_op_fifo_ptr_set_bit_0:
+                {
+                    egress_sram_address = egress_fifo_address;
+                    egress_sram_address[0] = 1;
+                }
+                }
+        }
+
+    /*b Egress SRAM (TxData and control)
+     */
+    egress_sram "Egress sram":
+        {
+            memory_s_sp_2048_x_32 egress_sram( sram_clock <- int_clock,
+                                               sram_read <= egress_sram_read,
+                                               sram_write <= egress_sram_write,
+                                               sram_address <= egress_sram_address,
+                                               sram_write_data <= egress_sram_write_data,
+                                               sram_read_data => egress_sram_read_data );
+        }
+
+    /*b Baud rate generators
+     */
+    brg "Baud rate generators":
+        {
+            io_baud_rate_generator brg0 ( io_clock <- int_clock,
+                                          io_reset <= int_reset,
+                                          counter_enable <= brg0_counter_enable, // or allow for daisychaining or divide-by-input-enable
+                                          counter_reset <= brg0_counter_reset, // or allow for synchronization
+                                          baud_clock_enable => brg0_baud_enable,
+                                          set_clock_config <= brg0_set_config,
+                                          config_baud_addition_value <= cfg_baud_addition_value,
+                                          config_baud_subtraction_value <= cfg_baud_subtraction_value
+                );
+
+            io_baud_rate_generator brg1 ( io_clock <- int_clock,
+                                          io_reset <= int_reset,
+                                          counter_enable <= brg1_counter_enable, // or allow for daisychaining or divide-by-input-enable
+                                          counter_reset <= brg1_counter_reset, // or allow for synchronization
+                                          baud_clock_enable => brg1_baud_enable,
+                                          set_clock_config <= brg1_set_config,
+                                          config_baud_addition_value <= cfg_baud_addition_value,
+                                          config_baud_subtraction_value <= cfg_baud_subtraction_value
+                );
+        }
+
+    /*b Postbus interface
+     */
+    postbus_interface "Postbus source and target":
+        {
+            io_postbus pst( int_clock <- int_clock,
+                            int_reset <= int_reset,
+
+                            postbus_src_type => postbus_src_type,
+                            postbus_src_data => postbus_src_data,
+                            postbus_src_ack <= postbus_src_ack,
+
+                            postbus_tgt_type <= postbus_tgt_type,
+                            postbus_tgt_data <= postbus_tgt_data,
+                            postbus_tgt_ack => postbus_tgt_ack,
+
+                            egress_req => egress_postbus_req,
+                            egress_ack <= egress_postbus_ack,
+
+                            egress_fifo_op => egress_postbus_fifo_op,
+                            egress_fifo_op_to_cmd_status => egress_postbus_fifo_op_to_cmd_status,
+                            egress_fifo_to_access => egress_postbus_fifo_to_access,
+                            egress_fifo_address_from_read_ptr => egress_postbus_fifo_address_from_read_ptr,
+
+                            egress_sram_address_op => egress_postbus_sram_address_op,
+                            egress_sram_data_op => egress_postbus_sram_data_op,
+
+                            ingress_req => ingress_postbus_req,
+                            ingress_ack <= ingress_postbus_ack,
+
+                            ingress_fifo_op => ingress_postbus_fifo_op,
+                            ingress_fifo_op_to_cmd_status => ingress_postbus_fifo_op_to_cmd_status,
+                            ingress_fifo_to_access => ingress_postbus_fifo_to_access,
+                            ingress_fifo_address_from_read_ptr => ingress_postbus_fifo_address_from_read_ptr,
+
+                            ingress_sram_address_op => ingress_postbus_sram_address_op,
+                            ingress_sram_data_op => ingress_postbus_sram_data_op,
+
+                            read_data <= ingress_sram_read_data,
+
+                            configuration_write => postbus_configuration_write,
+                            write_address => postbus_write_address,
+                            write_data => postbus_write_data );
+        }
+
+    /*b Configuration registers for postbus to handle later
+     */
+    config "Config data tie downs for now":
+        {
+            brg0_counter_enable = 1;
+            brg0_counter_reset = 0;
+
+            brg1_counter_enable = 1;
+            brg1_counter_reset = 0;
+
+            brg0_set_config = 0;
+            brg1_set_config = 0;
+            if (postbus_configuration_write)
+            {
+                part_switch (postbus_write_address[3;0])
+                {
+                case 0:
+                {
+                    brg0_set_config = 1;
+                }
+                case 1:
+                {
+                    brg1_set_config = 1;
+                }
+                }
+            }
+
+            cfg_baud_addition_value = postbus_write_data[io_baud_rate_divider_size;0];
+            cfg_baud_subtraction_value = postbus_write_data[io_baud_rate_divider_size;16];
+
+            cfg_size_m_one = 0;
+            cfg_watermark  = 0;
+            cfg_base_address                      = postbus_write_data[io_sram_log_size;0];
+            cfg_size_m_one[io_sram_log_size-1;0]  = postbus_write_data[io_sram_log_size-1;io_sram_log_size];
+            cfg_watermark[io_sram_log_size-1;0]   = postbus_write_data[io_sram_log_size-1;2*io_sram_log_size-1];
+        }
+
+    /*b Done
+     */
+}

@@ -61,6 +61,138 @@ expected to start running (if it actually gets scheduled) at a
 specified PC in a specified mode (GIP or ARM, sticky flags, ...); this
 data is stored in the scheduler register file.
 
+<?php page_section( "registers", "Registers" ); ?>
+
+A thread has access to 16 registers directly in its
+instructions. These are split in to three regions: r0-r7; r8-r11;
+r12-r15. There are 8 threads, and the mapping is different for each
+thread; the mapping is writable.
+
+<br>
+
+The basic mapping for the lower eight
+registers is to have them 'thread relative', i.e. r0-r7 map to
+register file entries thread*8 to thread*8+7, or as absolute,
+i.e. mapping to register file entries 0 to 7.
+
+<br>
+
+The upper registers can be mapped as natural (i.e. thread*8+(r&7)), or as a specified set of absolute (three sets). The absolute registers are a 4-register aligned set, with the bottom 3 bits given by the register itself. The top 5 bits are given by one of three 5-bit absolute set bases; these bits map as follows:
+
+<table>
+<tr><th>Bits<th>Meaning</tr>
+<tr><th>00ppp<td>Physical register file ppprr, rr given in instruction</tr>
+<tr><th>01ppp<td>Peripheral ppprr</tr>
+<tr><th>10ppp<td>Coprocessor</tr>
+<tr><th>11ppp<td>Internal (scheduling etc)</tr>
+</table>
+
+<p>
+
+Therefore the following are thought of as operating modes for the GIP:
+
+<dl>
+
+<dt>ARM, microkernel, hardware interrupts
+
+<dd>
+
+ARM runs in thread 0, with r0-r15 mapped to register file entries 0 to 15.
+<br>
+Microkernel runs in thread 1, with r0-r7, r11-r15 mapped absolutely to register file entries 0-7, 11-15; r8-r12 mapped to register file entries 16-19.
+<br>
+Hardware interrupt threads are 4, 5, 6 and 7; they need private registers, and use register file entries 20-31 through whatever mapping they desire, and also use coprocessor and peripheral registers as needed through appropriate mappings.
+
+<dt>Cooperative, equal, ARM threads with shared globals
+
+<dd>
+
+Here four threads run with six dedicated registers each, and with access to a small set of global registers. The global registers are accessed through r8, r11. For ARM mode r13 and r14 should be local, so they can be defined as natural.
+
+<br>
+Thus the configuration is r0-r7 natural; r8-r11 set 0 of absolute, given as physical registers 4 to 7; r12-r15 as natural
+
+<br>
+
+Thread 0/4 then uses r0-r3, r8, r11, r13, r14 as physical registers 0-3, 4, 7, 13, 14.
+Thread 1/5 uses r0-r3, r8, r11, r13, r14 as physical registers 8-11, 4, 7, 5, 6.
+Thread 2/6 uses r0-r3, r8, r11, r13, r14 as physical registers 16-19, 4, 7, 21, 22.
+Thread 3/7 uses r0-r3, r8, r11, r13, r14 as physical registers 24-27, 4, 7, 29, 30.
+
+<dt>Cooperative, equal, ARM threads without shared globals
+
+<dd>
+
+Here four threads run with eight dedicated registers each. For ARM mode r13 and r14 should be accessible, so they can be defined as natural. r8-r11 can be mapped to hardware or peripherals as required.
+
+<br>
+Thus the configuration is r0-r7 natural; r8-r11 set 0 of absolute, peripherals or hardware; r12-r15 as natural
+
+<br>
+
+Thread 0/4 then uses r0-r3, r7, r12-r14 as physical registers 0-3, 7, 12-14.
+Thread 1/5 then uses r0-r3, r7, r12-r14 as physical registers 8-11, 15, 4-6.
+Thread 2/6 then uses r0-r3, r7, r12-r14 as physical registers 16-19, 23, 28-30.
+Thread 3/7 then uses r0-r3, r7, r12-r14 as physical registers 24-27, 31, 20-22.
+
+<dt>Four cooperative, equal, native GIP threads without shared globals
+
+<dd>
+
+Here four threads run with eight dedicated registers each. r8-r11, r12-r15 can be mapped to hardware or peripherals as required.
+
+<br>
+Thus the configuration is r0-r7 natural; r8-r11, r12-r15 as required.
+
+<br>
+
+Thread 0/4 then uses r0-r7 as physical registers 0-7.
+Thread 1/5 then uses r0-r7 as physical registers 8-15.
+Thread 2/6 then uses r0-r7 as physical registers 16-23.
+Thread 3/7 then uses r0-r7 as physical registers 24-31.
+
+<dt>Eight cooperative, unequal, native GIP threads without shared globals
+
+<dd>
+
+Here eight threads run with four dedicated registers each. r8-r11, r12-r15 can be mapped to hardware or peripherals as required. Some threads access registers through r0-r3, some through r4-r7. Note this limits the branch/linking capability of the threads, as the link register is defined to be local register 7.
+
+<br>
+Thus the configuration is r0-r7 natural; r8-r11, r12-r15 as required.
+
+<br>
+
+Thread 0 then uses r0-r3 as physical registers 0-3.
+Thread 1 then uses r0-r3 as physical registers 8-11.
+Thread 2 then uses r0-r3 as physical registers 16-19.
+Thread 3 then uses r0-r3 as physical registers 24-27.
+Thread 4 then uses r4-r7 as physical registers 4-7.
+Thread 5 then uses r4-r7 as physical registers 11-15.
+Thread 6 then uses r4-r7 as physical registers 20-23.
+Thread 7 then uses r4-r7 as physical registers 28-31.
+
+<dt>Eight prioritized, unequal, native GIP threads without shared globals
+
+<dd>
+
+Here eight threads run with eight pair-shared registers each. r8-r11, r12-r15 can be mapped to hardware or peripherals as required. High priority threads must preserve any of the registers they access across their execution if they are not to damage operation of lower priority threads.
+
+<br>
+Thus the configuration is r0-r7 natural; r8-r11, r12-r15 as required.
+
+<br>
+
+Thread 0 then uses r0-r7 as physical registers 0-7.
+Thread 1 then uses r0-r7 as physical registers 8-15.
+Thread 2 then uses r0-r7 as physical registers 16-23.
+Thread 3 then uses r0-r7 as physical registers 24-31.
+Thread 4 then uses r0-r7 as physical registers 0-7.
+Thread 5 then uses r0-r7 as physical registers 8-15.
+Thread 6 then uses r0-r7 as physical registers 16-23.
+Thread 7 then uses r0-r7 as physical registers 24-31.
+
+</dl>
+
 <?php page_section( "implementation", "Thread switching implementation" ); ?>
 
 The scheduler communicates with the decode and register file stages of the GIP pipeline to implement thread switching.

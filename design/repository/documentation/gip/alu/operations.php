@@ -110,6 +110,27 @@ carry flag
 </tr>
 
 <tr>
+<th>BITR</th>
+<th>Bit reverse bottom byte</th>
+<td>bitrev8(Op2)</td>
+<td>Bit reverse the bottom byte of Op2, use rest of Op2</td>
+</tr>
+
+<tr>
+<th>BYTR</th>
+<th>Byte reverse</th>
+<td>byterev(Op2)</td>
+<td>Byte reverse Op2</td>
+</tr>
+
+<tr>
+<th>XORL</th>
+<th>XOR and count zeros from right</th>
+<td>TZC(Op1 ^ Op2)</td>
+<td>Exclusive-or Op1 and Op2<br>&nbsp;and count number of trailing zeros in result (0 to 32)</td>
+</tr>
+
+<tr>
 <th>LSL</th>
 <th>Logical shift left</th>
 <td>Op2 LSL Op1</td>

@@ -29,6 +29,15 @@ RISC processors.
 
 </p>
 
+<p>
+
+One difference, though, is that the native instruction set utilizes an
+extension capability to provide for 3-register instructions, as well
+as access to the fuller flavor of internal instructions supported by
+the GIP pipeline.
+
+</p>
+
 <?php page_section( "summary", "Summary" ); ?>
 
 <p>

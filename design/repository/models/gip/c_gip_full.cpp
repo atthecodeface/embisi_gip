@@ -15,7 +15,8 @@
   Native instruction access in ARM mode - with conditional access (break out that coproc space?)
   Conditional instruction shadow for native mode
   Clearing extended immediate etc
-  Implement xorcnt, xorfirst, xorlast
+  Implement andcnt, xorfirst, xorlast
+  Add in saturated N/P and saturate instructions - how to clear them? No need for sticky V or N I think
  */
 
 /*a Notes
@@ -236,7 +237,9 @@ typedef struct t_gip_rf_state
     /*b State in the RF write stage guaranteed by the design
      */
     t_gip_ins_rd alu_rd;   // Type of register file write requested for the result of ALU operation
-    unsigned int alu_result; // Registered result of the ALU stage
+ZZ    int use_shifter; // If 1 and alu_rd indicates a write then use the shifter result not the ALU result
+    unsigned int alu_result; // Registered result of the ALU
+    unsigned int shf_result; // Registered result of the shifter
     t_gip_ins_rd mem_rd;   // Type of register file write requested for the result of memory operation
     unsigned int mem_result; // Register result of the memory stage
     int accepting_alu_rd; // 1 if the RFW stage can take an ALU register write; 0 only if the mem_rd is not-none and the alu_rd is not-none

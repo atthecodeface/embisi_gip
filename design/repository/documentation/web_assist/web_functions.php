@@ -340,6 +340,88 @@ $code_styles["gip"]["replacements"][]  = "&lt;";
 $code_styles["gip"]["patterns"][]      = "/>/";
 $code_styles["gip"]["replacements"][]  = "&gt;";
 
+/*a Bit breakouts
+ */
+function bit_breakout_start( $size, $heading )
+{
+    global $bit_breakout;
+    echo "<table border=1 class=data><tr><th>$heading";
+    for ($i=$size-1; $i>=0; $i--)
+    {
+        echo "<th>$i";
+    }
+    echo "<th>Comment";
+    echo "</tr>\n";
+    $bit_breakout["size"] = $size;
+}
+
+function bit_breakout_hdr( $heading )
+{
+    global $bit_breakout;
+    echo "<tr><th>$heading";
+}
+
+function bit_breakout_bits( $num_bits, $value )
+{
+    global $bit_breakout;
+    if ($num_bits<0)
+    {
+        echo "<td>$value</tr>\n";
+        return;
+    }
+    echo "<td colspan=$num_bits align=center>$value";
+}
+
+function bit_breakout_bits_split( $value )
+{
+    global $bit_breakout;
+    for ($i=0; $i<strlen($value); $i++)
+    {
+        bit_breakout_bits( 1, $value[$i] );
+    }
+}
+
+function bit_breakout_end()
+{
+    global $bit_breakout;
+    echo "</table>\n";
+}
+
+/*a Encodings
+ */
+function encoding_start( $size, $heading )
+{
+    echo "<table border=1 class=data><tr><th>$heading<th>Encoding<th>Description</tr>\n";
+}
+
+function encoding( $heading, $encoding, $desc )
+{
+    echo "<tr><th>$heading</th><td>$encoding</td><td>$desc</td></tr>";
+}
+
+function encoding_end()
+{
+    echo "</table>\n";
+}
+
+/*a Mappings
+ */
+function mapping_start( $from, $to )
+{
+    echo "<table border=1 class=data><tr><th>$from<th>$to</tr>\n";
+}
+
+function mapping( $from, $to )
+{
+    echo "<tr><th>$from</th><td>$to</td></tr>";
+}
+
+function mapping_end()
+{
+    echo "</table>\n";
+}
+
 /*a Done
  */
 ?>
+

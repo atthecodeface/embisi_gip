@@ -22,27 +22,21 @@ the native 16-bit GIP instruction set decoder and the ARM 32-bit instruction emu
 </p>
 
 <p>
-There are a few basic classes of instruction:
+There are very few basic classes of instruction:
 
 <ul>
 
-<li> ALU / shift instructions (including multiply/divide steps)
+<li> Arithmetic instructions (including multiply/divide steps)
+
+<li> Logical instructions
+
+<li> Shift instructions
 
 <li> Memory reads
 
 <li> Memory writes
 
-<li> Coprocessor reads
-
-<li> Coprocessor writes
-
-<li> Coprocessor to memory transfers
-
-<li> Memory to coprocessor transfers
-
 <li> Memory commands (prefetch, flush, and such like)
-
-<li> Coprocessor/memory DMA commands
 
 </ul>
 
@@ -123,273 +117,85 @@ Note that there are no flow control instructions; in fact, there is no specific 
 
 <?php page_section( "class", "Instruction classes" ); ?>
 
-<table border=1 class=data>
-<tr>
-<th>Class</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<th>Arith</th>
-<td>000</td>
-<td>Arithmetic operation (with S flag sets ZCVN)</td>
-</tr>
-
-<tr>
-<th>Logic</th>
-<td>001</td>
-<td>Logical operation (with S flag sets ZN, with P flag sets C)</td>
-</tr>
-
-<tr>
-<th>SHF</th>
-<td>010</td>
-<td>Shift, always writes P flag and SHF register</td>
-</tr>
-
-<tr>
-<th>Coproc</th>
-<td>011</td>
-<td>Coprocessor</td>
-</tr>
-
-<tr>
-<th>Load</th>
-<td>100</td>
-<td>Load from memory</td>
-</tr>
-
-<tr>
-<th>Store</th>
-<td>101</td>
-<td>Store to memory</td>
-</tr>
-
-</table>
+<?php
+encoding_start( 3, "Class" );
+encoding( "Arith", "000", "Arithmetic operation (with S flag sets ZCVN)" );
+encoding( "Logic", "001", "Logical operation (with S flag sets ZN, with P flag sets C)" );
+encoding( "SHF", "010", "Shift, always writes P flag and SHF register" );
+encoding( "Load", "100", "Load from memory" );
+encoding( "Store", "101", "Store to memory" );
+encoding_end();
+?>
 
 <?php page_section( "arith_subclass", "Arithmetic instruction subclasses" ); ?>
 
-<table border=1 class=data>
-<tr>
-<th>Subclass</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
+<?php
 
-<tr>
-<th>Add</th>
-<td>0000</td>
-<td>Add</td>
-</tr>
+encoding_start( 4, "Subclass" );
+encoding( "Add", "0000", "Add" );
+encoding( "Adc", "0001", "Add with carry in from current C flag" );
+encoding( "Sub", "0010", "Subtract" );
+encoding( "Sbc", "0011", "Subtract with carry in from current C flag" );
+encoding( "Rsb", "0100", "Reverse subtract" );
+encoding( "Rsc", "0101", "Reverse subtract with carry in from current C flag" );
+encoding( "Init", "1000", "Clear carry, Acc=Rm/Imm, SHF=Rn" );
+encoding( "Mla", "1010", "Acc+=2/1/0/-1*Rm/Imm; B=Rm/Imm LSL 2; SHF=SHF LSR 2; P=0/1" );
+encoding( "Mlb", "1011", "Acc+=2/1/0/-1*B; B=B LSL 2; SHF=SHF LSR 2; P=0/1" );
+encoding( "Dva", "1100", "Acc=Acc-?Rm/Imm; SHF=SHF|?Rn; B=Rm/Imm LSR 1; A=Rn LSR 1" );
+encoding( "Dvb", "1101", "Acc=Acc-?B; SHF=SHF|?A; B=Rm/Imm LSR 1; A=Rn LSR 1" );
+encoding_end();
 
-<tr>
-<th>Adc</th>
-<td>0001</td>
-<td>Add with carry in from current C flag</td>
-</tr>
-
-<tr>
-<th>Sub</th>
-<td>0010</td>
-<td>Subtract</td>
-</tr>
-
-<tr>
-<th>Sbc</th>
-<td>0011</td>
-<td>Subtract with carry in from current C flag</td>
-</tr>
-
-<tr>
-<th>Rsb</th>
-<td>0100</td>
-<td>Reverse subtract</td>
-</tr>
-
-<tr>
-<th>Rsc</th>
-<td>0101</td>
-<td>Reverse subtract with carry in from current C flag</td>
-</tr>
-
-<tr>
-<th>Init</th>
-<td>1000</td>
-<td>Clear carry, Acc=Rm/Imm, SHF=Rn</td>
-</tr>
-
-<tr>
-<th>Mla</th>
-<td>1010</td>
-<td>Acc+=2/1/0/-1*Rm/Imm; B=Rm/Imm LSL 2; SHF=SHF LSR 2; P=0/1</td>
-</tr>
-
-<tr>
-<th>Mlb</th>
-<td>1011</td>
-<td>Acc+=2/1/0/-1*B; B=B LSL 2; SHF=SHF LSR 2; P=0/1</td>
-</tr>
-
-<tr>
-<th>Dva</th>
-<td>1100</td>
-<td>Acc=Acc-?Rm/Imm; SHF=SHF|?Rn; B=Rm/Imm LSR 1; A=Rn LSR 1</td>
-</tr>
-
-<tr>
-<th>Dvb</th>
-<td>1101</td>
-<td>Acc=Acc-?B; SHF=SHF|?A; B=Rm/Imm LSR 1; A=Rn LSR 1</td>
-</tr>
-
-</table>
+?>
 
 <?php page_section( "logic_subclass", "Logical instruction subclasses" ); ?>
 
-<table border=1 class=data>
-<tr>
-<th>Subclass</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
+<?php
 
-<tr>
-<th>And</th>
-<td>000</td>
-<td>AND</td>
-</tr>
+encoding_start( 3, "Subclass" );
+encoding( "AND", "0000", "AND" );
+encoding( "OR",  "0001", "OR" );
+encoding( "XOR", "0010", "XOR" );
+encoding( "ORN", "0011", "ORN" );
+encoding( "BIC", "0100", "BIC" );
+encoding( "MOV", "0101", "MOV" );
+encoding( "MVN", "0110", "MVN" );
+encoding( "ANDC", "0111", "ANDC" );
+encoding( "ANDX", "1000", "ANDX" );
+encoding( "XORF", "1001", "XORF" );
+encoding( "XORL", "1011", "XORL" );
+encoding( "BITR", "1100", "BITR" );
+encoding( "BYTR", "1101", "BYTR" );
+encoding_end();
 
-<tr>
-<th>OR</th>
-<td>001</td>
-<td>OR</td>
-</tr>
-
-<tr>
-<th>XOR</th>
-<td>010</td>
-<td>XOR</td>
-</tr>
-
-<tr>
-<th>ORN</th>
-<td>011</td>
-<td>ORN</td>
-</tr>
-
-<tr>
-<th>BIC</th>
-<td>011</td>
-<td>BIC</td>
-</tr>
-
-<tr>
-<th>MOV</th>
-<td>011</td>
-<td>MOV</td>
-</tr>
-
-<tr>
-<th>MVN</th>
-<td>011</td>
-<td>MVN</td>
-</tr>
-
-</table>
+?>
 
 <?php page_section( "shift_subclass", "Shift instruction subclasses" ); ?>
 
-<table border=1 class=data>
-<tr>
-<th>Subclass</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
+<?php
 
-<tr>
-<th>LSL</th>
-<td>0000</td>
-<td>LSL</td>
-</tr>
+encoding_start( 4, "Subclass" );
+encoding( "LSL", "0000", "LSL" );
+encoding( "LSR", "0001", "LSR" );
+encoding( "ASR", "0010", "ASR" );
+encoding( "ROR", "0011", "ROR" );
+encoding( "ROR33", "0100", "Rotate right 33-bit value (33rd bit comes from carry flag)" );
+encoding_end();
 
-<tr>
-<th>LSR</th>
-<td>0001</td>
-<td>LSR</td>
-</tr>
-
-<tr>
-<th>ASR</th>
-<td>0010</td>
-<td>ASR</td>
-</tr>
-
-<tr>
-<th>ROR</th>
-<td>0011</td>
-<td>ROR</td>
-</tr>
-
-<tr>
-<th>ROR33</th>
-<td>0100</td>
-<td>Rotate right 33-bit value (33rd bit comes from carry flag)</td>
-</tr>
-
-</table>
+?>
 
 <?php page_section( "memory_subclass", "Memory (load/store) instruction subclasses" ); ?>
 
-<table border=1 class=data>
-<tr>
-<th>Subclass</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
+encoding_start( 4, "Subclass" );
+encoding( "Preindex", "1xxx", "The transaction adds/subtracts the offset to the index and uses the result as the address" );
+encoding( "Postindex", "0xxx", "The transaction adds/subtracts the offset to the index in the ALU but uses the 'Rn' value as the address" );
+encoding( "Sub", "x0xx", "The transaction subtracts the offset from the index" );
+encoding( "Add", "x1xx", "The transaction adds the offset from the index" );
+encoding( "Word", "xx00", "Perform a word access" );
+encoding( "Half", "xx01", "Perform a 16-bit access" );
+encoding( "Byte", "xx10", "Perform a byte access" );
+encoding_end();
 
-<tr>
-<th>Preindex</th>
-<td>1xxx</td>
-<td>The transaction adds/subtracts the offset to the index and uses the result as the address</td>
-</tr>
-
-<tr>
-<th>Postindex</th>
-<td>0xxx</td>
-<td>The transaction adds/subtracts the offset to the index in the ALU but uses the 'Rn' value as the address</td>
-</tr>
-
-<tr>
-<th>Sub</th>
-<td>x0xx</td>
-<td>The transaction subtracts the offset from the index</td>
-</tr>
-<tr>
-<th>Add</th>
-<td>x1xx</td>
-<td>The transaction adds the offset from the index</td>
-</tr>
-
-<tr>
-<th>Word</th>
-<td>xx00</td>
-<td>Perform a word access</td>
-</tr>
-
-<tr>
-<th>Half</th>
-<td>xx01</td>
-<td>Perform a 16-bit access</td>
-</tr>
-
-<tr>
-<th>Byte</th>
-<td>xx10</td>
-<td>Perform a byte access</td>
-</tr>
-
-</table>
+?>
 
 <?php page_section( "cc", "Condition code encoding" ); ?>
 
@@ -864,6 +670,32 @@ IANDXOR[CC][S][P][A][F] Rn, Rm/Imm -> Rd
 </th>
 <td>Logic</td>
 <td>ANDX</td>
+<td>SP</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IBITREV[CC][S][P][A][F] Rm/Imm -> Rd
+</th>
+<td>Logic</td>
+<td>BITR</td>
+<td>SP</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IBYTEREV[CC][S][P][A][F] Rm/Imm -> Rd
+</th>
+<td>Logic</td>
+<td>BYTR</td>
 <td>SP</td>
 <td>CC</td>
 <td>Rd</td>
@@ -1770,13 +1602,7 @@ Still missing:
 XMC (word, block), XCM (word, block), MEMCMD (prefetch, writeback, writeback_and_invalidate, flush, fill buffer from address, write buffer to address,
 Sticky flags
 
-TestAllSet where you want to test that the bits specified by #0x123 are all set in R4 is down with IANDXOR R4, #0x1234 -> EQ. This ANDs R4 with 0x1234 and then XORs the result with 0x1234, and if the result is zero then TestAllSet passes.
-TestAllClear is equivalent to IAND R4, #0x1234 -> EQ
-TestAnySet is IAND R4, #0x1234 -> NE
-TestAnyClear is IANDXOR R4, #0x1234 -> NE
-
-
-   condition passed shadow size, L=little-endian, u=unaligned will come from pipeline configuration, as do sticky flags.
+condition passed shadow size, L=little-endian, u=unaligned will come from pipeline configuration, as do sticky flags.
 
 <?php
 page_ep();

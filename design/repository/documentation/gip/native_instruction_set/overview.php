@@ -27,176 +27,862 @@ item to note is the instruction set is a 2-register instruction set,
 with separated memory and operation instructions, much like simple
 RISC processors.
 
+<p>
+
+The native instruction set is designed for a wide range of
+functionality with high code density, with the expectation that most
+code blocks written will be relatively small. Memory accesses are
+reduced through a fairly large register set; lowering power
+consumption and improving performance a little, for address and data
+calculations. But at the end of the day the bulk of the operation in a
+microcontroller is data-touching, and so some powerful memory access
+instructions are included. The native instruction set is not expected
+to support high level languages, so complex stack manipulation
+instructions must be built from many individual instructions.
+
 </p>
 
+<?php page_section( "encodings", "Instruction encodings" ); ?>
+
+The instruction encodings are listed below; the placing is for ease of reference by the sections below.
+
 <p>
-There are a few basic classes of instruction:
 
-<ul>
+<?php
 
-<li> ALU instructions
+bit_breakout_start( 16, "Mnemonic" );
 
-4-bit subclass, 4-bit register, 4-bit immediate or register
+bit_breakout_hdr( "ALU Rn, Rm" );
+bit_breakout_bits_split( "0000" );
+bit_breakout_bits( 4, "ALU" );
+bit_breakout_bits( 4, "Rd/n" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm" );
 
-immediate may be extended with extended immediate
+bit_breakout_hdr( "ALU Rn, #I" );
+bit_breakout_bits_split( "0001" );
+bit_breakout_bits( 4, "ALU" );
+bit_breakout_bits( 4, "Rd/n" );
+bit_breakout_bits_split( "IIII" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm" );
 
-if register is extended with extended immediate then it is an absolute or relative register not subject to the register mapping
+bit_breakout_hdr( "Cnd Rn, Rm" );
+bit_breakout_bits_split( "0010" );
+bit_breakout_bits( 4, "Cnd" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm" );
 
-<ul>
+bit_breakout_hdr( "Cnd Rn, #I" );
+bit_breakout_bits_split( "0011" );
+bit_breakout_bits( 4, "Cnd" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits_split( "IIII" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm" );
 
-<li>add
-<li>sub
-<li>rsb
-<li>AND
-<li>OR
-<li>XOR
-<li>MOV
-<li>MOVN
+bit_breakout_hdr( "Shf Rd/n, Rm" );
+bit_breakout_bits_split( "0100" );
+bit_breakout_bits( 2, "Shf" );
+bit_breakout_bits_split( "0x" );
+bit_breakout_bits( 4, "Rd/n" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm" );
 
-</ul>
+bit_breakout_hdr( "Shf Rd/n, #I" );
+bit_breakout_bits_split( "0100" );
+bit_breakout_bits( 2, "Shf" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits_split( "I" );
+bit_breakout_bits( 4, "Rd/n" );
+bit_breakout_bits_split( "IIII" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm" );
 
-NP mode
-<ul>
 
-<li>BIC
-<li>ORN
-<li>XORFIRST
-<li>XORLAST
-<li>XORCOUNT
-<li>ANDXOR
-<li>ANDPARITY
 
-</ul>
+bit_breakout_hdr( "Ldr Rd, [Rn]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "000" );
+bit_breakout_bits_split( "0" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rd" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm" );
 
-GP mode
-<ul>
+bit_breakout_hdr( "LdrH Rd, [Rn]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "001" );
+bit_breakout_bits_split( "0" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rd" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm" );
 
-<li>addc
-<li>subc
-<li>rsbc
+bit_breakout_hdr( "LdrB Rd, [Rn]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "010" );
+bit_breakout_bits_split( "0" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rd" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm" );
 
-</ul>
+bit_breakout_hdr( "Ldr Rd, [Rn, #4]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "011" );
+bit_breakout_bits_split( "0" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rd" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm" );
 
-DSP mode
-<ul>
+bit_breakout_hdr( "Ldr Rd, [Rn, SHF]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "100" );
+bit_breakout_bits_split( "0" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rd" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm" );
 
-<li>mlinit
-<li>mulla
-<li>mullb
-<li>diva
-<li>divb
+bit_breakout_hdr( "Ldr Rd, [Rn, -SHF]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "101" );
+bit_breakout_bits_split( "0" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rd" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm" );
 
-</ul>
+bit_breakout_hdr( "Ldr Rd, [Rn], #4" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "110" );
+bit_breakout_bits_split( "0" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rd" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Does not write back Rn" );
 
-<li> Condition instructions
+bit_breakout_hdr( "Ldr Rd, [Rn], #-4" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "111" );
+bit_breakout_bits_split( "0" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rd" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm<br>Does not write back Rn" );
 
-4-bit subclass, 4-bit register, 4-bit immediate or register
+bit_breakout_hdr( "Str Rm, [Rn]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "000" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes address to Rd if extended" );
 
-if register is extended with extended immediate then it is an absolute or relative register not subject to the register mapping
+bit_breakout_hdr( "StrH Rm, [Rn]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "001" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes address to Rd if extended" );
 
-<ul>
+bit_breakout_hdr( "StrB Rm, [Rn]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "010" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes address to Rd if extended" );
 
-<li>CMPEQ
-<li>CMPNE
+bit_breakout_hdr( "Str Rm, [Rn, #4]!" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "011" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes back Rd (=Rn if not extended)" );
 
-<li>CMPGT
-<li>CMPGE
-<li>CMPLT
-<li>CMPLE
+bit_breakout_hdr( "Str Rm, [Rn, +SHF]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "100" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes address to Rd if extended" );
 
-<li>CMPHI
-<li>CMPHS
-<li>CMPLO
-<li>CMPLS
+bit_breakout_hdr( "Str Rm, [Rn, -SHF]" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "101" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes address to Rd if extended" );
 
-<li>TESTANYSET
-<li>TESTANYCLEAR
-<li>TESTALLSET
-<li>TESTALLCLEAR
+bit_breakout_hdr( "Str Rm, [Rn], #4" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "110" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes back Rd (=Rn if not extended)" );
 
-<li>TESTFLAGS (sticky V, sticky C, etc)
+bit_breakout_hdr( "Str Rm, [Rn], #-4" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits_split( "111" );
+bit_breakout_bits_split( "1" );
+bit_breakout_bits( 4, "Rn" );
+bit_breakout_bits( 4, "Rm" );
+bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes back Rd (=Rn if not extended)" );
 
-</ul>
 
-<li> Shift instructions
 
-2-bit subclass, 4-bit register, 1-bit indicates immediate, 5-bit immediate or 4-bit register
+bit_breakout_hdr( "B" );
+bit_breakout_bits_split( "0110" );
+bit_breakout_bits( 1, "Dly" );
+bit_breakout_bits( 11, "Offset" );
+bit_breakout_bits( -1, "Extimm" );
 
-if register is extended with extended immediate then it is an absolute or relative register not subject to the register mapping
+bit_breakout_hdr( "Special" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 12, "Undefined" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm" );
 
-immediate is never extended with extended immediate
 
-<ul>
 
-<li>LSL
-<li>LSR
-<li>ASR
-<li>ROR
+bit_breakout_hdr( "ExtImm" );
+bit_breakout_bits_split( "10" );
+bit_breakout_bits( 14, "imm value" );
+bit_breakout_bits( -1, "Extimm (to fully extend)" );
 
-</ul>
+bit_breakout_hdr( "ExtRdRm" );
+bit_breakout_bits_split( "1100" );
+bit_breakout_bits( 8, "Rd extend" );
+bit_breakout_bits( 4, "Rm top extend" );
+bit_breakout_bits( -1, "" );
 
-<li> Branch instructions
+bit_breakout_hdr( "ExtRnRm" );
+bit_breakout_bits_split( "1101" );
+bit_breakout_bits( 4, "Rn top extend" );
+bit_breakout_bits_split( "xxxx" );
+bit_breakout_bits( 4, "Rm top extend" );
+bit_breakout_bits( -1, "" );
 
-<ul>
-<li>
-With and without link - link goes in to r14.
+bit_breakout_hdr( "ExtCmd" );
+bit_breakout_bits_split( "1110" );
+bit_breakout_bits( 4, "Cond" );
+bit_breakout_bits( 1, "Sign" );
+bit_breakout_bits( 1, "Acc" );
+bit_breakout_bits( 2, "Op" );
+bit_breakout_bits( 4, "Burst" );
+bit_breakout_bits( -1, "" );
 
-<li>
-With an optional delay slot - if conditional (i.e. previous
-instruction was a conditional) then the delay slot indicates 1 or 2
-delay slots; if it is unconditional, then the delay slot indicates 0
-or 1 delay slots.
+bit_breakout_hdr( "Undefined" );
+bit_breakout_bits_split( "1111" );
+bit_breakout_bits_split( "xxxxxxxxxxxx" );
+bit_breakout_bits( -1, "" );
 
-<li>
-Target is current address plus bottom 11 bits of instruction (top bit of this is sign) indicating a 16-bit instruction offset; if extended immediate is in operation, then the bottom 11 bits are used unsigned ORred with the extended immediate value.
+bit_breakout_end();
 
-</ul>
+?>
 
-<li> Extend immediate
+<?php page_section( "extending", "Extending instructions" ); ?>
 
-Sets the extended immediate register: two bits indicate which range, 10 bits indicate the amount. The ranges are:
+<p>
+
+A 16-bit native instruction may be extended in a number of ways, all
+of which utilize 'extend' instructions immediately prior to the actual
+extended instruction itself (note also that the order of extensions is
+important - see below). The following extension types are provided:
+
+<?php page_subsection( "extimm", "Extimm - Extend immediate" ); ?>
+
+This supplies an extension to an immediate value in ALU immediate,
+conditional immediate, branch and load instructions. A single extimm
+instruction provides a sign-extended 14-bit number, which is used as
+bits 31 to 4 of the immediate value for ALU/cond immediate
+instructions. A pair of extimm instructions provides a full 28-bit
+number which is used as bits 31 to 4 of the immediate value for
+ALU/cond immediate instructions.
+
+<br> Branch instructions use the 28-bit number as the top bit of a 31
+bit value which is then ORred with the 10 bit offset in the
+instruction; the offset is a 16-bit word offset, so only 31-bits are
+required.
+
+<br> Load instructions use the 28-bit number as the offset for
+preindexed or postindexed accesses; the number is sign extended to 32
+bits. Do note that the instructions themselves determine whether the
+offset is added or subtracted from the index register, so only
+positive immediate values are of real use.
+
+<br> Note: if an extimm instruction is used to extend an immediate
+instruction then it must be the first extension instruction (if more
+than one) for that immediate instruction.
+
+
+<?php page_subsection( "extrdrdm", "ExtRdRm - Extend destination register and second source register" ); ?>
+
+This supplies a third register for an instruction, and allows for
+a global specification of the second source register for an
+instruction. An 8-bit field specifies Rd; if the top 4 bits are all 1
+then Rd is not extended (this provides for extending purely Rm). A
+4-bit field specifies the extension of Rm (the remaining 4 bits are
+given in the instruction itself); if these bits are all 1 then Rm is
+not extended.
+
+<?php page_subsection( "extrnrm", "ExtRnRm - Extend first source register and second source register" ); ?>
+
+This allows for a global specification of the source registers for
+an instruction. A 4-bit field specifies the extension to Rn; if the 4
+bits are all 1 then Rn is not extended (this provides for extending
+purely Rm). A 4-bit field specifies the extension of Rm (the remaining
+4 bits are given in the instruction itself); if these bits are all 1
+then Rm is not extended.
+
+<?php page_subsection( "extcmd", "ExtCmd - Extend command" ); ?>
+
+The instruction contains a number of fields. The 4-bit condition field is used as indicated in the following table:
+
+<?php
+encoding_start( 4, "Condition" );
+encoding( "EQ", "0000", "internal 'eq'" );
+encoding( "NE", "0001", "internal 'ne'" );
+encoding( "CS", "0010", "internal 'cs'" );
+encoding( "CC", "0011", "internal 'cc'" );
+encoding( "MI", "0100", "internal 'mi'" );
+encoding( "PL", "0101", "internal 'pl'" );
+encoding( "VS", "0110", "internal 'vs'" );
+encoding( "VC", "0111", "internal 'vc'" );
+encoding( "HI", "1000", "internal 'hi'" );
+encoding( "LS", "1001", "internal 'ls'" );
+encoding( "GE", "1010", "internal 'ge'" );
+encoding( "LT", "1011", "internal 'lt'" );
+encoding( "LE", "1100", "internal 'le'" );
+encoding( "GT", "1101", "internal 'gt'" );
+encoding( "", "1110", "do not override condition" );
+encoding( "CP", "1111", "internal 'cp'" );
+encoding_end();
+?>
+
+The use of this condition mechanism is outside the scope of the normal conditional mechanism, and should be used with caution.
+
 
 <dl>
 
-<dt>14-bit signed ALU operations
+<dt>ALU instructions
 
-<dd>Sign extend the 10 bits in the instruction, and place them at bit 4 upwards; this lets an extended immediate instruction followed by an immediate operation to use up to 14-bit signed immediate operands
+<dd>When extended in this manner the ALU operation can be told: to not set sign flags and/or accumulator (basic instructions do); to specify full 5-bit ALU operation (using 2 bits in 'extcmd' with 4 bits in instruction); to provide for extended conditional instruction as discussed above.
 
-<dt>10-bits in bits 12 through 21
+<dt>Conditional instructions
 
-<dd>Place the 10 bits specified in bits 12 through 21; use with the others to generate full 32-bit immediate values
+<dd>When extended in this manner the conditional instruction can be told: to not set sign flags and/or accumulator (basic instructions do set accumulator, do not set sign flags); to use a full 5-bit condition operation; to provide for extended conditional instructions as discussed above.
 
-<dt>10-bits in bits 22 through 31
+<br>
+This extension has potential uses in the full condition use, but the other features are probably not that useful.
 
-<dd>Place the 10 bits specified in bits 22 through 31; use with the others to generate full 32-bit immediate values
+<dt>Shift instructions
 
-<dt>21-bit signed branches
+<dd>When extension in this manner the shift instruction can be told: to set sign flags (Z and N); to provide for extended conditional instruction as discussed above.
 
-<dd>Sign extend the top bits specified in the instruction, and place them at bit 11 upwards; this lets a branch instruction go to any address +/- 2^20 instructions from the current instruction.
+<dt>Branch instructions
+
+<dd>Do not use with branch instructions
+
+<dt>Load/store instructions
+
+<dd>When extension in this manner the load/store instruction can be told: to set sign flags and/or accumulator from address calculation (basic instructions only set accumulator); set the burst size (which is decremented for following accesses, so if the burst size is used then successive instructions should be identical accesses to successive word addresses with no burst size specified - default burst size is the last burst size-1, or zero); to provide for extended conditional instruction as discussed above.
 
 </dl>
 
-<li> Memory reads
+<?php page_section( "alu_class", "ALU instructions" ); ?>
 
-<li> Memory writes
+There are 8 basic ALU instructions accessible in all modes; a further 8 ALU instructions can be accessed which depend on the mode. However, in all modes every ALU operation may be accessed through extended commands
 
-<li> Coprocessor reads
+<?php page_subsection( "basic", "Basic ALU instructions" ); ?>
 
-<li> Coprocessor writes
+<?php
+bit_breakout_start( 4, "Mnemonic" );
 
-<li> Coprocessor to memory transfers
+bit_breakout_hdr( "and" );
+bit_breakout_bits_split( "0000" );
+bit_breakout_bits( -1, "Rd <= Op1 & Op2" );
 
-<li> Memory to coprocessor transfers
+bit_breakout_hdr( "or" );
+bit_breakout_bits_split( "0001" );
+bit_breakout_bits( -1, "Rd <= Op1 | Op2" );
 
-<li> Memory commands (prefetch, flush, and such like)
+bit_breakout_hdr( "xor" );
+bit_breakout_bits_split( "0010" );
+bit_breakout_bits( -1, "Rd <= Op1 ^ Op2" );
 
-<li> Coprocessor/memory DMA commands
+bit_breakout_hdr( "mov" );
+bit_breakout_bits_split( "0011" );
+bit_breakout_bits( -1, "Rd <= ~Op2" );
 
-</ul>
+bit_breakout_hdr( "mvn" );
+bit_breakout_bits_split( "0100" );
+bit_breakout_bits( -1, "Rd <= ~Op2" );
+
+bit_breakout_hdr( "add" );
+bit_breakout_bits_split( "0101" );
+bit_breakout_bits( -1, "Rd <= Op1 + Op2" );
+
+bit_breakout_hdr( "sub" );
+bit_breakout_bits_split( "0110" );
+bit_breakout_bits( -1, "Rd <= Op1 - Op2" );
+
+bit_breakout_hdr( "adc" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( -1, "Rd <= Op1 + Op2 + C" );
+
+bit_breakout_end();
+
+?>
+
+<?php page_subsection( "math", "Math mode ALU instructions" ); ?>
+
+Math mode instructions are optimized for fast math, and can be used
+for basic calculation. The 'xorfirst' instruction is useful for
+floating point normalization. This mode also supports multiplication
+(at two bits per instruction) and division (at one bit per
+instruction).
+
+<?php
+bit_breakout_start( 4, "Mnemonic" );
+
+bit_breakout_hdr( "xorfirst" );
+bit_breakout_bits_split( "1000" );
+bit_breakout_bits( -1, "Number of first bit set in Op1 ^ Op2" );
+
+bit_breakout_hdr( "rsb" );
+bit_breakout_bits_split( "1001" );
+bit_breakout_bits( -1, "Rd <=-Op1 + Op2" );
+
+bit_breakout_hdr( "init" );
+bit_breakout_bits_split( "1010" );
+bit_breakout_bits( -1, "MulInit" );
+
+bit_breakout_hdr( "mla" );
+bit_breakout_bits_split( "1011" );
+bit_breakout_bits( -1, "MulA" );
+
+bit_breakout_hdr( "mlb" );
+bit_breakout_bits_split( "1100" );
+bit_breakout_bits( -1, "Rd <= Mulb" );
+
+bit_breakout_hdr( "sbc" );
+bit_breakout_bits_split( "1101" );
+bit_breakout_bits( -1, "Rd <= Op1 - Op2 - !C" );
+
+bit_breakout_hdr( "dva" );
+bit_breakout_bits_split( "1110" );
+bit_breakout_bits( -1, "Rd <= Op1 + Op2" );
+
+bit_breakout_hdr( "dvb" );
+bit_breakout_bits_split( "1111" );
+bit_breakout_bits( -1, "Rd <= Op1 + Op2" );
+
+bit_breakout_end();
+
+?>
+
+<?php page_subsection( "bit", "Bit mode ALU instructions" ); ?>
+
+Bit mode instructions are aimed at hardware interfacing, network
+processing and media access control implementations. 'xorfirst' and
+'xorlast' are useful for determining the first and last bits set in a
+word, for example for address parsing. 'andcnt' is used for hardware
+interfacing including parity and error correction. 'bic' and 'orn' are
+useful bit manipulation instructions. 'bitreverse' and 'bytereverse'
+are very useful in interfacing and network processing.
+
+<?php
+bit_breakout_start( 4, "Mnemonic" );
+
+bit_breakout_hdr( "xorfirst" );
+bit_breakout_bits_split( "1000" );
+bit_breakout_bits( -1, "Number of first bit set in Op1 ^ Op2" );
+
+bit_breakout_hdr( "rsb" );
+bit_breakout_bits_split( "1001" );
+bit_breakout_bits( -1, "Rd <=-Op1 + Op2" );
+
+bit_breakout_hdr( "bic" );
+bit_breakout_bits_split( "1010" );
+bit_breakout_bits( -1, "Rd <= Op1 &~Op2" );
+
+bit_breakout_hdr( "orn" );
+bit_breakout_bits_split( "1011" );
+bit_breakout_bits( -1, "Rd <= Op1 |~Op2" );
+
+bit_breakout_hdr( "andcnt" );
+bit_breakout_bits_split( "1100" );
+bit_breakout_bits( -1, "Rd <= number of ones in (Op1 & Op2)" );
+
+bit_breakout_hdr( "xorlast" );
+bit_breakout_bits_split( "1101" );
+bit_breakout_bits( -1, "Rd <= Op1 + Op2" );
+
+bit_breakout_hdr( "bitreverse" );
+bit_breakout_bits_split( "1110" );
+bit_breakout_bits( -1, "Rd <= Op2 (bottom byte bit reversed)" );
+
+bit_breakout_hdr( "bytereverse" );
+bit_breakout_bits_split( "1111" );
+bit_breakout_bits( -1, "Rd <= Op2 byte reversed" );
+
+bit_breakout_end();
+
+?>
+
+<?php page_subsection( "gp", "General purpose mode ALU instructions" ); ?>
+
+This area is not yet cleaned up.
+
+<?php
+bit_breakout_start( 4, "Mnemonic" );
+
+bit_breakout_hdr( "xorfirst" );
+bit_breakout_bits_split( "1000" );
+bit_breakout_bits( -1, "Number of first bit set in Op1 ^ Op2" );
+
+bit_breakout_hdr( "rsb" );
+bit_breakout_bits_split( "1001" );
+bit_breakout_bits( -1, "Rd <=-Op1 + Op2" );
+
+bit_breakout_hdr( "bic" );
+bit_breakout_bits_split( "1010" );
+bit_breakout_bits( -1, "Rd <= Op1 &~Op2" );
+
+bit_breakout_hdr( "andxor" );
+bit_breakout_bits_split( "1110" );
+bit_breakout_bits( -1, "Rd <= Op1 + Op2; used in conditional 'all set'" );
+
+bit_breakout_hdr( "rsc" );
+bit_breakout_bits_split( "1110" );
+bit_breakout_bits( -1, "Math mode: Rd <=-Op1 + Op2 - !C" );
+
+bit_breakout_end();
+
+?>
+
+The native ALU instruction is mapped to an internal ALU instruction first by mapping the ALU operation, the registers, and the conditional. If not extended then the conditional is derived in the standard way, and the registers are mapped in the standard way with the Rn specified in the instruction mapping both for Rn and Rd. If extended then the extended mappings are used.
+
+<p>
+
+The ALU op is mapped according to table:
+
+<table>
+<tr><th>ALU op<th>Internal instruction op</tr>
+<tr><td>and<td>IAND</tr>
+<tr><td>bic<td>IBIC</tr>
+<tr><td>or <td>IORR</tr>
+<tr><td>orn<td>IORN</tr>
+<tr><td>xor<td>IXOR</tr>
+<tr><td>mov<td>IMOV</tr>
+<tr><td>mvn<td>IMVN</tr>
+
+<tr><td>add<td>IADD</tr>
+<tr><td>adc<td>IADC</tr>
+<tr><td>sub<td>ISUB</tr>
+<tr><td>sbc<td>ISBC</tr>
+<tr><td>rsb<td>IRSB</tr>
+<tr><td>rsc<td>IRSC</tr>
+
+<tr><td>bitreverse<td>IBITREV</tr>
+<tr><td>bytereverse<td>IBYTEREV</tr>
+
+<tr><td>andcnt<td>IANDCOUNT</tr>
+<tr><td>xorfirst<td>IXORFIRST</tr>
+<tr><td>xorlast<td>IXORLAST</tr>
+
+<tr><td>init<td>INIT</tr>
+<tr><td>mla<td>IMLA</tr>
+<tr><td>mlb<td>IMLB</tr>
+
+<tr><td>dva<td>IDIVA</tr>
+<tr><td>dvb<td>IDIVB</tr>
+
+</table>
+
+The conditional is determined by whether the instruction is in the shadow of a condition instruction or not. If not, then always 'AL' is used; if it is, then 'CP' is used. However, none if this applies if the instruction is extended with an 'extcmd' instruction and the conditional specified there is not 'always'.
+
+<p>
+
+ALU instructions usually set the sign flags and accumulator; only if extended may they not. The extension also allows for an actual operation to be specified directly; the internal instruction encoding should be used in the 'extcmd' instruction to specify the internal ALU instruction operation.
+
+<p>
+
+So, unextended the mapping is (for an add) to:
+
+<br>
+
+IADDSA Rn, Rm -> Rn
+
+<br>
+
+If extended with Rd set to PC, then instead the instruction is:
+
+<br>
+
+IADDSAF Rn, Rm -> PC
+
+<br>
+
+If the instruction is extended with an 'extcmd' and the specified condition in the 'extcmd' is not 1110 (''), say 'EQ' instead, and the 'extcmd' op bits in conjunction with the 4 ALU op bits in the ALU instruction yield '010011' then the instruction is mapped to:
+
+<br>
+
+IORNSA Rn, Rm -> Rn
+
+<br>
+
+The mapping of the ALU code is done with the 'op' field. If the top bit is clear, then no mapping of the ALU code is done. If it is set, then the bottom bit is used as the top bit of a five bit operation, the bottom 4 coming from the ALU instruction encoding; this five bit field is prefixed by two zeros to get the internal instruction class of the internal instruction.
+
+<br>
+
+<?php page_section( "cnd_class", "Condition instructions" ); ?>
+
+Condition instructions are the mechanism used by the native GIP
+instruction set to perform conditional execution. The condition
+instructions create a shadow; that is, instructions that are put in to
+the GIP pipeline following a condition instruction fall within its
+shadow and are therefore executed based on the conditions success or
+failure. The length of the shadow can be configured to be one or two
+instructions, depending on the thread configuration; note that
+extensions are not counted, only the instructions they extend. 16
+basic conditional instructions are available at all times without
+extension; these instructions implement the comparison themselves.
+
+<p>
+
+A condition instruction immediately following (ignoring extensions)
+another condition instruction generates either an 'and' condition or
+an 'or' condition, depending on the thread configuration. Note,
+however, that if the shadow length is configured as 2 and a condition
+instruction follows another condition instruction with an intervening
+instruction in the shadow, then the second condition instruction is
+treated as though it were not within the shadow of the first condition
+instruction.
+
+<?php
+
+encoding_start( 5, "Mnemonic" );
+
+encoding( "cmpeq", "00000", "Op1 == Op2" );
+encoding( "cmpne", "00001", "Op1 != Op2" );
+encoding( "cmpgt", "00010", "Op1 > Op2 (signed)" );
+encoding( "cmpge", "00011", "Op1 >= Op2 (signed)" );
+encoding( "cmplt", "00100", "Op1 < Op2 (signed)" );
+encoding( "cmple", "00101", "Op1 <= Op2 (signed)" );
+encoding( "cmphi", "00110", "Op1 > Op2 (unsigned)" );
+encoding( "cmphs", "00111", "Op1 >= Op2 (unsigned)" );
+encoding( "cmplo", "01000", "Op1 < Op2 (unsigned)" );
+encoding( "cmpls", "01001", "Op1 <= Op2 (unsigned)" );
+encoding( "tstsps", "01010", "shifter P set" );
+encoding( "tstspc", "01011", "shifter P clear" );
+encoding( "tstallset", "01100", "(Op1 & Op2) == Op2" );
+encoding( "tstallclr", "01101", "(Op1 & Op2)==0" );
+encoding( "tstanyset", "01110", "(Op1 & Op2)!=0" );
+encoding( "tstanyclr", "01111", "(Op1 & Op2)!=Op2" );
+
+
+encoding( "tstseq", "10000", "Z set" );
+encoding( "tstsne", "10001", "Z clear" );
+encoding( "tstsgt", "10010", "!Z & ((!N&!V) | (N&V)))" );
+encoding( "tstsge", "10011", "(!N&!V) | (N&V)" );
+encoding( "tstslt", "10100", "(!N&V) | (N&!V)" );
+encoding( "tstsle", "10101", "Z | (!N&V) | (N&!V)" );
+encoding( "tstshi", "10110", "C & !Z" );
+encoding( "tstshs", "10111", "C" );
+encoding( "tstslo", "11000", "!C" );
+encoding( "tstsls", "11001", "C | !Z" );
+encoding( "tstsmi", "11010", "N" );
+encoding( "tstspl", "11011", "!N" );
+encoding( "tstsvs", "11100", "V" );
+encoding( "tstsvc", "11101", "!V" );
+
+encoding_end();
+
+?>
+
+The native condition instruction is mapped to an internal ALU instruction with a destination given by the condition. The Rn and Rm registers are mapped in the normal way. The mapped instruction will be conditional 'CP' only if it immediately follows a condition instruction (perhaps with intervening extensions only) and if the thread operating mode is 'AND' for stacked conditions; else the condition will be always. However, if extended then the conditional is generated directly from the extension.
+
+<p>
+
+<?php
+mapping_start("Native", "Internal" );
+mapping( "cmpeq", "ISUBccsa Rn, Rm -> EQ" );
+mapping( "cmpne", "ISUBccsa Rn, Rm -> NE" );
+mapping( "cmpgt", "ISUBccsa Rn, Rm -> GT" );
+mapping( "cmpge", "ISUBccsa Rn, Rm -> GE" );
+mapping( "cmplt", "ISUBccsa Rn, Rm -> LT" );
+mapping( "cmple", "ISUBccsa Rn, Rm -> LE" );
+mapping( "cmphi", "ISUBccsa Rn, Rm -> HI" );
+mapping( "cmphs", "ISUBccsa Rn, Rm -> CS" );
+mapping( "cmplo", "ISUBccsa Rn, Rm -> CC" );
+mapping( "cmpls", "ISUBccsa Rn, Rm -> LS" );
+mapping( "tstsps", "IMOVccSa Rn, Rm -> CS" );
+mapping( "tstspc", "IMOVccSa Rn, Rm -> CC" );
+mapping( "tstallset", "IANDXORccsa Rn, Rm -> EQ" );
+mapping( "tstallclr", "IANDccSa Rn, Rm -> EQ" );
+mapping( "tstanyset", "IANDccsa Rn, Rm -> NE" );
+mapping( "tstanyclr", "IANDXORccSa Rn, Rm -> NE" );
+mapping( "tstseq", "ISUBEQsa Rn, Rn -> EQ" );
+mapping( "tstsne", "ISUBNEsa Rn, Rn -> EQ" );
+mapping( "tstsgt", "ISUBGTsa Rn, Rn -> EQ" );
+mapping( "tstsge", "ISUBGEsa Rn, Rn -> EQ" );
+mapping( "tstslt", "ISUBLTsa Rn, Rn -> EQ" );
+mapping( "tstsle", "ISUBLEsa Rn, Rn -> EQ" );
+mapping( "tstshi", "ISUBHIsa Rn, Rn -> EQ" );
+mapping( "tstshs", "ISUBCSsa Rn, Rn -> EQ" );
+mapping( "tstslo", "ISUBCCsa Rn, Rn -> EQ" );
+mapping( "tstsls", "ISUBLSsa Rn, Rn -> EQ" );
+mapping( "tstsmi", "ISUBMIsa Rn, Rn -> EQ" );
+mapping( "tstspl", "ISUBPLsa Rn, Rn -> EQ" );
+mapping( "tstsvs", "ISUBVSsa Rn, Rn -> EQ" );
+mapping( "tstsvc", "ISUBVCsa Rn, Rn -> EQ" );
+mapping_end();
+
+?>
+
+<?php page_section( "shf_class", "Shift instructions" ); ?>
+
+The shift instructions provide for logical shift left, logical shift
+right, arithmetic shift right and rotate right. Additionally a 33-bit
+rotation is supported, and this is performed if a ROR Rn, #0
+instruction is issued.
+
+<?php
+
+encoding_start( 4, "Mnemonic" );
+encoding( "lsl", "00", "Rd,SHF,P = Op1 << Op2" );
+encoding( "lsr", "01", "Rd,SHF,P = Op1 >> Op2" );
+encoding( "asr", "10", "Rd,SHF,P = Op1 >>> Op2" );
+encoding( "ror", "11", "Rd,SHF,P = Op1 >><< Op2 (immediate not zero)" );
+encoding( "rrx", "11", "Rd,SHF,P = P,Op1 >><< (33)1 (immediate of zero)" );
+encoding_end();
+
+?>
+
+The native shift instruction is mapped to a shift instruction. If not extended then the conditional is derived in the standard way, and the registers are mapped in the standard way with the Rn specified in the instruction mapping both for Rn and Rd. If extended then the extended mappings are used.
+
+<p>
+
+<?php
+mapping_start("Native", "Internal" );
+mapping( "lsl", "ILSLccs Rn, Rm -> Rd" );
+mapping( "lsr", "ILSRccs Rn, Rm -> Rd" );
+mapping( "asr", "IASRccs Rn, Rm -> Rd" );
+mapping( "ror", "IRORccs Rn, Rm -> Rd" );
+mapping( "rrx", "IROR33ccs Rn -> Rd" );
+mapping_end();
+?>
+
+<?php page_section( "branch_class", "Branch instructions" ); ?>
+
+Branch instructions have an optional delay slot. The instruction in the delay slot is effected by the shadow of a conditional instruction if the shadow length configured for the thread is 2 instructions, and the branch is placed as the instruction following the condition instruction. Delay slots should not be used if the thread may be preempted (i.e. if the thread is not high priority and preemption is enabled).
+
+<p>
+
+The branch instruction contains an 11 bit offset to which the execution flow should branch. This value is sign extended and added to the PC as a 16-bit offset. If the instruction is not in the shadow of a conditional then the branch is taken in the decode stage; if it is conditional then it will force a conditional imovf instruction in to the pipeline.
+
+<p>
+
+If the instruction indicates there is a delay slot then the following instruction will be inserted in to the pipeline also, marked as not flushable. As a delay slot the following instruction must not be extended; it must be just a single 16-bit instruction. It may also not be a branch. It may, however, be an extension for a following instruction that will be fetched as the target of the branch.
+
+<p>
+
+If the branch instruction is extended with an 'extimm' instruction then the extended immediate value is prepended to the 11-bit offset in the instruction itself.
+
+<p>
+
+To implement a branch-with-link the code should include an 'add rn, pc, #n' instruction somehow. Ideally we will get that down to a single 16-bit instruction.
+
+<?php page_section( "load_class", "Load instructions" ); ?>
+
+The native load instructions are mapped to internal load
+instructions. If not extended then the conditional is derived in the
+standard way, and the registers are mapped in the standard way. If
+extended then the extended mappings are used. If an extended immedaite
+is provided then that immediate value is used as the offset for the
+instruction, be it preindexed or postindexed.
+
+<p>
+
+In general the burst ('k' in the internal instruction) for a load instruction is zero. However, if a load is extended with an extcmd specifying a non-zero burst then the following loads (up to that burst length) will have a decreasing burst size down to 0.
+
+<?php
+mapping_start("Native unextended", "Internal" );
+mapping( "Ldr Rd, [Rn]",      "ILDRccA #0 (Rn) -> Rd" );
+mapping( "LdrH Rd, [Rn]",     "ILDRccHA #0 (Rn) -> Rd" );
+mapping( "LdrB Rd, [Rn]",     "ILDRccBA #0 (Rn) -> Rd" );
+mapping( "Ldr Rd, [Rn, #4]",  "ILDRccA #0 (Rn, 4) -> Rd" );
+mapping( "Ldr Rd, [Rn, SHF]",  "ILDRccA #0 (Rn, SHF) -> Rd" );
+mapping( "Ldr Rd, [Rn, -SHF]", "ILDRccA #0 (Rn, -SHF) -> Rd" );
+mapping( "Ldr Rd, [Rn], #4",  "ILDRccA #0 (Rn), 4 -> Rd" );
+mapping( "Ldr Rd, [Rn], #-4", "ILDRccA #0 (Rn), -4 -> Rd" );
+mapping_end();
+
+mapping_start("Native extended immediate", "Internal" );
+mapping( "Ldr Rd, [Rn]",      "ILDRccA #0 (Rn, +imm) -> Rd" );
+mapping( "LdrH Rd, [Rn]",     "ILDRccHA #0 (Rn, +imm) -> Rd" );
+mapping( "LdrB Rd, [Rn]",     "ILDRccBA #0 (Rn, +imm) -> Rd" );
+mapping_end();
+
+?>
+
+<?php page_section( "store_class", "Store instructions" ); ?>
+
+The native store instructions are mapped to internal store
+instructions. If not extended then the conditional is derived in the
+standard way, and the registers are mapped in the standard way. If
+extended then the extended mappings are used. If an extended immedaite
+is provided then that immediate value is used as the offset for the
+instruction, be it preindexed or postindexed.
+
+<p>
+
+In general the burst ('k' in the internal instruction) for a store instruction is zero. However, if a store is extended with an extcmd specifying a non-zero burst then the following stores (up to that burst length) will have a decreasing burst size down to 0.
+
+<?php
+mapping_start("Native unextended", "Internal" );
+mapping( "Str Rd, [Rn]",       "ISTRccA #0 (Rn) <- Rm" );
+mapping( "StrH Rm, [Rn]",      "ISTRccHA #0 (Rn) <- Rm" );
+mapping( "StrB Rm, [Rn]",      "ISTRccBA #0 (Rn) <- Rm" );
+mapping( "Str Rm, [Rn, #4]!",  "ISTRccA #0 (Rn, 4) <- Rm -> Rn" );
+mapping( "Str Rm, [Rn, SHF]",  "ISTRccA #0 (Rn, SHF) <- Rm" );
+mapping( "Str Rm, [Rn, -SHF]", "ISTRccA #0 (Rn, -SHF) <- Rm" );
+mapping( "Str Rm, [Rn], #4",   "ISTRccA #0 (Rn), 4 <- Rm -> Rn" );
+mapping( "Str Rm, [Rn], #-4",  "ISTRccA #0 (Rn), -4 <- Rm -> Rn" );
+mapping_end();
+
+mapping_start("Native extended Rd", "Internal" );
+mapping( "Str Rm, [Rn, #4]!",  "ISTRccA #0 (Rn, 4) <- Rm -> Rd" );
+mapping( "Str Rm, [Rn, SHF]",  "ISTRccA #0 (Rn, SHF) <- Rm -> Rd" );
+mapping( "Str Rm, [Rn, -SHF]", "ISTRccA #0 (Rn, -SHF) <- Rm -> Rd" );
+mapping( "Str Rm, [Rn], #4",   "ISTRccA #0 (Rn), 4 <- Rm -> Rd" );
+mapping( "Str Rm, [Rn], #-4",  "ISTRccA #0 (Rn), -4 <- Rm -> Rd" );
+mapping_end();
+
+mapping_start("Native extended op (?)", "Internal" );
+mapping( "Str Rm, [Rn, #4]!",  "ISTRccHA #0 (Rn, 2) <- Rm -> Rn" );
+mapping( "Str Rm, [Rn, #4]!",  "ISTRccBA #0 (Rn, 1) <- Rm -> Rn" );
+mapping( "Str Rm, [Rn, SHF]",  "ISTRccHA #0 (Rn, SHF) <- Rm" );
+mapping( "Str Rm, [Rn, SHF]",  "ISTRccBA #0 (Rn, SHF) <- Rm" );
+mapping( "Str Rm, [Rn, -SHF]", "ISTRccHA #0 (Rn, -SHF) <- Rm -> Rn" );
+mapping( "Str Rm, [Rn, -SHF]", "ISTRccBA #0 (Rn, -SHF) <- Rm -> Rn" );
+mapping( "Str Rm, [Rn], #4",   "ISTRccHA #0 (Rn), 2 <- Rm -> Rn" );
+mapping( "Str Rm, [Rn], #4",   "ISTRccBA #0 (Rn), 1 <- Rm -> Rn" );
+mapping( "Str Rm, [Rn], #-4",  "ISTRccHA #0 (Rn), -2 <- Rm -> Rn" );
+mapping( "Str Rm, [Rn], #-4",  "ISTRccBA #0 (Rn), -1 <- Rm -> Rn" );
+mapping_end();
+?>
+
+Any extended immediate value is ignored by store instructions. If extended with extcmd, then 'op' of 0 indicates standard operation, op of 1 indicates half-word accesses and op of 2 indicates byte accesses, as shown above.
+
+<?php page_section( "missing", "Missing instructions" ); ?>
 
 Missing:
 
 <ul>
+
+<li> Memory commands (prefetch, flush, and such like)
+
+<li> Coprocessor/memory DMA commands
 
 <li>Change mode
 
@@ -214,1545 +900,13 @@ Missing:
 
 <li>Unaligned accesses
 
-<li>Atomicity (exclusive for 'n' instructions)
+<li>Atomicity (exclusive for 'n' instructions) - note atomic in shadow of conditionals and branches
 
 <li>Scheduler control - start other threads, test and set/clear flags, read flags
 
 </ul>
 
 </p>
-
-<?php page_section( "instruction_encoding", "Basic instruction Encoding" ); ?>
-
-<table border=1 class=data>
-<tr>
-<th>Field
-<th>Size
-<th>Description
-</tr>
-
-<tr>
-<th>Class
-<td>[4]
-<td>Class of operation, see table below
-</tr>
-
-<tr>
-<th>Subclass
-<td>[4]
-<td>Subclass of operation, see table below
-</tr>
-
-</table>
-
-<?php page_section( "class", "Basic instruction classes" ); ?>
-
-<table border=1 class=data>
-<tr>
-<th>Class</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<th>ALU immediate</th>
-<td>0000</td>
-<td>Arithmetic or logical operation of register with immediate</td>
-</tr>
-
-<tr>
-<th>ALU register</th>
-<td>0000</td>
-<td>Arithmetic or logical operation of register with immediate</td>
-</tr>
-
-<tr>
-<th>Shift</th>
-<td>0001</td>
-<td>Logical operation (with S flag sets ZN, with P flag sets C)</td>
-</tr>
-
-<tr>
-<th>SHF</th>
-<td>010</td>
-<td>Shift, always writes P flag and SHF register</td>
-</tr>
-
-<tr>
-<th>Coproc</th>
-<td>011</td>
-<td>Coprocessor</td>
-</tr>
-
-<tr>
-<th>Load</th>
-<td>100</td>
-<td>Load from memory</td>
-</tr>
-
-<tr>
-<th>Store</th>
-<td>101</td>
-<td>Store to memory</td>
-</tr>
-
-</table>
-
-<?php page_section( "arith_subclass", "Arithmetic instruction subclasses" ); ?>
-
-<table border=1 class=data>
-<tr>
-<th>Subclass</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<th>Add</th>
-<td>0000</td>
-<td>Add</td>
-</tr>
-
-<tr>
-<th>Adc</th>
-<td>0001</td>
-<td>Add with carry in from current C flag</td>
-</tr>
-
-<tr>
-<th>Sub</th>
-<td>0010</td>
-<td>Subtract</td>
-</tr>
-
-<tr>
-<th>Sbc</th>
-<td>0011</td>
-<td>Subtract with carry in from current C flag</td>
-</tr>
-
-<tr>
-<th>Rsb</th>
-<td>0100</td>
-<td>Reverse subtract</td>
-</tr>
-
-<tr>
-<th>Rsc</th>
-<td>0101</td>
-<td>Reverse subtract with carry in from current C flag</td>
-</tr>
-
-<tr>
-<th>Init</th>
-<td>1000</td>
-<td>Clear carry, Acc=Rm/Imm, SHF=Rn</td>
-</tr>
-
-<tr>
-<th>Mla</th>
-<td>1010</td>
-<td>Acc+=2/1/0/-1*Rm/Imm; B=Rm/Imm LSL 2; SHF=SHF LSR 2; P=0/1</td>
-</tr>
-
-<tr>
-<th>Mlb</th>
-<td>1011</td>
-<td>Acc+=2/1/0/-1*B; B=B LSL 2; SHF=SHF LSR 2; P=0/1</td>
-</tr>
-
-<tr>
-<th>Dva</th>
-<td>1100</td>
-<td>Acc=Acc-?Rm/Imm; SHF=SHF|?Rn; B=Rm/Imm LSR 1; A=Rn LSR 1</td>
-</tr>
-
-<tr>
-<th>Dvb</th>
-<td>1101</td>
-<td>Acc=Acc-?B; SHF=SHF|?A; B=Rm/Imm LSR 1; A=Rn LSR 1</td>
-</tr>
-
-</table>
-
-<?php page_section( "logic_subclass", "Logical instruction subclasses" ); ?>
-
-<table border=1 class=data>
-<tr>
-<th>Subclass</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<th>And</th>
-<td>000</td>
-<td>AND</td>
-</tr>
-
-<tr>
-<th>OR</th>
-<td>001</td>
-<td>OR</td>
-</tr>
-
-<tr>
-<th>XOR</th>
-<td>010</td>
-<td>XOR</td>
-</tr>
-
-<tr>
-<th>ORN</th>
-<td>011</td>
-<td>ORN</td>
-</tr>
-
-<tr>
-<th>BIC</th>
-<td>011</td>
-<td>BIC</td>
-</tr>
-
-<tr>
-<th>MOV</th>
-<td>011</td>
-<td>MOV</td>
-</tr>
-
-<tr>
-<th>MVN</th>
-<td>011</td>
-<td>MVN</td>
-</tr>
-
-</table>
-
-<?php page_section( "shift_subclass", "Shift instruction subclasses" ); ?>
-
-<table border=1 class=data>
-<tr>
-<th>Subclass</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<th>LSL</th>
-<td>0000</td>
-<td>LSL</td>
-</tr>
-
-<tr>
-<th>LSR</th>
-<td>0001</td>
-<td>LSR</td>
-</tr>
-
-<tr>
-<th>ASR</th>
-<td>0010</td>
-<td>ASR</td>
-</tr>
-
-<tr>
-<th>ROR</th>
-<td>0011</td>
-<td>ROR</td>
-</tr>
-
-<tr>
-<th>ROR33</th>
-<td>0100</td>
-<td>Rotate right 33-bit value (33rd bit comes from carry flag)</td>
-</tr>
-
-</table>
-
-<?php page_section( "memory_subclass", "Memory (load/store) instruction subclasses" ); ?>
-
-<table border=1 class=data>
-<tr>
-<th>Subclass</th>
-<th>Encoding</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<th>Preindex</th>
-<td>1xxx</td>
-<td>The transaction adds/subtracts the offset to the index and uses the result as the address</td>
-</tr>
-
-<tr>
-<th>Postindex</th>
-<td>0xxx</td>
-<td>The transaction adds/subtracts the offset to the index in the ALU but uses the 'Rn' value as the address</td>
-</tr>
-
-<tr>
-<th>Sub</th>
-<td>x0xx</td>
-<td>The transaction subtracts the offset from the index</td>
-</tr>
-<tr>
-<th>Add</th>
-<td>x1xx</td>
-<td>The transaction adds the offset from the index</td>
-</tr>
-
-<tr>
-<th>Word</th>
-<td>xx00</td>
-<td>Perform a word access</td>
-</tr>
-
-<tr>
-<th>Half</th>
-<td>xx01</td>
-<td>Perform a 16-bit access</td>
-</tr>
-
-<tr>
-<th>Byte</th>
-<td>xx10</td>
-<td>Perform a byte access</td>
-</tr>
-
-</table>
-
-<?php page_section( "cc", "Condition code encoding" ); ?>
-
-<table border=1 class=data>
-<tr>
-<th>CC
-<th>Value
-<th>Meaning
-<th>Flags
-<th>Description
-</tr>
-
-<tr>
-<th>EQ</th>
-<td>0000</td>
-<td>Equal</td>
-<td>Z</td>
-<td>Zero flag set, indicating an equality of comparison or an ALU result being zero</td>
-</tr>
-
-<tr>
-<th>NE</th>
-<td>0001</td>
-<td>Not equal</td>
-<td>!Z</td>
-<td>Zero flag clear, indicating an equality of comparison or an ALU result being zero</td>
-</tr>
-
-<tr>
-<th>CS</th>
-<td>0010</td>
-<td>Carry set</td>
-<td>C</td>
-<td>Carry flag set, indicating an overflow in an unsigned addition, or no borrow in an unsigned subtraction; thus it also is equivalent to an unsigned 'higher or same', or 'greater than or equal to'</td>
-</tr>
-
-<tr>
-<th>CC</th>
-<td>0001</td>
-<td>Carry clear</td>
-<td>!C</td>
-<td>Carry flag clear, indicating no overflow in an unsigned addition, or a borrow in an unsigned subtraction; thus it also is equivalent to an unsigned 'less than', or 'lower than'</td>
-</tr>
-
-<tr>
-<th>MI</th>
-<td>0100</td>
-<td>Negative</td>
-<td>N</td>
-<td>Negative flag set, indicating bit 31 of an ALU result is asserted; normally indicates a twos complement result is negative</td>
-</tr>
-
-<tr>
-<th>PL</th>
-<td>0101</td>
-<td>Positive</td>
-<td>!N</td>
-<td>Negative flag clear, indicating bit 31 of an ALU result is deasserted; normally indicates a twos complement result is positive or zero</td>
-</tr>
-
-<tr>
-<th>VS</th>
-<td>0110</td>
-<td>Overflow set</td>
-<td>V</td>
-<td>Overflow flag set, indicating a signed twos complement addition operation overflowed</td>
-</tr>
-
-<tr>
-<th>VC</th>
-<td>0111</td>
-<td>Overflow clear</td>
-<td>!V</td>
-<td>Overflow flag clear, indicating a signed twos complement addition operation did not overflow</td>
-</tr>
-
-<tr>
-<th>HI</th>
-<td>1000</td>
-<td>Higher</td>
-<td>C & !Z</td>
-<td>Combining CS and NE, thus indicating an unsigned 'higher than' in a comparision</td>
-</tr>
-
-<tr>
-<th>LS</th>
-<td>1001</td>
-<td>Lower or same</td>
-<td>!C | Z</td>
-<td>Combining CC and EQ, thus indicating an unsigned 'lower or same' in a comparision</td>
-</tr>
-
-<tr>
-<th>GE</th>
-<td>1010</td>
-<td>Greater than or equal</td>
-<td>(!N&!V) | (N&V)</td>
-<td>Indicates a signed twos complement arithmetic result is greater than or equal to zero</td>
-</tr>
-
-<tr>
-<th>LT</th>
-<td>1011</td>
-<td>Less than</td>
-<td>(!N&V) | (N&!V)</td>
-<td>Indicates a signed twos complement arithmetic result is less than zero</td>
-</tr>
-
-<tr>
-<th>GT</th>
-<td>1100</td>
-<td>Greater than</td>
-<td>!Z & ((!N&!V) | (N&V)))</td>
-<td>Indicates a signed twos complement arithmetic result is greater than zero</td>
-</tr>
-
-<tr>
-<th>LE</th>
-<td>1101</td>
-<td>Less than or equal</td>
-<td>Z | (!N&V) | (N&!V)</td>
-<td>Indicates a signed twos complement arithmetic result is less than or equal to zero</td>
-</tr>
-
-<tr>
-<th>AL</th>
-<td>1110</td>
-<td>Always</td>
-<td>1</td>
-<td>Also a blank CC, indicates an instruction is always executed, the condition is always true</td>
-</tr>
-
-<tr>
-<th>CP</th>
-<td>1111</td>
-<td>Condition passed</td>
-<td></td>
-<td>If the previous instruction condition passed, then this does, else this does not</td>
-</tr>
-
-</table>
-
-Note that 'HS' is not used as a synonym for 'CS'; this would lead to ambiguity in some halfword load instructions! The only recognized conditions for GIP code are those given above.
-
-<?php page_section( "options", "Options" ); ?>
-
-<table>
-
-<tr><th>Class</th><th>Encoding</th></tr>
-<tr><th>Arith</th><td>S0</td></tr>
-<tr><th>Logic</th><td>SP</td></tr>
-<tr><th>Shift</th><td>SP</td></tr>
-<tr><th>Coproc</th><td>xx</td></tr>
-<tr><th>Load</th><td>0s</td></tr>
-<tr><th>Store</th><td>Os</td></tr>
-</table>
-
-<table>
-<tr><th>ID</th><th>Name</th><th>Description</th></tr>
-
-<tr>
-<th>S
-<td>Set flags
-<td>Assert if the flags should be set by the arithmetic/logical/shift operation; for arithmetic this is ZCVN, for shift ZCN, for logical ZN.
-</tr>
-
-<tr>
-<th>P
-<td>Copy P flag
-<td>Assert if the P flag in the shifter should be copied to the carry flag with a logical operation
-</tr>
-
-<tr>
-<th>O
-<td>Offset
-<td>0=> offset of 1/2/4 (depending on access size), 1=> use SHF as the offset
-</tr>
-
-<tr>
-<th>s
-<td>Stack access
-<td>1=> use stack locality for caching access, 0=> use default locality for caching access
-</tr>
-
-</table>
-
-<?php page_section( "encoding", "Encoding" ); ?>
-
-<table border=1 class=data>
-<tr>
-<th>Mnemonic</th>
-<th>Class</th>
-<th>Subclass</th>
-<th>Opts</th>
-<th>CC</th>
-<th>Rd</th>
-<th>A</th>
-<th>F</th>
-</tr>
-
-<tr>
-<th colspan=8>Arithmetic</th>
-</tr>
-
-<tr>
-<th align=left>
-IADD[CC][S][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Arith</td>
-<td>ADD</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IADC[CC][S][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Arith</td>
-<td>ADC</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ISUB[CC][S][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Arith</td>
-<td>SUB</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ISBC[CC][S][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Arith</td>
-<td>SBC</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IRSB[CC][S][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Arith</td>
-<td>RSB</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IRSC[CC][S][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Arith</td>
-<td>RSC</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-INIT[CC][S][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Arith</td>
-<td>INIT</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IMLA[CC][S][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Arith</td>
-<td>INIT</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IMLB[CC][S][A][F] -> Rd
-</th>
-<td>Arith</td>
-<td>INIT</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IDIV[CC][S][A][F] -> Rd
-</th>
-<td>Arith</td>
-<td>INIT</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th colspan=8>Logical</th>
-</tr>
-
-<tr>
-<th align=left>
-IAND[CC][S][P][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Logic</td>
-<td>AND</td>
-<td>SP</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IORR[CC][S][P][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Logic</td>
-<td>OR</td>
-<td>SP</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IEOR[CC][S][P][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Logic</td>
-<td>XOR</td>
-<td>SP</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IBIC[CC][S][P][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Logic</td>
-<td>BIC</td>
-<td>SP</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IORN[CC][S][P][A][F] Rn, Rm/Imm -> Rd
-</th>
-<td>Logic</td>
-<td>ORN</td>
-<td>SP</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IMOV[CC][S][P][A][F] Rm/Imm -> Rd
-</th>
-<td>Logic</td>
-<td>MOV</td>
-<td>SP</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IMVN[CC][S][P][A][F] Rm/Imm -> Rd
-</th>
-<td>Logic</td>
-<td>MVN</td>
-<td>SP</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th colspan=8>Immediate comparison</th>
-</tr>
-
-<tr>
-<th align=left>
-IADD[CC][S][A] Rn, Rm/Imm -> {cond}
-</th>
-<td>Arith</td>
-<td>ADD</td>
-<td>S0</td>
-<td>CC</td>
-<td>cond</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISUB[CC][S][A] Rn, Rm/Imm -> {cond}
-</th>
-<td>Arith</td>
-<td>SUB</td>
-<td>S0</td>
-<td>CC</td>
-<td>cond</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-IRSB[CC][S][A] Rn, Rm/Imm -> {cond}
-</th>
-<td>Arith</td>
-<td>RSB</td>
-<td>S0</td>
-<td>CC</td>
-<td>cond</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-IAND[CC][S][P][A][F] Rn, Rm/Imm -> {cond}
-</th>
-<td>Logic</td>
-<td>AND</td>
-<td>SP</td>
-<td>CC</td>
-<td>cond</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IORR[CC][S][P][A][F] Rn, Rm/Imm -> {cond}
-</th>
-<td>Logic</td>
-<td>OR</td>
-<td>SP</td>
-<td>CC</td>
-<td>cond</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IEOR[CC][S][P][A][F] Rn, Rm/Imm -> {cond}
-</th>
-<td>Logic</td>
-<td>XOR</td>
-<td>SP</td>
-<td>CC</td>
-<td>cond</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IBIC[CC][S][P][A][F] Rn, Rm/Imm -> {cond}
-</th>
-<td>Logic</td>
-<td>BIC</td>
-<td>SP</td>
-<td>CC</td>
-<td>cond</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IORN[CC][S][P][A][F] Rn, Rm/Imm -> {cond}
-</th>
-<td>Logic</td>
-<td>ORN</td>
-<td>SP</td>
-<td>CC</td>
-<td>cond</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th colspan=8>Shift</th>
-</tr>
-
-<tr>
-<th align=left>
-ILSL[CC][S][F] Rn, Rm/Imm -> Rd
-</th>
-<td>SHF</td>
-<td>LSL</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILSR[CC][S][F] Rn, Rm/Imm -> Rd
-</th>
-<td>SHF</td>
-<td>LSR</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IASR[CC][S][F] Rn, Rm/Imm -> Rd
-</th>
-<td>SHF</td>
-<td>ASR</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IROR[CC][S][F] Rn, Rm/Imm -> Rd
-</th>
-<td>SHF</td>
-<td>ROR</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-IROR33[CC][S][F] Rn -> Rd
-</th>
-<td>SHF</td>
-<td>ROR33</td>
-<td>S0</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th colspan=8>Coprocessor</th>
-</tr>
-
-<tr>
-<th align=left>
-ICPRD[CC] Rm/Imm -> Rd
-</th>
-<td>Coproc</td>
-<td>Read</td>
-<td>00</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ICPWR[CC] Rn, Rm/Imm
-</th>
-<td>Coproc</td>
-<td>Write</td>
-<td>00</td>
-<td>CC</td>
-<td>000000</td>
-<td>0</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ICPCMD[CC] Rm/Imm
-</th>
-<td>Coproc</td>
-<td>Cmd</td>
-<td>00</td>
-<td>CC</td>
-<td>000000</td>
-<td>0</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th colspan=8>Word loads</th>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC][S][F] #k (Rn) -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Up<br>Word</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]A[S][F] #k (Rn), Rm/Imm -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Up<br>Word</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>1</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC][A][S][F] #k (Rn, Rm/Imm) -> Rd
-</th>
-<td>Load</td>
-<td>Pre<br>Up<br>Word</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]A[S][F] #k (Rn), -Rm/Imm -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Down<br>Word</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>1</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC][A][S][F] #k (Rn, -Rm/Imm) -> Rd
-</th>
-<td>Load</td>
-<td>Pre<br>Down<br>Word</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-
-<tr>
-<th colspan=8>Byte loads</th>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]B[S][F] #k (Rn) -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Up<br>Byte</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]BA[S][F] #k (Rn), Rm/Imm -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Up<br>Byte</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>1</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]B[A][S][F] #k (Rn, Rm/Imm) -> Rd
-</th>
-<td>Load</td>
-<td>Pre<br>Up<br>Byte</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]BA[S][F] #k (Rn), -Rm/Imm -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Down<br>Byte</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>1</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]B[A][S][F] #k (Rn, -Rm/Imm) -> Rd
-</th>
-<td>Load</td>
-<td>Pre<br>Down<br>Byte</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-
-<tr>
-<th colspan=8>Halfword loads</th>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]H[S][F] #k (Rn) -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Up<br>Half</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>0</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]HA[S][F] #k (Rn), Rm/Imm -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Up<br>Half</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>1</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]H[A][S][F] #k (Rn, Rm/Imm) -> Rd
-</th>
-<td>Load</td>
-<td>Pre<br>Up<br>Half</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]HA[S][F] #k (Rn), -Rm/Imm -> Rd
-</th>
-<td>Load</td>
-<td>Post<br>Down<br>Half</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>1</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]H[A][S][F] #k (Rn, -Rm/Imm) -> Rd
-</th>
-<td>Load</td>
-<td>Pre<br>Down<br>Half</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-
-<tr>
-<th colspan=8>Word stores</th>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC][S] #k (Rn) <- Rm/Imm
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Word</td>
-<td>0s</td>
-<td>CC</td>
-<td>000000</td>
-<td>0</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC][A][S] #k (Rn), #+4 <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Word</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC][A][S] #k (Rn, #+4) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Up<br>Word</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]A[S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Word</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC][A][S] #k (Rn, #+SHF) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Up<br>Word</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC][A][S] #k (Rn), #-4 <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Down<br>Word</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC][A][S] #k (Rn, #-4) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Down<br>Word</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC][A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Down<br>Word</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC][A][S] #k (Rn, #-SHF) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Down<br>Word</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-
-<tr>
-<th colspan=8>Byte stores</th>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]B[S] #k (Rn) <- Rm/Imm
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Byte</td>
-<td>0s</td>
-<td>CC</td>
-<td>000000</td>
-<td>0</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]B[A][S] #k (Rn), #+1 <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Byte</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]B[A][S] #k (Rn, #+1) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Up<br>Byte</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]BA[S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Byte</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]B[A][S] #k (Rn, #+SHF) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Up<br>Byte</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]B[A][S] #k (Rn), #-1 <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Down<br>Byte</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]B[A][S] #k (Rn, #-1) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Down<br>Byte</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]B[A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Down<br>Byte</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]B[A][S] #k (Rn, #-SHF) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Down<br>Byte</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-
-<tr>
-<th colspan=8>Halfword stores</th>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]H[S] #k (Rn) <- Rm/Imm
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Half</td>
-<td>0s</td>
-<td>CC</td>
-<td>000000</td>
-<td>0</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]H[A][S] #k (Rn), #+2 <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Half</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]H[A][S] #k (Rn, #+2) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Up<br>Half</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]HA[S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Up<br>Half</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]H[A][S] #k (Rn, #+SHF) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Up<br>Half</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]H[A][S] #k (Rn), #-2 <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Down<br>Half</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]H[A][S] #k (Rn, #-2) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Down<br>Half</td>
-<td>0s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]H[A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Post<br>Down<br>Half</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-<tr>
-<th align=left>
-ISTR[CC]H[A][S] #k (Rn, #-SHF) <- Rm/Imm [-> Rd]
-</th>
-<td>Store</td>
-<td>Pre<br>Down<br>Half</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>0</td>
-</tr>
-
-
-</table>
-
-Still missing:
-XMC (word, block), XCM (word, block), EORFIRSTONE, EORLASTONE, BITCOUNT, TESTALLSET, TESTANYCLEAR, MEMCMD (prefetch, writeback, writeback_and_invalidate, flush, fill buffer from address, write buffer to address,
-Sticky flags
-
-
-   condition passed shadow size, L=little-endian, u=unaligned will come from pipeline configuration, as do sticky flags.
 
 <?php
 page_ep();

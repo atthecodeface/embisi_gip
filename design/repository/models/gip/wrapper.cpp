@@ -15,6 +15,7 @@
 #include "gdb_stub.h"
 #include "symbols.h"
 #include "c_gip_pipeline_single.h"
+#include "c_gip_full.h"
 #include "c_memory_model.h"
 #include "c_ram_model.h"
 #include "c_mmio_model.h"
@@ -24,7 +25,7 @@
 /*a Statics
  */
 int debug_level;
-static c_gip_pipeline_single *gip;
+static c_execution_model_class *gip;
 static c_memory_model *memory;
 static c_ram_model *ram;
 static c_ram_model *zero_page_ram;
@@ -66,7 +67,7 @@ static void usage( void )
     printf("This is a wrapper around various GIP and memory models\n");
     printf("It is very powerful, and probably exceeds the scope of options to manage it\n");
     printf("However, primitive options are supplied\n");
-    printf("-- -a -b -d -e -f -g -h -m -r -s -t -M -T\n");
+    printf("-- -a -b -d -e -f -g -h -m -r -s -S -t -M -T\n");
     printf("\t--: use stdin for the code to load into the GIP\n");
     printf("\t-a <hex>: set base address of code to load; precede '-f' or '--'\n");
     printf("\t-b: load code as binary, not as a MIF file (which is hex data, or address:hex, in text form); precede '-f' or '--'\n");
@@ -78,6 +79,7 @@ static void usage( void )
     printf("\t-m: launch minicom\n");
     printf("\t-r<n> <hex>: set register n (decimal) to the hex value given at initialization\n");
     printf("\t-s <symbol.map>: set the filename of the symbol file - usually 'System.map' if run from the linux directory\n");
+    printf("\t-S: use the single cycle GIP internal model - this runs faster, but less accurately than the default full pipeline model\n");
     printf("\t-t <cycles>: if not running under gdb, run for this maximum number of cycles then exit\n");
     printf("\t-M <start> <end> <level>: turn on memory tracing for a region of memory at this level (1-3, 3 gives everything, 1 just errors); output is appended to file memory_model.log\n");
     printf("\t-T <region> <start> <end>: turn on execution tracing within a numbered region (0 to 7); output is appended to file gip_exec_trace.log\n");
@@ -172,6 +174,7 @@ extern int main( int argc, char **argv )
     file_desc files_to_load [8];
     int nfiles_to_load = 0;
     int must_launch_minicom = 0;
+    int use_single_pipeline = 0;
 
     memset (files_to_load, 0, sizeof(files_to_load));
 
@@ -187,7 +190,7 @@ extern int main( int argc, char **argv )
         execution_regions[i][2] = 0;
     }
 //	f=stdin;
-	cycles=100;
+	cycles=1000;
 //	binary=0;
 	gdb_enabled = 0;
 //    base_address = 0;
@@ -332,6 +335,13 @@ extern int main( int argc, char **argv )
             }
             continue;
         }
+        /*b '-S'
+         */
+        if (!strcmp( argv[i], "-S" ))
+        {
+            use_single_pipeline=1;
+            continue;
+        }
         /*b '-M'
          */
         if (!strcmp( argv[i], "-M" ))
@@ -403,7 +413,20 @@ extern int main( int argc, char **argv )
      */
    	ram = new c_ram_model( 1<<24 ); // Create RAM of size 1<<24 = 16MB
    	memory = new c_memory_model();
-	gip = new c_gip_pipeline_single( memory );
+
+    if (use_single_pipeline)
+    {
+        c_gip_pipeline_single *gip_single;
+        gip_single = new c_gip_pipeline_single( memory );
+        gip = (c_execution_model_class *)gip_single;
+    }
+    else
+    {
+        c_gip_full *gip_full;
+        gip_full = new c_gip_full( memory );
+        gip = (c_execution_model_class *)gip_full;
+    }
+
    	zero_page_ram = new c_ram_model( 1<<24 ); // Create zero-pagee RAM of size 1<<24 = 16MB
    	mmio = new c_mmio_model( gip ); // Create our standard MMIO model
 

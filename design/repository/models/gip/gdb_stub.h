@@ -9,7 +9,7 @@
 /*a External functions
  */
 extern void gdb_stub_disable( void );
-extern void gdb_stub_init( class c_gip_pipeline_single *gip, class c_memory_model *memory, class c_mmio_model *mmio );
+extern void gdb_stub_init( class c_execution_model_class *gip, class c_memory_model *memory, class c_mmio_model *mmio );
 extern void gdb_trap (int trapid);
 extern int gdb_poll (int reason );
 extern void gdb_set_breakpoint (unsigned int addr);

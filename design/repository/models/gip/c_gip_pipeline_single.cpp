@@ -134,6 +134,12 @@ typedef struct t_private_data
 
 /*a Static variables
  */
+static t_gip_ins_rd gip_ins_rd_none = { gip_ins_rd_type_internal, {gip_ins_rd_int_none}};
+static t_gip_ins_rd gip_ins_rd_pc = { gip_ins_rd_type_internal, {gip_ins_rd_int_pc}};
+static t_gip_ins_rd gip_ins_rd_r14 = { gip_ins_rd_type_register, {14}};
+static t_gip_ins_rnm gip_ins_rnm_acc = { gip_ins_rnm_type_internal, {gip_ins_rnm_int_acc}};
+static t_gip_ins_rnm gip_ins_rnm_shf = { gip_ins_rnm_type_internal, {gip_ins_rnm_int_shf}};
+static t_gip_ins_rnm gip_ins_rnm_pc = { gip_ins_rnm_type_internal, {gip_ins_rnm_int_pc}};
 
 /*a Support functions
  */
@@ -533,7 +539,7 @@ int c_gip_pipeline_single::step( int *reason, int requested_count )
             continue;
         }
         *reason = opcode;
-        printf( "failed_to_execute %x\n", opcode );
+        printf( "failed to execute %x\n", opcode );
         debug(-1);
         return i;
         if (1) 
@@ -894,20 +900,11 @@ void c_gip_pipeline_single::execute_int_memory_instruction( t_gip_mem_op gip_mem
  */
 unsigned int c_gip_pipeline_single::read_int_register( t_gip_instruction *instr, t_gip_ins_rnm r )
 {
-    unsigned int result;
-
-    switch (r)
+    if (r.type==gip_ins_rnm_type_register)
     {
-    case gip_ins_rnm_acc:
-    case gip_ins_rnm_shf:
-    case gip_ins_rnm_pc:
-        result = instr->pc;
-        break;
-    default:
-        result = pd->regs[((int)r)&0x1f];
-        break;
+        return pd->regs[r.data.r&0x1f];
     }
-    return result;
+    return instr->pc;
 }
 
 /*f c_gip_pipeline_single::disassemble_int_instruction
@@ -978,78 +975,99 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
 
     /*b Get text of Rd
      */
-    switch (inst->gip_ins_rd)
+    switch (inst->gip_ins_rd.type)
     {
-    case gip_ins_rd_none:
-        rd = "";
+    case gip_ins_rd_type_internal:
+        switch (inst->gip_ins_rd.data.internal)
+        {
+        case gip_ins_rd_int_none:
+            rd = "";
+            break;
+        case gip_ins_rd_int_eq:
+            rd = "-> EQ";
+            break;
+        case gip_ins_rd_int_ne:
+            rd = "-> NE";
+            break;
+        case gip_ins_rd_int_cs:
+            rd = "-> CS";
+            break;
+        case gip_ins_rd_int_cc:
+            rd = "-> CC";
+            break;
+        case gip_ins_rd_int_mi:
+            rd = "-> MI";
+            break;
+        case gip_ins_rd_int_pl:
+            rd = "-> PL";
+            break;
+        case gip_ins_rd_int_vs:
+            rd = "-> VS";
+            break;
+        case gip_ins_rd_int_vc:
+            rd = "-> VC";
+            break;
+        case gip_ins_rd_int_hi:
+            rd = "-> HI";
+            break;
+        case gip_ins_rd_int_ls:
+            rd = "-> LS";
+            break;
+        case gip_ins_rd_int_ge:
+            rd = "-> GE";
+            break;
+        case gip_ins_rd_int_lt:
+            rd = "-> LT";
+            break;
+        case gip_ins_rd_int_gt:
+            rd = "-> GT";
+            break;
+        case gip_ins_rd_int_le:
+            rd = "-> LE";
+            break;
+        case gip_ins_rd_int_pc:
+            rd = "-> PC";
+            break;
+        }
         break;
-    case gip_ins_rd_eq:
-        rd = "-> EQ";
-        break;
-    case gip_ins_rd_ne:
-        rd = "-> NE";
-        break;
-    case gip_ins_rd_cs:
-        rd = "-> CS";
-        break;
-    case gip_ins_rd_cc:
-        rd = "-> CC";
-        break;
-    case gip_ins_rd_mi:
-        rd = "-> MI";
-        break;
-    case gip_ins_rd_pl:
-        rd = "-> PL";
-        break;
-    case gip_ins_rd_vs:
-        rd = "-> VS";
-        break;
-    case gip_ins_rd_vc:
-        rd = "-> VC";
-        break;
-    case gip_ins_rd_hi:
-        rd = "-> HI";
-        break;
-    case gip_ins_rd_ls:
-        rd = "-> LS";
-        break;
-    case gip_ins_rd_ge:
-        rd = "-> GE";
-        break;
-    case gip_ins_rd_lt:
-        rd = "-> LT";
-        break;
-    case gip_ins_rd_gt:
-        rd = "-> GT";
-        break;
-    case gip_ins_rd_le:
-        rd = "-> LE";
-        break;
-    case gip_ins_rd_pc:
-        rd = "-> PC";
+    case gip_ins_rd_type_register:
+        rd = rd_buffer;
+        sprintf( rd_buffer, "-> R%d", inst->gip_ins_rd.data.r );
         break;
     default:
         rd = rd_buffer;
-        sprintf( rd_buffer, "-> R%d", (int)inst->gip_ins_rd&0x1f );
+        sprintf( rd_buffer, "-> S/C%d", inst->gip_ins_rd.data.r );
         break;
     }
 
     /*b Get text of Rn
      */
-    switch (inst->gip_ins_rn)
+    switch (inst->gip_ins_rn.type)
     {
-    case gip_ins_rnm_acc:
+    case gip_ins_rnm_type_internal:
+        switch (inst->gip_ins_rn.data.internal)
+        {
+        case gip_ins_rnm_int_acc:
             rn = "ACC";
             break;
-    case gip_ins_rnm_shf:
+        case gip_ins_rnm_int_shf:
             rn = "SHF";
             break;
-    case gip_ins_rnm_pc:
+        case gip_ins_rnm_int_pc:
             rn = "PC";
             break;
-    default:
-        sprintf( rn_buffer, "R%d", ((int)inst->gip_ins_rn)&0x1f );
+        default:
+            rn = "<NONE>";
+            break;
+        }
+        break;
+    case gip_ins_rnm_type_register:
         rn = rn_buffer;
+        sprintf( rn_buffer, "R%d", inst->gip_ins_rn.data.r );
+        break;
+    default:
+        rn = rn_buffer;
+        sprintf( rn_buffer, "S/C%d", inst->gip_ins_rn.data.r );
         break;
     }
 
@@ -1062,20 +1080,32 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
     }
     else
     {
-        switch (inst->rm_data.gip_ins_rm)
+        switch (inst->rm_data.gip_ins_rm.type)
         {
-        case gip_ins_rnm_acc:
-            rm = "ACC";
+        case gip_ins_rnm_type_internal:
+            switch (inst->rm_data.gip_ins_rm.data.internal)
+            {
+            case gip_ins_rnm_int_acc:
+                rm = "ACC";
+                break;
+            case gip_ins_rnm_int_shf:
+                rm = "SHF";
+                break;
+            case gip_ins_rnm_int_pc:
+                rm = "PC";
+                break;
+            default:
+                rm = "<NONE>";
+                break;
+            }
             break;
-        case gip_ins_rnm_shf:
-            rm = "SHF";
-            break;
-        case gip_ins_rnm_pc:
-            rm = "PC";
+        case gip_ins_rnm_type_register:
+            rm = rm_buffer;
+            sprintf( rm_buffer, "R%d", inst->rm_data.gip_ins_rm.data.r );
             break;
         default:
-            sprintf( rm_buffer, "R%d", ((int)inst->rm_data.gip_ins_rm)&0x1f );
             rm = rm_buffer;
+            sprintf( rm_buffer, "S/C%d", inst->rm_data.gip_ins_rm.data.r );
             break;
         }
     }
@@ -1293,7 +1323,7 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
  */
 void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_gip_pipeline_results *results )
 {
-    //debug(6);
+//    debug(6);
     disassemble_int_instruction( inst );
     results->write_pc = 0;
     results->flush = 0;
@@ -1338,14 +1368,11 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
     pd->set_zcvn = 0;
     pd->set_p = 0;
     pd->set_acc = inst->a;
-    switch (inst->gip_ins_rn)
+    pd->op1_src = gip_alu_op1_src_a_in;
+    if ( (inst->gip_ins_rn.type==gip_ins_rnm_type_internal) &&
+         (inst->gip_ins_rn.data.internal==gip_ins_rnm_int_acc) )
     {
-    case gip_ins_rnm_acc:
         pd->op1_src = gip_alu_op1_src_acc;
-        break;
-    default:
-        pd->op1_src = gip_alu_op1_src_a_in;
-        break;
     }
     if (inst->rm_is_imm)
     {
@@ -1353,17 +1380,16 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
     }
     else
     {
-        switch (inst->rm_data.gip_ins_rm)
+        pd->op2_src = gip_alu_op2_src_b_in;
+        if ( (inst->rm_data.gip_ins_rm.type==gip_ins_rnm_type_internal) &&
+             (inst->rm_data.gip_ins_rm.data.internal==gip_ins_rnm_int_acc) )
         {
-        case gip_ins_rnm_acc:
             pd->op2_src = gip_alu_op2_src_acc;
-            break;
-        case gip_ins_rnm_shf:
+        }
+        if ( (inst->rm_data.gip_ins_rm.type==gip_ins_rnm_type_internal) &&
+             (inst->rm_data.gip_ins_rm.data.internal==gip_ins_rnm_int_shf) )
+        {
             pd->op2_src = gip_alu_op2_src_shf;
-            break;
-        default:
-            pd->op2_src = gip_alu_op2_src_b_in;
-            break;
         }
     }
     switch (inst->gip_ins_class)
@@ -1587,59 +1613,26 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
 
     /*b Register file writeback
      */
-    switch (pd->alu_rd)
+    results->rfw_data = pd->alu_result;
+    if (pd->alu_rd.type==gip_ins_rd_type_register)
     {
-    case gip_ins_rd_none:
-    case gip_ins_rd_eq:
-    case gip_ins_rd_ne:
-    case gip_ins_rd_cs:
-    case gip_ins_rd_cc:
-    case gip_ins_rd_mi:
-    case gip_ins_rd_pl:
-    case gip_ins_rd_vs:
-    case gip_ins_rd_vc:
-    case gip_ins_rd_hi:
-    case gip_ins_rd_ls:
-    case gip_ins_rd_ge:
-    case gip_ins_rd_lt:
-    case gip_ins_rd_gt:
-    case gip_ins_rd_le:
-        break;
-    case gip_ins_rd_pc:
-        results->rfw_data = pd->alu_result;
-        results->write_pc = 1;
-        break;
-    default:
-        results->rfw_data = pd->alu_result;
-        pd->regs[ ((int)pd->alu_rd)&0x1f ] = pd->alu_result;
-        break;
+        pd->regs[ pd->alu_rd.data.r&0x1f ] = pd->alu_result;
     }
-    switch (pd->mem_rd)
+    if ( (pd->alu_rd.type==gip_ins_rd_type_internal) &&
+         (pd->alu_rd.data.internal==gip_ins_rd_int_pc) )
     {
-    case gip_ins_rd_none:
-    case gip_ins_rd_eq:
-    case gip_ins_rd_ne:
-    case gip_ins_rd_cs:
-    case gip_ins_rd_cc:
-    case gip_ins_rd_mi:
-    case gip_ins_rd_pl:
-    case gip_ins_rd_vs:
-    case gip_ins_rd_vc:
-    case gip_ins_rd_hi:
-    case gip_ins_rd_ls:
-    case gip_ins_rd_ge:
-    case gip_ins_rd_lt:
-    case gip_ins_rd_gt:
-    case gip_ins_rd_le:
-        break;
-    case gip_ins_rd_pc:
+        results->write_pc = 1;
+    }
+    if (pd->mem_rd.type==gip_ins_rd_type_register)
+    {
+        results->rfw_data = pd->mem_result;
+        pd->regs[ pd->mem_rd.data.r&0x1f ] = pd->mem_result;
+    }
+    if ( (pd->mem_rd.type==gip_ins_rd_type_internal) &&
+         (pd->mem_rd.data.internal==gip_ins_rd_int_pc) )
+    {
         results->rfw_data = pd->mem_result;
         results->write_pc = 1;
-        break;
-    default:
-        results->rfw_data = pd->mem_result;
-        pd->regs[ ((int)pd->mem_rd)&0x1f ] = pd->mem_result;
-        break;
     }
     //printf("RFW ALU %d MEM %d D %08x\n",pd->alu_rd, pd->mem_rd, results->rfw_data );
 
@@ -1821,18 +1814,30 @@ t_gip_ins_cc c_gip_pipeline_single::map_condition_code( int arm_cc )
  */
 t_gip_ins_rnm c_gip_pipeline_single::map_source_register( int arm_r )
 {
+    t_gip_ins_rnm result;
+    result.type = gip_ins_rnm_type_register;
+    result.data.r = arm_r;
     if (arm_r==15)
-        return gip_ins_rnm_pc;
-    return (t_gip_ins_rnm)(((int)gip_ins_rnm_r00) + arm_r);
+    {
+        result.type = gip_ins_rnm_type_internal;
+        result.data.internal = gip_ins_rnm_int_pc;
+    }
+    return result;
 }
 
 /*f c_gip_pipeline_single::map_destination_register
  */
 t_gip_ins_rd c_gip_pipeline_single::map_destination_register( int arm_rd )
 {
+    t_gip_ins_rd result;
+    result.type = gip_ins_rd_type_register;
+    result.data.r = arm_rd;
     if (arm_rd==15)
-        return gip_ins_rd_pc;
-    return (t_gip_ins_rd)(((int)gip_ins_rd_r00) + arm_rd);
+    {
+        result.type = gip_ins_rd_type_internal;
+        result.data.internal = gip_ins_rd_int_pc;
+    }
+    return result;
 }
 
 /*f c_gip_pipeline_single::map_shift

@@ -27,7 +27,7 @@ typedef struct t_mmio_model_data
 {
 //	unsigned int isr;
 //	unsigned int return_addr;
-    c_gip_pipeline_single *gip;
+    c_execution_model_class *gip;
 } t_mmio_model_data;
 
 /*a Static function wrappers for class functions
@@ -52,7 +52,7 @@ static unsigned int read_mmio( void *handle, unsigned int address )
  */
 /*f c_mmio_model::c_mmio_model
  */
-c_mmio_model::c_mmio_model( c_gip_pipeline_single *gip )
+c_mmio_model::c_mmio_model( c_execution_model_class *gip )
 {
 	private_data = (t_mmio_model_data *)malloc(sizeof(t_mmio_model_data));
 //	private_data->isr = 0;

@@ -14,17 +14,6 @@
 
 /*a Types
  */
-/*t gip_flag_mask_*
- */
-enum
-{
-    gip_flag_mask_z = 1,
-    gip_flag_mask_n = 2,
-    gip_flag_mask_c = 4,
-    gip_flag_mask_v = 8,
-    gip_flag_mask_cp= 16,
-};
-
 /*t	c_gip_pipeline_single
 */
 class c_gip_pipeline_single : public c_execution_model_class

@@ -14,17 +14,6 @@
 
 /*a Types
  */
-/*t gip_flag_mask_*
- */
-enum
-{
-    gip_flag_mask_z = 1,
-    gip_flag_mask_n = 2,
-    gip_flag_mask_c = 4,
-    gip_flag_mask_v = 8,
-    gip_flag_mask_cp= 16,
-};
-
 /*t	c_gip_full
 */
 class c_gip_full : public c_execution_model_class
@@ -66,38 +55,63 @@ private:
 
     /*b Internal instruction building methods
      */
+    void c_gip_full::build_gip_instruction_nop( t_gip_instruction *gip_instr );
     void c_gip_full::build_gip_instruction_alu( t_gip_instruction *gip_instr, t_gip_ins_class gip_ins_class, t_gip_ins_subclass gip_ins_subclass, int a, int s, int p, int f );
     void c_gip_full::build_gip_instruction_shift( t_gip_instruction *gip_instr, t_gip_ins_subclass gip_ins_subclass, int s, int f );
     void c_gip_full::build_gip_instruction_load( t_gip_instruction *gip_instr, t_gip_ins_subclass gip_ins_subclass, int preindex, int up, int stack, int burst_left, int a, int f );
     void c_gip_full::build_gip_instruction_store( t_gip_instruction *gip_instr, t_gip_ins_subclass gip_ins_subclass, int preindex, int up, int use_shift, int stack, int burst_left, int a, int f );
     void c_gip_full::build_gip_instruction_cc( t_gip_instruction *gip_instr, t_gip_ins_cc gip_ins_cc);
     void c_gip_full::build_gip_instruction_rn( t_gip_instruction *gip_instr, t_gip_ins_rnm gip_ins_rn );
+    void c_gip_full::build_gip_instruction_rn_int( t_gip_instruction *gip_instr, t_gip_ins_rnm_int gip_ins_rn_int );
     void c_gip_full::build_gip_instruction_rm( t_gip_instruction *gip_instr, t_gip_ins_rnm gip_ins_rm );
+    void c_gip_full::build_gip_instruction_rm_int( t_gip_instruction *gip_instr, t_gip_ins_rnm_int gip_ins_rm_int );
     void c_gip_full::build_gip_instruction_rd( t_gip_instruction *gip_instr, t_gip_ins_rd gip_ins_rd );
+    void c_gip_full::build_gip_instruction_rd_int( t_gip_instruction *gip_instr, t_gip_ins_rd_int gip_ins_rd_int );
+    void c_gip_full::build_gip_instruction_rd_reg( t_gip_instruction *gip_instr, int gip_ins_rd_r );
     void c_gip_full::build_gip_instruction_immediate( t_gip_instruction *gip_instr, unsigned int imm_val );
     t_gip_ins_cc c_gip_full::map_condition_code( int arm_cc );
     t_gip_ins_rnm c_gip_full::map_source_register( int arm_r );
     t_gip_ins_rd c_gip_full::map_destination_register( int arm_rd );
     t_gip_ins_subclass c_gip_full::map_shift( int shf_how, int imm, int amount );
 
-    /*b ARM Execution methods
+    /*b ARM Decode methods
      */
-    int c_gip_full::execute_arm_alu( unsigned int opcode );
-    int c_gip_full::execute_arm_branch( unsigned int opcode );
-    int c_gip_full::execute_arm_ld_st( unsigned int opcode );
-    int c_gip_full::execute_arm_ldm_stm( unsigned int opcode );
-    int c_gip_full::execute_arm_mul( unsigned int opcode );
-    int c_gip_full::execute_arm_trace( unsigned int opcode );
+    int c_gip_full::decode_arm_alu( void );
+    int c_gip_full::decode_arm_branch( void );
+    int c_gip_full::decode_arm_ld_st( void );
+    int c_gip_full::decode_arm_ldm_stm( void );
+    int c_gip_full::decode_arm_mul( void );
+    int c_gip_full::decode_arm_trace( void );
+
+    /*b Decoder methods
+     */
+    void c_gip_full::dec_preclock( void );
+    void c_gip_full::dec_clock( void );
+    void c_gip_full::dec_comb( void );
 
     /*b RF methods
      */
-    unsigned int c_gip_full::read_int_register( t_gip_instruction *instr, t_gip_ins_rnm r );
-    void c_gip_full::rf_writeback( t_gip_pipeline_results *results );
-    void c_gip_full::rf_read( t_gip_instruction *inst, t_gip_pipeline_results *results );
+    void c_gip_full::rf_preclock( void  );
+    void c_gip_full::rf_clock( void );
+    void c_gip_full::rf_comb( t_gip_pipeline_results *results );
 
     /*b ALU methods
      */
-    void c_gip_full::alu_operate( t_gip_pipeline_results *results );
+    void c_gip_full::alu_clock( void );
+    void c_gip_full::alu_preclock( void );
+    void c_gip_full::alu_comb( t_gip_pipeline_results *results );
+
+    /*b Memory stage methods
+     */
+    void c_gip_full::mem_clock( void );
+    void c_gip_full::mem_preclock( void );
+    void c_gip_full::mem_comb( t_gip_pipeline_results *results );
+
+    /*b Complete structure methods
+     */
+    void c_gip_full::clock( void );
+    void c_gip_full::preclock( void );
+    void c_gip_full::comb( void );
 
 };
 

@@ -25,7 +25,7 @@ typedef struct t_gdb_stub
     int enabled;   
     int client_socket;
     int public_socket;
-    c_gip_pipeline_single *gip;
+    c_execution_model_class *gip;
     c_memory_model *memory;
     int status;
 } t_gdb_stub;
@@ -253,7 +253,7 @@ static int handle_packet( char * rx_packet )
             addr = (addr << 4) | parse_hex_char (*(ptr++));
         if (*ptr == ',')
         {
-            *ptr++;
+            ptr++;
             len = 0;
             while (*ptr && *ptr != ',')
                 len = (len << 4) | parse_hex_char (*(ptr++));
@@ -281,7 +281,7 @@ static int handle_packet( char * rx_packet )
             addr = (addr << 4) | parse_hex_char (*(ptr++));
         if (*ptr == ',')
         {
-            *ptr++;
+            ptr++;
             value = 0;
             while (*ptr && *ptr != ':')
                 value = (value << 4) | parse_hex_char (*(ptr++));
@@ -335,7 +335,7 @@ static void gdb_ensure_connected( void )
     if (stub.client_socket == 0)
     {
         struct sockaddr_in caddr;
-        unsigned int caddr_len = sizeof(caddr);
+        int caddr_len = sizeof(caddr);
     
         printf ("Waiting for connection from gdb\n");   
         stub.client_socket = accept (stub.public_socket, (struct sockaddr *)&caddr, &caddr_len);
@@ -371,7 +371,7 @@ void gdb_stub_disable( void )
   Record the GIP model we are connected to, so we can get data
   Record the memory model so we can set watchpoints and read memory
 */
-void gdb_stub_init( c_gip_pipeline_single *gip, c_memory_model *memory, c_mmio_model *mmio )
+void gdb_stub_init( c_execution_model_class *gip, c_memory_model *memory, c_mmio_model *mmio )
 {
     stub.enabled = 1;
     stub.gip = gip;

@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/socket.h>
+#ifdef LINUX
 #include <linux/if_ether.h>
 #include <netinet/in.h>
 #include <netpacket/packet.h>
@@ -11,6 +12,7 @@
 #include <sys/ioctl.h>
 
 #include "ether.h"
+#endif
 
 static int raw_s;
 
@@ -19,21 +21,10 @@ static int tx_packet_len;
 static unsigned char mac [6];
 static int if_index;
 
-void ether_byte (unsigned char b)
-{
-	tx_packet[tx_packet_len++] = b;
-}
-
-void ether_send (void)
-{
-	ether_send_packet (tx_packet, tx_packet_len);
-	tx_packet_len = 0;
-}
-
-void ether_send_packet (unsigned char * pkt, unsigned int len)
+static void ether_send_packet (unsigned char * pkt, unsigned int len)
 {
 	memcpy (mac, pkt+6, 6); // save our mac address
-	
+#ifdef LINUX	
 	struct sockaddr_ll addr;
 	memset (&addr, 0, sizeof(addr));
 	addr.sll_family = AF_PACKET;
@@ -41,10 +32,23 @@ void ether_send_packet (unsigned char * pkt, unsigned int len)
 	int n = sendto (raw_s, pkt, len, 0, (struct sockaddr *)&addr, sizeof(addr));
 //	printf ("Sending packet len=%d, n=%d\n", len, n);
 	if (n == -1) perror ("send");
+#endif
 }
 
-void ether_init (const char * netdev)
+extern void ether_byte (unsigned char b)
 {
+	tx_packet[tx_packet_len++] = b;
+}
+
+extern void ether_send (void)
+{
+	ether_send_packet (tx_packet, tx_packet_len);
+	tx_packet_len = 0;
+}
+
+extern void ether_init (const char * netdev)
+{
+#ifdef LINUX
 	raw_s = socket (AF_PACKET, SOCK_RAW, ntohs (ETH_P_ALL));
 
     if (raw_s<0)
@@ -78,7 +82,8 @@ void ether_init (const char * netdev)
 	mreq.mr_ifindex = if_index;
 	mreq.mr_type = PACKET_MR_PROMISC;
 	setsockopt (raw_s, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
-}
+#endif
+ }
 
 
 const char * pkttype [] = {"host", "broadcast", "multicast", "otherhost", "outgoing", "loopback", "fastroute"};
@@ -137,6 +142,7 @@ int ether_poll (void)
 		int n = select (raw_s+1, &fd, 0,0, &tv);
 		if (n == 0) break;
 		
+#ifdef LINUX
 		unsigned char buf [2048];
 		struct sockaddr_ll addr;
 		unsigned int addr_len = sizeof(addr);
@@ -163,6 +169,7 @@ int ether_poll (void)
 //				printf (" %2.2x", buf[i]);
 //			printf ("\n");
 		}
+#endif
 	}
 	return interrupt;
 }

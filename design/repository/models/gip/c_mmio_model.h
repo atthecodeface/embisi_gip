@@ -15,7 +15,7 @@ class c_mmio_model
 
  public:
 	int page_size;
-    c_mmio_model::c_mmio_model( class c_gip_pipeline_single *gip );
+    c_mmio_model::c_mmio_model( class c_execution_model_class *model );
 	c_mmio_model::~c_mmio_model( void );
     int c_mmio_model::register_with_memory_map( class c_memory_model *memory, unsigned int base_address, unsigned int address_range_size );
     unsigned int c_mmio_model::read( unsigned int address );

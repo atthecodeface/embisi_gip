@@ -33,6 +33,11 @@ typedef enum
     gip_ins_subclass_arith_sbc=3,
     gip_ins_subclass_arith_rsb=4,
     gip_ins_subclass_arith_rsc=5,
+    gip_ins_subclass_arith_init=8,
+    gip_ins_subclass_arith_mla=10,
+    gip_ins_subclass_arith_mlb=11,
+    gip_ins_subclass_arith_dva=10,
+    gip_ins_subclass_arith_dvb=11,
 
     gip_ins_subclass_logic_and=0,
     gip_ins_subclass_logic_or=1,

@@ -35,7 +35,8 @@ typedef enum
     gip_alu_op_rsub,
     gip_alu_op_rsbc,
     gip_alu_op_init,
-    gip_alu_op_mulst,
+    gip_alu_op_mla,
+    gip_alu_op_mlb,
     gip_alu_op_divst,
 } t_gip_alu_op;
 

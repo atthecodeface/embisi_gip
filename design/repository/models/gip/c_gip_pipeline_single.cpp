@@ -429,6 +429,9 @@ c_gip_pipeline_single::c_gip_pipeline_single( c_memory_model *memory )
     pd->p = 0;
     pd->cp = 0;
 
+    pd->trace_file = NULL;
+    pd->last_address = 0;
+    pd->seq_count = 0;
     /*
       pd->debugging_enabled = 0;
       pd->breakpoints_enabled = 0;
@@ -442,7 +445,6 @@ c_gip_pipeline_single::c_gip_pipeline_single( c_memory_model *memory )
       pd->trace_region_starts[i] = 0;
       pd->trace_region_ends[i] = 0;
       }
-      pd->trace_file = NULL;
       pd->halt = 0;
       for (i=0; i<8; i++)
       {
@@ -521,6 +523,9 @@ void c_gip_pipeline_single::debug( int mask )
                 pd->v,
                 pd->p,
                 pd->cp );
+        printf( "\t  alu a:%08x alu b:%08x\n",
+                pd->alu_a_in,
+                pd->alu_b_in );
     }
     if (mask&1)
     {
@@ -570,11 +575,11 @@ int c_gip_pipeline_single::arm_step( int *reason, int requested_count )
 
         /*b attempt to execute opcode, trying each instruction coding one at a time till we succeed
          */
-        if ( execute_arm_alu( opcode ) ||
+        if ( execute_arm_mul( opcode ) ||
+             execute_arm_alu( opcode ) ||
              execute_arm_ld_st( opcode ) ||
              execute_arm_ldm_stm( opcode ) ||
              execute_arm_branch( opcode ) ||
-             execute_arm_mul( opcode ) ||
              execute_arm_trace( opcode ) ||
              0 )
         {
@@ -701,8 +706,11 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
         pd->shf_result = barrel_shift( pd->c, shf_type_rrx, pd->alu_a_in, pd->alu_b_in, &pd->shf_carry );
         break;
     case gip_alu_op_init:
+        pd->shf_result = barrel_shift( 0&pd->c, shf_type_lsr, pd->alu_a_in, 0, &pd->shf_carry );
         break;
-    case gip_alu_op_mulst:
+    case gip_alu_op_mla:
+    case gip_alu_op_mlb:
+        pd->shf_result = barrel_shift( pd->c, shf_type_lsr, pd->shf, 2, &pd->shf_carry );
         break;
     case gip_alu_op_divst:
         break;
@@ -735,9 +743,10 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
     case gip_alu_op_orn:
         pd->logic_result = pd->alu_op1 |~ pd->alu_op2;
         break;
-    case gip_alu_op_xorcnt:
     case gip_alu_op_init:
-    case gip_alu_op_mulst:
+    case gip_alu_op_xorcnt:
+    case gip_alu_op_mla:
+    case gip_alu_op_mlb:
     case gip_alu_op_divst:
         break;
     default:
@@ -769,7 +778,34 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
     case gip_alu_op_xorcnt:
         break;
     case gip_alu_op_init:
-    case gip_alu_op_mulst:
+        pd->arith_result = add_op( 0&pd->alu_op1, pd->alu_op2, 0, &pd->alu_c, &pd->alu_v );
+        break;
+    case gip_alu_op_mla:
+    case gip_alu_op_mlb:
+        switch ((pd->shf&3)+pd->p)
+        {
+        case 0:
+            pd->arith_result = add_op( pd->alu_op1, 0&pd->alu_op2, 0, &pd->alu_c, &pd->alu_v );
+            pd->shf_carry = 0;
+            break;
+        case 1:
+            pd->arith_result = add_op( pd->alu_op1, pd->alu_op2, 0, &pd->alu_c, &pd->alu_v );
+            pd->shf_carry = 0;
+            break;
+        case 2:
+            pd->arith_result = add_op( pd->alu_op1, pd->alu_op2<<1, 0, &pd->alu_c, &pd->alu_v );
+            pd->shf_carry = 0;
+            break;
+        case 3:
+            pd->arith_result = add_op( pd->alu_op1, ~pd->alu_op2, 1, &pd->alu_c, &pd->alu_v );
+            pd->shf_carry = 1;
+            break;
+        case 4:
+            pd->arith_result = add_op( pd->alu_op1, 0&pd->alu_op2, 0, &pd->alu_c, &pd->alu_v );
+            pd->shf_carry = 1;
+            break;
+        }
+        break;
     case gip_alu_op_divst:
         break;
     default:
@@ -822,6 +858,24 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
         }
         pd->shf = 0;// should only be with the 'C' flag, but have not defined that yet
         break;
+    case gip_alu_op_init:
+    case gip_alu_op_mla:
+    case gip_alu_op_mlb:
+        pd->alu_result = pd->arith_result;
+        if (s)
+        {
+            pd->z = (pd->arith_result==0);
+            pd->n = ((pd->arith_result&0x80000000)!=0);
+            pd->c = pd->alu_c;
+            pd->v = pd->alu_v;
+        }
+        if (a)
+        {
+            pd->acc = pd->arith_result;
+        }
+        pd->shf = pd->shf_result;
+        pd->p = pd->shf_carry;
+        break;
     case gip_alu_op_lsl:
     case gip_alu_op_lsr:
     case gip_alu_op_asr:
@@ -836,10 +890,9 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
         }
         pd->p = pd->shf_carry;
         break;
-    case gip_alu_op_xorcnt:
-    case gip_alu_op_init:
-    case gip_alu_op_mulst:
     case gip_alu_op_divst:
+        break;
+    case gip_alu_op_xorcnt:
         break;
     }
 
@@ -1148,6 +1201,15 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
         case gip_ins_subclass_arith_rsc:
             op = "IRSC";
             break;
+        case gip_ins_subclass_arith_init:
+            op = "INIT";
+            break;
+        case gip_ins_subclass_arith_mla:
+            op = "IMLA";
+            break;
+        case gip_ins_subclass_arith_mlb:
+            op = "IMLB";
+            break;
         default:
             break;
         }
@@ -1285,15 +1347,28 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
  */
 void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_gip_pipeline_results *results )
 {
-    disassemble_int_instruction( inst );
     //debug(6);
+    disassemble_int_instruction( inst );
     results->write_pc = 0;
     results->flush = 0;
 
-    /*b Read the register file
+    /*b Read the register file; but don't write alu_a_in if we have a mlb instruction!
      */
-    pd->alu_a_in = read_int_register( inst, inst->gip_ins_rn ); // Read register/special
-    if (inst->rm_is_imm)
+    if ( 0 && (inst->gip_ins_class==gip_ins_class_arith) &&
+         (inst->gip_ins_subclass==gip_ins_subclass_arith_mlb) )
+    {
+        pd->alu_a_in = pd->alu_a_in;
+    }
+    else
+    {
+        pd->alu_a_in = read_int_register( inst, inst->gip_ins_rn ); // Read register/special
+    }
+    if ( (inst->gip_ins_class==gip_ins_class_arith) &&
+         (inst->gip_ins_subclass==gip_ins_subclass_arith_mlb) )
+    {
+        pd->alu_b_in = pd->alu_b_in<<2;// MLB in RF read stage implies shift left by 2; but only if it moves to the ALU stage, which it does here
+    }
+    else if (inst->rm_is_imm)
     {
         pd->alu_b_in = inst->rm_data.immediate; // If immediate, pass immediate data in
     }
@@ -1370,6 +1445,15 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
             break;
         case gip_ins_subclass_arith_rsc:
             gip_alu_op = gip_alu_op_rsbc;
+            break;
+        case gip_ins_subclass_arith_init:
+            gip_alu_op = gip_alu_op_init;
+            break;
+        case gip_ins_subclass_arith_mla:
+            gip_alu_op = gip_alu_op_mla;
+            break;
+        case gip_ins_subclass_arith_mlb:
+            gip_alu_op = gip_alu_op_mlb;
             break;
         default:
             break;
@@ -2782,6 +2866,9 @@ int c_gip_pipeline_single::execute_arm_ldm_stm( unsigned int opcode )
 int c_gip_pipeline_single::execute_arm_mul( unsigned int opcode )
 {
     int cc, zero, nine, accum, sign, rd, rn, rs, rm;
+    int i;
+    t_gip_instruction gip_instr;
+    t_gip_pipeline_results gip_results;
 
     /*b Decode ARM instruction
      */
@@ -2795,10 +2882,61 @@ int c_gip_pipeline_single::execute_arm_mul( unsigned int opcode )
     nine    = (opcode>>4) & 0x0f;
     rm      = (opcode>>0) & 0x0f;
 
+    /*b Validate MUL/MLA instruction
+     */
     if ((zero!=0) || (nine!=9) || (cc==15))
         return 0;
 
-    return 0; 
+    /*b First the INIT instruction
+     */
+    build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, gip_ins_subclass_arith_init, 1, 0, 0, 0 );
+    build_gip_instruction_cc( &gip_instr, map_condition_code(cc) );
+    build_gip_instruction_rn( &gip_instr, map_source_register(rm) ); // Note these are
+    if (accum)
+    {
+        build_gip_instruction_rm( &gip_instr, map_source_register(rn) ); //  correctly reversed
+    }
+    else
+    {
+        build_gip_instruction_immediate( &gip_instr, 0 );
+    }
+    build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
+    execute_int_instruction( &gip_instr, &gip_results );
+
+    /*b Then the MLA instruction to get the ALU inputs ready, and do the first step
+     */
+    build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, gip_ins_subclass_arith_mla, 1, 0, 0, 0 );
+    build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
+    build_gip_instruction_rn( &gip_instr, gip_ins_rnm_acc );
+    build_gip_instruction_rm( &gip_instr, map_source_register(rs) );
+    build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
+    execute_int_instruction( &gip_instr, &gip_results );
+
+    /*b Then 14 MLB instructions to churn
+     */
+    for (i=0; i<14; i++)
+    {
+        build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, gip_ins_subclass_arith_mlb, 1, 0, 0, 0 );
+        build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
+        build_gip_instruction_rn( &gip_instr, gip_ins_rnm_acc );
+        build_gip_instruction_immediate( &gip_instr, 0 ); // Not used
+        build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
+        execute_int_instruction( &gip_instr, &gip_results );
+    }
+
+    /*b Then the last MLB instructions to produce the final results
+     */
+    build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, gip_ins_subclass_arith_mlb, 1, sign, 0, 0 );
+    build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
+    build_gip_instruction_rn( &gip_instr, gip_ins_rnm_acc );
+    build_gip_instruction_immediate( &gip_instr, 0 ); // Not used
+    build_gip_instruction_rd( &gip_instr, map_destination_register(rd) );
+    execute_int_instruction( &gip_instr, &gip_results );
+    pd->pc += 4;
+
+    /*b Done
+     */
+    return 1; 
 }
 
 /*f c_gip_pipeline_single::execute_arm_trace

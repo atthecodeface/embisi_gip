@@ -1,0 +1,742 @@
+module gip_alu( clock gip_clock,
+                   input bit gip_reset,
+
+                   input bit rfr_inst_valid,
+                   input t_gip_alu_inst rfr_inst,
+
+input bit alu_accepting_rf_instruction,
+input t_gip_rd alu_rd;
+input bit alu_use_shifter;
+input t_gip_word alu_arith_logic_result;
+input t_gip_word alu_shifter_result;
+
+               input t_gip_rd mem_rd;
+               input t_gip_word mem_result;
+
+               input bit gip_pipeline_flush;
+               )
+{
+    /*b Default clock and reset
+     */
+    default clock gip_clock;
+    default reset gip_reset;
+
+    int writes_conditional;
+    int conditional_result;
+
+    /*b Evaluate condition associated with the instruction - simultaneous with ALU stage, blocks all results from instruction if it fails
+     */
+    condition_passed = 0;
+    if (inst_valid)
+    {
+        condition_passed = is_condition_met( pd, &pd->alu, pd->alu.state.inst.gip_ins_cc );
+    }
+
+    /*b Get values for ALU operands
+     */
+    pd->alu.op1_src = gip_alu_op1_src_a_in;
+    if ( (pd->alu.state.inst.gip_ins_rn.type==gip_ins_r_type_internal) &&
+         (pd->alu.state.inst.gip_ins_rn.data.rnm_internal==gip_ins_rnm_int_acc) )
+    {
+        pd->alu.op1_src = gip_alu_op1_src_acc;
+    }
+    if (pd->alu.state.inst.rm_is_imm)
+    {
+        pd->alu.op2_src = gip_alu_op2_src_b_in;
+    }
+    else
+    {
+        pd->alu.op2_src = gip_alu_op2_src_b_in;
+        if ( (pd->alu.state.inst.rm_data.gip_ins_rm.type==gip_ins_r_type_internal) &&
+             (pd->alu.state.inst.rm_data.gip_ins_rm.data.rnm_internal==gip_ins_rnm_int_acc) )
+        {
+            pd->alu.op2_src = gip_alu_op2_src_acc;
+        }
+        if ( (pd->alu.state.inst.rm_data.gip_ins_rm.type==gip_ins_r_type_internal) &&
+             (pd->alu.state.inst.rm_data.gip_ins_rm.data.rnm_internal==gip_ins_rnm_int_shf) )
+        {
+            pd->alu.op2_src = gip_alu_op2_src_shf;
+        }
+    }
+
+    /*b Determine which flags and accumulator to set, and the ALU operation
+     */
+    pd->alu.set_zcvn = 0;
+    pd->alu.set_p = 0;
+    pd->alu.set_acc = pd->alu.state.inst.a;
+    pd->alu.use_shifter = 0;
+    pd->alu.gip_alu_op = gip_alu_op_add;
+    switch (pd->alu.state.inst.gip_ins_class)
+    {
+    case gip_ins_class_arith:
+        pd->alu.set_zcvn = pd->alu.state.inst.gip_ins_opts.alu.s;
+        pd->alu.set_p = pd->alu.state.inst.gip_ins_opts.alu.p;
+        switch (pd->alu.state.inst.gip_ins_subclass)
+        {
+        case gip_ins_subclass_arith_add:
+            pd->alu.gip_alu_op = gip_alu_op_add;
+            break;
+        case gip_ins_subclass_arith_adc:
+            pd->alu.gip_alu_op = gip_alu_op_adc;
+            break;
+        case gip_ins_subclass_arith_sub:
+            pd->alu.gip_alu_op = gip_alu_op_sub;
+            break;
+        case gip_ins_subclass_arith_sbc:
+            pd->alu.gip_alu_op = gip_alu_op_sbc;
+            break;
+        case gip_ins_subclass_arith_rsb:
+            pd->alu.gip_alu_op = gip_alu_op_rsub;
+            break;
+        case gip_ins_subclass_arith_rsc:
+            pd->alu.gip_alu_op = gip_alu_op_rsbc;
+            break;
+        case gip_ins_subclass_arith_init:
+            pd->alu.gip_alu_op = gip_alu_op_init;
+            break;
+        case gip_ins_subclass_arith_mla:
+            pd->alu.gip_alu_op = gip_alu_op_mla;
+            break;
+        case gip_ins_subclass_arith_mlb:
+            pd->alu.gip_alu_op = gip_alu_op_mlb;
+            break;
+        default:
+            break;
+        }
+        break;
+    case gip_ins_class_logic:
+        pd->alu.set_zcvn = pd->alu.state.inst.gip_ins_opts.alu.s;
+        pd->alu.set_p = pd->alu.state.inst.gip_ins_opts.alu.p;
+        switch (pd->alu.state.inst.gip_ins_subclass)
+        {
+        case gip_ins_subclass_logic_and:
+            pd->alu.gip_alu_op = gip_alu_op_and;
+            break;
+        case gip_ins_subclass_logic_or:
+            pd->alu.gip_alu_op = gip_alu_op_or;
+            break;
+        case gip_ins_subclass_logic_xor:
+            pd->alu.gip_alu_op = gip_alu_op_xor;
+            break;
+        case gip_ins_subclass_logic_bic:
+            pd->alu.gip_alu_op = gip_alu_op_bic;
+            break;
+        case gip_ins_subclass_logic_orn:
+            pd->alu.gip_alu_op = gip_alu_op_orn;
+            break;
+        case gip_ins_subclass_logic_mov:
+            pd->alu.gip_alu_op = gip_alu_op_mov;
+            break;
+        case gip_ins_subclass_logic_mvn:
+            pd->alu.gip_alu_op = gip_alu_op_mvn;
+            break;
+        case gip_ins_subclass_logic_andcnt:
+            pd->alu.gip_alu_op = gip_alu_op_and_cnt;
+            break;
+        case gip_ins_subclass_logic_andxor:
+            pd->alu.gip_alu_op = gip_alu_op_and_xor;
+            break;
+        case gip_ins_subclass_logic_xorfirst:
+            pd->alu.gip_alu_op = gip_alu_op_xor_first;
+            break;
+        case gip_ins_subclass_logic_xorlast:
+            pd->alu.gip_alu_op = gip_alu_op_xor_last;
+            break;
+        case gip_ins_subclass_logic_bitreverse:
+            pd->alu.gip_alu_op = gip_alu_op_bit_reverse;
+            break;
+        case gip_ins_subclass_logic_bytereverse:
+            pd->alu.gip_alu_op = gip_alu_op_byte_reverse;
+            break;
+        default:
+            break;
+        }
+        break;
+    case gip_ins_class_shift:
+        pd->alu.set_zcvn = pd->alu.state.inst.gip_ins_opts.alu.s;
+        pd->alu.set_p = 0;
+        pd->alu.use_shifter = 1;
+        switch (pd->alu.state.inst.gip_ins_subclass)
+        {
+        case gip_ins_subclass_shift_lsl:
+            pd->alu.gip_alu_op = gip_alu_op_lsl;
+            break;
+        case gip_ins_subclass_shift_lsr:
+            pd->alu.gip_alu_op = gip_alu_op_lsr;
+            break;
+        case gip_ins_subclass_shift_asr:
+            pd->alu.gip_alu_op = gip_alu_op_asr;
+            break;
+        case gip_ins_subclass_shift_ror:
+            pd->alu.gip_alu_op = gip_alu_op_ror;
+            break;
+        case gip_ins_subclass_shift_ror33:
+            pd->alu.gip_alu_op = gip_alu_op_ror33;
+            break;
+        default:
+            break;
+        }
+        break;
+    case gip_ins_class_load:
+        if ((pd->alu.state.inst.gip_ins_subclass & gip_ins_subclass_memory_dirn)==gip_ins_subclass_memory_up)
+        {
+            pd->alu.gip_alu_op = gip_alu_op_add;
+        }
+        else
+        {
+            pd->alu.gip_alu_op = gip_alu_op_sub;
+        }
+        break;
+    case gip_ins_class_store:
+        if ((pd->alu.state.inst.gip_ins_subclass & gip_ins_subclass_memory_dirn)==gip_ins_subclass_memory_up)
+        {
+            pd->alu.gip_alu_op = gip_alu_op_add;
+        }
+        else
+        {
+            pd->alu.gip_alu_op = gip_alu_op_sub;
+        }
+        switch (pd->alu.state.inst.gip_ins_subclass & gip_ins_subclass_memory_size)
+        {
+        case gip_ins_subclass_memory_word:
+            pd->alu.alu_constant = 4;
+            break;
+        case gip_ins_subclass_memory_half:
+            pd->alu.alu_constant = 2;
+            break;
+        case gip_ins_subclass_memory_byte:
+            pd->alu.alu_constant = 1;
+            break;
+        default:
+            pd->alu.alu_constant = 0;
+            break;
+        }
+        if (pd->alu.state.inst.gip_ins_opts.store.offset_type==1)
+        {
+            pd->alu.op2_src = gip_alu_op2_src_shf;
+        }
+        else
+        {
+            pd->alu.op2_src = gip_alu_op2_src_constant;
+        }
+        break;
+    }
+    if (!pd->alu.condition_passed)
+    {
+        pd->alu.set_acc = 0;
+        pd->alu.set_zcvn = 0;
+        pd->alu.set_p = 0;
+    }
+
+    /*b Determine inputs to the shifter and ALU
+     */
+    switch (pd->alu.op1_src)
+    {
+    case gip_alu_op1_src_a_in:
+        pd->alu.alu_op1 = pd->alu.state.alu_a_in;
+        break;
+    case gip_alu_op1_src_acc:
+        pd->alu.alu_op1 = pd->alu.state.acc;
+        break;
+    }
+    switch (pd->alu.op2_src)
+    {
+    case gip_alu_op2_src_b_in:
+        pd->alu.alu_op2 = pd->alu.state.alu_b_in;
+        break;
+    case gip_alu_op2_src_acc:
+        pd->alu.alu_op2 = pd->alu.state.acc;
+        break;
+    case gip_alu_op2_src_shf:
+        pd->alu.alu_op2 = pd->alu.state.shf;
+        break;
+    case gip_alu_op2_src_constant:
+        pd->alu.alu_op2 = pd->alu.alu_constant;
+        break;
+    }
+
+    /*b Perform shifter operation - operates on C, ALU A in, ALU B in: what about accumulator?
+     */
+    switch (pd->alu.gip_alu_op)
+    {
+    case gip_alu_op_lsl:
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_lsl, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
+        break;
+    case gip_alu_op_lsr:
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_lsr, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
+        break;
+    case gip_alu_op_asr:
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_asr, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
+        break;
+    case gip_alu_op_ror:
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_ror, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
+        break;
+    case gip_alu_op_ror33:
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_rrx, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
+        break;
+    case gip_alu_op_init:
+        pd->alu.shf_result = barrel_shift( 0&pd->alu.state.c, shf_type_lsr, pd->alu.alu_op1, 0, &pd->alu.shf_carry );
+        break;
+    case gip_alu_op_mla:
+    case gip_alu_op_mlb:
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_lsr, pd->alu.state.shf, 2, &pd->alu.shf_carry );
+        break;
+    case gip_alu_op_divst:
+        break;
+    default:
+        break;
+    }
+
+    /*b Perform logical operation - operates on ALU op 1 and ALU op 2
+     */
+    switch (pd->alu.gip_alu_op)
+    {
+    case gip_alu_op_mov:
+        pd->alu.logic_result = pd->alu.alu_op2;
+        break;
+    case gip_alu_op_mvn:
+        pd->alu.logic_result = ~pd->alu.alu_op2;
+        break;
+    case gip_alu_op_and:
+        pd->alu.logic_result = pd->alu.alu_op1 & pd->alu.alu_op2;
+        break;
+    case gip_alu_op_or:
+        pd->alu.logic_result = pd->alu.alu_op1 | pd->alu.alu_op2;
+        break;
+    case gip_alu_op_xor:
+        pd->alu.logic_result = pd->alu.alu_op1 ^ pd->alu.alu_op2;
+        break;
+    case gip_alu_op_bic:
+        pd->alu.logic_result = pd->alu.alu_op1 &~ pd->alu.alu_op2;
+        break;
+    case gip_alu_op_orn:
+        pd->alu.logic_result = pd->alu.alu_op1 |~ pd->alu.alu_op2;
+        break;
+    case gip_alu_op_and_cnt:
+        pd->alu.logic_result = bit_count(pd->alu.alu_op1 & pd->alu.alu_op2);
+        break;
+    case gip_alu_op_and_xor:
+        pd->alu.logic_result = (pd->alu.alu_op1 & pd->alu.alu_op2) ^ pd->alu.alu_op2;
+        break;
+    case gip_alu_op_xor_first:
+        pd->alu.logic_result = find_bit_set(pd->alu.alu_op1 ^ pd->alu.alu_op2, -1);
+        break;
+    case gip_alu_op_xor_last:
+        pd->alu.logic_result = find_bit_set(pd->alu.alu_op1 ^ pd->alu.alu_op2, 1);
+        break;
+    case gip_alu_op_bit_reverse:
+        pd->alu.logic_result = ( (pd->alu.alu_op2&0xffffff00) |
+                                 ((pd->alu.alu_op2&0x00000080)>>7) |
+                                 ((pd->alu.alu_op2&0x00000040)>>5) |
+                                 ((pd->alu.alu_op2&0x00000020)>>3) |
+                                 ((pd->alu.alu_op2&0x00000010)>>1) |
+                                 ((pd->alu.alu_op2&0x00000008)<<1) |
+                                 ((pd->alu.alu_op2&0x00000004)<<3) |
+                                 ((pd->alu.alu_op2&0x00000002)<<5) |
+                                 ((pd->alu.alu_op2&0x00000001)<<7) );
+        break;
+    case gip_alu_op_byte_reverse:
+        pd->alu.logic_result = ( ((pd->alu.alu_op2&0x000000ff)<<24) |
+                                 ((pd->alu.alu_op2&0x0000ff00)<<8) |
+                                 ((pd->alu.alu_op2&0x00ff0000)>>8) |
+                                 ((pd->alu.alu_op2&0xff000000)>>24) );
+        break;
+    case gip_alu_op_init:
+    case gip_alu_op_mla:
+    case gip_alu_op_mlb:
+    case gip_alu_op_divst:
+        break;
+    default:
+        break;
+    }
+    pd->alu.logic_z = (pd->alu.logic_result==0);
+    pd->alu.logic_n = ((pd->alu.logic_result&0x80000000)!=0);
+
+    /*b Perform arithmetic operation - operates on C, ALU op 1 and ALU op 2
+     */
+    switch (pd->alu.gip_alu_op)
+    {
+    case gip_alu_op_add:
+        pd->alu.arith_result = add_op( pd->alu.alu_op1, pd->alu.alu_op2, 0, &pd->alu.alu_c, &pd->alu.alu_v );
+        break;
+    case gip_alu_op_adc:
+        pd->alu.arith_result = add_op( pd->alu.alu_op1, pd->alu.alu_op2, pd->alu.state.c, &pd->alu.alu_c, &pd->alu.alu_v );
+        break;
+    case gip_alu_op_sub:
+        pd->alu.arith_result = add_op( pd->alu.alu_op1, ~pd->alu.alu_op2, 1, &pd->alu.alu_c, &pd->alu.alu_v );
+        break;
+    case gip_alu_op_sbc:
+        pd->alu.arith_result = add_op( pd->alu.alu_op1, ~pd->alu.alu_op2, pd->alu.state.c, &pd->alu.alu_c, &pd->alu.alu_v );
+        break;
+    case gip_alu_op_rsub:
+        pd->alu.arith_result = add_op( ~pd->alu.alu_op1, pd->alu.alu_op2, 1, &pd->alu.alu_c, &pd->alu.alu_v );
+        break;
+    case gip_alu_op_rsbc:
+        pd->alu.arith_result = add_op( ~pd->alu.alu_op1, pd->alu.alu_op2, pd->alu.state.c, &pd->alu.alu_c, &pd->alu.alu_v );
+        break;
+    case gip_alu_op_init:
+        pd->alu.arith_result = add_op( 0&pd->alu.alu_op1, pd->alu.alu_op2, 0, &pd->alu.alu_c, &pd->alu.alu_v );
+        break;
+    case gip_alu_op_mla:
+    case gip_alu_op_mlb:
+        switch ((pd->alu.state.shf&3)+pd->alu.state.p)
+        {
+        case 0:
+            pd->alu.arith_result = add_op( pd->alu.alu_op1, 0&pd->alu.alu_op2, 0, &pd->alu.alu_c, &pd->alu.alu_v );
+            pd->alu.shf_carry = 0;
+            break;
+        case 1:
+            pd->alu.arith_result = add_op( pd->alu.alu_op1, pd->alu.alu_op2, 0, &pd->alu.alu_c, &pd->alu.alu_v );
+            pd->alu.shf_carry = 0;
+            break;
+        case 2:
+            pd->alu.arith_result = add_op( pd->alu.alu_op1, pd->alu.alu_op2<<1, 0, &pd->alu.alu_c, &pd->alu.alu_v );
+            pd->alu.shf_carry = 0;
+            break;
+        case 3:
+            pd->alu.arith_result = add_op( pd->alu.alu_op1, ~pd->alu.alu_op2, 1, &pd->alu.alu_c, &pd->alu.alu_v );
+            pd->alu.shf_carry = 1;
+            break;
+        case 4:
+            pd->alu.arith_result = add_op( pd->alu.alu_op1, 0&pd->alu.alu_op2, 0, &pd->alu.alu_c, &pd->alu.alu_v );
+            pd->alu.shf_carry = 1;
+            break;
+        }
+        break;
+    case gip_alu_op_divst:
+        break;
+    default:
+        break;
+    }
+    pd->alu.alu_z = (pd->alu.arith_result==0);
+    pd->alu.alu_n = ((pd->alu.arith_result&0x80000000)!=0);
+
+    /*b Determine ALU result, next accumulator, next shifter and next flags
+     */
+    pd->alu.next_acc = pd->alu.state.acc;
+    pd->alu.next_c = pd->alu.state.c;
+    pd->alu.next_z = pd->alu.state.z;
+    pd->alu.next_v = pd->alu.state.v;
+    pd->alu.next_n = pd->alu.state.n;
+    pd->alu.next_p = pd->alu.state.p;
+    pd->alu.next_shf = pd->alu.state.shf;
+    switch (pd->alu.gip_alu_op)
+    {
+    case gip_alu_op_mov:
+    case gip_alu_op_mvn:
+    case gip_alu_op_and:
+    case gip_alu_op_or:
+    case gip_alu_op_xor:
+    case gip_alu_op_bic:
+    case gip_alu_op_orn:
+    case gip_alu_op_and_cnt:
+    case gip_alu_op_and_xor:
+    case gip_alu_op_xor_first:
+    case gip_alu_op_xor_last:
+    case gip_alu_op_bit_reverse:
+    case gip_alu_op_byte_reverse:
+        pd->alu.alu_result = pd->alu.logic_result;
+        if (pd->alu.set_p)
+        {
+            pd->alu.next_c = pd->alu.state.p;
+        }
+        if (pd->alu.set_zcvn)
+        {
+            pd->alu.next_z = pd->alu.logic_z;
+            pd->alu.next_n = pd->alu.logic_n;
+        }
+        if (pd->alu.set_acc)
+        {
+            pd->alu.next_acc = pd->alu.logic_result;
+        }
+        break;
+    case gip_alu_op_add:
+    case gip_alu_op_adc:
+    case gip_alu_op_sub:
+    case gip_alu_op_sbc:
+    case gip_alu_op_rsub:
+    case gip_alu_op_rsbc:
+        pd->alu.alu_result = pd->alu.arith_result;
+        if (pd->alu.set_zcvn)
+        {
+            pd->alu.next_z = pd->alu.alu_z;
+            pd->alu.next_n = pd->alu.alu_n;
+            pd->alu.next_c = pd->alu.alu_c;
+            pd->alu.next_v = pd->alu.alu_v;
+        }
+        if (pd->alu.set_acc)
+        {
+            pd->alu.next_acc = pd->alu.arith_result;
+        }
+        pd->alu.next_shf = 0;// should only be with the 'C' flag, but have not defined that yet
+        break;
+    case gip_alu_op_init:
+    case gip_alu_op_mla:
+    case gip_alu_op_mlb:
+        pd->alu.alu_result = pd->alu.arith_result;
+        if (pd->alu.set_zcvn)
+        {
+            pd->alu.next_z = (pd->alu.arith_result==0);
+            pd->alu.next_n = ((pd->alu.arith_result&0x80000000)!=0);
+            pd->alu.next_c = pd->alu.alu_c;
+            pd->alu.next_v = pd->alu.alu_v;
+        }
+        if (pd->alu.set_acc)
+        {
+            pd->alu.next_acc = pd->alu.arith_result;
+        }
+        pd->alu.next_shf = pd->alu.shf_result;
+        pd->alu.next_p = pd->alu.shf_carry;
+        break;
+    case gip_alu_op_lsl:
+    case gip_alu_op_lsr:
+    case gip_alu_op_asr:
+    case gip_alu_op_ror:
+    case gip_alu_op_ror33:
+        if (pd->alu.set_zcvn)
+        {
+            pd->alu.next_z = (pd->alu.shf_result==0);
+            pd->alu.next_n = ((pd->alu.shf_result&0x80000000)!=0);
+            pd->alu.next_c = pd->alu.shf_carry;
+        }
+        pd->alu.next_shf = pd->alu.shf_result;
+        pd->alu.next_p = pd->alu.shf_carry;
+        break;
+    case gip_alu_op_divst:
+        break;
+    }
+
+    /*b Determine 'cp' and 'old_cp' state
+     */
+    writes_conditional = 0;
+    if (pd->alu.state.inst.gip_ins_rd.type == gip_ins_r_type_internal) 
+    {
+        switch (pd->alu.state.inst.gip_ins_rd.data.rd_internal)
+        {
+        case gip_ins_rd_int_eq:
+            if (pd->alu.state.inst.gip_ins_class == gip_ins_class_logic)
+            {
+                conditional_result = pd->alu.logic_z;
+            }
+            else
+            {
+                conditional_result = pd->alu.alu_z;
+            }
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_ne:
+            if (pd->alu.state.inst.gip_ins_class == gip_ins_class_logic)
+            {
+                conditional_result = !pd->alu.logic_z;
+            }
+            else
+            {
+                conditional_result = !pd->alu.alu_z;
+            }
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_cs:
+            conditional_result = pd->alu.alu_c;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_cc:
+            conditional_result = !pd->alu.alu_c;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_hi:
+            conditional_result = pd->alu.alu_c && !pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_ls:
+            conditional_result = !pd->alu.alu_c || pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_ge:
+            conditional_result = (!pd->alu.alu_n && !pd->alu.alu_v) || (pd->alu.alu_n && pd->alu.alu_v);
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_lt:
+            conditional_result = (!pd->alu.alu_n && pd->alu.alu_v) || (pd->alu.alu_n && !pd->alu.alu_v);
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_gt:
+            conditional_result = ((!pd->alu.alu_n && !pd->alu.alu_v) || (pd->alu.alu_n && pd->alu.alu_v)) && !pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_le:
+            conditional_result = (!pd->alu.alu_n && pd->alu.alu_v) || (pd->alu.alu_n && !pd->alu.alu_v) || pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        default:
+            break;
+        }
+    }
+    if (writes_conditional)
+    {
+        if (pd->alu.condition_passed) // could be first of a sequence, or later on; if first of a sequence, we must set it to our result; if later then condition should be CP for ANDing condition passed
+            // if ANDing (CP is therefore set) and our result is 1, then the next result is 1; if our result is 0, then the next result is zero; so this is the same as the first condition
+        {
+            pd->alu.next_cp = conditional_result;
+        }
+        else // must be later in a sequence; condition ought to have been 'CP', so this means 'state.cp' should be zero already. No reason to make it one.
+        {
+            pd->alu.next_cp = 0;
+        }
+        pd->alu.next_old_cp = 1;
+    }
+    else
+    {
+        pd->alu.next_cp = pd->alu.condition_passed;
+        pd->alu.next_old_cp = pd->alu.state.cp;
+    }
+
+    /*b Get inputs to memory stage
+     */
+    pd->alu.mem_address = ((pd->alu.state.inst.gip_ins_subclass & gip_ins_subclass_memory_index)==gip_ins_subclass_memory_preindex)?pd->alu.alu_result:pd->alu.alu_op1;
+    pd->alu.mem_data_in = pd->alu.state.alu_b_in;
+
+    /*b Determine next Rd for the ALU operation, and memory operation, and if the instruction is blocked
+     */
+    pd->alu.alu_rd.type = gip_ins_r_type_none;
+    pd->alu.alu_rd.data.r = 0;
+    pd->alu.mem_rd.type = gip_ins_r_type_none;
+    pd->alu.mem_rd.data.r = 0;
+    pd->alu.gip_mem_op = gip_mem_op_none;
+    pd->alu.accepting_rf_instruction = 1;
+    if (pd->alu.condition_passed) // This is zero if instruction is not valid, so no writeback from invalid instructions!
+    {
+        switch (pd->alu.state.inst.gip_ins_class)
+        {
+        case gip_ins_class_arith:
+        case gip_ins_class_logic:
+        case gip_ins_class_shift:
+            pd->alu.alu_rd = pd->alu.state.inst.gip_ins_rd;
+            pd->alu.accepting_rf_instruction = pd->rf.state.accepting_alu_rd;
+            break;
+        case gip_ins_class_store:
+            pd->alu.alu_rd = pd->alu.state.inst.gip_ins_rd;
+            switch (pd->alu.state.inst.gip_ins_subclass & gip_ins_subclass_memory_size)
+            {
+            case gip_ins_subclass_memory_word:
+                pd->alu.gip_mem_op = gip_mem_op_store_word;
+                break;
+            case gip_ins_subclass_memory_half:
+                pd->alu.gip_mem_op = gip_mem_op_store_half;
+                break;
+            case gip_ins_subclass_memory_byte:
+                pd->alu.gip_mem_op = gip_mem_op_store_byte;
+                break;
+            default:
+                break;
+            }
+            pd->alu.accepting_rf_instruction = pd->rf.state.accepting_alu_rd && 1; // GJS - ADD MEMORY BLOCK HERE
+            break;
+        case gip_ins_class_load:
+            pd->alu.mem_rd = pd->alu.state.inst.gip_ins_rd;
+            switch (pd->alu.state.inst.gip_ins_subclass & gip_ins_subclass_memory_size)
+            {
+            case gip_ins_subclass_memory_word:
+                pd->alu.gip_mem_op = gip_mem_op_load_word;
+                break;
+            case gip_ins_subclass_memory_half:
+                pd->alu.gip_mem_op = gip_mem_op_load_half;
+                break;
+            case gip_ins_subclass_memory_byte:
+                pd->alu.gip_mem_op = gip_mem_op_load_byte;
+                break;
+            default:
+                break;
+            }
+            pd->alu.accepting_rf_instruction = 1; // GJS - ADD MEMORY BLOCK HERE
+            break;
+        }
+    }
+
+    /*b Determine flush output, tag and executing
+     */
+    pipeline_instruction "Pipeline instruction":
+        {
+            gip_pipeline_flush = inst.f;
+            gip_pipeline_executing = 1;
+            gip_pipeline_tag = inst.tag;
+            if (!condition_passed) // Also kills flush if the instruction is invalid
+            {
+                gip_pipeline_flush = 0;
+                gip_pipeline_executing = 0;
+            }
+            if (alu_accepting_rf_instruction) // Also kill flush if we are blocked for actually completing the instruction
+            {
+                gip_pipeline_flush = 0;
+                gip_pipeline_executing = 0;
+            }
+        }
+
+    /*b Copy the instruction across
+     */
+    pipeline_instruction "Pipeline instruction":
+        {
+            if (alu_accepting_rf_instruction)
+            {
+                inst <= rf_inst;
+                inst_valid <= rf_inst_valid;
+                if (!rf_accepting_dec_instruction_if_alu_does)
+                {
+                    inst_valid <= 0;
+                }
+            }
+            if (gip_pipeline_flush)
+            {
+                inst_valid <= 0;
+            }
+        }
+
+    alu_regs "ALU Regs":
+        {
+            /*b Select next values for ALU inputs based on execution blocked, or particular ALU operation (multiplies particularly)
+             */
+            if ( (rf_inst_valid) &&
+                 !(gip_pipeline_flush) &&
+                 alu_accepting_rf_instruction )
+            {
+                alu_a_in = rf_read_port_0;
+                if ( (rf_inst.gip_ins_class==gip_ins_class_arith) &&
+                     (rf_inst.gip_ins_subclass==gip_ins_subclass_arith_mlb) )
+                {
+                    alu_b_in <= alu_b_in<<2;// An MLB instruction in RF read stage implies shift left by 2; but only if it moves to the ALU stage, which it does here
+                }
+                else if (rf_inst.rm_is_imm)
+                {
+                    alu_b_in <= rf_inst.rm_data.immediate; // If immediate, pass immediate data in
+                }
+                else
+                {
+                    alu_b_in <= rf_read_port_1; // Else read register/special
+                }
+            }
+
+            /*b Update ALU result, accumulator, shifter and flags
+             */
+            if ( (alu_accepting_rf_instruction) &&
+                 (inst_valid) )
+            {
+                c <= next_c;
+                z <= next_z;
+                v <= next_v;
+                n <= next_n;
+                p <= next_p;
+                acc <= next_acc;
+                shf <= next_shf;
+            }
+
+            /*b Record condition passed indications
+             */
+            if ( (alu_accepting_rf_instruction) && (inst_valid) )
+            {
+                old_cp <= next_old_cp;
+                cp <= next_cp;
+            }
+        }
+
+    /*b Done
+     */
+}

@@ -1,0 +1,321 @@
+module gip_rf( clock gip_clock,
+               input bit gip_reset,
+
+               input bit dec_inst_valid,
+               input t_gip_rf_inst dec_inst,
+
+               output bit rf_postbus_read,
+               output bit rf_postbus_write,
+               output bit rf_postbus_address,
+               input t_gip_word rf_postbus_read_data,
+
+               output bit rf_special_read,
+               output bit rf_special_write,
+               output bit rf_special_address,
+               input t_gip_word rf_special_read_data,
+
+               input bit alu_accepting_rf_instruction,
+               input t_gip_rd alu_rd;
+               input bit alu_use_shifter;
+               input t_gip_word alu_arith_logic_result;
+               input t_gip_word alu_shifter_result;
+
+               input t_gip_rd mem_rd;
+               input t_gip_word mem_result;
+
+               input bit gip_pipeline_flush;
+               )
+{
+    /*b Default clock and reset
+     */
+    default clock gip_clock;
+    default reset gip_reset;
+
+    /*b State in the RF read stage
+     */
+    clocked bit rfr_inst_valid = 0 "Asserted if the instruction in the RF read stage is valid";
+    clocked t_gip_instruction_rf rfr_inst = gip_instruction_rf_none "Instruction in the RF read stage";
+
+    /*b State in the RF write stage
+     */
+    clocked t_gip_ins_r alu_rd = gip_ins_r_none "The current register to be written from an ALU path instruction";
+    clocked bit use_shifter = 0 "Asserted if alu_rd indicates a write from the shifter result not the ALU result";
+    clocked t_gip_word alu_result = 0 "Registered result of the ALU";
+    clocked t_gip_word shf_result = 0 "Registered result of the shifter";
+
+    clocked t_gip_ins_r mem_rd = gip_ins_r_none "Type of register file write requested for the result of memory operation";
+    clocked t_gip_word mem_result = 0 "Register result of the memory stage";
+    clocked bit accepting_alu_rd "Asserted if the RFW stage can take an ALU register write; 0 only if the mem_rd is not-none and the alu_rd is not-none";
+
+    /*b Combinatorials in the RF
+     */
+    comb bit rfw_write_enable "Asserted if the register file is to be written with the current address and data";
+    net t_gip_word rf_read_port_0 "Register file read port 0 value";
+    net t_gip_word rf_read_port_1 "Register file read port 1 value";
+
+    comb bit accepting_dec_instruction "Asserted if the RF stage is taking a proffered instruction from the decode independent of the ALU; will be asserted if the RF stage has no valid instruction to decode currently";
+    comb bit accepting_dec_instruction_if_alu_does "Asserted if the RF stage is taking a proffered instruction from the decode depending on the ALU taking the current instruction; 0 if the RF has no valid instruction, or if it has an instruction blocking on a pending register scoreboard; 1 if the RF has all the data and instruction ready for the ALU, and so depends on the ALU taking its instruction";
+
+    /*b Instantiate register file
+     */
+    regs[ MAX_REGISTERS ];
+    rf_inst "":
+        {
+            // Use rfw_write_enable
+            static unsigned int rf_read_int_register( t_gip_rf_data *rf, unsigned int pc, t_gip_ins_r r )
+                {
+                    /*b Simple forwarding path through register file, or read register file itself
+                     */
+                    if (r.type==gip_ins_r_type_register)
+                    {
+                        if ( (rf->state.mem_rd.type==gip_ins_r_type_register) &&
+                             (r.data.r==rf->state.mem_rd.data.r) )
+                        {
+                            return rf->state.mem_result;
+                        }
+                        if ( (rf->state.alu_rd.type==gip_ins_r_type_register) &&
+                             (r.data.r==rf->state.alu_rd.data.r) )
+                        {
+                            return rf->state.use_shifter ? rf->state.shf_result : rf->state.alu_result;
+                        }
+                        return rf->state.regs[r.data.r&0x1f];
+                    }
+
+                    /*b For internal results give the PC - other possibles are ACC and SHF, which will be replaced in ALU stage anyway
+                     */
+                    return pc;
+                }
+            /*b Read the register file
+             */
+            pd->rf.read_port_0 = rf_read_int_register( &pd->rf, pd->rf.state.inst.pc, pd->rf.state.inst.gip_ins_rn ); // Read register, with forwarding
+            pd->rf.read_port_1 = rf_read_int_register( &pd->rf, pd->rf.state.inst.pc, pd->rf.state.inst.rm_data.gip_ins_rm ); // Read register, with forwarding
+
+            /*b Multiplex the read data - can only be done once special, postbus and periph comb functions are called, so we have called them!
+             */
+            switch (pd->rf.state.inst.gip_ins_rn.type)
+            {
+            case gip_ins_r_type_special:
+                pd->rf.port_0_data = pd->rf.postbus_read_data;
+                break;
+            case gip_ins_r_type_postbus:
+                pd->rf.port_0_data = pd->rf.special_read_data;
+                break;
+            default:
+                pd->rf.port_0_data = pd->rf.read_port_0;
+                break;
+            }
+            switch (pd->rf.state.inst.rm_data.gip_ins_rm.type)
+            {
+            case gip_ins_r_type_special:
+                pd->rf.port_1_data = pd->rf.postbus_read_data;
+                break;
+            case gip_ins_r_type_postbus:
+                pd->rf.port_1_data = pd->rf.special_read_data;
+                break;
+            default:
+                pd->rf.port_1_data = pd->rf.read_port_1;
+                break;
+            }
+
+        }
+
+    /*b Determine whether to block or not
+     */
+    fred "Determine whether to accept another instruction from decode":
+        {
+            accepting_dec_instruction = 0;
+            accepting_dec_instruction_if_alu_does = 0;
+            /*b If instruction is valid, then accept instruction only if ALU takes this, and we are not blocking
+             */
+            if (inst_valid)
+            {
+                accepting_dec_instruction_if_alu_does = 1;
+                if ( (inst.gip_ins_rn.type==gip_ins_r_type_internal) &&
+                     (inst.gip_ins_rn.data.rnm_internal==gip_ins_rnm_int_block_all) )
+                {
+                    if (mem_rd.type!=gip_ins_r_type_none)
+                    {
+                        accepting_dec_instruction_if_alu_does = 0;
+                    }
+                    if (alu_rd.type!=gip_ins_r_type_none)
+                    {
+                        accepting_dec_instruction_if_alu_does = 0;
+                    }
+                    if ( alu.state.inst_valid &&
+                         (pd->alu.state.inst.gip_ins_rd.type!=gip_ins_r_type_none) )
+                    {
+                        pd->rf.accepting_dec_instruction_if_alu_does = 0;
+                    }
+                }
+                if (inst.gip_ins_rn.type==gip_ins_r_type_register)
+                {
+                    if ( pd->alu.state.inst_valid &&
+                         (pd->alu.state.inst.gip_ins_rd.type==gip_ins_r_type_register) &&
+                         (inst.gip_ins_rn.data.r==pd->alu.state.inst.gip_ins_rd.data.r) )
+                    {
+                        accepting_dec_instruction_if_alu_does = 0;
+                    }
+                    if ( (pd->mem.state.mem_rd.type==gip_ins_r_type_register) &&
+                         (pd->rf.state.inst.gip_ins_rn.data.r==pd->mem.state.mem_rd.data.r) )
+                    {
+                        accepting_dec_instruction_if_alu_does = 0;
+                    }
+                    if ( (mem_rd.type!=gip_ins_r_type_none) &&
+                         (alu_rd.type==gip_ins_r_type_register) &&
+                         (inst.gip_ins_rn.data.r==alu_rd.data.r) )
+                    {
+                        accepting_dec_instruction_if_alu_does = 0;
+                    }
+                }
+                if (inst.rm_data.gip_ins_rm.type==gip_ins_r_type_register)
+                {
+                    if ( pd->alu.state.inst_valid &&
+                         (pd->alu.state.inst.gip_ins_rd.type==gip_ins_r_type_register) &&
+                         (inst.rm_data.gip_ins_rm.data.r==pd->alu.state.inst.gip_ins_rd.data.r) )
+                    {
+                        accepting_dec_instruction_if_alu_does = 0;
+                    }
+                    if ( (pd->mem.state.mem_rd.type==gip_ins_r_type_register) &&
+                         (inst.rm_data.gip_ins_rm.data.r==pd->mem.state.mem_rd.data.r) )
+                    {
+                        accepting_dec_instruction_if_alu_does = 0;
+                    }
+                    if ( (mem_rd.type!=gip_ins_r_type_none) &&
+                         (alu_rd.type==gip_ins_r_type_register) &&
+                         (inst.rm_data.gip_ins_rm.data.r==pd->rf.state.alu_rd.data.r) )
+                    {
+                        pd->rf.accepting_dec_instruction_if_alu_does = 0;
+                    }
+                }
+            }
+            /*b Else instruction is not valid, then accept instruction anyway
+             */
+            else
+            {
+                accepting_dec_instruction = 1;
+            }
+        }
+
+    /*b Postbus and special read/write
+     */
+    special_and_postbus "Read and write the special and postbus data":
+        {
+            postbus_read = 0;
+            postbus_read_address = inst.gip_ins_rn.data.r;
+            special_read = 0;
+            special_read_address = inst.gip_ins_rn.data.r;
+            part_switch (inst.gip_ins_rn.type)
+                {
+                case gip_ins_r_type_postbus:
+                {
+                    postbus_read = 1;
+                    postbus_read_address = inst.gip_ins_rn.data.r;
+                }
+                case gip_ins_r_type_special:
+                {
+                    special_read = 1;
+                    special_read_address = inst.gip_ins_rn.data.r;
+                }
+                }
+            part_switch (inst.rm_data.gip_ins_rm.type)
+                {
+                case gip_ins_r_type_postbus:
+                {
+                    postbus_read = 1;
+                    postbus_read_address |= inst.rm_data.gip_ins_rm.data.r;
+                }
+                case gip_ins_r_type_special:
+                {
+                    special_read = 1;
+                    special_read_address |= state.inst.rm_data.gip_ins_rm.data.r;
+                }
+                }
+                postbus_write = 0;
+                special_write = 0;
+                part_switch (rd.type)
+                    {
+                    case gip_ins_r_type_special:
+                    {
+                        special_write = 1;
+                    }
+                    case gip_ins_r_type_postbus:
+                    {
+                        pd->rf.postbus_write = 1;
+                    }
+                    }
+        }
+
+    /*b Register file writeback logic
+     */
+    rf_writeback "Register file writeback logic":
+        {
+            rfw_write_enable = 0;
+            if (rd.type==gip_ins_r_type_register)
+            {
+                rfw_write_enable = 1;
+            }
+            rfw_data =  use_shifter ? shf_result : alu_result;
+            results->write_pc = 0;
+            rd = alu_rd;
+            if (mem_rd.type!=gip_ins_r_type_none)
+            {
+                rd = mem_rd;
+                rfw_data = mem_result;
+            }
+            if ( (rd.type==gip_ins_r_type_internal) &&
+                 (rd.data.rd_internal==gip_ins_rd_int_pc) )
+            {
+                results->write_pc = 1;
+            }
+            results->rfw_data = pd->rf.rfw_data;
+        }
+
+    /*b Pipeline instruction for RF read stage
+     */
+    pipeline_rfr_stage "Pipeline instruction for RF read stage":
+        {
+            if ( (accepting_dec_instruction) ||
+                 (accepting_dec_instruction_if_alu_does && alu_accepting_rf_instruction) )
+            {
+                inst <= dec_inst;
+                inst_valid <= dec_inst_valid;
+                if (gip_pipeline_flush)
+                {
+                    next_state.inst_valid <= 0;
+                }
+            }
+            else // Not willing to take another instruction; we must have one on hold - flush if asked AND if it is not 'D'
+            {
+                if ( gip_pipeline_flush && !inst.d )
+                {
+                    inst_valid <= 0;
+                }
+            }
+        }
+
+    /*b Record RFW stage results for the write stage
+     */
+    pipeline_rfw_stage "Pipeline results and 'rd's for RF write stage":
+        {
+            if (accepting_alu_rd) // If we promised to take the next ALU rd, then take it
+            {
+                r_alu_rd <= alu_rd;
+                r_alu_result <= alu_arith_logic_result;
+                r_use_shifter <= alu_use_shifter;
+                r_shf_result <= alu_shifter_result;
+            }
+            r_mem_rd <= mem_rd;
+            r_mem_result <= mem_result;
+            accepting_alu_rd <= 1;
+            if ( (r_alu_rd.type!=gip_ins_r_type_none) ) // If we have a write to do
+            {
+                if ( (r_mem_rd.type!=gip_ins_r_type_none) ) // If we are not doing it
+                {
+                    accepting_alu_rd <= 0; // Then we won't be able to take another
+                }
+            }
+        }
+
+    /*b Done
+     */
+}

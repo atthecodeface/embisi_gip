@@ -1,0 +1,398 @@
+/*a Decode stage methods
+ */
+/*f c_gip_full::dec_comb
+ */
+void c_gip_full::dec_comb( void )
+{
+    char buffer[256];
+    unsigned int native_opcode;
+
+    /*b Fake the prefetch of the instruction
+     */
+    if ( pd->dec.state.pc_valid && pd->dec.state.fetch_requested)
+    {
+        pd->dec.state.opcode = pd->memory->read_memory( pd->dec.state.pc );
+    }
+
+    /*b Native decode - use top or bottom half of instruction (pc bit 1 is set AND native AND valid)
+     */
+    build_gip_instruction_nop( &pd->dec.native.inst );
+    pd->dec.gip_ins_cc = gip_ins_cc_always;
+    if (pd->dec.state.in_conditional_shadow)
+    {
+        pd->dec.gip_ins_cc = gip_ins_cc_cp;
+    }
+    pd->dec.native.inst_valid = 0;
+    native_opcode = pd->dec.state.opcode;
+    if ( (!pd->dec.state.pc_valid) ||
+         (pd->dec.state.op_state!=gip_dec_op_state_native) ||
+         ((pd->dec.state.pc&2)==0) )
+    {
+        native_opcode = native_opcode & 0xffff;
+    }
+    else
+    {
+        native_opcode = native_opcode>>16;
+    }
+    pd->dec.native.next_pc = pd->dec.state.pc;
+    pd->dec.native.next_cycle_of_opcode = 0;
+    pd->dec.native.next_in_delay_slot = 0;
+    pd->dec.native.next_follow_delay_pc = 0;
+    pd->dec.native.next_in_immediate_shadow = 0;
+    pd->dec.native.next_extended_immediate = pd->dec.state.extended_immediate;
+    pd->dec.native.extending = 0;
+    if ( decode_native_debug( native_opcode ) ||
+         decode_native_extend( native_opcode ) ||
+         decode_native_alu( native_opcode ) ||
+         decode_native_cond( native_opcode ) ||
+         decode_native_shift( native_opcode ) ||
+         decode_native_ldr( native_opcode ) ||
+         decode_native_str( native_opcode ) ||
+         decode_native_branch( native_opcode ) ||
+         0 )
+    {
+        pd->dec.native.inst_valid = !pd->dec.native.extending;
+    }
+    if (pd->dec.state.follow_delay_pc)
+    {
+        pd->dec.native.next_pc = pd->dec.state.delay_pc;
+    }
+    if ((!pd->dec.native.extending) || (pd->gip_pipeline_results.flush) )
+    {
+        pd->dec.native.next_extended_immediate = 0;
+        pd->dec.native.next_extended_cmd.extended = 0;
+        pd->dec.native.next_extended_rd.type = gip_ins_r_type_no_override;
+        pd->dec.native.next_extended_rn.type = gip_ins_r_type_no_override;
+        pd->dec.native.next_extended_rm.type = gip_ins_r_type_no_override;
+    }
+    if (!pd->dec.state.pc_valid)
+    {
+        pd->dec.native.next_pc = pd->dec.state.pc;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        pd->dec.native.inst_valid = 0;
+    }
+    if (pd->gip_pipeline_results.write_pc)
+    {
+        pd->dec.native.next_pc = pd->gip_pipeline_results.rfw_data;
+    }
+    if (pd->gip_pipeline_results.flush)
+    {
+        pd->dec.native.inst_valid = 0;
+        pd->dec.native.next_in_delay_slot = 0;
+        pd->dec.native.next_follow_delay_pc = 0;
+        pd->dec.native.next_in_immediate_shadow = 0;
+    }
+
+    /*b ARM decode - attempt to decode opcode, trying each instruction coding one at a time till we succeed
+     */
+    build_gip_instruction_nop( &pd->dec.arm.inst );
+    pd->dec.arm.inst_valid = 0;
+    pd->dec.arm.next_acc_valid = 0;
+    pd->dec.arm.next_reg_in_acc = pd->dec.state.reg_in_acc;
+    pd->dec.arm.next_pc = pd->dec.state.pc;
+    pd->dec.arm.next_cycle_of_opcode = pd->dec.state.cycle_of_opcode+1;
+    if ( decode_arm_debug() ||
+         decode_arm_mul() ||
+         decode_arm_alu() ||
+         decode_arm_ld_st() ||
+         decode_arm_ldm_stm() ||
+         decode_arm_branch() ||
+         decode_arm_trace() ||
+         0 )
+    {
+        pd->dec.arm.inst_valid = 1;
+    }
+    if ( (pd->dec.arm.inst.gip_ins_rn.type == gip_ins_r_type_register) &&
+         (pd->dec.arm.inst.gip_ins_rn.data.r == pd->dec.state.reg_in_acc) &&
+         (pd->dec.state.acc_valid) )
+    {
+        pd->dec.arm.inst.gip_ins_rn.type = gip_ins_r_type_internal;
+        pd->dec.arm.inst.gip_ins_rn.data.rnm_internal = gip_ins_rnm_int_acc;
+    }
+    if ( (!pd->dec.arm.inst.rm_is_imm) &&
+         (pd->dec.arm.inst.rm_data.gip_ins_rm.type == gip_ins_r_type_register) &&
+         (pd->dec.arm.inst.rm_data.gip_ins_rm.data.r == pd->dec.state.reg_in_acc) &&
+         (pd->dec.state.acc_valid) )
+    {
+        pd->dec.arm.inst.rm_data.gip_ins_rm.type = gip_ins_r_type_internal;
+        pd->dec.arm.inst.rm_data.gip_ins_rm.data.rnm_internal = gip_ins_rnm_int_acc;
+    }
+    if (!pd->dec.state.pc_valid)
+    {
+        pd->dec.arm.next_pc = pd->dec.state.pc;
+        pd->dec.arm.next_cycle_of_opcode = 0;
+        pd->dec.arm.inst_valid = 0;
+    }
+    if (pd->gip_pipeline_results.write_pc)
+    {
+        pd->dec.arm.next_pc = pd->gip_pipeline_results.rfw_data;
+    }
+    if (pd->gip_pipeline_results.flush)
+    {
+        pd->dec.arm.inst_valid = 0;
+    }
+
+    /*b Handle according to operating state
+     */
+    pd->dec.next_op_state = pd->dec.state.op_state;
+    pd->dec.inst_valid = 0; // Pick some default values
+    pd->dec.inst = pd->dec.arm.inst; // also here
+    switch (pd->dec.state.op_state)
+    {
+        /*b Idle - wait for schedule request
+         */
+    case gip_dec_op_state_idle:
+        pd->dec.idle.next_pc_valid = 0;
+        pd->dec.next_acknowledge_scheduler = 0;
+        if (pd->sched.state.thread_to_start_valid)
+        {
+            pd->dec.next_op_state = gip_dec_op_state_emulate;
+            pd->dec.next_op_state = gip_dec_op_state_native;
+            pd->dec.next_acknowledge_scheduler = 1;
+            pd->dec.idle.next_thread = pd->sched.state.thread_to_start;
+            pd->dec.idle.next_pc = pd->sched.state.thread_to_start_pc;
+            pd->dec.idle.next_pc_valid = 1;
+            pd->dec.arm.next_cycle_of_opcode=0;
+            pd->dec.arm.next_acc_valid = 0;
+        }
+        break;
+        /*b ARM mode
+         */
+    case gip_dec_op_state_emulate:
+        /*b Disassemble instruction if verbose
+         */
+        if ( pd->dec.state.pc_valid && (pd->dec.state.cycle_of_opcode==0))
+        {
+            if (pd->verbose)
+            {
+                arm_disassemble( pd->dec.state.pc, pd->dec.state.opcode, buffer );
+                printf( "%08x %08x: %s\n", pd->dec.state.pc, pd->dec.state.opcode, buffer );
+            }
+        }
+        /*b Select ARM decode as our decode (NEED TO MUX IN NATIVE IF ENCODED NATIVE - BUT THEN STILL USE OUR CC)
+         */
+        pd->dec.inst = pd->dec.arm.inst;
+        pd->dec.inst_valid = pd->dec.arm.inst_valid;
+        break;
+        /*b Native - decode top or bottom half of instruction (pc bit 1 is set AND native AND valid)
+         */
+    case gip_dec_op_state_native:
+        /*b Disassemble instruction if verbose
+         */
+        if ( pd->dec.state.pc_valid && (pd->dec.state.cycle_of_opcode==0))
+        {
+            if (pd->verbose)
+            {
+                disassemble_native_instruction( pd->dec.state.pc, native_opcode, buffer, sizeof(buffer) );
+                printf( "%08x %04x: %s (native)\n", pd->dec.state.pc, native_opcode, buffer );
+            }
+        }
+        /*b Select native instruction as our decode
+         */
+        pd->dec.inst = pd->dec.native.inst;
+        pd->dec.inst_valid = pd->dec.native.inst_valid;
+        break;
+        /*b Preempt - NOT WRITTEN YET
+         */
+    case gip_dec_op_state_preempt:
+        break;
+        /*b All done
+         */
+    }
+
+}
+
+/*f c_gip_full::dec_preclock
+ */
+void c_gip_full::dec_preclock( void )
+{
+    /*b Copy current to next
+     */
+    memcpy( &pd->dec.next_state, &pd->dec.state, sizeof(pd->dec.state) );
+
+    /*b Handle according to operating state
+     */
+    pd->dec.next_state.acknowledge_scheduler = 0;
+    switch (pd->dec.state.op_state)
+    {
+        /*b Idle - wait for schedule request
+         */
+    case gip_dec_op_state_idle:
+        pd->dec.next_state.pc = pd->dec.idle.next_pc;
+        pd->dec.next_state.pc_valid = pd->dec.idle.next_pc_valid;
+        pd->dec.next_state.cycle_of_opcode = 0;
+        pd->dec.next_state.acc_valid = pd->dec.arm.next_acc_valid;
+        pd->dec.next_state.op_state = pd->dec.next_op_state;
+        pd->dec.next_state.acknowledge_scheduler = pd->dec.next_acknowledge_scheduler;
+        pd->dec.next_state.in_conditional_shadow = 0;
+        pd->dec.next_state.in_immediate_shadow = 0;
+            pd->dec.next_state.extended_immediate = 0;
+            pd->dec.next_state.extended_cmd.extended = 0;
+            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
+        printf("Idle %d %d %d\n", pd->dec.next_op_state, pd->dec.next_acknowledge_scheduler, pd->sched.state.thread_to_start_valid );
+        break;
+    case gip_dec_op_state_emulate:
+        /*b ARM - Move on PC
+         */
+        if ( (pd->rf.accepting_dec_instruction) ||
+             (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
+        {
+            pd->dec.next_state.pc = pd->dec.arm.next_pc;
+            pd->dec.next_state.cycle_of_opcode = pd->dec.arm.next_cycle_of_opcode;
+            pd->dec.next_state.acc_valid = pd->dec.arm.next_acc_valid;
+            pd->dec.next_state.reg_in_acc = pd->dec.arm.next_reg_in_acc;
+        }
+        if (pd->gip_pipeline_results.write_pc)
+        {
+            pd->dec.next_state.pc = pd->gip_pipeline_results.rfw_data;
+            pd->dec.next_state.pc_valid = 1;
+        }
+        if (pd->gip_pipeline_results.flush)
+        {
+            pd->dec.next_state.cycle_of_opcode=0;
+            pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
+            pd->dec.next_state.acc_valid = 0;
+        }
+        pd->dec.next_state.in_delay_slot = 0;
+        pd->dec.next_state.follow_delay_pc = 0;
+        pd->dec.next_state.delay_pc = 0;
+        pd->dec.next_state.in_conditional_shadow = 0;
+        pd->dec.next_state.in_immediate_shadow = 0;
+            pd->dec.next_state.extended_immediate = 0;
+            pd->dec.next_state.extended_cmd.extended = 0;
+            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
+        break;
+        /*b Native
+         */
+    case gip_dec_op_state_native:
+        if ( (pd->rf.accepting_dec_instruction) ||
+             (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
+        {
+            pd->dec.next_state.pc = pd->dec.native.next_pc;
+            pd->dec.next_state.cycle_of_opcode = pd->dec.native.next_cycle_of_opcode;
+            pd->dec.next_state.acc_valid = pd->dec.arm.next_acc_valid;
+            pd->dec.next_state.reg_in_acc = pd->dec.arm.next_reg_in_acc;
+            pd->dec.next_state.in_delay_slot = pd->dec.native.next_in_delay_slot;
+            pd->dec.next_state.follow_delay_pc = pd->dec.native.next_follow_delay_pc;
+            pd->dec.next_state.delay_pc = pd->dec.native.next_delay_pc;
+            pd->dec.next_state.extended_immediate = pd->dec.native.next_extended_immediate;
+            pd->dec.next_state.extended_cmd.extended = pd->dec.native.next_extended_cmd.extended;
+            pd->dec.next_state.extended_rd = pd->dec.native.next_extended_rd;
+            pd->dec.next_state.extended_rn = pd->dec.native.next_extended_rn;
+            pd->dec.next_state.extended_rm = pd->dec.native.next_extended_rm;
+            pd->dec.next_state.in_conditional_shadow = 0;
+            pd->dec.next_state.in_immediate_shadow = 0;
+            if (pd->dec.native.next_in_immediate_shadow)
+            {
+                pd->dec.next_state.in_conditional_shadow = 1;
+                pd->dec.next_state.in_immediate_shadow = 1;
+            }
+            if ( (pd->dec.state.in_immediate_shadow) && (pd->cp_trail_2) )
+            {
+                pd->dec.next_state.in_conditional_shadow = 1;
+            }
+        }
+        if (pd->gip_pipeline_results.write_pc)
+        {
+            pd->dec.next_state.pc = pd->gip_pipeline_results.rfw_data;
+            pd->dec.next_state.pc_valid = 1;
+        }
+        if (pd->gip_pipeline_results.flush)
+        {
+            pd->dec.next_state.cycle_of_opcode=0;
+            pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
+            pd->dec.next_state.acc_valid = 0;
+            pd->dec.next_state.in_conditional_shadow = 0;
+            pd->dec.next_state.extended_immediate = 0;
+            pd->dec.next_state.extended_cmd.extended = 0;
+            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
+        }
+        if (pd->gip_pipeline_results.tag)
+        {
+            pd->dec.next_state.op_state = gip_dec_op_state_idle;
+        }
+        break;
+        /*b Preempt - NOT WRITTEN YET
+         */
+    case gip_dec_op_state_preempt:
+        break;
+        /*b All done
+         */
+    }
+    pd->dec.next_state.fetch_requested=0;
+    if (pd->dec.next_state.cycle_of_opcode==0)
+    {
+        pd->dec.next_state.fetch_requested=1;
+    }
+}
+
+/*f c_gip_full::dec_clock
+ */
+void c_gip_full::dec_clock( void )
+{
+    /*b Debug
+     */
+    if (pd->verbose)
+    {
+        char buffer[256];
+        disassemble_int_instruction( pd->dec.inst_valid, &pd->dec.inst, buffer, sizeof(buffer) );
+        printf( "\t**:DEC %08x(%d)/%08x (ARM c %d ACC %d/%02d)\t:\t... %s\n",
+                pd->dec.state.pc,
+                pd->dec.state.pc_valid,
+                pd->dec.state.opcode,
+                pd->dec.state.cycle_of_opcode,
+                pd->dec.state.acc_valid,
+                pd->dec.state.reg_in_acc,
+                buffer
+            );
+    }
+
+    /*b Handle simulation debug instructions
+     */
+    if ( (pd->rf.accepting_dec_instruction) ||
+         (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
+    {
+        if ( (pd->dec.state.pc_valid) &&
+             ((pd->dec.state.opcode&0xff000000)==0xf0000000) )
+        {
+            switch (pd->dec.state.opcode&0xff)
+            {
+            case 0x90:
+                printf( "********************************************************************************\nTest passed\n********************************************************************************\n\n");
+                break;
+            case 0x91:
+                printf( "********************************************************************************\n--------------------------------------------------------------------------------\nTest failed\n--------------------------------------------------------------------------------\n\n");
+                break;
+            case 0xa0:
+                char buffer[256];
+                pd->memory->copy_string( buffer, pd->rf.state.regs[0], sizeof(buffer) );
+                printf( buffer, pd->rf.state.regs[1], pd->rf.state.regs[2], pd->rf.state.regs[3] );
+                break;
+            case 0xa1:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nDump regs\n");
+                debug(-1);
+                break;
+            case 0xa2:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose on\n");
+                pd->verbose = 1;
+                break;
+            case 0xa3:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose off\n");
+                pd->verbose = 0;
+                break;
+            }
+        }
+    }
+
+    /*b Copy current to next
+     */
+    memcpy( &pd->dec.state, &pd->dec.next_state, sizeof(pd->dec.state) );
+
+}
+

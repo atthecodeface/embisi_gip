@@ -1,0 +1,192 @@
+/*a Scheduler stage methods
+  The scheduler presents (from a clock edge) its request to change to another thread
+  The decode also has information from its clock edge based on the previous instruction
+  decoded indicating whether it can be preempted; if it is idle, then it can be :-)
+  The decode stage combinatorially combines this information to determine if the
+  instruction it currently has should be decoded, or if a NOP should be decoded instead.
+  This information is given to the scheduler as an acknowledge
+  Note that if a deschedule instruction (even if conditional) has been inserted in to the pipeline then that must
+  block any acknowledge - it implicitly ensures the 'atomic' indication is set.
+  In addition to the scheduling above, the register file read stage can indicate to the scheduler that
+  a thread execution has completed (i.e. the thread has descheduled). This may be accompanied by a restart address.
+  The scheduler should also restart lower priority threads when high priority threads
+  complete.
+  So, if we fo for the discard of prefetched instructions, we have:
+    decoder -> scheduler indicates that any presented thread preempt or start will be taken
+    scheduler -> decoder indicates a thread to start and its PC and decode/pipeline configuration
+    register file read -> scheduler indicates that a thread has completed (possibly with restart PC)
+    register file write -> scheduler indicates restart PC for a thread and configuration
+    decoder -> ALU indicates priority level that is being operated at (for CZVN and accumulator and shifter)
+    register file read -> decoder indicates that a deschedule event actually took place (qualifier for flush)
+ */
+/*f c_gip_full::sched_comb
+  The scheduler operates in three modes:
+    cooperative round robin
+    cooperative prioritized
+    preemptive prioritized
+ */
+void c_gip_full::sched_comb( void )
+{
+    int i;
+    int schedulable[NUM_THREADS];
+    int priority_thread, priority_schedulable;
+    int round_robin_thread, round_robin_schedulable;
+    int chosen_thread, chosen_schedulable;
+
+    /*b Determine the schedulability of each thread, and highest priority
+     */
+    priority_schedulable = 0;
+    priority_thread = 0;
+    for (i=0; i<NUM_THREADS; i++)
+    {
+        schedulable[i] = ( ( pd->sched.state.thread_data[i].flag_dependencies &
+                             (pd->special.state.semaphores>>(i*4)) &
+                             0xf ) &&
+                           !pd->sched.state.thread_data[i].running
+            );
+        if (schedulable[i])
+        {
+            priority_thread = i;
+            priority_schedulable = 1;
+            printf("Schedule %d\n", i );
+        }
+    }
+
+    /*b Determine round-robin thread
+     */
+    round_robin_thread = (pd->sched.state.thread+1)%NUM_THREADS;
+    round_robin_schedulable = 0;
+    if (!pd->sched.state.running) // If running, hold the round robin thread at the next thread, else...
+    {
+        if (schedulable[pd->sched.state.thread]) // If the next thread is schedulable, then use it
+        {
+            round_robin_thread = pd->sched.state.thread;
+            round_robin_schedulable = 1;
+        }
+        else if (schedulable[pd->sched.state.thread|1]) // Else try (possibly) the one after that
+        {
+            round_robin_thread = pd->sched.state.thread|1;
+            round_robin_schedulable = 1;
+        }
+        else // Else just move on the thread
+        {
+            round_robin_thread = ((pd->sched.state.thread|1)+1)%NUM_THREADS;
+            round_robin_schedulable = 0;
+        }
+    }
+
+    /*b Choose high priority or round-robin
+     */
+    chosen_thread = priority_thread;
+    chosen_schedulable = priority_schedulable;
+    if (pd->special.state.round_robin)
+    {
+        chosen_thread = round_robin_thread;
+        chosen_schedulable = round_robin_schedulable;
+    }
+
+    /*b Determine requester - if not running we will pick the chosen thread; if running we only do so if preempting and the levels allow it
+    */
+    pd->sched.next_thread_to_start = chosen_thread;
+    pd->sched.next_thread_to_start_valid = 0;
+    switch (chosen_thread)
+    {
+    case 0:
+        if (!pd->sched.state.running)
+        {
+            pd->sched.next_thread_to_start_valid = chosen_schedulable;
+        }
+        break;
+    case 1:
+    case 2:
+    case 3:
+        if ( (!pd->sched.state.running) ||
+             ((pd->sched.state.thread==0) && !pd->special.state.cooperative) )
+        {
+            pd->sched.next_thread_to_start_valid = chosen_schedulable;
+        }
+        break;
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+        if ( (!pd->sched.state.running) ||
+             (!(pd->sched.state.thread&4) && !pd->special.state.cooperative) )
+        {
+            pd->sched.next_thread_to_start_valid = chosen_schedulable;
+        }
+        break;
+    }
+
+    pd->sched.thread_data_to_read = pd->special.state.selected_thread;
+    if (pd->sched.next_thread_to_start_valid && !(pd->sched.state.thread_to_start_valid))
+    {
+        pd->sched.thread_data_to_read = pd->sched.next_thread_to_start;
+    }
+    pd->sched.thread_data_pc = pd->sched.state.thread_data[ pd->sched.thread_data_to_read ].restart_pc;
+    pd->sched.thread_data_config = pd->sched.state.thread_data[ pd->sched.thread_data_to_read ].config;
+}
+
+/*f c_gip_full::sched_preclock
+ */
+void c_gip_full::sched_preclock( void )
+{
+    /*b Copy current to next
+     */
+    memcpy( &pd->sched.next_state, &pd->sched.state, sizeof(pd->sched.state) );
+
+    /*b Store thread and running
+     */
+    pd->sched.next_state.thread_to_start = pd->sched.state.thread_to_start; // Ensure the bus is held constant unless we are raising request
+    if (pd->dec.state.acknowledge_scheduler)
+    {
+        pd->sched.next_state.thread = pd->sched.next_thread_to_start;
+        pd->sched.next_state.thread_data[ pd->sched.next_state.thread_to_start ].running = 1;
+        pd->sched.next_state.running = 1;
+    }
+    pd->sched.next_state.thread_to_start_valid = pd->sched.next_thread_to_start_valid;
+    if (pd->sched.next_state.thread_to_start_valid && !(pd->sched.state.thread_to_start_valid))
+    {
+        pd->sched.next_state.thread_to_start = pd->sched.next_thread_to_start;
+        pd->sched.next_state.thread_to_start_pc = pd->sched.thread_data_pc;
+        pd->sched.next_state.thread_to_start_config = pd->sched.thread_data_config;
+        pd->sched.next_state.thread_to_start_level = 0;
+    }
+
+    /*b Write thread data register file
+     */
+    if (pd->special.state.thread_data_write_pc)
+    {
+        pd->sched.next_state.thread_data[ pd->special.state.write_thread ].restart_pc = pd->special.state.thread_data_pc;
+        pd->sched.next_state.thread_data[ pd->special.state.write_thread ].running = 0;
+    }
+    if (pd->special.state.thread_data_write_config)
+    {
+        pd->sched.next_state.thread_data[ pd->special.state.write_thread ].config = pd->special.state.thread_data_config;
+    }
+}
+
+/*f c_gip_full::sched_clock
+ */
+void c_gip_full::sched_clock( void )
+{
+    /*b Debug
+     */
+    if (pd->verbose)
+    {
+        printf( "\t**:SCH %d/%d @ %08x/%02x/%d (%08x)\n",
+                pd->sched.state.thread_to_start_valid,
+                pd->sched.state.thread_to_start,
+                pd->sched.state.thread_to_start_pc,
+                pd->sched.state.thread_to_start_config,
+                pd->sched.state.thread_to_start_level,
+                pd->special.state.semaphores
+            );
+    }
+
+    /*b Copy next to current
+     */
+    memcpy( &pd->sched.state, &pd->sched.next_state, sizeof(pd->sched.state) );
+
+}
+

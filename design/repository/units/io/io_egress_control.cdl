@@ -102,7 +102,7 @@ The timers for these are implemented in the io_cmd_fifo_timer submodule
      */
     comb bit[2] timestamp_segment;
     comb bit[io_cmd_timestamp_sublength] timestamp;
-    comb bit[io_cmd_timestamp_length] fifo_timestamp_data;
+    comb bit[io_cmd_timestamp_length+1] fifo_timestamp_data;
 
     /*b Requests/acks from commands
      */
@@ -161,7 +161,7 @@ The timers for these are implemented in the io_cmd_fifo_timer submodule
                 }
                 }
 
-            fifo_timestamp_data = egress_sram_read_data[io_cmd_timestamp_length;0];
+            fifo_timestamp_data = egress_sram_read_data[io_cmd_timestamp_length+1;0];
 
             io_egress_control_cmd_fsm cmd_fsm_0( int_clock <- int_clock,
                                                  int_reset <= int_reset,

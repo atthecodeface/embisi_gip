@@ -48,7 +48,7 @@ The error value needs to be able to divide 200MHz down to 16*1200 for 1200 baud 
 so we need to be able to divide by up to 2e8/1.6e1/1.2e3 = 1.1e4 (or thereabouts) = 11,000
 This implies at least 14 bits of magnitude.
 For such a divider try subc=0x2af7, addc=1.
-Becasue we need the two's complement of subc, we have two options: use an additional
+Because we need the two's complement of subc, we have two options: use an additional
 magnitude bit in the error value and the constants to support the sign, or just extend the
 error value for the sign and assume the top bit of the addition constant will be zero and the
 top bit of the subtraction constant will be 1.

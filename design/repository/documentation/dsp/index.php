@@ -1,3 +1,19 @@
+<?php
+
+include "web_locals.php";
+include "${toplevel}web_assist/web_globals.php";
+
+site_set_location($site_location);
+
+include "${toplevel}web_assist/web_header.php";
+
+page_header( $page_title );
+
+page_sp();
+?>
+
+<?php page_section( "overview", "Overview" ); ?>
+
 For the FFT we need to be able to take in real data and perform an FFT
 
 The real data can be munged to produce the outcome of the first two
@@ -203,3 +219,8 @@ This requires three 32-bit adders to generate the new squared result, and 3
 Six iterations are then required; this makes a total of seven cycles
 for a square root, but it can run in parallel with a MAC.
 Can we use a sort of data-flow DSP here?
+
+<?php
+page_ep();
+
+include "${toplevel}web_assist/web_footer.php"; ?>

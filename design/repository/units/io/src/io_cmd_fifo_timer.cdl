@@ -5,21 +5,16 @@
  */
 include "io_cmd_fifo_timer.h"
 
-/*a Constants
- */
-constant integer timestamp_length=24;
-constant integer timestamp_sublength=timestamp_length/4;
-
 /*a Types
  */
 typedef fsm
 {
-    timer_fsm_idle "Idle; waiting for a timestamp to be presented with new_fifo_data",
-        timer_fsm_first_comparison  "Time value valid, wait for top segment, and compare top quarter",
-        timer_fsm_second_comparison "Time value valid, wait for second segment, compare second quarter",
-        timer_fsm_third_comparison  "Time value valid, wait for third segment, compare third quarter",
-        timer_fsm_last_comparison   "Time value valid, wait for last segment, compare last quarter",
-        timer_fsm_time_passed "Time value valid and in the past; wait here until told to reset"
+    timer_fsm_idle "Idle; waiting for a timestamp to be presented with new_fifo_data";
+    timer_fsm_first_comparison  "Time value valid, wait for top segment, and compare top quarter";
+    timer_fsm_second_comparison "Time value valid, wait for second segment, compare second quarter";
+    timer_fsm_third_comparison  "Time value valid, wait for third segment, compare third quarter";
+    timer_fsm_last_comparison   "Time value valid, wait for last segment, compare last quarter";
+    timer_fsm_time_passed       "Time value valid and in the past; wait here until told to reset";
 } t_timer_fsm;
 
 /*a io_cmd_fifo_timer module
@@ -86,13 +81,17 @@ The state machine therefore is:
      */
     clocked t_timer_fsm  state = timer_fsm_idle "Timer current state";
     comb t_timer_fsm     next_state             "Next state to transition to";
-    clocked bit[timestamp_length] value = 0    "Timestamp value to pass";
-    comb bit[timestamp_length] next_value      "Load or shift of current timestamp value for next clock";
+    clocked bit[timestamp_length] value = 0     "Timestamp value to pass";
+    comb bit[timestamp_length] next_value       "Load or shift of current timestamp value for next clock";
 
-    comb bit shift_value_register "Asserted to indicate the value in the register should be shifted up; depends on the FSM state";
-    comb bit[timestamp_sublength] value_difference "Difference between the top bits of the stored value and the current presented timer segment";
-    comb bit value_in_past "Asserted if the top bits of the stored value are less than (timer comparison method) the current presented timer segment; i.e. the top bit of the difference";
-    comb bit value_in_future "Asserted if the top bits of the stored value are greater than (timer comparison method) the current presented timer segment; i.e. the top bit of the difference is zero and the difference is NOT zero";
+    comb bit shift_value_register
+        "Asserted to indicate the value in the register should be shifted up; depends on the FSM state";
+    comb bit[timestamp_sublength] value_difference
+        "Difference between the top bits of the stored value and the current presented timer segment";
+    comb bit value_in_past
+        "Asserted if the top bits of the stored value are less than (timer comparison method) the current presented timer segment; i.e. the top bit of the difference";
+    comb bit value_in_future
+        "Asserted if the top bits of the stored value are greater than (timer comparison method) the current presented timer segment; i.e. the top bit of the difference is zero and the difference is NOT zero";
 
     /*b Output 'time_reached'
      */
@@ -131,9 +130,10 @@ The state machine therefore is:
     state_machine "Implement the state machine for the timer comparator":
         {
             next_state = state;
-            fullswitch (state)
+            full_switch (state)
                 {
                 case timer_fsm_idle:
+                {
                     if (load_fifo_data)
                     {
                         if (fifo_timestamp[timestamp_length]) // If its an immediate, pass immediately
@@ -145,8 +145,9 @@ The state machine therefore is:
                             next_state = timer_fsm_first_comparison;
                         }
                     }
-                    break;
+                }
                 case timer_fsm_first_comparison:
+                {
                     if (timestamp_segment==0)
                     {
                         if (value_in_past)
@@ -158,8 +159,9 @@ The state machine therefore is:
                                 next_state = timer_fsm_second_comparison;
                             }
                     }
-                    break;
+                }
                 case timer_fsm_second_comparison:
+                {
                     if (timestamp_segment==1)
                     {
                         if (value_in_past)
@@ -171,8 +173,9 @@ The state machine therefore is:
                                 next_state = timer_fsm_third_comparison;
                             }
                     }
-                    break;
+                }
                 case timer_fsm_third_comparison:
+                {
                     if (timestamp_segment==2)
                     {
                         if (value_in_past)
@@ -184,8 +187,9 @@ The state machine therefore is:
                                 next_state = timer_fsm_last_comparison;
                             }
                     }
-                    break;
+                }
                 case timer_fsm_last_comparison:
+                {
                     if (timestamp_segment==3)
                     {
                         if (!value_in_future)
@@ -193,14 +197,15 @@ The state machine therefore is:
                             next_state = timer_fsm_time_passed;
                         }
                     }
-                    break;
-                case timer_fsm_time_passed: // Get to idle on the override signal, 'clear_ready_indication'
-                    break;
                 }
-            if (clear_ready_indication)
-            {
-                next_state = timer_fsm_idle;
-            }
+                case timer_fsm_time_passed: // Get to idle on the override signal, 'clear_ready_indication'
+                {
+                    if (clear_ready_indication)
+                    {
+                        next_state = timer_fsm_idle;
+                    }
+                }
+                }
         }
 
 }

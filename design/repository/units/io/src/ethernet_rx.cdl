@@ -2,8 +2,7 @@
  */
 
 /*a To do
-  Add packet FSM
-  Add collision handling
+  Add collision handling? This is handled with mii_err
  */
 
 /*a Constants
@@ -41,7 +40,7 @@ module ethernet_rx( clock io_clock,
                     output bit data_fifo_write,
                     input bit data_fifo_full,
 
-                    input bit cmd_fifo_full,
+                    input bit status_fifo_full,
                     output bit[32] status_fifo_data,
                     output bit status_fifo_write,
 
@@ -109,7 +108,6 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
     clocked bit[32] status_fifo_data = 0;
     clocked bit status_fifo_write = 0;
 
-    comb bit write_word_to_data_fifo;
 registers:
     {
         r_mii_rx_data <= mii_data;
@@ -125,10 +123,16 @@ registers:
         data_register[4;24] <= data_register[4;20];
         data_register[4;28] <= data_register[4;24];
 
-        if (write_word_to_data_fifo)
+        if (word_complete)
         {
             data_fifo_data[ 4;0] <= r_mii_rx_data;
             data_fifo_data[28;4] <= data_register;
+            data_fifo_write <= ~data_fifo_write;
+        }
+        if (block_complete)
+        {
+            status_fifo_data <= 0;
+            status_fifo_write <= ~status_fifo_write;
         }
     }
 
@@ -297,9 +301,9 @@ registers:
                 {
                     fcs <= next_fcs;
                 }
-                case data_fsm_wait_for_end_of_sfd:
+                case data_fsm_packet_complete_waiting:
                 {
-                    fcs[28;4] <= fcs[28;0]; // Rotate up the FCS as we transmit it so that the data to transmit is always ready in the top 4 bits
+                    fcs <= fcs;
                 }
                 }
         }

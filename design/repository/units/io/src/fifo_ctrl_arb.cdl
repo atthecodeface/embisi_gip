@@ -34,29 +34,17 @@ This module implements a simple priority encoder to arbitrate between requesters
             acknowledge_out = 0;
             granted = 0;
             grant_to = 0;
-            if (requests_in[0])
+            for ( i; max_requests )
             {
-                acknowledge_out[0] = 1;
-                grant_to = 0;
-                granted = 1;
+                if (requests_in[i])
+                {
+                    grant_to = i;
+                    granted = 1;
+                }
             }
-            elsif (requests_in[1])
-                {
-                    acknowledge_out[1] = 1;
-                    grant_to = 1;
-                    granted = 1;
-                }
-            elsif (requests_in[2])
-                {
-                    acknowledge_out[2] = 1;
-                    grant_to = 2;
-                    granted = 1;
-                }
-            elsif (requests_in[3])
-                {
-                    acknowledge_out[3] = 1;
-                    grant_to = 3;
-                    granted = 1;
-                }
+            if (granted)
+            {
+                acknowledge_out[grant_to] = 1;
+            }
         }
 }

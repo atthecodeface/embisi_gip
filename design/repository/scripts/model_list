@@ -3,6 +3,8 @@
 #  This file 'model_list' copyright Gavin J Stark 2003, 2004
 #  
 
+c_src test_benches/io_fifos se_fifo inc:headers/c
+c_model test_benches/io_fifos c_io_fifos inc:headers/c
 c_model test_benches/postbus c_postbus_testbench inc:headers/c inc:test_benches/ethernet
 c_src test_benches/ethernet sl_data_stream
 c_model test_benches/ethernet c_mii_testbench inc:headers/c
@@ -11,6 +13,8 @@ cdl test_benches/postbus     input_mux           model:postbus_input_mux      in
 cdl test_benches/postbus     register_demux      model:postbus_register_demux inc:headers/cdl
 cdl units/io/src             ethernet_tx inc:headers/cdl
 cdl units/io/src             ethernet_rx inc:headers/cdl
+cdl units/io/src             fifo_ctrl_arb inc:headers/cdl
+cdl units/io/src             io_cmd_fifo_timer inc:headers/cdl inc:units/io/src
 
 #c_model src c_gip_cyc
 #c_src src c_gip_full

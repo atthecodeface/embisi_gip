@@ -31,19 +31,30 @@
         error_arg_type_const_string, string,\
         error_arg_type_none );}}
 
-/*a Types for pcostbus_testbench
+#define FAIL(expr,string) {if ((expr)) {\
+    next_posedge_int_clock_state.mon_failure = ~posedge_int_clock_state.mon_failure; \
+    engine->message->add_error( NULL, error_level_info, error_number_se_dated_assertion, error_id_sl_exec_file_allocate_and_read_exec_file, \
+        error_arg_type_integer, engine->cycle(),\
+        error_arg_type_malloc_string, engine->get_instance_name(engine_handle),  \
+        error_arg_type_const_string, string,\
+        error_arg_type_none );}}
+
+
+/*a Types for c_mii_testbench
 */
-/*t t_src_fsm
+/*t t_src_fsm - RX MII driver FSM
 */
 typedef enum t_src_fsm
 {
     src_fsm_idle,
-    src_fsm_first,
+    src_fsm_sfd,
+    src_fsm_end_sfd,
     src_fsm_data,
-    src_fsm_last,
+    src_fsm_crc,
+    src_fsm_error,
 };
 
-/*t t_tgt_fsm
+/*t t_tgt_fsm - TX MII sink FSM
 */
 typedef enum t_tgt_fsm
 {
@@ -51,14 +62,15 @@ typedef enum t_tgt_fsm
     tgt_fsm_data,
 };
 
-/*t t_mon_fsm
+/*t t_mon_fsm - TX MII monitor
 */
 typedef enum t_mon_fsm
 {
     mon_fsm_idle,
-    mon_fsm_first_and_last,
-    mon_fsm_first,
-    mon_fsm_last,
+    mon_fsm_sfd,
+    mon_fsm_end_sfd,
+    mon_fsm_data,
+    mon_fsm_collision,
 };
 
 /*t mon_level_*
@@ -70,15 +82,6 @@ enum
     mon_level_protocol = 2, // Check the mii protocol is adhered to
     mon_level_data = 4, // Check data according to type given in the transaction word (if length is nonzero)
 };
-
-/*t t_fc_type
-*/
-typedef enum
-{
-    fc_type_none = 0,
-    fc_type_transaction = 1,
-    fc_type_data = 2,
-} t_fc_type;
 
 /*t t_source
 */
@@ -98,14 +101,6 @@ typedef struct t_sink
     int ready_to_clock;
 } t_sink;
 
-/*t t_channel
- */
-typedef struct t_channel
-{
-    t_fc_type fc_type;
-    int fc_initial_credit;
-} t_channel;
-
 /*t t_sink_state
 */
 typedef struct t_sink_state
@@ -121,15 +116,6 @@ typedef struct t_source_state
     int pending;
 } t_source_state;
 
-/*t t_channel_state
-*/
-typedef struct t_channel_state
-{
-    int fc_credit;
-    int source;
-    int pending;
-};
-
 /*t t_mii_testbench_posedge_int_clock_state
 */
 typedef struct t_mii_testbench_posedge_int_clock_state
@@ -137,8 +123,6 @@ typedef struct t_mii_testbench_posedge_int_clock_state
     t_src_fsm src_fsm;
     unsigned int src_data;
     int src_left;
-    int src_channel;
-    t_channel_state src_channel_state[MAX_CHANNELS];
     t_source_state src_source_state[MAX_SOURCES];
 
     t_tgt_fsm tgt_fsm;
@@ -146,6 +130,7 @@ typedef struct t_mii_testbench_posedge_int_clock_state
     t_sink_state tgt_sink_state[MAX_SINKS];
 
     t_mon_fsm mon_fsm;
+    int mon_count;
     unsigned int mon_failure;
 
 } t_mii_testbench_posedge_int_clock_state;
@@ -156,14 +141,13 @@ typedef struct t_mii_testbench_inputs
 {
     unsigned int *int_reset;
 
-    unsigned int *tgt_type;
-    unsigned int *tgt_data;
+    unsigned int *mon_mii_enable;
+    unsigned int *mon_mii_data;
+    unsigned int *mon_mii_crs;
+    unsigned int *mon_mii_col;
 
-    unsigned int *src_ack;
-
-    unsigned int *mon_type;
-    unsigned int *mon_data;
-    unsigned int *mon_ack;
+    unsigned int *tx_mii_enable;
+    unsigned int *tx_mii_data;
 
 } t_mii_testbench_inputs;
 
@@ -171,9 +155,11 @@ typedef struct t_mii_testbench_inputs
 */
 typedef struct t_mii_testbench_combinatorials
 {
-    unsigned int tgt_ack;
-    unsigned int src_type;
-    unsigned int src_data;
+    unsigned int rx_mii_dv;
+    unsigned int rx_mii_data;
+    unsigned int rx_mii_err;
+    unsigned int tx_mii_crs;
+    unsigned int tx_mii_col;
 
 } t_mii_testbench_combinatorials;
 
@@ -198,16 +184,11 @@ private:
     t_mii_testbench_posedge_int_clock_state next_posedge_int_clock_state;
     t_mii_testbench_posedge_int_clock_state posedge_int_clock_state;
 
-    void c_mii_testbench::add_channel( t_fc_type type, int credit );
-
-    int num_channels;
     int num_sources;
     int num_sinks;
-    int has_target;
     int monitor_level;
     t_source sources[MAX_SOURCES];
     t_sink sinks[MAX_SINKS];
-    t_channel channels[MAX_CHANNELS];
 };
 
 /*a Static variables for mii_testbench
@@ -218,9 +199,9 @@ private:
 static t_mii_testbench_posedge_int_clock_state *___mii_testbench_posedge_int_clock__ptr;
 static t_engine_state_desc state_desc_mii_testbench_posedge_int_clock[] =
 {
-    {"src_fsm", engine_state_desc_type_bits, NULL, struct_offset(___mii_testbench_posedge_int_clock__ptr, src_fsm), {2,0,0,0}, {NULL,NULL,NULL,NULL} },
-    {"src_left", engine_state_desc_type_bits, NULL, struct_offset(___mii_testbench_posedge_int_clock__ptr, src_left), {5,0,0,0}, {NULL,NULL,NULL,NULL} },
-    {"fc_credit", engine_state_desc_type_bits, NULL, struct_offset(___mii_testbench_posedge_int_clock__ptr, src_channel_state[0].fc_credit), {32,0,0,0}, {NULL,NULL,NULL,NULL} },
+//    {"src_fsm", engine_state_desc_type_bits, NULL, struct_offset(___mii_testbench_posedge_int_clock__ptr, src_fsm), {2,0,0,0}, {NULL,NULL,NULL,NULL} },
+//    {"src_left", engine_state_desc_type_bits, NULL, struct_offset(___mii_testbench_posedge_int_clock__ptr, src_left), {5,0,0,0}, {NULL,NULL,NULL,NULL} },
+//    {"fc_credit", engine_state_desc_type_bits, NULL, struct_offset(___mii_testbench_posedge_int_clock__ptr, src_channel_state[0].fc_credit), {32,0,0,0}, {NULL,NULL,NULL,NULL} },
     {"", engine_state_desc_type_none, NULL, 0, {0,0,0,0}, {NULL,NULL,NULL,NULL} }
 };
 
@@ -287,23 +268,11 @@ static t_sl_error_level mii_testbench_clock_posedge_int_clock_fn( void *handle )
 
 /*a Constructors and destructors for mii_testbench
 */
-/*f c_mii_testbench::add_channel( t_fc_type type, int credit )
- */
-void c_mii_testbench::add_channel( t_fc_type type, int credit )
-{
-    if (num_channels<MAX_CHANNELS)
-    {
-        channels[num_channels].fc_type = type;
-        channels[num_channels].fc_initial_credit = credit;
-    }
-    num_channels++;
-}
-
 /*f c_mii_testbench::c_mii_testbench
 */
 c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
 {
-    int i, j, k;
+    int i;
     char *option_string;
     char *string_copy;
     char *argv[256], *arg, *end;
@@ -311,41 +280,12 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
     engine = eng;
     engine_handle = eng_handle;
 
-    for (i=0; i<MAX_CHANNELS; i++)
-    {
-        channels[i].fc_type = fc_type_none;
-        channels[i].fc_initial_credit = 0;
-    }
     for (i=0; i<MAX_SOURCES; i++)
     {
         sources[i].interval = 0;
         sources[i].ready_to_clock = 1;
-        sources[i].channel = 0;
         sources[i].data_stream = NULL;
     }
-
-    num_channels = 0;
-    option_string = engine->get_option_string( engine_handle, "channels", "" );
-    string_copy = (char *)malloc(strlen(option_string)+1);
-    argc = sl_str_split( option_string, string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
-    for (i=0; i<argc; i++)
-    {
-        if (argv[i][0]=='(') // We expect FC type, initial FC credit
-        {
-            end = argv[i]+strlen(argv[i]); // Get end of argument
-            arg = sl_token_next(0, argv[i]+1, end ); // get first token; this puts the ptr in arg, and puts a nul at the end of that first token
-            j = (int)fc_type_none; // 'n' or default
-            if (arg)
-            {
-                if (arg[0]=='t') j = (int)fc_type_transaction;
-                if (arg[0]=='d') j = (int)fc_type_data;
-            }
-            arg = sl_token_next(1, arg, end ); // get continuation token;
-            if (arg) sl_integer_from_token( arg, &k ); // size
-            if (arg) add_channel( (t_fc_type) j, k );
-        }
-    }
-    free(string_copy);
 
     num_sources = 0;
     option_string = engine->get_option_string( engine_handle, "sources", "" );
@@ -353,13 +293,11 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
     argc = sl_str_split( option_string, string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
     for (i=0; (i<argc) && (num_sources<MAX_SOURCES); i++)
     {
-        if (argv[i][0]=='(') // We expect interval, channel, stream type (i/~i,r/~r...), stream length, stream hdr, stream seed, stream value
+        if (argv[i][0]=='(') // We expect interval, stream type (i/~i,r/~r...), stream length, stream hdr, stream seed, stream value
         {
             end = argv[i]+strlen(argv[i]); // Get end of argument
             arg = sl_token_next(0, argv[i]+1, end ); // get first token; this puts the ptr in arg, and puts a nul at the end of that first token
             if (arg) sl_integer_from_token( arg, &sources[num_sources].interval );
-            arg = sl_token_next(1, arg, end ); // get continuation token;
-            if (arg) sl_integer_from_token( arg, &sources[num_sources].channel );
             arg = sl_token_next(1, arg, end ); // get continuation token;
             if (arg)
             {
@@ -367,8 +305,6 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
             }
             if (sources[num_sources].data_stream)
             {
-                if (sources[num_sources].channel>num_channels) sources[num_sources].channel=num_channels;
-                if (sources[num_sources].channel<0) sources[num_sources].channel=0;
                 num_sources++;
             }
         }
@@ -389,9 +325,6 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
     }
     free(string_copy);
 
-    has_target = engine->get_option_int( engine_handle, "has_target", 0 );
-    if (num_sinks>0) has_target=1;
-
     monitor_level = engine->get_option_int( engine_handle, "monitor_level", 0 );
 
     engine->register_delete_function( engine_handle, (void *)this, mii_testbench_delete_fn );
@@ -402,37 +335,43 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
 
     engine->register_input_signal( engine_handle, "int_reset", 1, (int **)&inputs.int_reset );
 
-    if (has_target)
+    if (num_sinks>0)
     {
-        engine->register_input_signal( engine_handle, "tgt_type", 2, (int **)&inputs.tgt_type );
-        engine->register_input_used_on_clock( engine_handle, "tgt_type", "int_clock", 1 );
-        engine->register_input_signal( engine_handle, "tgt_data", 32, (int **)&inputs.tgt_data );
-        engine->register_input_used_on_clock( engine_handle, "tgt_data", "int_clock", 1 );
-        engine->register_output_signal( engine_handle, "tgt_ack", 2, (int *)&combinatorials.tgt_ack );
-        engine->register_output_generated_on_clock( engine_handle, "tgt_ack", "int_clock", 1 );
-        combinatorials.tgt_ack = 0;
+        engine->register_input_signal( engine_handle, "tx_mii_enable", 1, (int **)&inputs.tx_mii_enable );
+        engine->register_input_used_on_clock( engine_handle, "tx_mii_enable", "int_clock", 1 );
+        engine->register_input_signal( engine_handle, "tx_mii_data", 4, (int **)&inputs.tx_mii_data );
+        engine->register_input_used_on_clock( engine_handle, "tx_mii_data", "int_clock", 1 );
+        engine->register_output_signal( engine_handle, "tx_mii_col", 1, (int *)&combinatorials.tx_mii_col );
+        engine->register_output_generated_on_clock( engine_handle, "tx_mii_col", "int_clock", 1 );
+        engine->register_output_signal( engine_handle, "tx_mii_crs", 1, (int *)&combinatorials.tx_mii_crs );
+        engine->register_output_generated_on_clock( engine_handle, "tx_mii_crs", "int_clock", 1 );
+        combinatorials.tx_mii_col = 0;
+        combinatorials.tx_mii_crs = 0;
     }
 
     if (num_sources>0)
     {
-        engine->register_input_signal( engine_handle, "src_ack", 2, (int **)&inputs.src_ack );
-        engine->register_input_used_on_clock( engine_handle, "src_ack", "int_clock", 1 );
-        engine->register_output_signal( engine_handle, "src_data", 32, (int *)&combinatorials.src_data );
-        engine->register_output_generated_on_clock( engine_handle, "src_data", "int_clock", 1 );
-        engine->register_output_signal( engine_handle, "src_type", 2, (int *)&combinatorials.src_type );
-        engine->register_output_generated_on_clock( engine_handle, "src_type", "int_clock", 1 );
-        combinatorials.src_data = 0;
-        combinatorials.src_type = 0;
+        engine->register_output_signal( engine_handle, "rx_mii_dv", 1, (int *)&combinatorials.rx_mii_dv );
+        engine->register_output_generated_on_clock( engine_handle, "rx_mii_dv", "int_clock", 1 );
+        engine->register_output_signal( engine_handle, "rx_mii_data", 4, (int *)&combinatorials.rx_mii_data );
+        engine->register_output_generated_on_clock( engine_handle, "rx_mii_data", "int_clock", 1 );
+        engine->register_output_signal( engine_handle, "rx_mii_err", 1, (int *)&combinatorials.rx_mii_err );
+        engine->register_output_generated_on_clock( engine_handle, "rx_mii_err", "int_clock", 1 );
+        combinatorials.rx_mii_dv = 0;
+        combinatorials.rx_mii_data = 0;
+        combinatorials.rx_mii_err = 0;
     }
 
     if (monitor_level>0)
     {
-        engine->register_input_signal( engine_handle, "mon_type", 2, (int **)&inputs.mon_type );
-        engine->register_input_used_on_clock( engine_handle, "mon_type", "int_clock", 1 );
-        engine->register_input_signal( engine_handle, "mon_data", 32, (int **)&inputs.mon_data );
-        engine->register_input_used_on_clock( engine_handle, "mon_data", "int_clock", 1 );
-        engine->register_input_signal( engine_handle, "mon_ack", 2, (int **)&inputs.mon_ack );
-        engine->register_input_used_on_clock( engine_handle, "mon_ack", "int_clock", 1 );
+        engine->register_input_signal( engine_handle, "mon_mii_enable", 1, (int **)&inputs.mon_mii_enable );
+        engine->register_input_used_on_clock( engine_handle, "mon_mii_enable", "int_clock", 1 );
+        engine->register_input_signal( engine_handle, "mon_mii_data", 4, (int **)&inputs.mon_mii_data );
+        engine->register_input_used_on_clock( engine_handle, "mon_mii_data", "int_clock", 1 );
+        engine->register_input_signal( engine_handle, "mon_mii_crs", 1, (int **)&inputs.mon_mii_crs );
+        engine->register_input_used_on_clock( engine_handle, "mon_mii_crs", "int_clock", 1 );
+        engine->register_input_signal( engine_handle, "mon_mii_col", 1, (int **)&inputs.mon_mii_col );
+        engine->register_input_used_on_clock( engine_handle, "mon_mii_col", "int_clock", 1 );
         engine->register_output_signal( engine_handle, "mon_failure", 1, (int *)&posedge_int_clock_state.mon_failure );
         engine->register_output_generated_on_clock( engine_handle, "mon_failure", "int_clock", 1 );
         posedge_int_clock_state.mon_failure = 0;
@@ -481,12 +420,7 @@ t_sl_error_level c_mii_testbench::reset_active_high_int_reset( void )
     posedge_int_clock_state.src_data = 0;
     posedge_int_clock_state.src_left = 0;
 
-    for (i=0; i<MAX_CHANNELS; i++)
-    {
-        posedge_int_clock_state.src_channel_state[i].fc_credit = channels[i].fc_initial_credit;
-        posedge_int_clock_state.src_channel_state[i].source = 0;
-        posedge_int_clock_state.src_channel_state[i].pending = 0;
-    }
+    posedge_int_clock_state.tgt_fsm = tgt_fsm_idle;
 
     for (i=0; i<MAX_SOURCES; i++)
     {
@@ -500,8 +434,6 @@ t_sl_error_level c_mii_testbench::reset_active_high_int_reset( void )
         posedge_int_clock_state.tgt_sink_state[i].counter = 0;
         sinks[i].ready_to_clock = 1;
     }
-
-    posedge_int_clock_state.tgt_fsm = tgt_fsm_idle;
 
     return error_level_okay;
 }
@@ -520,33 +452,45 @@ t_sl_error_level c_mii_testbench::evaluate_combinatorials( void )
         switch (posedge_int_clock_state.src_fsm)
         {
         case src_fsm_idle:
-            combinatorials.src_data = 0;
-            combinatorials.src_type = postbus_word_type_idle;
+            combinatorials.rx_mii_dv = 0;
+            combinatorials.rx_mii_err = 0;
+            combinatorials.rx_mii_data = 0;
             break;
-        case src_fsm_first:
-            combinatorials.src_data = posedge_int_clock_state.src_data;
-            combinatorials.src_type = postbus_word_type_start;
+        case src_fsm_sfd:
+            combinatorials.rx_mii_dv = 1;
+            combinatorials.rx_mii_err = 0;
+            combinatorials.rx_mii_data = 0x5; // preamble
+            break;
+        case src_fsm_end_sfd:
+            combinatorials.rx_mii_dv = 1;
+            combinatorials.rx_mii_err = 0;
+            combinatorials.rx_mii_data = 0xd; // sfd
             break;
         case src_fsm_data:
-            combinatorials.src_data = posedge_int_clock_state.src_data;
-            combinatorials.src_type = postbus_word_type_data;
+            combinatorials.rx_mii_dv = 1;
+            combinatorials.rx_mii_err = 0;
+            combinatorials.rx_mii_data = 0;
             break;
-        case src_fsm_last:
-            combinatorials.src_data = posedge_int_clock_state.src_data;
-            combinatorials.src_type = postbus_word_type_last;
+        case src_fsm_crc:
+            combinatorials.rx_mii_dv = 1;
+            combinatorials.rx_mii_err = 0;
+            combinatorials.rx_mii_data = 0;
+            break;
+        case src_fsm_error:
+            combinatorials.rx_mii_dv = 1;
+            combinatorials.rx_mii_err = 1;
+            combinatorials.rx_mii_data = 0xf;
             break;
         }
     }
 
-    if ( has_target )
+    if ( num_sinks>0 )
     {
         switch (posedge_int_clock_state.tgt_fsm)
         {
         case tgt_fsm_idle:
-            combinatorials.tgt_ack = postbus_ack_taken;
             break;
         case tgt_fsm_data:
-            combinatorials.tgt_ack = postbus_ack_taken;
             break;
         }
     }
@@ -571,205 +515,62 @@ t_sl_error_level c_mii_testbench::preclock_posedge_int_clock( void )
         switch (posedge_int_clock_state.mon_fsm)
         {
         case mon_fsm_idle:
-        case mon_fsm_first_and_last:
-        case mon_fsm_last:
-            switch ((t_postbus_type)inputs.mon_type[0])
+            if (inputs.mon_mii_enable[0])
             {
-            case postbus_word_type_idle:
-                break;
-            case postbus_word_type_start:
-                if (inputs.mon_ack[0])
+                if (inputs.mon_mii_data[0]==0x5)
                 {
-                    if ((inputs.mon_data[0]>>postbus_command_last_bit)&1)
+                    next_posedge_int_clock_state.mon_fsm = mon_fsm_sfd;
+                    next_posedge_int_clock_state.mon_count = 0;
+                }
+                FAIL( (inputs.mon_mii_data[0]!=0x5), "Bad data from idle, expected 5 for the preamble" );
+            }
+            break;
+        case mon_fsm_sfd:
+            if (inputs.mon_mii_col[0])
+            {
+                next_posedge_int_clock_state.mon_fsm = mon_fsm_collision;
+            }
+            else if (inputs.mon_mii_enable[0])
+            {
+                next_posedge_int_clock_state.mon_count = posedge_int_clock_state.mon_count+1;
+                if (inputs.mon_mii_data[0]==0xd)
+                {
+                    if (posedge_int_clock_state.mon_count==8)
                     {
-                        next_posedge_int_clock_state.mon_fsm = mon_fsm_first_and_last;
+                        next_posedge_int_clock_state.mon_fsm = mon_fsm_data;
+                        next_posedge_int_clock_state.mon_count = 0;
                     }
                     else
                     {
-                        next_posedge_int_clock_state.mon_fsm = mon_fsm_first;
+                        FAIL( 1, "Bad data in preamble, got 0xd at wrong point in the preamble" );
                     }
-                }
-                break;
-            default:
-                ASSERT( 1, "Protocol error: in idle/last data state, got non-idle and non-start transaction word" );
-                break;
-            }
-            break;
-        case mon_fsm_first:
-            switch ((t_postbus_type)inputs.mon_type[0])
-            {
-            case postbus_word_type_data:
-            case postbus_word_type_hold:
-                break;
-            case postbus_word_type_last:
-                if (inputs.mon_ack[0])
-                {
-                    next_posedge_int_clock_state.mon_fsm = mon_fsm_last;
-                }
-                break;
-            default:
-                ASSERT( 1, "Protocol error: in data state, got start transaction word" );
-                break;
-            }
-            break;
-        }
-    }
-
-    /*b src_fsm
-    */
-    if (num_sources>0)
-    {
-        for (src=0; src<MAX_SOURCES; src++)
-        {
-            next_posedge_int_clock_state.src_source_state[src].counter = posedge_int_clock_state.src_source_state[src].counter+1;
-            if (posedge_int_clock_state.src_source_state[src].counter>=sources[src].interval)
-            {
-                next_posedge_int_clock_state.src_source_state[src].pending = 1;
-                next_posedge_int_clock_state.src_source_state[src].counter = 0;
-            }
-        }
-        for (src=0; src<MAX_SOURCES; src++)
-        {
-            if (posedge_int_clock_state.src_source_state[src].pending)
-            {
-                chan = sources[src].channel;
-                if (!posedge_int_clock_state.src_channel_state[chan].pending)
-                {
-                    next_posedge_int_clock_state.src_channel_state[chan].source = src;
-                    next_posedge_int_clock_state.src_channel_state[chan].pending = 1;
-                    if (sources[src].ready_to_clock)
-                    {
-                        sl_data_stream_start_packet( sources[src].data_stream );
-                        sources[src].ready_to_clock = 0;
-                    }
-                }
-            }
-        }
-        switch (posedge_int_clock_state.src_fsm)
-        {
-        case src_fsm_idle:
-        {
-            int fnd;
-            for (chan=0, fnd=0; (!fnd) && (chan<MAX_CHANNELS); chan++)
-            {
-                src = posedge_int_clock_state.src_channel_state[chan].source;
-                if (posedge_int_clock_state.src_channel_state[chan].pending)
-                {
-                    switch (channels[chan].fc_type)
-                    {
-                    case fc_type_none:
-                        fnd = 1;
-                        break;
-                    case fc_type_data:
-                        fnd = (posedge_int_clock_state.src_channel_state[chan].fc_credit >= sl_data_stream_packet_length(sources[src].data_stream));
-                        break;
-                    case fc_type_transaction:
-                        fnd = (posedge_int_clock_state.src_channel_state[chan].fc_credit >= 1);
-                        break;
-                    }
-                    if (fnd)
-                    {
-                        break;
-                    }
-                }
-            }
-            if (fnd)
-            {
-                src = posedge_int_clock_state.src_channel_state[chan].source;
-                next_posedge_int_clock_state.src_channel = chan;
-
-                next_posedge_int_clock_state.src_channel_state[chan].pending = 0;
-                next_posedge_int_clock_state.src_source_state[src].pending = 0;
-
-                next_posedge_int_clock_state.src_fsm = src_fsm_first;
-                next_posedge_int_clock_state.src_left = sl_data_stream_packet_length(sources[src].data_stream);
-                if (next_posedge_int_clock_state.src_left==0)
-                {
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_header(sources[src].data_stream) | 1;
                 }
                 else
                 {
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_header(sources[src].data_stream)& ~1;
-                }
-                switch (channels[chan].fc_type)
-                {
-                case fc_type_none:
-                    break;
-                case fc_type_data:
-                    next_posedge_int_clock_state.src_channel_state[chan].fc_credit = posedge_int_clock_state.src_channel_state[chan].fc_credit - next_posedge_int_clock_state.src_left;
-                    break;
-                case fc_type_transaction:
-                    next_posedge_int_clock_state.src_channel_state[chan].fc_credit = posedge_int_clock_state.src_channel_state[chan].fc_credit - 1;
-                    break;
+                    if ( (inputs.mon_mii_data[0]!=0x5) || 
+                         (posedge_int_clock_state.mon_count==8) )
+                    {
+                        FAIL( 1, "Bad data in preamble, either it didn't end at 8 or it was not 0x5s" );
+                    }
                 }
             }
             break;
-        }
-        case src_fsm_first:
-            src = posedge_int_clock_state.src_channel_state[posedge_int_clock_state.src_channel].source;
-            if (inputs.src_ack[0])
+        case mon_fsm_data:
+            if (inputs.mon_mii_col[0])
             {
-                next_posedge_int_clock_state.src_left = posedge_int_clock_state.src_left-1;
-                if (posedge_int_clock_state.src_left==0)
-                {
-                    next_posedge_int_clock_state.src_fsm = src_fsm_idle;
-                }
-                else if (posedge_int_clock_state.src_left==1)
-                {
-                    next_posedge_int_clock_state.src_fsm = src_fsm_last;
-                    if (sources[src].ready_to_clock)
-                    {
-                        sl_data_stream_next_data( sources[src].data_stream );
-                        sources[src].ready_to_clock = 0;
-                    }
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data(sources[src].data_stream);
-                }
-                else
-                {
-                    next_posedge_int_clock_state.src_fsm = src_fsm_data;
-                    if (sources[src].ready_to_clock)
-                    {
-                        sl_data_stream_next_data( sources[src].data_stream );
-                        sources[src].ready_to_clock = 0;
-                    }
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data(sources[src].data_stream);
-                }
+                next_posedge_int_clock_state.mon_fsm = mon_fsm_collision;
+            }
+            else if (inputs.mon_mii_enable[0])
+            {
+                next_posedge_int_clock_state.mon_count = posedge_int_clock_state.mon_count+1;
+            }
+            else
+            {
+                next_posedge_int_clock_state.mon_fsm = mon_fsm_idle;
             }
             break;
-        case src_fsm_data:
-            src = posedge_int_clock_state.src_channel_state[posedge_int_clock_state.src_channel].source;
-            if (inputs.src_ack[0])
-            {
-                next_posedge_int_clock_state.src_left = posedge_int_clock_state.src_left-1;
-                if (posedge_int_clock_state.src_left==1)
-                {
-                    next_posedge_int_clock_state.src_fsm = src_fsm_last;
-                    if (sources[src].ready_to_clock)
-                    {
-                        sl_data_stream_next_data( sources[src].data_stream );
-                        sources[src].ready_to_clock = 0;
-                    }
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data(sources[src].data_stream);
-                }
-                else
-                {
-                    next_posedge_int_clock_state.src_fsm = src_fsm_data;
-                    if (sources[src].ready_to_clock)
-                    {
-                        sl_data_stream_next_data( sources[src].data_stream );
-                        sources[src].ready_to_clock = 0;
-                    }
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data(sources[src].data_stream);
-                }
-            }
-            break;
-        case src_fsm_last:
-            src = posedge_int_clock_state.src_channel_state[posedge_int_clock_state.src_channel].source;
-            if (inputs.src_ack[0])
-            {
-                next_posedge_int_clock_state.src_left = posedge_int_clock_state.src_left-1;
-                next_posedge_int_clock_state.src_fsm = src_fsm_idle;
-            }
+        case mon_fsm_collision:
+            next_posedge_int_clock_state.mon_fsm = mon_fsm_idle;
             break;
         }
     }
@@ -795,7 +596,7 @@ t_sl_error_level c_mii_testbench::clock_posedge_int_clock( void )
     if (monitor_level&mon_level_verbose)
     {
         char buffer[256];
-        sprintf( buffer, "Type %d ack %d data %08x", inputs.mon_type[0], inputs.mon_ack[0], inputs.mon_data[0] );
+        sprintf( buffer, "E/Data %d/%x CRS %d COL %d", inputs.mon_mii_enable[0], inputs.mon_mii_data[0], inputs.mon_mii_crs[0], inputs.mon_mii_col[0] );
         engine->message->add_error( NULL, error_level_info, error_number_se_dated_message, error_id_sl_exec_file_allocate_and_read_exec_file,
                                     error_arg_type_integer, engine->cycle(),
                                     error_arg_type_malloc_string, engine->get_instance_name(engine_handle), 

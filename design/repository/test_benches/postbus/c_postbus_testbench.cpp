@@ -795,7 +795,7 @@ t_sl_error_level c_postbus_testbench::clock_posedge_int_clock( void )
     if (monitor_level&mon_level_verbose)
     {
         char buffer[256];
-        sprintf( buffer, "Type %d ack %d data %08x", inputs.mon_type[0], inputs.mon_ack[0], inputs.mon_data[0] );
+        sprintf( buffer, "(uses inputs - wrong)Type %d ack %d data %08x", inputs.mon_type[0], inputs.mon_ack[0], inputs.mon_data[0] );
         engine->message->add_error( NULL, error_level_info, error_number_se_dated_message, error_id_sl_exec_file_allocate_and_read_exec_file,
                                     error_arg_type_integer, engine->cycle(),
                                     error_arg_type_malloc_string, engine->get_instance_name(engine_handle), 

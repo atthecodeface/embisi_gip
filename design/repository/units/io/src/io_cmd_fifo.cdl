@@ -3,21 +3,15 @@
 
 /*a Includes
 */
-include "io_cmd_fifo_timer.h"
+include "io_cmd_fifo.h"
 
 /*a Constants
  */
-constant integer log_fifo_size=6; // 64 entries for now
-constant integer num_cmd_fifos=4;
 
 /*a Types
  */
 typedef struct
 {
-    bit[log_fifo_size] read_ptr;
-    bit[log_fifo_size] write_ptr;
-    bit empty;
-    bit full;
     bit pending_timer;
     bit timer_ready;
 } t_cmd_fifo;
@@ -27,16 +21,28 @@ typedef struct
 module io_cmd_fifo( clock int_clock,
                     input bit int_reset,
 
-                    input bit[2] timestamp_segment "Indicates which quarter of the timer counter value is being presented (00=top, 01=middle high, 10=middle low, 11=bottom); always follows the order [00 01 10 11 [11*]]",
-                    input bit[timestamp_sublength] timestamp "Portion (given by timestamp_segment) of the synchronous timer counter value, which only increments when timestamp_segment==11;",
+                    input bit[2] timestamp_segment
+                    "Indicates which quarter of the timer counter value is being presented (00=top, 01=middle high, 10=middle low, 11=bottom); always follows the order [00 01 10 11 [11*]]",
 
-                    input bit cmd_fifo_cmd_enable "Asserted to indicate a FIFO command should be performed, preempting any internal action, clocked internally"
-                    input t_cmd_fifo_cmd cmd_fifo_cmd "Command to the command FIFO, clocked internally; read, write, flush, write pointers, read pointers, etc; if a FIFO read, data is valid at end of next clock tick from RAM",
-                    output bit[log_fifo_size] ram_read_address "Address from this module to the RAM itself",
-                    output bit ram_read_enable "Read enable for the RAM itself; clocked by RAM, indicates RAM read data should be valid at end of that clock tick",
-                    input bit[32] ram_read_data "Data from the RAM",
+                    input bit[timestamp_sublength] timestamp
+                    "Portion (given by timestamp_segment) of the synchronous timer counter value, which only increments when timestamp_segment==11;",
 
-                    output bit cmd_fifo_ready "Asserted if the command FIFO has data ready to be read"
+                    input bit cmd_fifo_cmd_enable
+                    "Asserted to indicate a FIFO command should be performed, preempting any internal action, clocked internally"
+
+                    input t_cmd_fifo_cmd cmd_fifo_cmd
+                    "Command to the command FIFO, clocked internally; read, write, flush, write pointers, read pointers, etc; if a FIFO read, data is valid at end of next clock tick from RAM",
+
+                    output bit[log_fifo_size] ram_read_address
+                    "Address from this module to the RAM itself",
+
+                    output bit ram_read_enable
+                    "Read enable for the RAM itself; clocked by RAM, indicates RAM read data should be valid at end of that clock tick",
+                    input bit[32] ram_read_data
+                    "Data from the RAM",
+
+                    output bit cmd_fifo_ready
+                    "Asserted if the command FIFO has data ready to be read"
 
  )
 
@@ -54,28 +60,28 @@ The request from the clients is registered here, and also an internal state mach
     default reset int_reset;
 
     clocked t_cmd_fifo cmd_fifo={ read_ptr=0, write_ptr=0, empty=1, full=0, pending_timer=0 };
-    net bit cmd_fifo_time_reached;
-    comb bit cmd_fifo_clear_ready;
-    comb bit cmd_fifo_load_data;
+    net bit[num_cmd_fifos] cmd_fifo_time_reached;
+    comb bit[num_cmd_fifos] cmd_fifo_clear_ready;
+    comb bit[num_cmd_fifos] cmd_fifo_load_data;
 
-    io_cmd_fifo_timer "IO command FIFO timer":
+    io_cmd_fifo_timer "IO command FIFO timers":
+    {
+        for (i; num_cmd_fifos)
         {
-            io_cmd_fifo_timer cmd_fifo_timer( int_clock = int_clock,
+            io_cmd_fifo_timer cmd_fifo_timer[i]( int_clock -> int_clock,
                                                  int_reset = int_reset,
                                                  timestamp_segment = timestamp_segment,
                                                  timestamp = timestamp_counter_segment,
-                                                 clear_ready_indication = cmd_fifo_clear_ready,
-                                                 load_fifo_data = cmd_fifo_load_data,
+                                                 clear_ready_indication = cmd_fifo_clear_ready[i],
+                                                 load_fifo_data = cmd_fifo_load_data[i],
                                                  fifo_timestamp = ram_read_data[ timestamp_length+1; 0],
-                                                 time_reached >= cmd_fifo_time_reached );
+                                                 time_reached => cmd_fifo_time_reached[i] );
+            if ( (!cmd_fifo.empty[i]) &&
+                 (!cmd_fifo.pending_timer[i]) )
+            {
+                load_cmd_fifo_timer = 1;
+            }
         }
-
-    
-    if ( (!cmd_fifo.empty) &&
-         (!cmd_fifo.pending_timer) )
-    {
-        load_cmd_fifo_timer = 1;
-    }
     if (cmd_fifo.empty)
     {
         cmd_fifo_clear_ready = 1;

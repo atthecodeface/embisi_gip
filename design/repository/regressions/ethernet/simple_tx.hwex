@@ -1,0 +1,72 @@
+#a Copyright
+#  
+#  This file 'simple.hwex' copyright Gavin J Stark 2004
+#  
+
+string options
+
+sprintf options "-f %s0%" env_string("gip_mif")
+#option_string "sources" "(1 ())"
+option_string "sinks" "((i 4 0x1234 0 0))"
+option_string "monitor_level" "15"
+module mii_testbench "mii"
+
+option_string "clock" "system_clock"
+option_string "inputs" "cmd_fifo_read data_fifo_read"
+option_string "outputs" "test_reset cmd_fifo_empty cmd_fifo_read_data[32] data_fifo_read_data[32]"
+option_string "filename" "simple_tx.th"
+module se_test_harness th
+
+module ethernet_tx etx
+
+clock system_clock 0 1 1
+drive th.system_clock system_clock
+drive mii.int_clock system_clock
+drive etx.io_clock system_clock
+
+
+wire system_reset
+wire cmd_fifo_empty cmd_fifo_read cmd_fifo_read_data[32]
+wire data_fifo_read data_fifo_read_data[32]
+wire mii_col mii_crs mii_txen mii_txd[4]
+#wire mii_rxdv mii_rxer mii_rxd[4]
+
+# Test harness
+drive system_reset        th.test_reset 
+drive cmd_fifo_empty      th.cmd_fifo_empty 
+drive cmd_fifo_read_data  th.cmd_fifo_read_data
+drive th.cmd_fifo_read    cmd_fifo_read
+drive data_fifo_read_data th.data_fifo_read_data
+drive th.data_fifo_read   data_fifo_read
+
+#b MII
+drive etx.io_reset system_reset
+drive etx.data_fifo_data     data_fifo_read_data
+drive data_fifo_read         etx.data_fifo_read
+drive etx.cmd_fifo_empty     cmd_fifo_empty
+drive etx.cmd_fifo_data      cmd_fifo_read_data
+drive cmd_fifo_read          etx.cmd_fifo_read
+drive etx.mii_crs            mii_crs
+drive etx.mii_col            mii_col
+drive mii_txen               etx.mii_enable
+drive mii_txd                etx.mii_data
+
+#b MII testbench
+drive mii.int_reset          system_reset
+drive mii.mon_mii_col        mii_col
+drive mii.mon_mii_crs        mii_crs
+drive mii.mon_mii_data       mii_txd
+drive mii.mon_mii_enable     mii_txen
+drive mii.tx_mii_data        mii_txd
+drive mii.tx_mii_enable      mii_txen
+drive mii_crs                mii.tx_mii_crs
+drive mii_col                mii.tx_mii_col
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

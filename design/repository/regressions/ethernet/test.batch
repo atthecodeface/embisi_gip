@@ -1,0 +1,38 @@
+#a Copyright
+#  
+#  This file 'test.batch' copyright Gavin J Stark 2003, 2004
+#  
+#  This program is free software; you can redistribute it and/or modify it under
+#  the terms of the GNU General Public License as published by the Free Software
+#  Foundation, version 2.0.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even implied warranty of MERCHANTABILITY
+#  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+#  for more details.
+string vcd_file
+
+setenv gip_mif "../gip/bin/test_pst.gif"
+read_hw_file simple_tx.hwex
+
+sprintf vcd_file "%s0%/test_pst.vcd" env_string("run_dir")
+vcd_file_open "allsignals" vcd_file
+vcd_file_add "allsignals" "mii" "etx"
+vcd_file_enable "allsignals"
+#global_monitor_display "mux_data" "Mux type %0x% data %1x% source %0x%" global_signal_value("mux_type") global_signal_value("mux_data") global_signal_value("mux_ack")
+reset
+step 1500
+vcd_file_close "allsignals"
+
+#setenv gip_mif "../../../../regressions/gip/bin/test1.gif"
+#read_hw_file simple.hwex
+#reset
+#step 50
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***

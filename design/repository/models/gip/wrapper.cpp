@@ -14,7 +14,7 @@
 #include "arm_dis.h"
 #include "gdb_stub.h"
 #include "symbols.h"
-#include "c_arm_model.h"
+#include "c_gip_pipeline_single.h"
 #include "c_memory_model.h"
 #include "c_ram_model.h"
 #include "c_mmio_model.h"
@@ -24,21 +24,13 @@
 /*a Statics
  */
 int debug_level;
-static c_arm_model *arm;
+static c_gip_pipeline_single *gip;
 static c_memory_model *memory;
 static c_ram_model *ram;
 static c_ram_model *zero_page_ram;
 static c_mmio_model *mmio;
-// static int time_to_next_irq = 100000;
 
 static int tty_fd;
-
-/*
-void swi_hack (void)
-{
-	time_to_next_irq += 1000;
-}
-*/
 
 /*a Main routines
  */
@@ -47,8 +39,8 @@ void swi_hack (void)
 static void memory_model_debug( void *handle, t_memory_model_debug_action action, int write_not_read, unsigned int address, unsigned int data, int bytes )
 {
     printf("Wrapper:Memory model debug action %d wnr %d address %08x data %08x bytes %d\n", action, write_not_read, address, data, bytes );
-    arm->debug(-1);
-    arm->halt_cpu();
+    gip->debug(-1);
+    gip->halt_cpu();
     gdb_trap(5);
 }
 
@@ -71,11 +63,11 @@ static void handle_user1 (int signal)
  */
 static void usage( void )
 {
-    printf("This is a wrapper around various ARM and memory models\n");
+    printf("This is a wrapper around various GIP and memory models\n");
     printf("It is very powerful, and probably exceeds the scope of options to manage it\n");
     printf("However, primitive options are supplied\n");
     printf("-- -a -b -d -e -f -g -h -m -r -s -t -M -T\n");
-    printf("\t--: use stdin for the code to load into the ARM\n");
+    printf("\t--: use stdin for the code to load into the GIP\n");
     printf("\t-a <hex>: set base address of code to load; precede '-f' or '--'\n");
     printf("\t-b: load code as binary, not as a MIF file (which is hex data, or address:hex, in text form); precede '-f' or '--'\n");
     printf("\t-d <n>: set debug level and enable debugging\n");
@@ -88,7 +80,7 @@ static void usage( void )
     printf("\t-s <symbol.map>: set the filename of the symbol file - usually 'System.map' if run from the linux directory\n");
     printf("\t-t <cycles>: if not running under gdb, run for this maximum number of cycles then exit\n");
     printf("\t-M <start> <end> <level>: turn on memory tracing for a region of memory at this level (1-3, 3 gives everything, 1 just errors); output is appended to file memory_model.log\n");
-    printf("\t-T <region> <start> <end>: turn on execution tracing within a numbered region (0 to 7); output is appended to file arm_exec_trace.log\n");
+    printf("\t-T <region> <start> <end>: turn on execution tracing within a numbered region (0 to 7); output is appended to file gip_exec_trace.log\n");
 }
 
 #define TTY_BUF_SIZE 8
@@ -411,17 +403,17 @@ extern int main( int argc, char **argv )
      */
    	ram = new c_ram_model( 1<<24 ); // Create RAM of size 1<<24 = 16MB
    	memory = new c_memory_model();
-	arm = new c_arm_model( memory );
+	gip = new c_gip_pipeline_single( memory );
    	zero_page_ram = new c_ram_model( 1<<24 ); // Create zero-pagee RAM of size 1<<24 = 16MB
-   	mmio = new c_mmio_model( arm ); // Create our standard MMIO model
+   	mmio = new c_mmio_model( gip ); // Create our standard MMIO model
 
     zero_page_ram->register_with_memory_map( memory, 0x00000000, 0x10000000 ); // Register zero-page RAM at 0x00000000 to 0xd0000000
     ram->register_with_memory_map( memory, 0xc0000000, 0x10000000 ); // Register RAM at 0xc0000000 to 0xd0000000
     mmio->register_with_memory_map( memory, 0xff000000, 0x00ffffff ); // Register MMIO at 0xff000000 to 0xfffffff
     memory->register_debug_handler( NULL, memory_model_debug );
 
-    microkernel * ukernel = new microkernel(arm);
-    arm->register_microkernel (ukernel);
+//    microkernel * ukernel = new microkernel(gip);
+//    gip->register_microkernel (ukernel);
     
     /*b Load code and symbols
      */
@@ -431,17 +423,17 @@ extern int main( int argc, char **argv )
 	if (fdp->binary)
 	{
 		printf ("Loading binary file '%s' at %08x\n", fdp->name, fdp->addr);
-        arm->load_code_binary( fdp->fp, fdp->addr );
+        gip->load_code_binary( fdp->fp, fdp->addr );
 	}
 	else
 	{
 		printf ("Loading text file '%s' at %08x\n", fdp->name, fdp->addr);
-        arm->load_code( fdp->fp, fdp->addr );
+        gip->load_code( fdp->fp, fdp->addr );
 	}
     }
     for (i=0; i<16; i++)
     {
-        arm->set_register( i, regs[i] );
+        gip->set_register( i, regs[i] );
     }
     symbol_initialize( symbol_map );
 
@@ -450,9 +442,9 @@ extern int main( int argc, char **argv )
     signal (SIGUSR1, handle_user1);
     signal (SIGUSR2, handle_user2);
     
-    /*b Enable memory logging and tracing of ARM
+    /*b Enable memory logging and tracing of GIP
      */
-    memory->set_log_file( "memory_model.log" );
+//    memory->set_log_file( "memory_model.log" );
     for (i=0; i<8; i++)
     {
         if (memory_regions[i][2]<4)
@@ -461,12 +453,12 @@ extern int main( int argc, char **argv )
         }
     }
 
-    arm->trace_set_file( "arm_exec_trace.log" );
+    gip->trace_set_file( "gip_exec_trace.log" );
     for (i=0; i<8; i++)
     {
         if (execution_regions[i][2])
         {
-            arm->trace_region( i, execution_regions[i][0], execution_regions[i][1] ); // Trace execution in main ram
+            gip->trace_region( i, execution_regions[i][0], execution_regions[i][1] ); // Trace execution in main ram
         }
     }
 
@@ -475,7 +467,7 @@ extern int main( int argc, char **argv )
     if (gdb_enabled)
     {
 	    printf ("Starting GDB interface...\n");
-        gdb_stub_init( arm, memory, mmio );
+        gdb_stub_init( gip, memory, mmio );
     }
     else
     {
@@ -487,7 +479,7 @@ extern int main( int argc, char **argv )
 //    time_to_next_irq = 100000;
     if (gdb_enabled)
     {
-	int next_timer = get_ticks() + 1;
+        int next_timer = get_ticks() + 1;
         int instruction_count;
         while (1)
         {
@@ -502,38 +494,39 @@ extern int main( int argc, char **argv )
                 instruction_count = 100000;
             }
 
-	    if (instruction_count > 50) instruction_count = 50;
+            if (instruction_count > 50) instruction_count = 50;
 //            if (instruction_count > time_to_next_irq)
 //                instruction_count = time_to_next_irq;
 	    
-            int actual_count = arm->step_with_cache( &okay, instruction_count );
+            int actual_count = gip->arm_step( &okay, instruction_count );
 
 //            time_to_next_irq -= actual_count;
 
-	    if (ether_poll())
-		ukernel->handle_interrupt (2);
+//	    if (ether_poll())
+//		ukernel->handle_interrupt (2);
 	    
-	    if (keyboard_poll ())
-		    ukernel->handle_interrupt (1);
+//	    if (keyboard_poll ())
+//		    ukernel->handle_interrupt (1);
 	    
-	    if (get_ticks() > next_timer)
-	    {
-		    next_timer++;
-		    ukernel->handle_interrupt (0);
+            if (get_ticks() > next_timer)
+            {
+                next_timer++;
+//		    ukernel->handle_interrupt (0);
 
-	    }
+            }
         }
     }
     else
     {
-	int next_timer = get_ticks() + 1;
+        int next_timer = get_ticks() + 1;
 //	struct timeval tv;
         int instruction_count;
         int actual_count;
-	int total_instructions = 0;
-	int start_time = get_ticks();
+        int total_instructions = 0;
+        int start_time = get_ticks();
 	
-        while (cycles>0)
+        okay = 0;
+        while ((cycles>0) && (!okay))
         {
             if (sigusr1)
             {
@@ -546,24 +539,24 @@ extern int main( int argc, char **argv )
 //              instruction_count = time_to_next_irq;
 	   
 //	    if (instruction_count > 500) instruction_count = 500;
-	    if (instruction_count > 50) instruction_count = 50;
+            if (instruction_count > 50) instruction_count = 50;
 	    
-            actual_count = arm->step_with_cache( &okay, instruction_count );
+            actual_count = gip->arm_step( &okay, instruction_count );
             cycles -= actual_count;
-	    total_instructions += actual_count;
+            total_instructions += actual_count;
 	    
-	    if (ether_poll())
-		    ukernel->handle_interrupt (2);
+//	    if (ether_poll())
+//		    ukernel->handle_interrupt (2);
 
-	    if (keyboard_poll ())
-		    ukernel->handle_interrupt (1);
+//	    if (keyboard_poll ())
+//		    ukernel->handle_interrupt (1);
 
-	    if (get_ticks() > next_timer)
-	    {
-		    next_timer++;
-		    ukernel->handle_interrupt (0);
+            if (get_ticks() > next_timer)
+            {
+                next_timer++;
+//		    ukernel->handle_interrupt (0);
 
-	    }
+            }
         }
     }
 

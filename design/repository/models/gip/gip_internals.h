@@ -53,8 +53,22 @@ typedef enum
 {
     gip_alu_op2_src_b_in,
     gip_alu_op2_src_acc,
-    gip_alu_op2_src_shf
+    gip_alu_op2_src_shf,
+    gip_alu_op2_src_constant
 } t_gip_alu_op2_src;
+
+/*t t_gip_mem_op
+ */
+typedef enum
+{
+    gip_mem_op_none,
+    gip_mem_op_store_word,
+    gip_mem_op_store_half,
+    gip_mem_op_store_byte,
+    gip_mem_op_load_word,
+    gip_mem_op_load_half,
+    gip_mem_op_load_byte
+} t_gip_mem_op;
 
 /*t t_gip_register_encode
  */

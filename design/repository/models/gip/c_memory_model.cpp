@@ -156,7 +156,7 @@ void c_memory_model::write_memory( unsigned int address, unsigned int data, int 
     
     if (write_trap && address == write_trap)
     {
-	    printf ("Write trap at %lx\n", address);
+	    printf ("Write trap at %08x\n", address);
 	    gdb_trap(5);
     }
 

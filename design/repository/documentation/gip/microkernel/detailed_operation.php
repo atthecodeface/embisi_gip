@@ -98,6 +98,20 @@ The microkernel has six states, and transitions between them according to the fo
 <td>System state, interrupts enabled</td>
 </tr>
 
+<tr>
+<th>System state, interrupts enabled</th>
+<td>EnterUserMode</td>
+<td>Set ARM mode code thread PC to R15</td>
+<td>User state, interrupts enabled</td>
+</tr>
+
+<tr>
+<th>System state, interrupts disabled</th>
+<td>EnterUserMode</td>
+<td><b>Should not occur - interrups should be enabled</b>Set ARM mode code thread PC to R15</td>
+<td>User state, interrupts enabled</td>
+</tr>
+
 </table>
 
 <?php page_section( "modes", "Modes" ); ?>

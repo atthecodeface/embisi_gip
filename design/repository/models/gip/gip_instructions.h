@@ -143,10 +143,10 @@ typedef enum
 typedef enum
 {
     gip_ins_r_type_register = 0,
-    gip_ins_r_type_register_indirect = 1,
+    gip_ins_r_type_register_indirect = 1, // DEPRECATED
     gip_ins_r_type_periph = 2, // access to 2-cycle peripheral space (timer, ?uart?)
-    gip_ins_r_type_coproc = 3, // direct addressing of coprocessor register file
-    gip_ins_r_type_special = 4, // access to coprocessor FIFO pointers, coprocessor as FIFO, coprocessor cmd, DAGs, scheduler semaphores
+    gip_ins_r_type_postbus = 3, // direct addressing of postbus register file, FIFOs and command/status
+    gip_ins_r_type_special = 4, // access to DAGs, scheduler semaphores, repeat counts, ZOL data
     gip_ins_r_type_internal = 5, // conditions, accumulator, shifter result, pc
     gip_ins_r_type_none = 6,
     gip_ins_r_type_none_b = 7,
@@ -196,6 +196,31 @@ typedef struct t_gip_pipeline_results
     int write_pc; // From the end of the pipeline, so that branches and jump tables may be handled
     unsigned int rfw_data; // To go with write_pc, the data being written; writes to the PC should always follow (or be simultaneous with) a flush
 } t_gip_pipeline_results;
+
+/*t t_gip_special_reg
+ */
+typedef enum
+{
+    gip_special_reg_semaphores = 0, // read only
+    gip_special_reg_semaphores_set = 1, // write only
+    gip_special_reg_semaphores_clear = 2, // write only
+    gip_special_reg_gip_config = 3, // scheduler mode, ARM trap semaphore, privelege state of thread 0
+    gip_special_reg_thread = 4, // thread to write with 'selected' thread; may be read
+    gip_special_reg_thread_pc = 5, // thread restart address, bottom bit indicates current thread or selected thread; on reads actually you get the selected thread, but only if no scheduling is going on
+    gip_special_reg_thread_data = 6, // thread restart semaphore mask, decoder type, pipeline config (trail, sticky), ALU mode (for native) - restart data; on reads actually you get the selected thread, but only if no scheduling is going on
+    gip_special_reg_thread_regmap = 7, // Need something here - may be part of data?
+    gip_special_reg_repeat_count = 8, // Register repeat count; for nested, one can use immediate or this value, so not two variable nested! - not readable
+    gip_special_reg_preempted_pc_l = 12, // Low priority PC value stacked, if thread 0 was preempted; bit 0 indicates 1 for invalid (not preempted)
+    gip_special_reg_preempted_pc_m = 13, // Medium priority PC value stacked, if thread 1-3 was preempted; bit 0 indicaes 1 for invalid (not preempted)
+    gip_special_reg_preempted_flags = 14, // Low priority flags (0-7), medium priority flags (8-15), if preempted
+    gip_special_reg_dag_value_0 = 16, // Data-address generator 0 value
+    gip_special_reg_dag_base_0 = 17, // Data-address generator 0 config base
+    gip_special_reg_dag_config_0 = 18, // Data-address generator 0 config size, current offset, bit reverse
+    gip_special_reg_dag_value_1 = 20, // Data-address generator 1 value
+    gip_special_reg_dag_base_1 = 21, // Data-address generator 1 config base
+    gip_special_reg_dag_config_1 = 22, // Data-address generator 1 config size, current offset, bit reverse
+
+} t_gip_special_reg;
 
 /*a Wrapper
  */

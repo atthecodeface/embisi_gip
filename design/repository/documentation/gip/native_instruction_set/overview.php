@@ -383,7 +383,15 @@ This extension has potential uses in the full condition use, but the other featu
 
 <dt>Load/store instructions
 
-<dd>When extension in this manner the load/store instruction can be told: to set sign flags and/or accumulator from address calculation (basic instructions only set accumulator); set the burst size (which is decremented for following accesses, so if the burst size is used then successive instructions should be identical accesses to successive word addresses with no burst size specified - default burst size is the last burst size-1, or zero); to provide for extended conditional instruction as discussed above.
+<dd>When extension in this manner the load/store instruction can be
+told: to set sign flags and/or accumulator from address calculation
+(basic instructions only set accumulator); set the burst size to the
+value of the extcmd burst field or the special repeat count register
+if an option bit is set (the burst size is decremented for following
+accesses, so if the burst size is used then immediatevsuccessive
+instructions should be identical accesses to successive word addresses
+- default burst size is the last burst size-1, or zero); to provide for
+extended conditional instruction as discussed above.
 
 </dl>
 
@@ -803,7 +811,13 @@ instruction, be it preindexed or postindexed.
 
 <p>
 
-In general the burst ('k' in the internal instruction) for a load instruction is zero. However, if a load is extended with an extcmd specifying a non-zero burst then the following loads (up to that burst length) will have a decreasing burst size down to 0.
+In general the burst ('k' in the internal instruction) for a load
+instruction is zero. However, if a load is extended with an extcmd
+specifying a non-zero burst then the following loads (up to that burst
+length) will have a decreasing burst size down to 0. The burst size
+may be specified either directly in an 'extcmd' instruction, or (by
+setting bit zero of the options in the 'extcmd') indirectly to the
+current value of the repeat count special register.
 
 <?php
 mapping_start("Native unextended", "Internal" );
@@ -836,7 +850,13 @@ instruction, be it preindexed or postindexed.
 
 <p>
 
-In general the burst ('k' in the internal instruction) for a store instruction is zero. However, if a store is extended with an extcmd specifying a non-zero burst then the following stores (up to that burst length) will have a decreasing burst size down to 0.
+In general the burst ('k' in the internal instruction) for a store
+instruction is zero. However, if a store is extended with an extcmd
+specifying a non-zero burst then the following stores (up to that
+burst length) will have a decreasing burst size down to 0. The burst size
+may be specified either directly in an 'extcmd' instruction, or (by
+setting bit zero of the options in the 'extcmd') indirectly to the
+current value of the repeat count special register.
 
 <?php
 mapping_start("Native unextended", "Internal" );

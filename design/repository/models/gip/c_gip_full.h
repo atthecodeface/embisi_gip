@@ -49,7 +49,6 @@ public:
 private:
     /*b Internal instruction execution methods
      */
-    void c_gip_full::disassemble_native_instruction( int opcode, char *buffer, int length );
     void c_gip_full::disassemble_int_instruction( int valid, t_gip_instruction *inst, char *buffer, int length );
     void c_gip_full::execute_int_memory_instruction( t_gip_mem_op gip_mem_op, unsigned int address, unsigned int data_in );
     void c_gip_full::execute_int_instruction( t_gip_instruction *inst, struct t_gip_pipeline_results *results );
@@ -84,6 +83,7 @@ private:
     int c_gip_full::decode_native_debug( unsigned int opcode );
     int c_gip_full::decode_native_alu( unsigned int opcode );
     int c_gip_full::decode_native_cond( unsigned int opcode );
+    int c_gip_full::decode_native_shift( unsigned int opcode );
     int c_gip_full::decode_native_ldr( unsigned int opcode );
     int c_gip_full::decode_native_str( unsigned int opcode );
     int c_gip_full::decode_native_branch( unsigned int opcode );
@@ -128,6 +128,20 @@ private:
     void c_gip_full::mem_clock( void );
     void c_gip_full::mem_preclock( void );
     void c_gip_full::mem_comb( t_gip_pipeline_results *results );
+
+    /*b Postbus and special register methods
+      comb is called after the pipeline register file comb, as that determines the register address to fetch
+      the data is valid for the register file preclock function
+      postbus covers the post bus register file, command registers and FIFO registers
+      special covers the semaphores, pipeline configuration, repeat count, ZOL data - not all written through the RF path
+      peripheral will include a peripheral indirect register, and all the peripherals themselves (a three-cycle access)
+     */
+    void c_gip_full::postbus_comb( int read_select, int read_address, unsigned int *read_data );
+    void c_gip_full::postbus_preclock( int flush, int read_select, int read_address, int write_select, int write_address, unsigned int write_data );
+    void c_gip_full::postbus_clock( void );
+    void c_gip_full::special_comb( int read_select, int read_address, unsigned int *read_data );
+    void c_gip_full::special_preclock( int flush, int read_select, int read_address, int write_select, int write_address, unsigned int write_data );
+    void c_gip_full::special_clock( void );
 
     /*b Complete structure methods
      */

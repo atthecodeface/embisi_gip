@@ -35,7 +35,7 @@ If preemption is enabled then a low priority thread may be preempted
 by a medium or high priority thread, and a medium priority thread by a
 high priority thread. The threads themselves have the capability of
 locally disabling preemption (a little like an interrupt disable flag)
-to support atomic updates of structures.
+to support atomic updates of structures. This disabling is global; that is, a low priority thread that disables preemption will stop high and medium priority threads from preemtping it - it is not possible to stop just medium priority threads from preempting.
 
 <p>
 
@@ -43,10 +43,9 @@ With the preemption scheme described, there can be at most three
 active threads (one running, two preempted) simultaneously. In some
 systems this would entail pushing the state of the threads on to a
 stack, or mirroring the entire state. The GIP, however, only preserves
-the condition flags on a small register file in the ALU itself. It
+the condition flags and accumulator on a small register file in the ALU itself. It
 does not preserve the state of the main register file, which is
-designed to be shared. It does not, either, preserve the accumulator
-register or the shifter register. If these are to be preserved over
+designed to be shared. It does not, either, preserve the shifter register. If these are to be preserved over
 preemption then the software must do that explicitly. Note that ARM
 emulation does not require the accumulator or shifter to be preserved,
 so ARM mode threads can be run and preempted, and preempt, without
@@ -61,6 +60,88 @@ appropriately set the thread becomes schedulable. The thread is
 expected to start running (if it actually gets scheduled) at a
 specified PC in a specified mode (GIP or ARM, sticky flags, ...); this
 data is stored in the scheduler register file.
+
+<?php page_section( "implementation", "Thread switching implementation" ); ?>
+
+The scheduler communicates with the decode and register file stages of the GIP pipeline to implement thread switching.
+The scheduler may request of the decode the following:
+
+<ol>
+
+<li>Schedule thread 'n' with GIP pipeline configuration 'c' at address 'pc' from nothing running
+
+<li>Preempt current thread with thread 'n' with GIP pipeline configuration 'c' at address 'pc'
+
+<li>Resume preempted thread 'n' with GIP pipeline configuration 'c' at address 'pc'
+
+</ol>
+
+The decode is responsible for acknowledging these requests, and indeed
+it completely controls actual thread switching. In response to a
+preempt request the GIP pipeline will, at some point, if the request
+is acknowledged, signal that the preempted thread has been preempted -
+the thread may not spontaneosuly deschedule following the request
+being acknowledged.
+
+<p>
+
+The GIP pipeline communicates descheduling and preemption events to
+the scheduler. It does this from the register file read stage of the
+pipeline. The two potential messages that can be given are:
+
+<ol>
+
+<li>Preemption occurred
+
+<li>Thread descheduled
+
+</ol>
+
+The mechanism the scheduler uses for communicating with the decoder is
+a bus with the following components and protocol: <dl>
+
+<dt>Request indication 
+
+<dd>1 for request for schedule, 0 for no request (idle)
+
+<dt>Thread number
+
+<dd>Number of thread requesting scheduling; only changes the clock
+edge that request goes high
+
+<dt>GIP configuration
+
+<dd>Configuration values for the thread to be scheudled; only changes
+on the clock edge that request goes high
+
+<dt>Acknowledge
+
+<dd>From the decode logic to the scheduler, only asserted if the
+previous cycle was a schedule request, indicating that the request was
+acted upon
+
+</dl>
+
+The scheduler may present requests whenever it chooses, but if it
+decides to change the presented request (perhaps because a higher
+priority thread becomes available when a previous request has not been
+acknowledged) then it must first go idle (remove its request): in the
+idle cycle (as can be seen from the protocol above) the request
+content must not have changed, so if the race condition of an
+acknowledge occurring simultaneously with a request change happens
+then the decoder and scheduler will not have to backtrack state.
+
+<?php page_section( "round_robin", "Round robin mechanism" ); ?>
+
+The round robin mechanism is not a single cycle round robin
+resolver. It uses multiple cycles to reduce the circuitry required. On
+each clock edge the mechanism basically examines the next two threads
+after the one it last examined to determine if either of them is
+ready; it selects the appropriate one if so. If neither is then on the
+next cycle it examines the next pair of threads, and so on. This means
+that there is an extra delay when scheduling round robin, particularly
+if all the threads are not used. However, the overall performance
+impact should not be that high.
 
 <?php page_section( "state", "State" ); ?>
 

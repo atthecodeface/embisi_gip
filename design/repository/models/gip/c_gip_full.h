@@ -49,6 +49,7 @@ public:
 private:
     /*b Internal instruction execution methods
      */
+    void c_gip_full::disassemble_native_instruction( int opcode, char *buffer, int length );
     void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buffer, int length );
     void c_gip_full::execute_int_memory_instruction( t_gip_mem_op gip_mem_op, unsigned int address, unsigned int data_in );
     void c_gip_full::execute_int_instruction( t_gip_instruction *inst, struct t_gip_pipeline_results *results );
@@ -73,6 +74,19 @@ private:
     t_gip_ins_rnm c_gip_full::map_source_register( int arm_r );
     t_gip_ins_rd c_gip_full::map_destination_register( int arm_rd );
     t_gip_ins_subclass c_gip_full::map_shift( int shf_how, int imm, int amount );
+    t_gip_ins_rnm c_gip_full::map_native_rm( int rm );
+    t_gip_ins_rnm c_gip_full::map_native_rn( int rn );
+    t_gip_ins_rd c_gip_full::map_native_rd( int rd );
+    unsigned int c_gip_full::map_native_immediate( int imm );
+
+    /*b Native Decode methods
+     */
+    int c_gip_full::decode_native_debug( unsigned int opcode );
+    int c_gip_full::decode_native_alu( unsigned int opcode );
+    int c_gip_full::decode_native_cond( unsigned int opcode );
+    int c_gip_full::decode_native_ld_st( unsigned int opcode );
+    int c_gip_full::decode_native_branch( unsigned int opcode );
+    int c_gip_full::decode_native_extend( unsigned int opcode );
 
     /*b ARM Decode methods
      */
@@ -83,6 +97,12 @@ private:
     int c_gip_full::decode_arm_ldm_stm( void );
     int c_gip_full::decode_arm_mul( void );
     int c_gip_full::decode_arm_trace( void );
+
+    /*b Scheduler methods
+     */
+    void c_gip_full::sched_preclock( void );
+    void c_gip_full::sched_clock( void );
+    void c_gip_full::sched_comb( void );
 
     /*b Decoder methods
      */

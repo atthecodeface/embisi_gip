@@ -46,6 +46,9 @@ typedef enum
     gip_ins_subclass_logic_bic=4,
     gip_ins_subclass_logic_mov=5,
     gip_ins_subclass_logic_mvn=6,
+    gip_ins_subclass_logic_xorcnt=7,
+    gip_ins_subclass_logic_xorfirst=8,
+    gip_ins_subclass_logic_xorlast=9,
 
     gip_ins_subclass_shift_lsl=0,
     gip_ins_subclass_shift_lsr=1,
@@ -112,6 +115,7 @@ typedef enum
 typedef enum
 {
     gip_ins_rd_int_none = 0,
+    gip_ins_rd_int_pc = 0x1,
     gip_ins_rd_int_eq = 0x10,
     gip_ins_rd_int_ne = 0x11,
     gip_ins_rd_int_cs = 0x12,
@@ -126,7 +130,6 @@ typedef enum
     gip_ins_rd_int_lt = 0x1b,
     gip_ins_rd_int_gt = 0x1c,
     gip_ins_rd_int_le = 0x1d,
-    gip_ins_rd_int_pc = 0x1f,
 } t_gip_ins_rd_int;
 
 /*t t_gip_ins_rd_type

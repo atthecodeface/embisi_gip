@@ -162,11 +162,8 @@ extern int main( int argc, char **argv )
 {
 	int i, okay, gdb_enabled;
 	int cycles;
-//	FILE *f;
-//	int binary;
     int r;
     unsigned int regs[16];
-//    unsigned int base_address;
     char *symbol_map;
     char *eth_device;
     unsigned int memory_regions[8][3];
@@ -191,9 +188,7 @@ extern int main( int argc, char **argv )
     }
 //	f=stdin;
 	cycles=1000;
-//	binary=0;
 	gdb_enabled = 0;
-//    base_address = 0;
     symbol_map = "../../os/linux/System.map";
     eth_device = "eth3";
     for (i=0; i<16; i++)

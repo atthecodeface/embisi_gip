@@ -3,6 +3,31 @@
   Reading of peripherals et al in RFR stage
   Writing of peripherals et al in RFW stage
   Checking instruction flow is okay and flush never occurs after write of PC
+  Conditional native instructions
+  Zero overhead loops
+  Scheduler registers accessed by RF internal; particularly set of semaphores, clear of semaphores
+  Indirect register accesses (read register to get register number to access)
+  Extended registers to include support for global register number and thread-relative number
+  Preemption
+  Deschedule instruction
+  Thunking library call instruction
+  SWIs
+  Native instruction access in ARM mode - with conditional access (break out that coproc space?)
+  Conditional instruction shadow for native mode
+  Clearing extended immediate etc
+  Implement xorcnt, xorfirst, xorlast
+ */
+
+/*a Notes
+  Add the configuration register for the pipeline as an internal register
+  Add two internal registers that set and clear the scheduling semaphore bits
+  Decode the bottom half of the fetched instruction if in arm mode or if invalid but in GIP mode do the half given by PC[1]
+  Generate a combinatorial that can be used to clear extended instruction, guaranteed to also clear next_cycle_of_opcode
+  For repeats have a special internal register with the repeat count
+  For ZOLs use the repeat count above, and also have internal registers for the start and lengths
+  Add an extension to loads and stores to specify a compile-time burst size. We also need run-time burst sizes - add another option for using the repeat count for this
+  Extend also with a bit indicating the destination (i.e. data) register should be incremented or not (cf xfrcm and ldm/stm)
+
  */
 
 /*a Includes
@@ -18,6 +43,7 @@
 #include "arm_dis.h"
 #include "gip_internals.h"
 #include "gip_instructions.h"
+#include "gip_native.h"
 
 /*a Defines
  */
@@ -30,6 +56,7 @@
 #define MAX_REGISTERS (32)
 #define GIP_REGISTER_MASK (0x1f)
 #define GIP_REGISTER_TYPE (0x20)
+#define NUM_THREADS (8)
 
 /*a Types
  */
@@ -44,16 +71,75 @@ typedef enum
     shf_type_rrx=4,
 } t_shf_type;
 
-/*t t_gip_sch_thread - Per thread register file storage
+/*t t_gip_sched_thread - Per thread register file storage
  */
-typedef struct t_gip_sch_thread
+typedef struct t_gip_sched_thread
 {
     unsigned int restart_pc;
     int flag_dependencies; // 4-bit field indicating which sempahores are important
     int register_map;
-    int processor_mode; // 1 for ARM, 0 for GIP native
+    int config; // 1 for ARM, 0 for GIP native
     int running; // 1 if the thread has been scheduled and is running (or is currently preempted)
-} t_gip_sch_thread;
+} t_gip_sched_thread;
+
+/*t t_gip_sched_state
+ */
+typedef struct t_gip_sched_state
+{
+
+    /*b State in the scheduler guaranteed by the design
+     */
+    t_gip_sched_thread thread_data[NUM_THREADS]; // 'Register file' of thread data for all eight threads
+    unsigned int semaphores;
+    int cooperative;
+    int round_robin;
+    int thread; // Actual thread number that is currently running
+    int running; // 1 if a thread is running, 0 otherwise
+    int preempted_medium_thread; // 0 if none, else number
+    int preempted_low_thread; // 0 if not, else 1
+
+    int thread_to_start_valid; // 1 if the bus contents are valid; bus contents may only change when this signal rises
+    int thread_to_start; // Thread number to start
+    int thread_to_start_pc; // Thread number to start
+    int thread_to_start_config; // GIP pipeline configuration including operating mode
+    int thread_to_start_level; // 0 for low, 1 for medium, 2 for high
+} t_gip_sched_state;
+
+/*t t_gip_sched_data
+ */
+typedef struct t_gip_sched_data
+{
+    /*b State of the scheduler
+     */
+    t_gip_sched_state state;
+    t_gip_sched_state next_state;
+
+    /*b Combinatorials in the scheduler
+     */
+    int next_thread_to_start; // Next thread, presented to decoder
+    int next_thread_to_start_valid; // 1 if next_thread_to_start is valid and indicates a thread to change to
+
+} t_gip_sched_data;
+
+/*t t_gip_dec_idle_data
+ */
+typedef struct t_gip_dec_idle_data
+{
+    int next_pc_valid;
+    int next_pc;
+    int next_thread;
+} t_gip_dec_idle_data;
+
+/*t t_gip_dec_native_data
+ */
+typedef struct t_gip_dec_native_data
+{
+    unsigned int next_pc;
+    int next_cycle_of_opcode;
+    int inst_valid; // If 1 then instruction is valid, else not
+    t_gip_instruction inst; // Instruction to be executed by the RF stage
+
+} t_gip_dec_native_data;
 
 /*t t_gip_dec_arm_state
  */
@@ -61,7 +147,6 @@ typedef struct t_gip_dec_arm_state
 {
     /*b State in the ARM emulator guaranteed by the design
      */
-    int cycle_of_opcode;
     int acc_valid; // 1 if the register in the accumulator is valid, 0 if the accumulator should not be used
     int reg_in_acc; // register number (0 through 14) that is in the accumulator; 15 means none.
 
@@ -73,12 +158,25 @@ typedef struct t_gip_dec_arm_data
 {
     t_gip_dec_arm_state state;
     t_gip_dec_arm_state next_state;
-    int opcode_complete;
     unsigned int next_pc;
     int next_cycle_of_opcode;
     int next_acc_valid;
     int next_reg_in_acc;
+
+    int inst_valid; // If 1 then instruction is valid, else not
+    t_gip_instruction inst; // Instruction to be executed by the RF stage
+
 } t_gip_dec_arm_data;
+
+/*t t_gip_dec_op_state
+ */
+typedef enum t_gip_dec_op_state
+{
+    gip_dec_op_state_idle,
+    gip_dec_op_state_native,
+    gip_dec_op_state_emulate,
+    gip_dec_op_state_preempt
+} t_gip_dec_op_state;
 
 /*t t_gip_dec_state
  */
@@ -86,9 +184,19 @@ typedef struct t_gip_dec_state
 {
     /*b State in the decoder stage guaranteed by the design
      */
+    t_gip_dec_op_state op_state;
     unsigned int opcode;
     unsigned int pc;
     int pc_valid;
+    int acknowledge_scheduler;
+    int cycle_of_opcode;
+    int fetch_requested; // 1 if at end of previous cycle a new instruction was stored in the opcode - basically comb cycle_of_opcode==0
+    int instruction_extended; // 1 if the instruction being decoded has been extended; if 0, then current register values should be ignored (zeroed)
+    unsigned int extended_immediate; // 28-bit extended immediate value for native instructions (ORred in with ARM decode immediate also); if zero, no extension yet
+    t_gip_ins_rd extended_rd; // if extended instruction this specifies rd; if none, then do not extend rd
+    t_gip_ins_rnm extended_rm; // if extended instruction this specifies rm; if none, then do not extend rm
+    t_gip_ins_rnm extended_rn; // if extended instruction this specifies rn; if none, then do not extend rn
+    int extended_cmd; // 6-bit field of extension bits for a command - needs to cover burst size (k), and whether to increment register
 } t_gip_dec_state;
 
 /*t t_gip_dec_data
@@ -104,10 +212,14 @@ typedef struct t_gip_dec_data
      */
     int inst_valid; // If 1 then instruction is valid, else not
     t_gip_instruction inst; // Instruction to be executed by the RF stage
+    t_gip_dec_op_state next_op_state;
+    int next_acknowledge_scheduler; // 1 to acknowledge scheduler on next cycle
 
-    /*b ARM decoder subelement
+    /*b Subelement
      */
+    t_gip_dec_native_data native;
     t_gip_dec_arm_data arm;
+    t_gip_dec_idle_data idle;
 
 } t_gip_dec_data;
 
@@ -217,22 +329,6 @@ typedef struct t_gip_full_alu_data
     int accepting_rf_instruction; // 1 if the ALU stage is taking a proffered instruction from the RF state; if not asserted then the ALU stage should not assert flush for the pipeline, and the instruction within the ALU will not complete. Should only be deasserted if the ALU instruction is valid and writes to the RF but the RF indicates a stall, or if the ALU instruction is valid and causes a memory operation and the memory stage indicates a stall
 } t_gip_alu_data;
 
-/*t t_gip_sched_data
- */
-typedef struct t_gip_sched_data
-{
-    /*b State of the scheduler
-     */
-    t_gip_sch_thread sch_thread_data[8]; // 'Register file' of thread data for all eight threads
-    unsigned int sch_semaphores;
-    int sch_mode; // 0 is round-robin cooperative, 1 is prioritized cooperative, 2 is full-blown prioritized preemption
-    int sch_thread; // Actual thread number that is currently running
-    int sch_running; // 1 if a thread is running, 0 otherwise
-
-    /*b Combinatorials in the scheduler
-     */
-} t_gip_sched_data;
-
 /*t t_gip_mem_state
  */
 typedef struct t_gip_mem_state
@@ -275,6 +371,8 @@ typedef struct t_private_data
     int sticky_c;
     int sticky_n;
     int cp_trail_2; // Assert to have a 'condition passed' trail of 2, else it is one.
+    int arm_trap_semaphore; // Number of semaphore to assert when an undefined instruction or SWI is hit
+// these instructions force a deschedule, mov pc to r15 (optional), mov instruction to r?, set semaphore bit (in some order)
 
     /*b State and combinatorials in the GIP internal pipeline stages
      */
@@ -503,6 +601,153 @@ static unsigned int add_op( unsigned int a, unsigned int b, int c_in, int *c_out
         *v_out = 0;
     }
     return (result_hi<<16) | result_lo;
+}
+
+/*f c_gip_full::disassemble_native_instruction
+ */
+void c_gip_full::disassemble_native_instruction( int opcode, char *buffer, int length )
+{
+    char *op;
+    char *rm, *rd;
+    char rm_buffer[16], rd_buffer[8];
+    char text[128];
+
+    t_gip_native_ins_class ins_class;
+    t_gip_native_ins_subclass ins_subclass;
+
+    /*b Generated 'op'
+     */
+    ins_class = (t_gip_native_ins_class) ((opcode>>12)&0xf);
+    switch (ins_class)
+    {
+    case gip_native_ins_class_alu_reg:
+    case gip_native_ins_class_alu_imm:
+        ins_subclass = (t_gip_native_ins_subclass) ((opcode>>8)&0xf);
+        switch (ins_subclass)
+        {
+        case gip_native_ins_subclass_alu_and:
+            op = "AND";
+            break;
+        case gip_native_ins_subclass_alu_or:
+            op = "OR ";
+            break;
+        case gip_native_ins_subclass_alu_xor:
+            op = "XOR";
+            break;
+        case gip_native_ins_subclass_alu_orn:
+            op = "ORN";
+            break;
+        case gip_native_ins_subclass_alu_bic:
+            op = "BIC";
+            break;
+        case gip_native_ins_subclass_alu_mov:
+            op = "MOV";
+            break;
+        case gip_native_ins_subclass_alu_mvn:
+            op = "MVN";
+            break;
+        case gip_native_ins_subclass_alu_add:
+            op = "ADD";
+            break;
+        case gip_native_ins_subclass_alu_sub:
+            op = "SUB";
+            break;
+        case gip_native_ins_subclass_alu_rsb:
+            op = "RSB";
+            break;
+        case gip_native_ins_subclass_alu_init:
+            op = "INIT";
+            break;
+        case gip_native_ins_subclass_alu_mla:
+            op = "MLA";
+            break;
+        case gip_native_ins_subclass_alu_mlb:
+            op = "MLB";
+            break;
+        case gip_native_ins_subclass_alu_adc:
+            op = "ADC";
+            break;
+        case gip_native_ins_subclass_alu_sbc:
+            op = "SBC";
+            break;
+        case gip_native_ins_subclass_alu_rsc:
+            op = "RSC";
+            break;
+        case gip_native_ins_subclass_alu_dva:
+            op = "DVA";
+            break;
+        case gip_native_ins_subclass_alu_dvb:
+            op = "DVB";
+            break;
+        case gip_native_ins_subclass_alu_xorcnt:
+            op = "XORCNT";
+            break;
+        case gip_native_ins_subclass_alu_xorfirst:
+            op = "XORFST";
+            break;
+        case gip_native_ins_subclass_alu_xorlast:
+            op = "XORLST";
+            break;
+        default:
+            op = "<UNEXPECTED>";
+            break;
+        }
+        break;
+    default:
+        break;
+    }
+
+    /*b Get text of Rd
+     */
+    switch ((opcode>>4)&0xf)
+    {
+    case 15:
+        rd = "ACC";
+        break;
+    default:
+        rd = rd_buffer;
+        sprintf( rd_buffer, "R%d", ((opcode>>0)&0xf) );
+        break;
+    }
+
+    /*b Get text of Rm
+     */
+    switch ((opcode>>0)&0xf)
+    {
+    case 15:
+        rm = "PC";
+        break;
+    default:
+        rm = rm_buffer;
+        sprintf( rm_buffer, "R%d", ((opcode>>4)&0xf) );
+        break;
+    }
+
+    /*b Decode instruction
+     */
+    switch (ins_class)
+    {
+    case gip_native_ins_class_alu_reg:
+        sprintf( text, "%s %s, %s",
+                 op,
+                 rd,
+                 rm );
+        break;
+    case gip_native_ins_class_alu_imm:
+        sprintf( text, "%s %s, #%01x",
+                 op,
+                 rd,
+                 opcode&0xf );
+        break;
+    default:
+        sprintf( text, "NO DISASSEMBLY YET" );
+        break;
+    }
+
+    /*b Display instruction
+     */
+    strncpy( buffer, text, length );
+    buffer[length-1] = 0;
 }
 
 /*f c_gip_full::disassemble_int_instruction
@@ -908,7 +1153,7 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buf
                  rd );
         break;
     default:
-        sprintf( text, "NO DISASSEMBLY YET" );
+        sprintf( text, "NO DISASSEMBLY YET %d/%d", inst->gip_ins_class, inst->gip_ins_subclass );
         break;
     }
 
@@ -930,30 +1175,45 @@ c_gip_full::c_gip_full( c_memory_model *memory ) : c_execution_model_class( memo
 
     pd->cycle = 0;
     pd->memory = memory;
-    pd->verbose = 0;
+    pd->verbose = 1;
 
     /*b Initialize the scheduler
      */
-    for (i=0; i<8; i++)
+    for (i=0; i<NUM_THREADS; i++)
     {
-        pd->sched.sch_thread_data[i].restart_pc = 0;
-        pd->sched.sch_thread_data[i].flag_dependencies = 0;
-        pd->sched.sch_thread_data[i].register_map = 0;
-        pd->sched.sch_thread_data[i].processor_mode = 0;
-        pd->sched.sch_thread_data[i].running = 0;
+        pd->sched.state.thread_data[i].restart_pc = 0;
+        pd->sched.state.thread_data[i].flag_dependencies = 0;
+        pd->sched.state.thread_data[i].register_map = 0;
+        pd->sched.state.thread_data[i].config = 0;
+        pd->sched.state.thread_data[i].running = 0;
     }
-    pd->sched.sch_semaphores = 1;
-    pd->sched.sch_mode = 0;
-    pd->sched.sch_thread_data[0].running = 1;
-    pd->sched.sch_thread = 0;
-    pd->sched.sch_running = 0;
-
+    pd->sched.state.thread_data[0].flag_dependencies = 1;
+    pd->sched.state.semaphores = 1;
+    pd->sched.state.cooperative = 1;
+    pd->sched.state.round_robin = 0;
+    pd->sched.state.thread = 0;
+    pd->sched.state.running = 0;
+    pd->sched.state.preempted_medium_thread = 0;
+    pd->sched.state.preempted_low_thread = 0;
+    
     /*b Initialize the decoder
      */
+    pd->dec.state.op_state = gip_dec_op_state_idle;
     pd->dec.state.pc = 0;
-    pd->dec.state.pc_valid = 1;
+    pd->dec.state.pc_valid = 0;
     pd->dec.state.opcode = 0;
-    pd->dec.arm.state.cycle_of_opcode = 0;
+    pd->dec.state.acknowledge_scheduler = 0;
+    pd->dec.state.cycle_of_opcode = 0;
+    pd->dec.state.fetch_requested = 0;
+    pd->dec.state.instruction_extended = 0;
+    pd->dec.state.extended_immediate = 0;
+    pd->dec.state.extended_rd.type= gip_ins_rd_type_internal;
+    pd->dec.state.extended_rd.data.internal = gip_ins_rd_int_none;
+    pd->dec.state.extended_rm.type = gip_ins_rnm_type_internal;
+    pd->dec.state.extended_rm.data.internal = gip_ins_rnm_int_none;
+    pd->dec.state.extended_rn.type = gip_ins_rnm_type_internal;
+    pd->dec.state.extended_rn.data.internal = gip_ins_rnm_int_none;
+    pd->dec.state.extended_cmd = 0;
     pd->dec.arm.state.reg_in_acc = 0;
     pd->dec.arm.state.acc_valid = 0;
 
@@ -1186,6 +1446,503 @@ void c_gip_full::load_symbol_table( char *filename )
     symbol_initialize( filename );
 }
 
+/*a Scheduler stage methods
+  The scheduler presents (from a clock edge) its request to change to another thread
+  The decode also has information from its clock edge based on the previous instruction
+  decoded indicating whether it can be preempted; if it is idle, then it can be :-)
+  The decode stage combinatorially combines this information to determine if the
+  instruction it currently has should be decoded, or if a NOP should be decoded instead.
+  This information is given to the scheduler as an acknowledge
+  Note that if a deschedule instruction (even if conditional) has been inserted in to the pipeline then that must
+  block any acknowledge - it implicitly ensures the 'atomic' indication is set.
+  In addition to the scheduling above, the register file read stage can indicate to the scheduler that
+  a thread execution has completed (i.e. the thread has descheduled). This may be accompanied by a restart address.
+  The scheduler should also restart lower priority threads when high priority threads
+  complete.
+  So, if we fo for the discard of prefetched instructions, we have:
+    decoder -> scheduler indicates that any presented thread preempt or start will be taken
+    scheduler -> decoder indicates a thread to start and its PC and decode/pipeline configuration
+    register file read -> scheduler indicates that a thread has completed (possibly with restart PC)
+    register file write -> scheduler indicates restart PC for a thread and configuration
+    decoder -> ALU indicates priority level that is being operated at (for CZVN and accumulator and shifter)
+    register file read -> decoder indicates that a deschedule event actually took place (qualifier for flush)
+ */
+/*f c_gip_full::sched_comb
+  The scheduler operates in three modes:
+    cooperative round robin
+    cooperative prioritized
+    preemptive prioritized
+ */
+void c_gip_full::sched_comb( void )
+{
+    int i;
+    int schedulable[NUM_THREADS];
+    int priority_thread, priority_schedulable;
+    int round_robin_thread, round_robin_schedulable;
+    int chosen_thread, chosen_schedulable;
+
+    /*b Determine the schedulability of each thread, and highest priority
+     */
+    priority_schedulable = 0;
+    priority_thread = 0;
+    for (i=0; i<NUM_THREADS; i++)
+    {
+        schedulable[i] = ( ( pd->sched.state.thread_data[i].flag_dependencies &
+                             (pd->sched.state.semaphores>>(i*4)) &
+                             0xf ) &&
+                           !pd->sched.state.thread_data[i].running
+            );
+        if (schedulable[i])
+        {
+            priority_thread = i;
+            priority_schedulable = 1;
+            printf("Schedule %d\n", i );
+        }
+    }
+
+    /*b Determine round-robin thread
+     */
+    round_robin_thread = (pd->sched.state.thread+1)%NUM_THREADS;
+    round_robin_schedulable = 0;
+    if (!pd->sched.state.running) // If running, hold the round robin thread at the next thread, else...
+    {
+        if (schedulable[pd->sched.state.thread]) // If the next thread is schedulable, then use it
+        {
+            round_robin_thread = pd->sched.state.thread;
+            round_robin_schedulable = 1;
+        }
+        else if (schedulable[pd->sched.state.thread|1]) // Else try (possibly) the one after that
+        {
+            round_robin_thread = pd->sched.state.thread|1;
+            round_robin_schedulable = 1;
+        }
+        else // Else just move on the thread
+        {
+            round_robin_thread = ((pd->sched.state.thread|1)+1)%NUM_THREADS;
+            round_robin_schedulable = 0;
+        }
+    }
+
+    /*b Choose high priority or round-robin
+     */
+    chosen_thread = priority_thread;
+    chosen_schedulable = priority_schedulable;
+    if (pd->sched.state.round_robin)
+    {
+        chosen_thread = round_robin_thread;
+        chosen_schedulable = round_robin_schedulable;
+    }
+
+    /*b Determine requester - if not running we will pick the chosen thread; if running we only do so if preempting and the levels allow it
+    */
+    pd->sched.next_thread_to_start = chosen_thread;
+    pd->sched.next_thread_to_start_valid = 0;
+    switch (chosen_thread)
+    {
+    case 0:
+        if (!pd->sched.state.running)
+        {
+            pd->sched.next_thread_to_start_valid = chosen_schedulable;
+        }
+        break;
+    case 1:
+    case 2:
+    case 3:
+        if ( (!pd->sched.state.running) ||
+             ((pd->sched.state.thread==0) && !pd->sched.state.cooperative) )
+        {
+            pd->sched.next_thread_to_start_valid = chosen_schedulable;
+        }
+        break;
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+        if ( (!pd->sched.state.running) ||
+             (!(pd->sched.state.thread&4) && !pd->sched.state.cooperative) )
+        {
+            pd->sched.next_thread_to_start_valid = chosen_schedulable;
+        }
+        break;
+    }
+}
+
+/*f c_gip_full::sched_preclock
+ */
+void c_gip_full::sched_preclock( void )
+{
+    /*b Copy current to next
+     */
+    memcpy( &pd->sched.next_state, &pd->sched.state, sizeof(pd->sched.state) );
+
+    /*b Store thread and running
+     */
+    pd->sched.next_state.thread_to_start = pd->sched.state.thread_to_start; // Ensure the bus is held constant unless we are raising request
+    if (pd->dec.state.acknowledge_scheduler)
+    {
+        pd->sched.next_state.thread = pd->sched.next_thread_to_start;
+        pd->sched.next_state.thread_data[ pd->sched.next_state.thread_to_start ].running = 1;
+        pd->sched.next_state.running = 1;
+    }
+    pd->sched.next_state.thread_to_start_valid = pd->sched.next_thread_to_start_valid;
+    if (pd->sched.next_state.thread_to_start_valid && !(pd->sched.state.thread_to_start_valid))
+    {
+        pd->sched.next_state.thread_to_start = pd->sched.next_thread_to_start;
+        pd->sched.next_state.thread_to_start_pc = pd->sched.state.thread_data[ pd->sched.next_state.thread_to_start ].restart_pc;
+        pd->sched.next_state.thread_to_start_config = pd->sched.state.thread_data[ pd->sched.next_state.thread_to_start ].config;
+        pd->sched.next_state.thread_to_start_level = 0;
+    }
+}
+
+/*f c_gip_full::sched_clock
+ */
+void c_gip_full::sched_clock( void )
+{
+    /*b Debug
+     */
+    if (pd->verbose)
+    {
+        printf( "\t**:SCH %d/%d @ %08x/%02x/%d (%08x)\n",
+                pd->sched.state.thread_to_start_valid,
+                pd->sched.state.thread_to_start,
+                pd->sched.state.thread_to_start_pc,
+                pd->sched.state.thread_to_start_config,
+                pd->sched.state.thread_to_start_level,
+                pd->sched.state.semaphores
+            );
+    }
+
+    /*b Copy next to current
+     */
+    memcpy( &pd->sched.state, &pd->sched.next_state, sizeof(pd->sched.state) );
+
+}
+
+/*a Decode stage methods
+ */
+/*f c_gip_full::dec_comb
+ */
+void c_gip_full::dec_comb( void )
+{
+    char buffer[256];
+    unsigned int native_opcode;
+
+    /*b Fake the prefetch of the instruction
+     */
+    if ( pd->dec.state.pc_valid && pd->dec.state.fetch_requested)
+    {
+        pd->dec.state.opcode = pd->memory->read_memory( pd->dec.state.pc );
+    }
+
+    /*b Native decode - use top or bottom half of instruction (pc bit 1 is set AND native AND valid)
+     */
+    build_gip_instruction_nop( &pd->dec.native.inst );
+    pd->dec.native.inst_valid = 0;
+    native_opcode = pd->dec.state.opcode;
+    if ( (!pd->dec.state.pc_valid) ||
+         (pd->dec.state.op_state!=gip_dec_op_state_native) ||
+         ((pd->dec.state.pc&2)==0) )
+    {
+        native_opcode = native_opcode & 0xffff;
+    }
+    else
+    {
+        native_opcode = native_opcode>>16;
+    }
+    pd->dec.native.next_pc = pd->dec.state.pc;
+    pd->dec.native.next_cycle_of_opcode = 0;
+    if ( decode_native_debug( native_opcode ) ||
+         decode_native_extend( native_opcode ) ||
+         decode_native_alu( native_opcode ) ||
+         decode_native_cond( native_opcode ) ||
+         decode_native_ld_st( native_opcode ) ||
+         decode_native_branch( native_opcode ) ||
+         0 )
+    {
+        pd->dec.native.inst_valid = 1;
+    }
+    if (!pd->dec.state.pc_valid)
+    {
+        pd->dec.native.next_pc = pd->dec.state.pc;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        pd->dec.native.inst_valid = 0;
+    }
+    if (pd->gip_pipeline_results.write_pc)
+    {
+        pd->dec.native.next_pc = pd->gip_pipeline_results.rfw_data;
+    }
+    if (pd->gip_pipeline_results.flush)
+    {
+        pd->dec.native.inst_valid = 0;
+    }
+
+    /*b ARM decode - attempt to decode opcode, trying each instruction coding one at a time till we succeed
+     */
+    build_gip_instruction_nop( &pd->dec.arm.inst );
+    pd->dec.arm.inst_valid = 0;
+    pd->dec.arm.next_acc_valid = 0;
+    pd->dec.arm.next_reg_in_acc = pd->dec.arm.state.reg_in_acc;
+    pd->dec.arm.next_pc = pd->dec.state.pc;
+    pd->dec.arm.next_cycle_of_opcode = pd->dec.state.cycle_of_opcode+1;
+    if ( decode_arm_debug() ||
+         decode_arm_mul() ||
+         decode_arm_alu() ||
+         decode_arm_ld_st() ||
+         decode_arm_ldm_stm() ||
+         decode_arm_branch() ||
+         decode_arm_trace() ||
+         0 )
+    {
+        pd->dec.arm.inst_valid = 1;
+    }
+    if ( (pd->dec.arm.inst.gip_ins_rn.type == gip_ins_rnm_type_register) &&
+         (pd->dec.arm.inst.gip_ins_rn.data.r == pd->dec.arm.state.reg_in_acc) &&
+         (pd->dec.arm.state.acc_valid) )
+    {
+        pd->dec.arm.inst.gip_ins_rn.type = gip_ins_rnm_type_internal;
+        pd->dec.arm.inst.gip_ins_rn.data.internal = gip_ins_rnm_int_acc;
+    }
+    if ( (!pd->dec.arm.inst.rm_is_imm) &&
+         (pd->dec.arm.inst.rm_data.gip_ins_rm.type == gip_ins_rnm_type_register) &&
+         (pd->dec.arm.inst.rm_data.gip_ins_rm.data.r == pd->dec.arm.state.reg_in_acc) &&
+         (pd->dec.arm.state.acc_valid) )
+    {
+        pd->dec.arm.inst.rm_data.gip_ins_rm.type = gip_ins_rnm_type_internal;
+        pd->dec.arm.inst.rm_data.gip_ins_rm.data.internal = gip_ins_rnm_int_acc;
+    }
+    if (!pd->dec.state.pc_valid)
+    {
+        pd->dec.arm.next_pc = pd->dec.state.pc;
+        pd->dec.arm.next_cycle_of_opcode = 0;
+        pd->dec.arm.inst_valid = 0;
+    }
+    if (pd->gip_pipeline_results.write_pc)
+    {
+        pd->dec.arm.next_pc = pd->gip_pipeline_results.rfw_data;
+    }
+    if (pd->gip_pipeline_results.flush)
+    {
+        pd->dec.arm.inst_valid = 0;
+    }
+
+    /*b Handle according to operating state
+     */
+    pd->dec.next_op_state = pd->dec.state.op_state;
+    switch (pd->dec.state.op_state)
+    {
+        /*b Idle - wait for schedule request
+         */
+    case gip_dec_op_state_idle:
+        pd->dec.idle.next_pc_valid = 0;
+        pd->dec.next_acknowledge_scheduler = 0;
+        if (pd->sched.state.thread_to_start_valid)
+        {
+            pd->dec.next_op_state = gip_dec_op_state_emulate;
+            pd->dec.next_op_state = gip_dec_op_state_native;
+            pd->dec.next_acknowledge_scheduler = 1;
+            pd->dec.idle.next_thread = pd->sched.state.thread_to_start;
+            pd->dec.idle.next_pc = pd->sched.state.thread_to_start_pc;
+            pd->dec.idle.next_pc_valid = 1;
+            pd->dec.arm.next_cycle_of_opcode=0;
+            pd->dec.arm.next_acc_valid = 0;
+        }
+        break;
+        /*b ARM mode
+         */
+    case gip_dec_op_state_emulate:
+        /*b Disassemble instruction if verbose
+         */
+        if ( pd->dec.state.pc_valid && (pd->dec.state.cycle_of_opcode==0))
+        {
+            if (pd->verbose)
+            {
+                arm_disassemble( pd->dec.state.pc, pd->dec.state.opcode, buffer );
+                printf( "%08x %08x: %s\n", pd->dec.state.pc, pd->dec.state.opcode, buffer );
+            }
+        }
+        /*b Select ARM decode as our decode (NEED TO MUX IN NATIVE IF ENCODED NATIVE - BUT THEN STILL USE OUR CC)
+         */
+        pd->dec.inst = pd->dec.arm.inst;
+        pd->dec.inst_valid = pd->dec.arm.inst_valid;
+        break;
+        /*b Native - decode top or bottom half of instruction (pc bit 1 is set AND native AND valid)
+         */
+    case gip_dec_op_state_native:
+        /*b Disassemble instruction if verbose
+         */
+        if ( pd->dec.state.pc_valid && (pd->dec.state.cycle_of_opcode==0))
+        {
+            if (pd->verbose)
+            {
+                disassemble_native_instruction( native_opcode, buffer, sizeof(buffer) );
+                printf( "%08x %04x: %s (native)\n", pd->dec.state.pc, native_opcode, buffer );
+            }
+        }
+        /*b Select native instruction as our decode
+         */
+        pd->dec.inst = pd->dec.native.inst;
+        pd->dec.inst_valid = pd->dec.native.inst_valid;
+        break;
+        /*b Preempt - NOT WRITTEN YET
+         */
+    case gip_dec_op_state_preempt:
+        break;
+        /*b All done
+         */
+    }
+
+}
+
+/*f c_gip_full::dec_preclock
+ */
+void c_gip_full::dec_preclock( void )
+{
+    /*b Copy current to next
+     */
+    memcpy( &pd->dec.next_state, &pd->dec.state, sizeof(pd->dec.state) );
+    memcpy( &pd->dec.arm.next_state, &pd->dec.arm.state, sizeof(pd->dec.arm.state) );
+
+    /*b Handle according to operating state
+     */
+    pd->dec.next_state.acknowledge_scheduler = 0;
+    switch (pd->dec.state.op_state)
+    {
+        /*b Idle - wait for schedule request
+         */
+    case gip_dec_op_state_idle:
+        pd->dec.next_state.pc = pd->dec.idle.next_pc;
+        pd->dec.next_state.pc_valid = pd->dec.idle.next_pc_valid;
+        pd->dec.next_state.cycle_of_opcode = 0;
+        pd->dec.arm.next_state.acc_valid = pd->dec.arm.next_acc_valid;
+        pd->dec.next_state.op_state = pd->dec.next_op_state;
+        pd->dec.next_state.acknowledge_scheduler = pd->dec.next_acknowledge_scheduler;
+        printf("Idle %d %d %d\n", pd->dec.next_op_state, pd->dec.next_acknowledge_scheduler, pd->sched.state.thread_to_start_valid );
+        break;
+    case gip_dec_op_state_emulate:
+        /*b ARM - Move on PC
+         */
+        if ( (pd->rf.accepting_dec_instruction) ||
+             (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
+        {
+            pd->dec.next_state.pc = pd->dec.arm.next_pc;
+            pd->dec.next_state.cycle_of_opcode = pd->dec.arm.next_cycle_of_opcode;
+            pd->dec.arm.next_state.acc_valid = pd->dec.arm.next_acc_valid;
+            pd->dec.arm.next_state.reg_in_acc = pd->dec.arm.next_reg_in_acc;
+        }
+        if (pd->gip_pipeline_results.write_pc)
+        {
+            pd->dec.next_state.pc = pd->gip_pipeline_results.rfw_data;
+            pd->dec.next_state.pc_valid = 1;
+        }
+        if (pd->gip_pipeline_results.flush)
+        {
+            pd->dec.next_state.cycle_of_opcode=0;
+            pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
+            pd->dec.arm.next_state.acc_valid = 0;
+        }
+        break;
+        /*b Native - NOT WRITTEN YET
+         */
+    case gip_dec_op_state_native:
+        if ( (pd->rf.accepting_dec_instruction) ||
+             (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
+        {
+            pd->dec.next_state.pc = pd->dec.native.next_pc;
+            pd->dec.next_state.cycle_of_opcode = pd->dec.native.next_cycle_of_opcode;
+            pd->dec.arm.next_state.acc_valid = pd->dec.arm.next_acc_valid;
+            pd->dec.arm.next_state.reg_in_acc = pd->dec.arm.next_reg_in_acc;
+        }
+        if (pd->gip_pipeline_results.write_pc)
+        {
+            pd->dec.next_state.pc = pd->gip_pipeline_results.rfw_data;
+            pd->dec.next_state.pc_valid = 1;
+        }
+        if (pd->gip_pipeline_results.flush)
+        {
+            pd->dec.next_state.cycle_of_opcode=0;
+            pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
+            pd->dec.arm.next_state.acc_valid = 0;
+        }
+        break;
+        /*b Preempt - NOT WRITTEN YET
+         */
+    case gip_dec_op_state_preempt:
+        break;
+        /*b All done
+         */
+    }
+    pd->dec.next_state.fetch_requested=0;
+    if (pd->dec.next_state.cycle_of_opcode==0)
+    {
+        pd->dec.next_state.fetch_requested=1;
+    }
+}
+
+/*f c_gip_full::dec_clock
+ */
+void c_gip_full::dec_clock( void )
+{
+    /*b Debug
+     */
+    if (pd->verbose)
+    {
+        char buffer[256];
+        disassemble_int_instruction( &pd->dec.inst, buffer, sizeof(buffer) );
+        printf( "\t**:DEC %08x(%d)/%08x (ARM c %d ACC %d/%02d)\t:\t... %s\n",
+                pd->dec.state.pc,
+                pd->dec.state.pc_valid,
+                pd->dec.state.opcode,
+                pd->dec.state.cycle_of_opcode,
+                pd->dec.arm.state.acc_valid,
+                pd->dec.arm.state.reg_in_acc,
+                buffer
+            );
+    }
+
+    /*b Handle simulation debug instructions
+     */
+    if ( (pd->rf.accepting_dec_instruction) ||
+         (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
+    {
+        if ( (pd->dec.state.pc_valid) &&
+             ((pd->dec.state.opcode&0xffffff00)==0xf0000000) )
+        {
+            switch (pd->dec.state.opcode&0xff)
+            {
+            case 0x90:
+                printf( "********************************************************************************\nTest passed\n********************************************************************************\n\n");
+                break;
+            case 0x91:
+                printf( "********************************************************************************\n--------------------------------------------------------------------------------\nTest failed\n--------------------------------------------------------------------------------\n\n");
+                break;
+            case 0xa0:
+                char buffer[256];
+                pd->memory->copy_string( buffer, pd->rf.state.regs[0], sizeof(buffer) );
+                printf( buffer, pd->rf.state.regs[1], pd->rf.state.regs[2], pd->rf.state.regs[3] );
+                break;
+            case 0xa1:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nDump regs\n");
+                debug(-1);
+                break;
+            case 0xa2:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose on\n");
+                pd->verbose = 1;
+                break;
+            case 0xa3:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose off\n");
+                pd->verbose = 0;
+                break;
+            }
+        }
+    }
+
+    /*b Copy current to next
+     */
+    memcpy( &pd->dec.state, &pd->dec.next_state, sizeof(pd->dec.state) );
+    memcpy( &pd->dec.arm.state, &pd->dec.arm.next_state, sizeof(pd->dec.arm.state) );
+
+}
+
 /*a Register file operation
  */
 /*f rf_read_int_register
@@ -1369,6 +2126,13 @@ void c_gip_full::rf_comb( t_gip_pipeline_results *results )
     {
         pd->rf.accepting_dec_instruction = 1;
     }
+
+    /*b If a deschedule then execute IF condition passed UNLESS flushing in ALU stage OR ALU is not taking instruction
+      the instruction should not be in the pipeline at this stage if there is any other earlier instruction writing
+      the PC. This will be true in general as instructions that write the PC will cause a flush. However, a
+      deschedule in the shadow of a branch (in a delay slot particularly) would not be flushed.
+    */
+    printf("decode handles deschedule - if condition passed unless flushing in ALU stage or ALU is not taking instructoin; must not be here if any previous instruction is writing PC\n");
 
     /*b Read the register file
      */
@@ -2124,182 +2888,7 @@ void c_gip_full::mem_clock( void )
     }
 }
 
-/*a Decode stage methods
- */
-/*f c_gip_full::dec_comb
- */
-void c_gip_full::dec_comb( void )
-{
-    char buffer[256];
-
-    /*b ARM mode - no native yet - fetch from pc if starting a new instruction
-     */
-    log_reset();
-    if ( pd->dec.state.pc_valid && (pd->dec.arm.state.cycle_of_opcode==0))
-    {
-        pd->dec.state.opcode = pd->memory->read_memory( pd->dec.state.pc );
-        if (pd->verbose)
-        {
-            arm_disassemble( pd->dec.state.pc, pd->dec.state.opcode, buffer );
-            printf( "%08x %08x: %s\n", pd->dec.state.pc, pd->dec.state.opcode, buffer );
-        }
-    }
-
-    /*b attempt to decode opcode, trying each instruction coding one at a time till we succeed
-     */
-    build_gip_instruction_nop( &pd->dec.inst );
-    pd->dec.inst_valid = 0;
-    pd->dec.arm.next_acc_valid = 0;
-    pd->dec.arm.next_reg_in_acc = pd->dec.arm.state.reg_in_acc;
-    if (pd->dec.state.pc_valid)
-    {
-        pd->dec.arm.next_pc = pd->dec.state.pc;
-        pd->dec.arm.next_cycle_of_opcode = pd->dec.arm.state.cycle_of_opcode+1;
-        if ( decode_arm_debug() ||
-             decode_arm_mul() ||
-             decode_arm_alu() ||
-             decode_arm_ld_st() ||
-             decode_arm_ldm_stm() ||
-             decode_arm_branch() ||
-             decode_arm_trace() ||
-             0 )
-        {
-            pd->dec.inst_valid = 1;
-        }
-        if ( (pd->dec.inst.gip_ins_rn.type == gip_ins_rnm_type_register) &&
-             (pd->dec.inst.gip_ins_rn.data.r == pd->dec.arm.state.reg_in_acc) &&
-             (pd->dec.arm.state.acc_valid) )
-        {
-            pd->dec.inst.gip_ins_rn.type = gip_ins_rnm_type_internal;
-            pd->dec.inst.gip_ins_rn.data.internal = gip_ins_rnm_int_acc;
-        }
-        if ( (!pd->dec.inst.rm_is_imm) &&
-             (pd->dec.inst.rm_data.gip_ins_rm.type == gip_ins_rnm_type_register) &&
-             (pd->dec.inst.rm_data.gip_ins_rm.data.r == pd->dec.arm.state.reg_in_acc) &&
-             (pd->dec.arm.state.acc_valid) )
-        {
-            pd->dec.inst.rm_data.gip_ins_rm.type = gip_ins_rnm_type_internal;
-            pd->dec.inst.rm_data.gip_ins_rm.data.internal = gip_ins_rnm_int_acc;
-        }
-    }
-    else
-    {
-        pd->dec.arm.next_pc = pd->dec.state.pc;
-        pd->dec.arm.next_cycle_of_opcode = 0;
-    }
-
-    /*b We should have the GIP pipeline results valid before we are called
-     */
-    if (pd->gip_pipeline_results.write_pc)
-    {
-        if (pd->verbose)
-        {
-            printf("Writing the pipeline (%08x)\n",pd->gip_pipeline_results.rfw_data);
-        }
-        pd->dec.arm.next_pc = pd->gip_pipeline_results.rfw_data;
-    }
-    if (pd->gip_pipeline_results.flush)
-    {
-        pd->dec.inst_valid = 0;
-    }
-}
-
-/*f c_gip_full::dec_preclock
- */
-void c_gip_full::dec_preclock( void )
-{
-    /*b Copy current to next
-     */
-    memcpy( &pd->dec.next_state, &pd->dec.state, sizeof(pd->dec.state) );
-    memcpy( &pd->dec.arm.next_state, &pd->dec.arm.state, sizeof(pd->dec.arm.state) );
-
-    /*b Move on PC
-     */
-    if ( (pd->rf.accepting_dec_instruction) ||
-         (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
-    {
-        pd->dec.next_state.pc = pd->dec.arm.next_pc;
-        pd->dec.arm.next_state.cycle_of_opcode = pd->dec.arm.next_cycle_of_opcode;
-        pd->dec.arm.next_state.acc_valid = pd->dec.arm.next_acc_valid;
-        pd->dec.arm.next_state.reg_in_acc = pd->dec.arm.next_reg_in_acc;
-    }
-    if (pd->gip_pipeline_results.write_pc)
-    {
-        pd->dec.next_state.pc = pd->gip_pipeline_results.rfw_data;
-        pd->dec.next_state.pc_valid = 1;
-    }
-    if (pd->gip_pipeline_results.flush)
-    {
-        pd->dec.arm.next_state.cycle_of_opcode=0;
-        pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
-        pd->dec.arm.next_state.acc_valid = 0;
-    }
-}
-
-/*f c_gip_full::dec_clock
- */
-void c_gip_full::dec_clock( void )
-{
-    /*b Debug
-     */
-    if (pd->verbose)
-    {
-        char buffer[256];
-        disassemble_int_instruction( &pd->dec.inst, buffer, sizeof(buffer) );
-        printf( "\t**:DEC %08x (ARM c %d ACC %d/%02d)\t:\t... %s\n",
-                pd->dec.state.opcode,
-                pd->dec.arm.state.cycle_of_opcode,
-                pd->dec.arm.state.acc_valid,
-                pd->dec.arm.state.reg_in_acc,
-                buffer
-            );
-    }
-
-    /*b Handle simulation debug instructions
-     */
-    if ( (pd->rf.accepting_dec_instruction) ||
-         (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
-    {
-        if ( (pd->dec.state.pc_valid) &&
-             ((pd->dec.state.opcode&0xffffff00)==0xf0000000) )
-        {
-            switch (pd->dec.state.opcode&0xff)
-            {
-            case 0x90:
-                printf( "********************************************************************************\nTest passed\n********************************************************************************\n\n");
-                break;
-            case 0x91:
-                printf( "********************************************************************************\n--------------------------------------------------------------------------------\nTest failed\n--------------------------------------------------------------------------------\n\n");
-                break;
-            case 0xa0:
-                char buffer[256];
-                pd->memory->copy_string( buffer, pd->rf.state.regs[0], sizeof(buffer) );
-                printf( buffer, pd->rf.state.regs[1], pd->rf.state.regs[2], pd->rf.state.regs[3] );
-                break;
-            case 0xa1:
-                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nDump regs\n");
-                debug(-1);
-                break;
-            case 0xa2:
-                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose on\n");
-                pd->verbose = 1;
-                break;
-            case 0xa3:
-                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose off\n");
-                pd->verbose = 0;
-                break;
-            }
-        }
-    }
-
-    /*b Copy current to next
-     */
-    memcpy( &pd->dec.state, &pd->dec.next_state, sizeof(pd->dec.state) );
-    memcpy( &pd->dec.arm.state, &pd->dec.arm.next_state, sizeof(pd->dec.arm.state) );
-
-}
-
-/*a Combination methods
+/*a Full pipeline methods
  */
 /*f c_gip_full::comb
  */
@@ -2310,6 +2899,7 @@ void c_gip_full::comb( void )
     rf_comb( &pd->gip_pipeline_results );
     alu_comb( &pd->gip_pipeline_results );
     mem_comb( &pd->gip_pipeline_results );
+    sched_comb( );
     dec_comb( );
 }
 
@@ -2325,6 +2915,7 @@ void c_gip_full::preclock( void )
 
     /*b Preclock the stages
      */
+    sched_preclock( );
     dec_preclock( );
     rf_preclock( );
     alu_preclock( );
@@ -2343,6 +2934,7 @@ void c_gip_full::clock( void )
 
     /*b Clock the stages
      */
+    sched_clock( );
     dec_clock( );
     rf_clock( );
     alu_clock( );
@@ -2643,6 +3235,281 @@ t_gip_ins_subclass c_gip_full::map_shift( int shf_how, int imm, int amount )
 }
 
 
+/*f c_gip_full::map_native_rm
+ */
+t_gip_ins_rnm c_gip_full::map_native_rm( int rm )
+{
+    t_gip_ins_rnm result;
+    if ( (pd->dec.state.instruction_extended) &&
+         !( (pd->dec.state.extended_rm.type==gip_ins_rnm_type_internal) &&
+            (pd->dec.state.extended_rm.data.internal==gip_ins_rnm_int_none) ) )
+    {
+        result.type = pd->dec.state.extended_rm.type;
+        result.data.r = (pd->dec.state.extended_rm.data.r&0x30) | (rm&0xf);
+    }
+    else
+    {
+        result.type = gip_ins_rnm_type_register;
+        result.data.r = rm;
+        if (rm==15)
+        {
+            result.type = gip_ins_rnm_type_internal;
+            result.data.internal = gip_ins_rnm_int_acc;
+        }
+    }
+    return result;
+}
+
+/*f c_gip_full::map_native_rn
+ */
+t_gip_ins_rnm c_gip_full::map_native_rn( int rn )
+{
+    t_gip_ins_rnm result;
+    if ( (pd->dec.state.instruction_extended) &&
+         !( (pd->dec.state.extended_rn.type==gip_ins_rnm_type_internal) &&
+            (pd->dec.state.extended_rn.data.internal==gip_ins_rnm_int_none) ) )
+    {
+        result.type = pd->dec.state.extended_rn.type;
+        result.data.r = pd->dec.state.extended_rn.data.r;
+    }
+    else
+    {
+        result.type = gip_ins_rnm_type_register;
+        result.data.r = rn;
+        if (rn==15)
+        {
+            result.type = gip_ins_rnm_type_internal;
+            result.data.internal = gip_ins_rnm_int_acc;
+        }
+    }
+    return result;
+}
+
+/*f c_gip_full::map_native_rd
+ */
+t_gip_ins_rd c_gip_full::map_native_rd( int rd )
+{
+    t_gip_ins_rd result;
+    if ( (pd->dec.state.instruction_extended) &&
+         !( (pd->dec.state.extended_rd.type==gip_ins_rd_type_internal) &&
+            (pd->dec.state.extended_rd.data.internal==gip_ins_rd_int_none) ) )
+    {
+        result.type = pd->dec.state.extended_rd.type;
+        result.data.r = pd->dec.state.extended_rd.data.r;
+    }
+    else
+    {
+        result.type = gip_ins_rd_type_register;
+        result.data.r = rd;
+        if (rd==15)
+        {
+            result.type = gip_ins_rd_type_internal;
+            result.data.internal = gip_ins_rd_int_pc;
+        }
+    }
+    return result;
+}
+
+/*f c_gip_full::map_native_immediate
+ */
+unsigned int c_gip_full::map_native_immediate( int imm )
+{
+    unsigned int result;
+    imm &= 0xf;
+    if ( pd->dec.state.instruction_extended )
+    {
+        result = imm | (pd->dec.state.extended_immediate<<4);
+    }
+    else
+    {
+        result = imm;
+    }
+    return result;
+}
+
+/*a Native Decode functions
+ */
+/*f c_gip_full::decode_native_debug
+ */
+int c_gip_full::decode_native_debug( unsigned int opcode )
+{
+    return 0;
+}
+
+/*f c_gip_full::decode_native_alu
+  Every ALU instruction effects the accumulator (unless configured/extended not to?)
+  No ALU instruction effects the flags (unless configured/extended not to?)
+  R15 source = acc (unless extended)
+  R15 destination = pc (unless extended)
+  SHF, PC source access through extended (?shf?)
+ */
+int c_gip_full::decode_native_alu( unsigned int opcode )
+{
+    t_gip_native_ins_class ins_class;
+    t_gip_native_ins_subclass ins_subclass;
+    int rd;
+    int rm;
+    int imm;
+    t_gip_ins_class gip_ins_class;
+    t_gip_ins_subclass gip_ins_subclass;
+    t_gip_ins_rd gip_ins_rd;
+    t_gip_ins_rnm gip_ins_rn;
+    t_gip_ins_rnm gip_ins_rm;
+    unsigned int imm_val;
+
+    ins_class = (t_gip_native_ins_class) ((opcode>>12)&0xf);
+    ins_subclass = (t_gip_native_ins_subclass) ((opcode>>8)&0xf);
+    rd = (opcode>>4)&0xf;
+    rm = (opcode>>0)&0xf;
+    imm = (opcode>>0)&0xf;
+
+    if ( (ins_class==gip_native_ins_class_alu_reg) ||
+         (ins_class==gip_native_ins_class_alu_imm) )
+    {
+        printf("HERE ********************************************************************************\n");
+        switch (ins_subclass)
+        {
+        case gip_native_ins_subclass_alu_and:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_and;
+            break;
+        case gip_native_ins_subclass_alu_or:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_or;
+            break;
+        case gip_native_ins_subclass_alu_xor:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_xor;
+            break;
+        case gip_native_ins_subclass_alu_orn:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_orn;
+            break;
+        case gip_native_ins_subclass_alu_bic:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_bic;
+            break;
+        case gip_native_ins_subclass_alu_mov:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_mov;
+            break;
+        case gip_native_ins_subclass_alu_mvn:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_mvn;
+            break;
+        case gip_native_ins_subclass_alu_add:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_add;
+            break;
+        case gip_native_ins_subclass_alu_sub:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_sub;
+            break;
+        case gip_native_ins_subclass_alu_rsb:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_rsb;
+            break;
+        case gip_native_ins_subclass_alu_init:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_init;
+            break;
+        case gip_native_ins_subclass_alu_mla:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_mla;
+            break;
+        case gip_native_ins_subclass_alu_mlb:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_mlb;
+            break;
+        case gip_native_ins_subclass_alu_adc:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_adc;
+            break;
+        case gip_native_ins_subclass_alu_sbc:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_sbc;
+            break;
+        case gip_native_ins_subclass_alu_rsc:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_rsc;
+            break;
+        case gip_native_ins_subclass_alu_dva:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_dva;
+            break;
+        case gip_native_ins_subclass_alu_dvb:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_dvb;
+            break;
+        case gip_native_ins_subclass_alu_xorcnt:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_xorcnt;
+            break;
+        case gip_native_ins_subclass_alu_xorfirst:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_xorfirst;
+            break;
+        case gip_native_ins_subclass_alu_xorlast:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_xorlast;
+            break;
+        default:
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_and;
+            break;
+        }
+        gip_ins_rd = map_native_rd( rd );
+        gip_ins_rm = map_native_rm( rm );
+        gip_ins_rn = map_native_rn( rd );
+        imm_val = map_native_immediate( imm );
+
+        build_gip_instruction_alu( &pd->dec.native.inst, gip_ins_class, gip_ins_subclass, 1, 0, 0, (gip_ins_rd.type==gip_ins_rd_type_internal)&&(gip_ins_rd.data.internal==gip_ins_rd_int_pc) ); // a s p f
+        build_gip_instruction_cc( &pd->dec.native.inst, gip_ins_cc_always ); // use cp if in immediate shadow of conditional
+        build_gip_instruction_rn( &pd->dec.native.inst, gip_ins_rn );
+        build_gip_instruction_rd( &pd->dec.native.inst, gip_ins_rd );
+        if (ins_class==gip_native_ins_class_alu_imm)
+        {
+            build_gip_instruction_immediate( &pd->dec.native.inst, imm_val );
+        }
+        else
+        {
+            build_gip_instruction_rm( &pd->dec.native.inst, gip_ins_rm );
+        }
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        return 1;
+    }
+    return 0;
+}
+
+/*f c_gip_full::decode_native_cond
+ */
+int c_gip_full::decode_native_cond( unsigned int opcode )
+{
+    return 0;
+}
+
+/*f c_gip_full::decode_native_ld_st
+ */
+int c_gip_full::decode_native_ld_st( unsigned int opcode )
+{
+    return 0;
+}
+
+/*f c_gip_full::decode_native_branch
+ */
+int c_gip_full::decode_native_branch( unsigned int opcode )
+{
+    return 0;
+}
+
+/*f c_gip_full::decode_native_extend
+ */
+int c_gip_full::decode_native_extend( unsigned int opcode )
+{
+    return 0;
+}
+
 /*a ARM Decode functions
  */
 /*f c_gip_full::decode_arm_debug
@@ -2875,11 +3742,11 @@ int c_gip_full::decode_arm_alu( void )
     if (imm)
     {
         gip_pass_p = 0;
-        build_gip_instruction_alu( &pd->dec.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
-        build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc );
-        build_gip_instruction_rn( &pd->dec.inst, gip_ins_rn );
-        build_gip_instruction_immediate( &pd->dec.inst, rotate_right(imm_val,imm_rotate*2) );
-        build_gip_instruction_rd( &pd->dec.inst, gip_ins_rd );
+        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
+        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc );
+        build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rn );
+        build_gip_instruction_immediate( &pd->dec.arm.inst, rotate_right(imm_val,imm_rotate*2) );
+        build_gip_instruction_rd( &pd->dec.arm.inst, gip_ins_rd );
         pd->dec.arm.next_cycle_of_opcode = 0;
         pd->dec.arm.next_pc = pd->dec.state.pc+4;
     }
@@ -2888,31 +3755,31 @@ int c_gip_full::decode_arm_alu( void )
               (shf_imm_amt==0) )
     {
         gip_pass_p = 0;
-        build_gip_instruction_alu( &pd->dec.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
-        build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc );
-        build_gip_instruction_rn( &pd->dec.inst, gip_ins_rn );
-        build_gip_instruction_rm( &pd->dec.inst, gip_ins_rm );
-        build_gip_instruction_rd( &pd->dec.inst, gip_ins_rd );
+        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
+        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc );
+        build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rn );
+        build_gip_instruction_rm( &pd->dec.arm.inst, gip_ins_rm );
+        build_gip_instruction_rd( &pd->dec.arm.inst, gip_ins_rd );
         pd->dec.arm.next_cycle_of_opcode = 0;
         pd->dec.arm.next_pc = pd->dec.state.pc+4;
     }
     else if (!shf_by_reg) // Immediate shift, non-zero or non-LSL: ISHF Rm, #imm; IALU{CC}(SP|)[A][F] Rn, SHF -> Rd
     {
-        switch (pd->dec.arm.state.cycle_of_opcode)
+        switch (pd->dec.state.cycle_of_opcode)
         {
         case 0:
-            build_gip_instruction_shift( &pd->dec.inst, map_shift( shf_how, 1, shf_imm_amt), 0, 0 );
-            build_gip_instruction_rn( &pd->dec.inst, gip_ins_rm );
-            build_gip_instruction_immediate( &pd->dec.inst, (shf_imm_amt==0)?32:shf_imm_amt );
+            build_gip_instruction_shift( &pd->dec.arm.inst, map_shift( shf_how, 1, shf_imm_amt), 0, 0 );
+            build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rm );
+            build_gip_instruction_immediate( &pd->dec.arm.inst, (shf_imm_amt==0)?32:shf_imm_amt );
             pd->dec.arm.next_acc_valid = pd->dec.arm.state.acc_valid; // First internal does not set acc
             pd->dec.arm.next_reg_in_acc = pd->dec.arm.state.reg_in_acc;
             break;
         default:
-            build_gip_instruction_alu( &pd->dec.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
-            build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc );
-            build_gip_instruction_rn( &pd->dec.inst, gip_ins_rn );
-            build_gip_instruction_rm_int( &pd->dec.inst, gip_ins_rnm_int_shf );
-            build_gip_instruction_rd( &pd->dec.inst, gip_ins_rd );
+            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
+            build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc );
+            build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rn );
+            build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
+            build_gip_instruction_rd( &pd->dec.arm.inst, gip_ins_rd );
             pd->dec.arm.next_cycle_of_opcode = 0;
             pd->dec.arm.next_pc = pd->dec.state.pc+4;
             break;
@@ -2920,21 +3787,21 @@ int c_gip_full::decode_arm_alu( void )
     }
     else // if (shf_by_reg) - must be! ISHF Rm, Rs; IALU{CC}(SP|)[A][F] Rn, SHF -> Rd
     {
-        switch (pd->dec.arm.state.cycle_of_opcode)
+        switch (pd->dec.state.cycle_of_opcode)
         {
         case 0:
-            build_gip_instruction_shift( &pd->dec.inst, map_shift(shf_how, 0, 0 ), 0, 0 );
-            build_gip_instruction_rn( &pd->dec.inst, gip_ins_rm );
-            build_gip_instruction_rm( &pd->dec.inst, gip_ins_rs );
+            build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 0, 0 ), 0, 0 );
+            build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rm );
+            build_gip_instruction_rm( &pd->dec.arm.inst, gip_ins_rs );
             pd->dec.arm.next_acc_valid = pd->dec.arm.state.acc_valid; // First internal does not set acc
             pd->dec.arm.next_reg_in_acc = pd->dec.arm.state.reg_in_acc;
             break;
         default:
-            build_gip_instruction_alu( &pd->dec.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
-            build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc );
-            build_gip_instruction_rn( &pd->dec.inst, gip_ins_rn );
-            build_gip_instruction_rm_int( &pd->dec.inst, gip_ins_rnm_int_shf );
-            build_gip_instruction_rd( &pd->dec.inst, gip_ins_rd );
+            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
+            build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc );
+            build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rn );
+            build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
+            build_gip_instruction_rd( &pd->dec.arm.inst, gip_ins_rd );
             pd->dec.arm.next_cycle_of_opcode = 0;
             pd->dec.arm.next_pc = pd->dec.state.pc+4;
             break;
@@ -2975,20 +3842,20 @@ int c_gip_full::decode_arm_branch( void )
         {
             if (offset&0x800000) // backward conditional branch; sub(!cc)f pc, #4 -> pc
             {
-                build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 1 );
-                build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc^0x1 ) ); // !cc is CC with bottom bit inverted, in ARM
-                build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_pc );
-                build_gip_instruction_immediate( &pd->dec.inst, 4 );
-                build_gip_instruction_rd_int( &pd->dec.inst, gip_ins_rd_int_pc );
+                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 1 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc^0x1 ) ); // !cc is CC with bottom bit inverted, in ARM
+                build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_pc );
+                build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
+                build_gip_instruction_rd_int( &pd->dec.arm.inst, gip_ins_rd_int_pc );
                 pd->dec.arm.next_pc = pd->dec.state.pc+8+((offset<<8)>>6);
                 pd->dec.arm.next_cycle_of_opcode = 0;
             }
             else // forward conditional branch; mov[cc]f #target -> pc
             {
-                build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, 1 );
-                build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-                build_gip_instruction_immediate( &pd->dec.inst, pd->dec.state.pc+8+((offset<<8)>>6) );
-                build_gip_instruction_rd_int( &pd->dec.inst, gip_ins_rd_int_pc );
+                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, 1 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+                build_gip_instruction_immediate( &pd->dec.arm.inst, pd->dec.state.pc+8+((offset<<8)>>6) );
+                build_gip_instruction_rd_int( &pd->dec.arm.inst, gip_ins_rd_int_pc );
                 pd->dec.arm.next_pc = pd->dec.state.pc+4;
                 pd->dec.arm.next_cycle_of_opcode = 0;
             }
@@ -2998,31 +3865,31 @@ int c_gip_full::decode_arm_branch( void )
     {
         if (cc==14) // guaranteed branch with link; sub pc, #4 -> r14
         {
-            build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 0 );
-            build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_always );
-            build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_pc );
-            build_gip_instruction_immediate( &pd->dec.inst, 4 );
-            build_gip_instruction_rd_reg( &pd->dec.inst, 14 );
+            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 0 );
+            build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_always );
+            build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_pc );
+            build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
+            build_gip_instruction_rd_reg( &pd->dec.arm.inst, 14 );
             pd->dec.arm.next_pc = pd->dec.state.pc+8+((offset<<8)>>6);
             pd->dec.arm.next_cycle_of_opcode = 0;
         }
         else // conditional branch with link; sub{!cc}f pc, #4 -> pc; sub pc, #4 -> r14
         {
-            switch (pd->dec.arm.state.cycle_of_opcode)
+            switch (pd->dec.state.cycle_of_opcode)
             {
             case 0:
-                build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 1 );
-                build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc^0x1 ) ); // !cc is CC with bottom bit inverted, in ARM
-                build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_pc );
-                build_gip_instruction_immediate( &pd->dec.inst, 4 );
-                build_gip_instruction_rd_int( &pd->dec.inst, gip_ins_rd_int_pc );
+                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 1 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc^0x1 ) ); // !cc is CC with bottom bit inverted, in ARM
+                build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_pc );
+                build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
+                build_gip_instruction_rd_int( &pd->dec.arm.inst, gip_ins_rd_int_pc );
                 break;
             default:
-                build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_always );
-                build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_pc );
-                build_gip_instruction_immediate( &pd->dec.inst, 4 );
-                build_gip_instruction_rd_reg( &pd->dec.inst, 14 );
+                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_always );
+                build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_pc );
+                build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
+                build_gip_instruction_rd_reg( &pd->dec.arm.inst, 14 );
                 pd->dec.arm.next_pc = pd->dec.state.pc+8+((offset<<8)>>6);
                 pd->dec.arm.next_cycle_of_opcode = 0;
             }
@@ -3085,18 +3952,18 @@ int c_gip_full::decode_arm_ld_st( void )
              */
             if (pre && !wb) // preindexed immediate/reg: ILDR[CC]A[F] #0 (Rn, #+/-imm or +/-Rm) -> Rd
             {
-                build_gip_instruction_load( &pd->dec.inst, gip_ins_subclass_memory_word, 1, up, (rn==13), 0, 1, (rd==15) );
-                build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-                build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
+                build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 1, up, (rn==13), 0, 1, (rd==15) );
+                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
                 if (not_imm)
                 {
-                    build_gip_instruction_rm( &pd->dec.inst, map_source_register(shf_rm) );
+                    build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
                 }
                 else
                 {
-                    build_gip_instruction_immediate( &pd->dec.inst, imm_val );
+                    build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
                 }
-                build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rd) );
+                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
                 pd->dec.arm.next_pc = pd->dec.state.pc+4;
                 pd->dec.arm.next_cycle_of_opcode = 0;
                 return 1;
@@ -3105,27 +3972,27 @@ int c_gip_full::decode_arm_ld_st( void )
              */
             else if (pre) // preindexed immediate/reg with writeback: IADD[CC]A/ISUB[CC]A Rn, #imm/Rm -> Rn; ILDRCP[F] #0, (Acc) -> Rd
             {
-                switch (pd->dec.arm.state.cycle_of_opcode)
+                switch (pd->dec.state.cycle_of_opcode)
                 {
                 case 0:
-                    build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-                    build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
+                    build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
                     if (not_imm)
                     {
-                        build_gip_instruction_rm( &pd->dec.inst, map_source_register(shf_rm) );
+                        build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
                     }
                     else
                     {
-                        build_gip_instruction_immediate( &pd->dec.inst, imm_val );
+                        build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
                     }
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                     break;
                 default:
-                    build_gip_instruction_load( &pd->dec.inst, gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 0, 0 );
-                    build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register( rd ) );
+                    build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 0, 0 );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                    build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register( rd ) );
                     pd->dec.arm.next_pc = pd->dec.state.pc+4;
                     pd->dec.arm.next_cycle_of_opcode = 0;
                     break;
@@ -3136,27 +4003,27 @@ int c_gip_full::decode_arm_ld_st( void )
              */
             else // postindexed immediate/reg: ILDR[CC]A #0, (Rn), +/-Rm/Imm -> Rd; MOVCP[F] Acc -> Rn
             {
-                switch (pd->dec.arm.state.cycle_of_opcode)
+                switch (pd->dec.state.cycle_of_opcode)
                 {
                 case 0:
-                    build_gip_instruction_load( &pd->dec.inst,gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 1, 0 );
-                    build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
+                    build_gip_instruction_load( &pd->dec.arm.inst,gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 1, 0 );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
                     if (not_imm)
                     {
-                        build_gip_instruction_rm( &pd->dec.inst, map_source_register(shf_rm) );
+                        build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
                     }
                     else
                     {
-                        build_gip_instruction_immediate( &pd->dec.inst, imm_val );
+                        build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
                     }
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rd) );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
                     break;
                 default:
-                    build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
-                    build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rm_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                    build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                     pd->dec.arm.next_pc = pd->dec.state.pc+4;
                     pd->dec.arm.next_cycle_of_opcode = 0;
                     break;
@@ -3172,19 +4039,19 @@ int c_gip_full::decode_arm_ld_st( void )
              */
             if (pre && !wb) // preindexed reg with shift: ISHF Rm, #imm; ILDR[CC]A[F] (Rn, +/-SHF) -> Rd
             {
-                switch (pd->dec.arm.state.cycle_of_opcode)
+                switch (pd->dec.state.cycle_of_opcode)
                 {
                 case 0:
-                    build_gip_instruction_shift( &pd->dec.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(shf_rm) );
-                    build_gip_instruction_immediate( &pd->dec.inst, shf_imm_amt );
+                    build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                    build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
                     break;
                 default:
-                    build_gip_instruction_load( &pd->dec.inst, gip_ins_subclass_memory_word, 1, up, (rn==13), 0, 1, (rd==15) );
-                    build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-                    build_gip_instruction_rm_int( &pd->dec.inst, gip_ins_rnm_int_shf );
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rd) );
+                    build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 1, up, (rn==13), 0, 1, (rd==15) );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
                     pd->dec.arm.next_pc = pd->dec.state.pc+4;
                     pd->dec.arm.next_cycle_of_opcode = 0;
                     break;
@@ -3195,25 +4062,25 @@ int c_gip_full::decode_arm_ld_st( void )
              */
             else if (pre) // preindexed reg with shift with writeback: ILSL Rm, #imm; IADD[CC]A/ISUB[CC]A Rn, SHF -> Rn; ILDRCP[F] #0 (Acc) -> Rd
             {
-                switch (pd->dec.arm.state.cycle_of_opcode)
+                switch (pd->dec.state.cycle_of_opcode)
                 {
                 case 0:
-                    build_gip_instruction_shift( &pd->dec.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(shf_rm) );
-                    build_gip_instruction_immediate( &pd->dec.inst, shf_imm_amt );
+                    build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                    build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
                     break;
                 case 1:
-                    build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-                    build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-                    build_gip_instruction_rm_int( &pd->dec.inst, gip_ins_rnm_int_shf );
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                    build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                     break;
                 default:
-                    build_gip_instruction_load( &pd->dec.inst, gip_ins_subclass_memory_word, 0, 1, (rn==13), 0, 0, (rd==15) );
-                    build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rd) );
+                    build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, 1, (rn==13), 0, 0, (rd==15) );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                    build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
                     pd->dec.arm.next_pc = pd->dec.state.pc+4;
                     pd->dec.arm.next_cycle_of_opcode = 0;
                     break;
@@ -3224,25 +4091,25 @@ int c_gip_full::decode_arm_ld_st( void )
              */
             else // postindexed reg with shift with writeback: ILSL Rm, #imm; ILDR[CC]A #0 (Rn), +/-SHF -> Rd; MOVCP[F] Acc -> Rn
             {
-                switch (pd->dec.arm.state.cycle_of_opcode)
+                switch (pd->dec.state.cycle_of_opcode)
                 {
                 case 0:
-                    build_gip_instruction_shift( &pd->dec.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(shf_rm) );
-                    build_gip_instruction_immediate( &pd->dec.inst, shf_imm_amt );
+                    build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                    build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
                     break;
                 case 1:
-                    build_gip_instruction_load( &pd->dec.inst, gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 1, 0 );
-                    build_gip_instruction_cc( &pd->dec.inst,map_condition_code(cc) );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-                    build_gip_instruction_rm_int( &pd->dec.inst, gip_ins_rnm_int_shf );
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rd) );
+                    build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 1, 0 );
+                    build_gip_instruction_cc( &pd->dec.arm.inst,map_condition_code(cc) );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
                     break;
                 default:
-                    build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
-                    build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rm_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                    build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                     pd->dec.arm.next_pc = pd->dec.state.pc+4;
                     pd->dec.arm.next_cycle_of_opcode = 0;
                     break;
@@ -3259,10 +4126,10 @@ int c_gip_full::decode_arm_ld_st( void )
      */
     if ( !not_imm && (imm_val==0) ) // no offset (hence no writeback, none needed); ISTR[CC] #0 (Rn) <- Rd
     {
-        build_gip_instruction_store( &pd->dec.inst, gip_ins_subclass_memory_word, 0, 1, 0, (rn==13), 0, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-        build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-        build_gip_instruction_rm( &pd->dec.inst, map_source_register(rd) );
+        build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, 1, 0, (rn==13), 0, 0, 0 );
+        build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+        build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+        build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
         pd->dec.arm.next_pc = pd->dec.state.pc+4;
         pd->dec.arm.next_cycle_of_opcode = 0;
         return 1;
@@ -3276,29 +4143,29 @@ int c_gip_full::decode_arm_ld_st( void )
         if ( !not_imm ||
              (((t_shf_type)(shf_how)==shf_type_lsl) && (shf_imm_amt==0)) )
         {
-            switch (pd->dec.arm.state.cycle_of_opcode)
+            switch (pd->dec.state.cycle_of_opcode)
             {
             case 0:
-                build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, map_condition_code(cc) );
-                build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
+                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
+                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
                 if (!not_imm)
                 {
-                    build_gip_instruction_immediate( &pd->dec.inst, imm_val );
+                    build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
                 }
                 else
                 {
-                    build_gip_instruction_rm( &pd->dec.inst, map_source_register(shf_rm) );
+                    build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
                 }
                 break;
             default:
-                build_gip_instruction_store( &pd->dec.inst, gip_ins_subclass_memory_word, 1, up, 1, (rn==13), 0, 1, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-                build_gip_instruction_rm( &pd->dec.inst, map_source_register(rd) );
+                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 1, up, 1, (rn==13), 0, 1, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
                 if (wb)
                 {
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                 }
                 pd->dec.arm.next_pc = pd->dec.state.pc+4;
                 pd->dec.arm.next_cycle_of_opcode = 0;
@@ -3309,22 +4176,22 @@ int c_gip_full::decode_arm_ld_st( void )
          */
         else
         {
-            switch (pd->dec.arm.state.cycle_of_opcode)
+            switch (pd->dec.state.cycle_of_opcode)
             {
             case 0:
-                build_gip_instruction_shift( &pd->dec.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-                build_gip_instruction_rn( &pd->dec.inst, map_source_register(shf_rm) );
-                build_gip_instruction_immediate( &pd->dec.inst, shf_imm_amt );
+                build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
                 break;
             default:
-                build_gip_instruction_store( &pd->dec.inst, gip_ins_subclass_memory_word, 1, up, 1, (rn==13), 0, 1, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-                build_gip_instruction_rm( &pd->dec.inst, map_source_register(rd) );
+                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 1, up, 1, (rn==13), 0, 1, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
                 if (wb)
                 {
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                 }
                 pd->dec.arm.next_pc = pd->dec.state.pc+4;
                 pd->dec.arm.next_cycle_of_opcode = 0;
@@ -3342,27 +4209,27 @@ int c_gip_full::decode_arm_ld_st( void )
         if ( !not_imm ||
              (((t_shf_type)(shf_how)==shf_type_lsl) && (shf_imm_amt==0)) )
         {
-            switch (pd->dec.arm.state.cycle_of_opcode)
+            switch (pd->dec.state.cycle_of_opcode)
             {
             case 0:
-                build_gip_instruction_store( &pd->dec.inst, gip_ins_subclass_memory_word, 0, 0, 0, (rn==13), 0, 0, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, map_condition_code(cc) );
-                build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-                build_gip_instruction_rm( &pd->dec.inst, map_source_register(rd) );
+                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, 0, 0, (rn==13), 0, 0, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
+                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
                 break;
             default:
-                build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
+                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
                 if (!not_imm)
                 {
-                    build_gip_instruction_immediate( &pd->dec.inst, imm_val );
+                    build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
                 }
                 else
                 {
-                    build_gip_instruction_rm( &pd->dec.inst, map_source_register(shf_rm) );
+                    build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
                 }
-                build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                 pd->dec.arm.next_pc = pd->dec.state.pc+4;
                 pd->dec.arm.next_cycle_of_opcode = 0;
                 break;
@@ -3373,20 +4240,20 @@ int c_gip_full::decode_arm_ld_st( void )
          */
         else //  ISHF[CC] Rm, #imm; ISTRCPA[S] #0 (Rn), +/-SHF) <-Rd -> Rn
         {
-            switch (pd->dec.arm.state.cycle_of_opcode)
+            switch (pd->dec.state.cycle_of_opcode)
             {
             case 0:
-                build_gip_instruction_shift( &pd->dec.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, map_condition_code( cc ) );
-                build_gip_instruction_rn( &pd->dec.inst, map_source_register(shf_rm) );
-                build_gip_instruction_immediate( &pd->dec.inst, shf_imm_amt );
+                build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
+                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
                 break;
             default:
-                build_gip_instruction_store( &pd->dec.inst, gip_ins_subclass_memory_word, 0, up, 1, (rn==13), 0, 1, 0 );
-                build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-                build_gip_instruction_rm( &pd->dec.inst, map_source_register(rd) );
-                build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, up, 1, (rn==13), 0, 1, 0 );
+                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
+                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                 pd->dec.arm.next_pc = pd->dec.state.pc+4;
                 pd->dec.arm.next_cycle_of_opcode = 0;
                 break;
@@ -3440,15 +4307,15 @@ int c_gip_full::decode_arm_ldm_stm( void )
     {
         /*b If DB/DA, do first instruction to generate base address: ISUB[CC]A Rn, #num_regs*4 [-> Rn]
          */
-        if ((!up) && (pd->dec.arm.state.cycle_of_opcode==0))
+        if ((!up) && (pd->dec.state.cycle_of_opcode==0))
         {
-            build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-            build_gip_instruction_cc( &pd->dec.inst, map_condition_code(cc) );
-            build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-            build_gip_instruction_immediate( &pd->dec.inst, num_regs*4 );
+            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+            build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
+            build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+            build_gip_instruction_immediate( &pd->dec.arm.inst, num_regs*4 );
             if (wb)
             {
-                build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
             }
             else
             {
@@ -3462,25 +4329,25 @@ int c_gip_full::decode_arm_ldm_stm( void )
         {
             for (j=0; (j<16) && ((regs&(1<<j))==0); j++);
             regs &= ~(1<<j);
-            if ( (!up && (i==pd->dec.arm.state.cycle_of_opcode+1)) ||
-                 (up && (i==pd->dec.arm.state.cycle_of_opcode)) )
+            if ( (!up && (i==pd->dec.state.cycle_of_opcode+1)) ||
+                 (up && (i==pd->dec.state.cycle_of_opcode)) )
             {
-                build_gip_instruction_load( &pd->dec.inst, gip_ins_subclass_memory_word, pre^!up, 1, (rn==13), (num_regs-1-i), 1, (j==15)&&!(up&&wb) );
-                if (pd->dec.arm.state.cycle_of_opcode==0)
+                build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, pre^!up, 1, (rn==13), (num_regs-1-i), 1, (j==15)&&!(up&&wb) );
+                if (pd->dec.state.cycle_of_opcode==0)
                 {
-                    build_gip_instruction_cc( &pd->dec.inst, map_condition_code(cc) );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
                 }
                 else
                 {
-                    build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_acc );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                    build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
                 }
-                build_gip_instruction_immediate( &pd->dec.inst, 4 );
-                build_gip_instruction_rd( &pd->dec.inst, map_destination_register(j) );
+                build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
+                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(j) );
             }
-            if ( (!up && (pd->dec.arm.state.cycle_of_opcode==num_regs)) ||
-                 ((up&&!wb) && (pd->dec.arm.state.cycle_of_opcode==num_regs-1)) )
+            if ( (!up && (pd->dec.state.cycle_of_opcode==num_regs)) ||
+                 ((up&&!wb) && (pd->dec.state.cycle_of_opcode==num_regs-1)) )
             {
                 pd->dec.arm.next_pc = pd->dec.state.pc+4;
                 pd->dec.arm.next_cycle_of_opcode = 0;
@@ -3489,12 +4356,12 @@ int c_gip_full::decode_arm_ldm_stm( void )
 
         /*b If IB/IA with writeback then do final MOVCP[F] Acc -> Rn; F if PC was read in the list
          */
-        if ((up&&wb) && (pd->dec.arm.state.cycle_of_opcode==num_regs))
+        if ((up&&wb) && (pd->dec.state.cycle_of_opcode==num_regs))
         {
-            build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, ((pd->dec.state.opcode&0x8000)!=0) );
-            build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-            build_gip_instruction_rm_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-            build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, ((pd->dec.state.opcode&0x8000)!=0) );
+            build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+            build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+            build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
             pd->dec.arm.next_pc = pd->dec.state.pc+4;
             pd->dec.arm.next_cycle_of_opcode = 0;
         }
@@ -3507,15 +4374,15 @@ int c_gip_full::decode_arm_ldm_stm( void )
     {
         /*b If DB/DA, do first instruction to generate base address: ISUB[CC]A Rn, #num_regs*4 [-> Rn]
          */
-        if ((!up) && (pd->dec.arm.state.cycle_of_opcode==0))
+        if ((!up) && (pd->dec.state.cycle_of_opcode==0))
         {
-            build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-            build_gip_instruction_cc( &pd->dec.inst, map_condition_code(cc) );
-            build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
-            build_gip_instruction_immediate( &pd->dec.inst, num_regs*4 );
+            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+            build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
+            build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
+            build_gip_instruction_immediate( &pd->dec.arm.inst, num_regs*4 );
             if (wb)
             {
-                build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
             }
             else
             {
@@ -3529,30 +4396,30 @@ int c_gip_full::decode_arm_ldm_stm( void )
         {
             for (j=0; (j<16) && ((regs&(1<<j))==0); j++);
             regs &= ~(1<<j);
-            if ( (!up && (pd->dec.arm.state.cycle_of_opcode==(i+1))) ||
-                 (up && (pd->dec.arm.state.cycle_of_opcode==i)) )
+            if ( (!up && (pd->dec.state.cycle_of_opcode==(i+1))) ||
+                 (up && (pd->dec.state.cycle_of_opcode==i)) )
             {
-                build_gip_instruction_store( &pd->dec.inst, gip_ins_subclass_memory_word, pre^!up, 1, 0, (rn==13), (num_regs-1-i), 1, 0 );
-                if (pd->dec.arm.state.cycle_of_opcode==0)
+                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, pre^!up, 1, 0, (rn==13), (num_regs-1-i), 1, 0 );
+                if (pd->dec.state.cycle_of_opcode==0)
                 {
-                    build_gip_instruction_cc( &pd->dec.inst, map_condition_code(cc) );
-                    build_gip_instruction_rn( &pd->dec.inst, map_source_register(rn) );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
+                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
                 }
                 else
                 {
-                    build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_acc );
+                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+                    build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
                 }
-                build_gip_instruction_rm( &pd->dec.inst, map_source_register(j) );
-                if ((pd->dec.arm.state.cycle_of_opcode==num_regs-1) && (up) && (wb))
+                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(j) );
+                if ((pd->dec.state.cycle_of_opcode==num_regs-1) && (up) && (wb))
                 {
-                    build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rn) );
+                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
                 }
                 else
                 {
                 }
-                if ( (!up && (pd->dec.arm.state.cycle_of_opcode==num_regs)) ||
-                     (up && (pd->dec.arm.state.cycle_of_opcode==num_regs-1)) )
+                if ( (!up && (pd->dec.state.cycle_of_opcode==num_regs)) ||
+                     (up && (pd->dec.state.cycle_of_opcode==num_regs-1)) )
                 {
                     pd->dec.arm.next_pc = pd->dec.state.pc+4;
                     pd->dec.arm.next_cycle_of_opcode = 0;
@@ -3593,30 +4460,30 @@ int c_gip_full::decode_arm_mul( void )
 
     /*b Decode according to stage
      */
-    switch (pd->dec.arm.state.cycle_of_opcode)
+    switch (pd->dec.state.cycle_of_opcode)
     {
     case 0:
         /*b First the INIT instruction
          */
-        build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_init, 1, 0, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.inst, map_condition_code(cc) );
-        build_gip_instruction_rn( &pd->dec.inst, map_source_register(rm) ); // Note these are
+        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_init, 1, 0, 0, 0 );
+        build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
+        build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rm) ); // Note these are
         if (accum)
         {
-            build_gip_instruction_rm( &pd->dec.inst, map_source_register(rn) ); //  correctly reversed
+            build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rn) ); //  correctly reversed
         }
         else
         {
-            build_gip_instruction_immediate( &pd->dec.inst, 0 );
+            build_gip_instruction_immediate( &pd->dec.arm.inst, 0 );
         }
         break;
     case 1:
         /*b Then the MLA instruction to get the ALU inputs ready, and do the first step
          */
-        build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_mla, 1, 0, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-        build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-        build_gip_instruction_rm( &pd->dec.inst, map_source_register(rs) );
+        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_mla, 1, 0, 0, 0 );
+        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+        build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+        build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rs) );
         break;
     case 2:
     case 3:
@@ -3634,19 +4501,19 @@ int c_gip_full::decode_arm_mul( void )
     case 15:
         /*b Then 14 MLB instructions to churn
          */
-        build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_mlb, 1, 0, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-        build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-        build_gip_instruction_immediate( &pd->dec.inst, 0 ); // Not used
+        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_mlb, 1, 0, 0, 0 );
+        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+        build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+        build_gip_instruction_immediate( &pd->dec.arm.inst, 0 ); // Not used
         break;
     default:
         /*b Then the last MLB instructions to produce the final results
          */
-        build_gip_instruction_alu( &pd->dec.inst, gip_ins_class_arith, gip_ins_subclass_arith_mlb, 1, sign, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.inst, gip_ins_cc_cp );
-        build_gip_instruction_rn_int( &pd->dec.inst, gip_ins_rnm_int_acc );
-        build_gip_instruction_immediate( &pd->dec.inst, 0 ); // Not used
-        build_gip_instruction_rd( &pd->dec.inst, map_destination_register(rd) );
+        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_mlb, 1, sign, 0, 0 );
+        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
+        build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
+        build_gip_instruction_immediate( &pd->dec.arm.inst, 0 ); // Not used
+        build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
         pd->dec.arm.next_pc = pd->dec.state.pc+4;
         pd->dec.arm.next_cycle_of_opcode = 0;
         break;

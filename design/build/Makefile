@@ -7,7 +7,7 @@ all:
 
 documentation:
 	rm -rf documentation
-	make_web ../repository/documentation documentation index.php
+	$(TNBT_CVS_ROOT)/common/bin/make_web ../repository/documentation documentation index.php
 
 #a Editor preferences and notes
 # Local Variables: ***

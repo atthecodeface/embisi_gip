@@ -77,8 +77,8 @@ foreach $i (@commons) {
     ($common, $asms, $ccs) = split(/ /,$i);
     foreach $asm (split(/@@@/,$asms)) {
         next if ($asm=~/^\s*$/);
-        print make "obj/common__$asm.o: src/common/$asm.s\n";
-        print make "\t\${ARM_CC} -c src/common/$asm.s -o obj/common__$asm.o\n";
+        print make "obj/common__$asm.o: src/common/$asm.S\n";
+        print make "\t\${ARM_CC} -c src/common/$asm.S -o obj/common__$asm.o\n";
         print make "\n";
     }
     foreach $cc (split(/@@@/,$ccs)) {
@@ -93,8 +93,8 @@ foreach $i (@tests) {
     ($test, $objs, $asms, $ccs) = split(/ /,$i);
     foreach $asm (split(/@@@/,$asms)) {
         next if ($asm=~/^\s*$/);
-        print make "obj/${test}__$asm.o: src/$test/$asm.s\n";
-        print make "\t\${ARM_CC} -c src/$test/$asm.s -o obj/${test}__$asm.o\n";
+        print make "obj/${test}__$asm.o: src/$test/$asm.S\n";
+        print make "\t\${ARM_CC} -c src/$test/$asm.S -o obj/${test}__$asm.o\n";
         print make "\n";
     }
     foreach $cc (split(/@@@/,$ccs)) {
@@ -111,7 +111,7 @@ foreach $i (@tests) {
         }
     }
     print make "\t\tscripts/build.script\n";
-    print make "\t\${ARM_LD} -T scripts/build.script -o obj/tmp.elf \\\n";
+    print make "\t\${ARM_LD} -T scripts/build.script --Map bin/$test.map -o obj/tmp.elf \\\n";
     foreach $obj (split(/@@@/,$objs)) {
         next if ($obj=~/^\s*$/);
         if ($obj=~/^([^:]*):(.*)/) {

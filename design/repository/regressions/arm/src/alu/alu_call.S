@@ -1,3 +1,6 @@
+//#define DEBUG
+//#define VERBOSE
+
 .text
 	.align 4
 	.global alu_call
@@ -10,7 +13,15 @@ alu_call:
     mov r9, r1
 
     ldmia r0, { r2, r3, r4, r5,  r6, r7,  r8 }
-    /* First clear all flags, get r0 so we can set overflow if we need to */
+
+    /*b Turn verbose on
+    */
+#ifdef VERBOSE
+    .word 0xf00000a2
+#endif
+    
+    /*b First clear all flags, get r0 so we can set overflow if we need to
+        */
     mov r0, #0
     adds r0, r0, #0x40000000
     teq r5, #0
@@ -40,6 +51,16 @@ flags_ready:
     mov lr, pc
     mov pc, r8
 
+    /*b nop four times to ensure we have a clean pipeline,  then turn verbose off
+    */
+#ifdef VERBOSE
+    .word 0xf00000a4
+    .word 0xf00000a4
+    .word 0xf00000a4
+    .word 0xf00000a4
+    .word 0xf00000a3
+#endif
+ 
     /*b Now preserve the flags
     */
     mov r2, #0
@@ -58,5 +79,11 @@ flags_ready:
     /*b Store results
     */
     stmia r9, { r2, r3, r4, r5,  r6 }
+        
+    /*b dump regs - pipeline is always clean enough for this
+    */
+#ifdef DEBUG
+    .word 0xf00000a1
+#endif
         
     ldmfd r13!, {r0-r12, pc}

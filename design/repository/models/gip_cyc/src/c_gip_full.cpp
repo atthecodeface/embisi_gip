@@ -139,6 +139,97 @@ typedef struct t_gip_sched_data
 
 } t_gip_sched_data;
 
+/*t t_gip_postbus_rx_fsm
+ */
+typedef enum
+{
+    gip_postbus_rx_fsm_idle, // Waiting for first data - go to hold or buffer_last
+    gip_postbus_rx_fsm_hold, // Buffer full - write data, then go to data state
+    gip_postbus_rx_fsm_data, // Buffer empty, write data directly to RF (if not GIP) and buffer in case
+    gip_postbus_rx_fsm_buffer_last, // Buffer full with last word - write data
+    gip_postbus_rx_fsm_signal, // All done, now just set the correct semaphore if reqd
+} t_gip_postbus_rx_fsm;
+
+/*t t_gip_postbus_tx_fsm
+ */
+typedef enum
+{
+    gip_postbus_tx_fsm_idle, // Waiting for command pending - go to present_single or first
+    gip_postbus_tx_fsm_present_single, // Single word transaction ongoing
+    gip_postbus_tx_fsm_present_first, // First word of multiword transaction ongoing
+    gip_postbus_tx_fsm_hold, // In the middle of a transaction, waiting for data from RF (GIP stole RF cycles)
+    gip_postbus_tx_fsm_present_middle, // In the middle of a transaction presenting data
+    gip_postbus_tx_fsm_present_last, // Presenting the last word of a transaction
+} t_gip_postbus_tx_fsm;
+
+/*t t_gip_postbus_fifo
+ */
+typedef struct t_gip_postbus_fifo
+{
+    int base;
+    int end;
+    int read;
+    int write;
+} t_gip_postbus_fifo;
+
+/*t t_gip_postbus_state
+ */
+typedef struct t_gip_postbus_state
+{
+
+    /*b State in the postbus registers guaranteed by the design
+     */
+    unsigned int rf[32]; // 32-word 32-bit FIFO, single read, single write port (separate as GIP can write to both at once)
+    unsigned int command[2]; // 32-bit command registers, used in tx; includes length (in words) for transfer
+    unsigned int status[2]; // I think these have gone(?)
+    t_gip_postbus_fifo tx_fifo[2]; // 2 write FIFOs - just read/write pointers, base, end, 5-bits each
+    t_gip_postbus_fifo rx_fifo[2]; // 2 read FIFOs - just read/write pointers, base, end, 5-bits each
+    unsigned int postbus_rx_buffer; // One word store for transfer to the rf if it is being read by GIP
+
+    int postbus_rx_fifo; // 0 for rx transfer to rx_fifo[0], 1 for transfer to rx_fifo[1]
+    t_gip_postbus_rx_fsm postbus_rx_fsm; // FSM for receive side of postbus
+    int postbus_rx_last; // 1 if this is the first word and last word
+
+    int pending_tx_xfrs; // 1 bit for each command, indicating transfers pending
+    int postbus_tx_fifo; // 0 for tx transfer from tx_fifo[0], 1 for transfer from tx_fifo[1]
+    t_gip_postbus_tx_fsm postbus_tx_fsm; // FSM for transmit side of postbus
+    unsigned int postbus_tx_data; // Postbus Tx side data presented
+    int postbus_tx_left; // Words left to transmit (0=>last)
+
+} t_gip_postbus_state;
+
+/*t t_gip_postbus_data
+ */
+typedef struct t_gip_postbus_data
+{
+    /*b State of the postbus registers
+     */
+    t_gip_postbus_state state;
+    t_gip_postbus_state next_state;
+
+    /*b Combinatorials in the postbus registers
+     */
+    int gip_rf_write; // 1 if the GIP wants to write
+    int gip_rf_write_r; // rf entry the GIP wants to write
+    int postbus_rf_write; // 1 if the postbus wants to write
+    int postbus_rf_write_r; // rf entry the postbus wants to write
+    int postbus_buffer_write; // 1 if the postbus wants to write to its buffer
+
+    int gip_rf_read; // 1 if the GIP wants to read
+    int gip_rf_read_r; // rf entry the GIP wants to read
+    int postbus_rf_read; // 1 if the postbus wants to read
+    int postbus_rf_read_r; // rf entry the postbus wants to read
+    unsigned int rf_read_data; // data read from the register file
+
+    int clock_tx_fifo;
+    int tx_fifo_read_okay;
+    int rx_fifo_written_okay;
+
+    t_postbus_type postbus_tx_type; // Postbus Tx side type of word presented
+    t_postbus_ack postbus_rx_ack; // Postbus RX side acknowledge
+
+} t_gip_postbus_data;
+
 /*t t_gip_special_state
  */
 typedef struct t_gip_special_state
@@ -448,6 +539,7 @@ typedef struct t_private_data
     t_gip_alu_data alu;
     t_gip_sched_data sched;
     t_gip_special_data special;
+    t_gip_postbus_data postbus;
     t_gip_mem_data mem;
     t_gip_pipeline_results gip_pipeline_results;
 
@@ -2255,7 +2347,7 @@ void c_gip_full::rf_comb( t_gip_pipeline_results *results )
       the PC. This will be true in general as instructions that write the PC will cause a flush. However, a
       deschedule in the shadow of a branch (in a delay slot particularly) would not be flushed.
     */
-    printf("decode handles deschedule - if condition passed unless flushing in ALU stage or ALU is not taking instructoin; must not be here if any previous instruction is writing PC\n");
+//    printf("decode handles deschedule - if condition passed unless flushing in ALU stage or ALU is not taking instructoin; must not be here if any previous instruction is writing PC\n");
 
     /*b Read the register file
      */
@@ -5927,18 +6019,381 @@ void c_gip_full::special_clock( void )
  */
 void c_gip_full::postbus_comb( int read_select, int read_address, unsigned int *read_data )
 {
+    int fifo;
+
+    /*b Handle reads
+     */
+    fifo = ((read_address & gip_postbus_reg_fifo)!=0);
+    read_address &= ~gip_postbus_reg_fifo;
+    pd->postbus.gip_rf_read = 0;
+    pd->postbus.postbus_rf_read = 0;
+    pd->postbus.gip_rf_read_r = pd->postbus.state.rx_fifo[fifo].read;
+    pd->postbus.postbus_rf_read_r = pd->postbus.state.tx_fifo[pd->postbus.state.postbus_tx_fifo].read;
+    switch ((t_gip_postbus_reg)read_address)
+    {
+    case gip_postbus_reg_command_0:
+    case gip_postbus_reg_command_1:
+        *read_data = pd->postbus.state.command[fifo];
+        break;
+    case gip_postbus_reg_tx_fifo_0:
+    case gip_postbus_reg_tx_fifo_1:
+        break;
+    case gip_postbus_reg_rx_fifo_0:
+    case gip_postbus_reg_rx_fifo_1:
+        pd->postbus.gip_rf_read = 1;
+        break;
+    case gip_postbus_reg_tx_fifo_config_0:
+    case gip_postbus_reg_tx_fifo_config_1:
+        *read_data = ( (pd->postbus.state.tx_fifo[fifo].base  <<  0) |
+                       (pd->postbus.state.tx_fifo[fifo].end  <<  8) |
+                       (pd->postbus.state.tx_fifo[fifo].read  << 16) |
+                       (pd->postbus.state.tx_fifo[fifo].write << 24) );
+        break;
+    case gip_postbus_reg_rx_fifo_config_0:
+    case gip_postbus_reg_rx_fifo_config_1:
+        *read_data = ( (pd->postbus.state.rx_fifo[fifo].base  <<  0) |
+                       (pd->postbus.state.rx_fifo[fifo].end  <<  8) |
+                       (pd->postbus.state.rx_fifo[fifo].read  << 16) |
+                       (pd->postbus.state.rx_fifo[fifo].write << 24) );
+        break;
+    }
+
+    /*b Handle the Tx FSM
+     */
+    switch (pd->postbus.state.postbus_tx_fsm)
+    {
+    case gip_postbus_tx_fsm_idle:
+        pd->postbus.postbus_tx_type = postbus_word_type_idle;
+        break;
+    case gip_postbus_tx_fsm_present_single:
+        pd->postbus.postbus_tx_type = postbus_word_type_start;
+        break;
+    case gip_postbus_tx_fsm_present_first:
+        pd->postbus.postbus_tx_type = postbus_word_type_start;
+        pd->postbus.postbus_rf_read = 1;
+        break;
+    case gip_postbus_tx_fsm_hold:
+        pd->postbus.postbus_tx_type = postbus_word_type_hold;
+        pd->postbus.postbus_rf_read = 1;
+        break;
+    case gip_postbus_tx_fsm_present_middle:
+        pd->postbus.postbus_tx_type = postbus_word_type_data;
+        pd->postbus.postbus_rf_read = 1;
+        break;
+    case gip_postbus_tx_fsm_present_last:
+        pd->postbus.postbus_tx_type = postbus_word_type_last;
+        break;
+    }
+
+    /*b Handle the Rx FSM
+     */
+    switch (pd->postbus.state.postbus_rx_fsm)
+    {
+    case gip_postbus_rx_fsm_idle:
+    case gip_postbus_rx_fsm_data:
+        pd->postbus.postbus_rx_ack = postbus_ack_taken;
+        break;
+    case gip_postbus_rx_fsm_buffer_last:
+    case gip_postbus_rx_fsm_signal:
+    case gip_postbus_rx_fsm_hold:
+        pd->postbus.postbus_rx_ack = postbus_ack_hold;
+        break;
+    }
+
+    /*b Read the RF
+     */
+    if (pd->postbus.gip_rf_read)
+    {
+        pd->postbus.rf_read_data = pd->postbus.state.rf[pd->postbus.gip_rf_read_r];
+        *read_data = pd->postbus.rf_read_data;
+    }
+    else if (pd->postbus.postbus_rf_read)
+    {
+        pd->postbus.rf_read_data = pd->postbus.state.rf[pd->postbus.postbus_rf_read_r];
+    }
+
+    /*b Done
+     */
+}
+
+/*f postbus_fifo_inc
+ */
+static int postbus_fifo_inc( t_gip_postbus_fifo *fifo, int read_not_write )
+{
+    int ptr;
+    if (read_not_write) ptr=fifo->read; else ptr=fifo->write;
+    ptr = (ptr+1)&0x1f;
+    if (ptr==fifo->end) ptr=fifo->base;
+    return ptr;
 }
 
 /*f c_gip_full::postbus_preclock
  */
 void c_gip_full::postbus_preclock( int flush, int read_select, int read_address, int write_select, int write_address, unsigned int write_data )
 {
+    int fifo;
+
+    /*b Copy current to next
+     */
+    memcpy( &pd->postbus.next_state, &pd->postbus.state, sizeof(pd->postbus.state) );
+
+    /*b Handle reads
+     */
+    fifo = ((read_address & gip_postbus_reg_fifo)!=0);
+    read_address &= ~gip_postbus_reg_fifo;
+    switch ((t_gip_postbus_reg)read_address)
+    {
+    case gip_postbus_reg_command_0:
+    case gip_postbus_reg_command_1:
+        break;
+    case gip_postbus_reg_tx_fifo_0:
+    case gip_postbus_reg_tx_fifo_1:
+        break;
+    case gip_postbus_reg_rx_fifo_0:
+    case gip_postbus_reg_rx_fifo_1:
+        if (read_select && !flush)
+        {
+            pd->postbus.next_state.tx_fifo[fifo].read = postbus_fifo_inc( &pd->postbus.state.tx_fifo[fifo], 1 );
+        }
+        break;
+    case gip_postbus_reg_tx_fifo_config_0:
+    case gip_postbus_reg_tx_fifo_config_1:
+        break;
+    case gip_postbus_reg_rx_fifo_config_0:
+    case gip_postbus_reg_rx_fifo_config_1:
+        break;
+    }
+
+    /*b Handle writes
+     */
+    fifo = ((write_address & gip_postbus_reg_fifo)!=0);
+    write_address &= ~gip_postbus_reg_fifo;
+    pd->postbus.gip_rf_write = 0;
+    pd->postbus.gip_rf_write_r = 0;
+    pd->postbus.postbus_rf_write = 0;
+    pd->postbus.postbus_rf_write_r = 0;
+    switch ((t_gip_postbus_reg)write_address)
+    {
+    case gip_postbus_reg_command_0:
+    case gip_postbus_reg_command_1:
+        if (write_select)
+        {
+            pd->postbus.next_state.pending_tx_xfrs |= (1<<fifo);
+            pd->postbus.next_state.command[fifo] = write_data;
+        }
+        break;
+    case gip_postbus_reg_tx_fifo_0:
+    case gip_postbus_reg_tx_fifo_1:
+        if (write_select)
+        {
+            pd->postbus.gip_rf_write = 1;
+            pd->postbus.gip_rf_write_r = pd->postbus.state.tx_fifo[fifo].write;
+            pd->postbus.next_state.tx_fifo[fifo].write = postbus_fifo_inc( &pd->postbus.state.tx_fifo[fifo], 0 );
+        }
+        break;
+    case gip_postbus_reg_rx_fifo_0:
+    case gip_postbus_reg_rx_fifo_1:
+        break;
+    case gip_postbus_reg_tx_fifo_config_0:
+    case gip_postbus_reg_tx_fifo_config_1:
+        if (write_select)
+        {
+            pd->postbus.next_state.tx_fifo[fifo].base  = ( (write_data>> 0)&0x1f);
+            pd->postbus.next_state.tx_fifo[fifo].end  = ( (write_data>> 8)&0x1f);
+            pd->postbus.next_state.tx_fifo[fifo].read  = ( (write_data>>16)&0x1f);
+            pd->postbus.next_state.tx_fifo[fifo].write = ( (write_data>>24)&0x1f);
+        }
+        break;
+    case gip_postbus_reg_rx_fifo_config_0:
+    case gip_postbus_reg_rx_fifo_config_1:
+        if (write_select)
+        {
+            pd->postbus.next_state.rx_fifo[fifo].base  = ( (write_data>> 0)&0x1f);
+            pd->postbus.next_state.rx_fifo[fifo].end  = ( (write_data>> 8)&0x1f);
+            pd->postbus.next_state.rx_fifo[fifo].read  = ( (write_data>>16)&0x1f);
+            pd->postbus.next_state.rx_fifo[fifo].write = ( (write_data>>24)&0x1f);
+        }
+        break;
+    }
+
+    /*b Handle the Tx FSM
+     */
+    pd->postbus.clock_tx_fifo = 0;
+    pd->postbus.tx_fifo_read_okay = !pd->postbus.gip_rf_read;
+    switch (pd->postbus.state.postbus_tx_fsm)
+    {
+    case gip_postbus_tx_fsm_idle:
+        if (pd->postbus.state.pending_tx_xfrs)
+        {
+            pd->postbus.next_state.postbus_tx_fifo = !(pd->postbus.state.pending_tx_xfrs&1);
+            if ((pd->postbus.state.command[ pd->postbus.next_state.postbus_tx_fifo ]>>postbus_command_last_bit)&1)
+            {
+                pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_present_single;
+            }
+            else
+            {
+                pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_present_first;
+            }
+            pd->postbus.next_state.postbus_tx_left = (pd->postbus.state.command[ pd->postbus.next_state.postbus_tx_fifo ]>>postbus_command_length_start)&0x1f;
+        }
+        break;
+    case gip_postbus_tx_fsm_present_single:
+        if (inputs.postbus_tx_ack == postbus_ack_taken)
+        {
+            pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_idle;
+        }
+        pd->postbus.next_state.pending_tx_xfrs = pd->postbus.state.pending_tx_xfrs &~ (1<<pd->postbus.state.postbus_tx_fifo);
+        break;
+    case gip_postbus_tx_fsm_present_first:
+        pd->postbus.next_state.pending_tx_xfrs = pd->postbus.state.pending_tx_xfrs &~ (1<<pd->postbus.state.postbus_tx_fifo);
+        // Fall through here
+    case gip_postbus_tx_fsm_present_middle:
+        if (inputs.postbus_tx_ack == postbus_ack_taken)
+        {
+            if (pd->postbus.tx_fifo_read_okay)
+            {
+                pd->postbus.clock_tx_fifo = 1; // move on FIFO ptr, decrement length
+                if (pd->postbus.state.postbus_tx_left == 0)
+                {
+                    pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_present_last;
+                }
+                else
+                {
+                    pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_present_middle;
+                }
+            }
+            else
+            {
+                pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_hold;
+            }
+        }
+        else
+        {
+            pd->postbus.next_state.postbus_tx_fsm = pd->postbus.state.postbus_tx_fsm; // Making it clear this is okay for both single and middle
+        }
+        break;
+    case gip_postbus_tx_fsm_hold:
+        if (pd->postbus.tx_fifo_read_okay)
+        {
+            pd->postbus.clock_tx_fifo = 1; // move on FIFO ptr, decrement length
+            if (pd->postbus.state.postbus_tx_left == 0)
+            {
+                pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_present_last;
+            }
+            else
+            {
+                pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_present_middle;
+            }
+        }
+        break;
+    case gip_postbus_tx_fsm_present_last:
+        if (inputs.postbus_tx_ack == postbus_ack_taken)
+        {
+            pd->postbus.next_state.postbus_tx_fsm = gip_postbus_tx_fsm_idle;
+        }
+        break;
+    }
+    if (pd->postbus.clock_tx_fifo)
+    {
+        pd->postbus.next_state.postbus_tx_left = pd->postbus.state.postbus_tx_left-1;
+        pd->postbus.next_state.tx_fifo[fifo].read = postbus_fifo_inc( &pd->postbus.state.tx_fifo[pd->postbus.state.postbus_tx_fifo], 1 );
+    }
+
+    /*b Handle the Rx FSM
+     */
+    pd->postbus.postbus_rf_write = 0;
+    pd->postbus.postbus_rf_write_r = pd->postbus.state.rx_fifo[0].write;
+    pd->postbus.rx_fifo_written_okay = !pd->postbus.gip_rf_write;
+    pd->postbus.postbus_buffer_write = 0;
+    switch (pd->postbus.state.postbus_rx_fsm)
+    {
+    case gip_postbus_rx_fsm_idle:
+        if (inputs.postbus_rx_type != postbus_word_type_idle)
+        {
+            pd->postbus.next_state.postbus_rx_fsm = gip_postbus_rx_fsm_hold;
+            pd->postbus.next_state.postbus_rx_last = (inputs.postbus_rx_data>>postbus_command_last_bit)&1;
+            pd->postbus.postbus_buffer_write = 1;
+        }
+        break;
+    case gip_postbus_rx_fsm_hold:
+        pd->postbus.postbus_rf_write = 1;
+        if (pd->postbus.rx_fifo_written_okay)
+        {
+            if (pd->postbus.state.postbus_rx_last)
+            {
+                pd->postbus.next_state.postbus_rx_fsm = gip_postbus_rx_fsm_signal;
+            }
+            else
+            {
+                pd->postbus.next_state.postbus_rx_fsm = gip_postbus_rx_fsm_data;
+            }
+        }
+        break;
+    case gip_postbus_rx_fsm_data:
+        pd->postbus.postbus_buffer_write = 1;
+        pd->postbus.postbus_rf_write = 1;
+        pd->postbus.next_state.postbus_rx_last = 0;
+        switch (inputs.postbus_rx_type)
+        {
+        case postbus_word_type_hold:
+            break;
+        case postbus_word_type_data:
+        case postbus_word_type_start: // we treat start as data - its defensive
+            if (!pd->postbus.rx_fifo_written_okay)
+            {
+                pd->postbus.next_state.postbus_rx_fsm = gip_postbus_rx_fsm_hold;
+            }
+            break;
+        case postbus_word_type_last:
+            if (pd->postbus.rx_fifo_written_okay)
+            {
+                pd->postbus.next_state.postbus_rx_fsm = gip_postbus_rx_fsm_signal;
+            }
+            else
+            {
+                pd->postbus.next_state.postbus_rx_fsm = gip_postbus_rx_fsm_buffer_last;
+            }
+            break;
+        default: // None here - just 4 types, but a default doesn't hurt
+            break;
+        }
+        break;
+    case gip_postbus_rx_fsm_buffer_last:
+        pd->postbus.postbus_rf_write = 1;
+        if (pd->postbus.rx_fifo_written_okay)
+        {
+            pd->postbus.next_state.postbus_rx_fsm = gip_postbus_rx_fsm_signal;
+        }
+        break;
+    case gip_postbus_rx_fsm_signal:
+        pd->postbus.next_state.postbus_rx_fsm = gip_postbus_rx_fsm_idle; // We assume the signalling always works
+        break;
+    }
+    if (pd->postbus.postbus_buffer_write)
+    {
+        pd->postbus.next_state.postbus_rx_buffer = inputs.postbus_rx_data;
+    }
+
+    /*b Write the register file
+     */
+    if (pd->postbus.gip_rf_write)
+    {
+        pd->postbus.next_state.rf[pd->postbus.gip_rf_write_r] = write_data;
+    }
+    else if (pd->postbus.postbus_rf_write)
+    {
+        pd->postbus.next_state.rf[pd->postbus.postbus_rf_write_r] = 0;//postbus_rx_data of some form; register or input data
+    }
+
+    /*b Done
+     */
 }
 
 /*f c_gip_full::postbus_clock
  */
 void c_gip_full::postbus_clock( void )
 {
+    memcpy( &pd->postbus.state, &pd->postbus.next_state, sizeof(pd->postbus.state) );
 }
 
 /*a Public level methods - reset, comb, preclock, clock, (step)
@@ -5962,6 +6417,35 @@ void c_gip_full::reset( void )
     pd->special.state.thread_data_write_pc = 0;
     pd->special.state.thread_data_write_config = 0;
     pd->special.state.repeat_count = 0;
+
+    /*b Initialize the postbus interface
+     */
+    for (i=0; i<32; i++)
+    {
+        pd->postbus.state.rf[i] = 0;
+    }
+    for (i=0; i<2; i++)
+    {
+        pd->postbus.state.command[i] = 0;
+        pd->postbus.state.tx_fifo[i].base = 0;
+        pd->postbus.state.tx_fifo[i].end = 0;
+        pd->postbus.state.tx_fifo[i].read = 0;
+        pd->postbus.state.tx_fifo[i].write = 0;
+        pd->postbus.state.rx_fifo[i].base = 0;
+        pd->postbus.state.rx_fifo[i].end = 0;
+        pd->postbus.state.rx_fifo[i].read = 0;
+        pd->postbus.state.rx_fifo[i].write = 0;
+    }
+    pd->postbus.state.postbus_rx_buffer = 0;
+    pd->postbus.state.postbus_rx_fifo = 0;
+    pd->postbus.state.postbus_rx_fsm = gip_postbus_rx_fsm_idle;
+    pd->postbus.state.postbus_rx_last = 0;
+
+    pd->postbus.state.pending_tx_xfrs = 0;
+    pd->postbus.state.postbus_tx_fifo = 0;
+    pd->postbus.state.postbus_tx_fsm = gip_postbus_tx_fsm_idle;
+    pd->postbus.state.postbus_tx_data = 0;
+    pd->postbus.state.postbus_tx_left = 0;
 
     /*b Initialize the scheduler
      */
@@ -6076,8 +6560,10 @@ void c_gip_full::reset( void )
 
 /*f c_gip_full::comb
  */
-void c_gip_full::comb( void )
+void c_gip_full::comb( void *data )
 {
+    t_gip_comb_data *gip_comb_data = (t_gip_comb_data *)data;
+
     /*b Combinatorial functions
      */
     rf_comb( &pd->gip_pipeline_results );
@@ -6085,6 +6571,12 @@ void c_gip_full::comb( void )
     mem_comb( &pd->gip_pipeline_results );
     sched_comb( );
     dec_comb( );
+
+    /*b Output combinatorial data
+     */
+    gip_comb_data->postbus_tx_data = pd->postbus.state.postbus_tx_data;
+    gip_comb_data->postbus_tx_type = pd->postbus.postbus_tx_type;
+    gip_comb_data->postbus_rx_ack = pd->postbus.postbus_rx_ack;
 }
 
 /*f c_gip_full::preclock
@@ -6128,6 +6620,7 @@ void c_gip_full::clock( void )
 int c_gip_full::step( int *reason, int requested_count )
 {
     int i;
+    t_gip_comb_data comb_data;
 
     *reason = 0;
 
@@ -6135,7 +6628,7 @@ int c_gip_full::step( int *reason, int requested_count )
      */
     for (i=0; i<requested_count; i++)
     {
-        comb();
+        comb((void *)&comb_data );
         preclock();
         clock();
     }

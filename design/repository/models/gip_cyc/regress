@@ -20,7 +20,7 @@ $os = "cygwin" if ($arch eq "cygwin");
 
 $bin_directory = "$os";
 $test_dirs = "simple";
-$debug_level = 1;
+$debug_level = 0;
 
 #a Run tests
 $tests = "";

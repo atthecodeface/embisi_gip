@@ -14,6 +14,48 @@
 
 /*a Types
  */
+/*t postbus
+ */
+enum
+{
+    postbus_command_last_bit = 0, // bit 0 of first transaction word indicates its also the last
+    postbus_command_length_start = 1, // bit 1 of first transaction word indicates the length (to GIP)
+};
+
+typedef enum
+{
+    postbus_ack_hold = 0,
+    postbus_ack_taken = 1,
+} t_postbus_ack;
+
+typedef enum
+{
+    postbus_word_type_start = 0,
+    postbus_word_type_idle = 1,
+    postbus_word_type_hold = 1,
+    postbus_word_type_data = 2,
+    postbus_word_type_last = 3,
+} t_postbus_type;
+
+
+/*t t_gip_comb_data
+ */
+typedef struct t_gip_comb_data
+{
+    unsigned int postbus_tx_data;
+    t_postbus_type postbus_tx_type;
+    t_postbus_ack postbus_rx_ack;
+} t_gip_comb_data;
+
+/*t t_gip_inputs
+ */
+typedef struct t_gip_inputs
+{
+    unsigned int postbus_rx_data;
+    t_postbus_type postbus_rx_type;
+    t_postbus_ack postbus_tx_ack;
+} t_gip_inputs;
+
 /*t	c_gip_full
 */
 class c_gip_full : public c_execution_model_class
@@ -148,8 +190,11 @@ private:
     void c_gip_full::reset( void );
     void c_gip_full::clock( void );
     void c_gip_full::preclock( void );
-    void c_gip_full::comb( void );
+    void c_gip_full::comb( void *data );
 
+    /*b Inputs
+     */
+    t_gip_inputs inputs;
 };
 
 /*a External functions

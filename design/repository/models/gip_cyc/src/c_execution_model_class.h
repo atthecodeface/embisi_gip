@@ -58,7 +58,7 @@ public:
     virtual void c_execution_model_class::reset( void) = 0;
     virtual void c_execution_model_class::preclock( void) = 0;
     virtual void c_execution_model_class::clock( void) = 0;
-    virtual void c_execution_model_class::comb( void) = 0;
+    virtual void c_execution_model_class::comb( void *data ) = 0;
 
     /*b Code loading methods
      */

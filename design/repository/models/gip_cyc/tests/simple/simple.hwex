@@ -3,14 +3,19 @@
 #  This file 'simple.hwex' copyright Gavin J Stark 2004
 #  
 
-option_string "options" "-f fred.gif"
-module gip_cyc gip
-#module tie_high gip
+string options
 
-option_string "clock" system_clock
+sprintf options "-f %s0%" env_string("gip_mif")
+option_string "options" options
+module gip_cyc "gip"
+
+module postbus_input_mux "pim"
+module postbus_register_demux "prd"
+
+option_string "clock" "system_clock"
 option_string "inputs" "result[32]"
 option_string "outputs" "test_reset in[32]"
-option_string "filename" gip_test_harness.th
+option_string "filename" "gip_test_harness.th"
 module se_test_harness th
 
 clock system_clock 0 1 1
@@ -18,14 +23,59 @@ drive th.system_clock system_clock
 drive gip.cpu_clock system_clock
 
 wire in[32] result[32] reset
+wire mux_data[32] mux_type[2] mux_ack[2]
+wire src_data_3[32] src_type_3[2] src_ack_3[2]
+wire src_data_2[32] src_type_2[2] src_ack_2[2]
+wire src_data_1[32] src_type_1[2] src_ack_1[2]
+wire src_data_0[32] src_type_0[2] src_ack_0[2]
+wire tgt_data[32]
+wire tgt_type_3[2] tgt_ack_3[2]
+wire tgt_type_2[2] tgt_ack_2[2]
+wire tgt_type_1[2] tgt_ack_1[2]
+wire tgt_type_0[2] tgt_ack_0[2]
 
 drive reset th.test_reset
 
-#drive gip.data_in in
-#drive in th.in
+drive prd.tgt_ack_3 tgt_ack_3
+drive prd.tgt_ack_2 tgt_ack_2
+drive prd.tgt_ack_1 tgt_ack_1
+drive prd.tgt_ack_0 tgt_ack_0
+drive prd.src_data mux_data
+drive prd.src_type mux_type
+drive prd.int_reset reset
 
-#drive result gip.sum
-#drive th.result result
+drive tgt_data prd.tgt_data
+drive tgt_type_3 prd.tgt_type_3
+drive tgt_type_2 prd.tgt_type_2
+drive tgt_type_1 prd.tgt_type_1
+drive tgt_type_0 prd.tgt_type_0
+drive mux_ack prd.src_ack
+
+drive pim.tgt_ack mux_ack
+drive pim.src_data_3 src_data_3
+drive pim.src_type_3 src_type_3
+drive pim.src_data_2 src_data_2
+drive pim.src_type_2 src_type_2
+drive pim.src_data_1 src_data_1
+drive pim.src_type_1 src_type_1
+drive pim.src_data_0 src_data_0
+drive pim.src_type_0 src_type_0
+drive pim.int_reset reset
+
+drive src_ack_3 pim.src_ack_3
+drive src_ack_2 pim.src_ack_2
+drive src_ack_1 pim.src_ack_1
+drive src_ack_0 pim.src_ack_0
+drive mux_data pim.tgt_data
+drive mux_type pim.tgt_type
+
+drive gip.postbus_tx_ack src_ack_0
+drive src_type_0 gip.postbus_tx_type
+drive src_data_0 gip.postbus_tx_data
+
+drive tgt_ack_0 gip.postbus_rx_ack
+drive gip.postbus_rx_type tgt_type_0 
+drive gip.postbus_rx_data tgt_data
 
 end
 

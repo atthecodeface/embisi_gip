@@ -1,6 +1,14 @@
 /*a To do
  */
 
+/*a Defines
+ */
+#if 0
+#define ENTRY() {fprintf (stderr, "Entry of %s at %s:%d\n", __func__, __FILE__, __LINE__);}
+#else
+#define ENTRY()
+#endif
+
 /*a Includes
  */
 #include <stdio.h>
@@ -40,13 +48,16 @@ typedef struct t_file_desc
 */
 typedef struct t_gip_cyc_inputs
 {
+    unsigned int *postbus_rx_data_ptr;
+    t_postbus_type *postbus_rx_type_ptr;
+    t_postbus_ack *postbus_tx_ack_ptr;
 } t_gip_cyc_inputs;
 
 /*t t_gip_cyc_combinatorials
 */
 typedef struct t_gip_cyc_combinatorials
 {
-    unsigned int value;
+    t_gip_comb_data gip;
 } t_gip_cyc_combinatorials;
 
 /*t t_gip_cyc_nets
@@ -154,11 +165,11 @@ int get_ticks (void)
 static t_sl_error_level gip_cyc_instance_fn( c_engine *engine, void *engine_handle )
 {
     c_gip_cyc *mod;
-    fprintf(stderr,"Instanve the gip\n");
+
     mod = new c_gip_cyc( engine, engine_handle );
     if (!mod)
         return error_level_fatal;
-    fprintf(stderr,"Done\n");
+
     return error_level_okay;
 }
 
@@ -220,31 +231,51 @@ c_gip_cyc::c_gip_cyc( class c_engine *eng, void *eng_handle )
     engine->register_delete_function( engine_handle, (void *)this, gip_cyc_delete_fn );
     engine->register_reset_function( engine_handle, (void *)this, gip_cyc_reset_fn );
     engine->register_clock_fns( engine_handle, (void *)this, "cpu_clock", gip_cyc_preclock_fn, gip_cyc_clock_fn );
-/*    engine->register_output_signal( engine_handle, "value", 1, (int *)&combinatorials.value );
-    engine->register_comb_output( engine_handle, "value" );
-     void c_engine::register_input_signal( void *engine_handle, const char *name, int size, int **value_ptr_ptr );
-     void c_engine::register_output_signal( void *engine_handle, const char *name, int size, int *value_ptr );
-     void c_engine::register_comb_fn( void *engine_handle, void *handle, t_engine_callback_fn comb_fn );
-     void c_engine::register_input_used_on_clock( void *engine_handle, const char *name, const char *clock_name, int posedge );
-     void c_engine::register_output_generated_on_clock( void *engine_handle, const char *name, const char *clock_name, int posedge );
-     void c_engine::register_comb_input( void *engine_handle, const char *name );
-     void c_engine::register_comb_output( void *engine_handle, const char *name );
-     void c_engine::register_state_desc( void *engine_handle, int static_desc, t_engine_state_desc *state_desc, void *data, const char *prefix );
-*/
+//     void c_engine::register_comb_fn( void *engine_handle, void *handle, t_engine_callback_fn comb_fn );
+
+    engine->register_output_signal( engine_handle, "postbus_tx_data", 32, (int *)&combinatorials.gip.postbus_tx_data );
+    engine->register_output_generated_on_clock( engine_handle, "postbus_tx_data", "cpu_clock", 1 );
+    engine->register_output_signal( engine_handle, "postbus_tx_type", 2, (int *)&combinatorials.gip.postbus_tx_type );
+    engine->register_output_generated_on_clock( engine_handle, "postbus_tx_type", "cpu_clock", 1 );
+    engine->register_output_signal( engine_handle, "postbus_rx_ack", 2, (int *)&combinatorials.gip.postbus_rx_ack );
+    engine->register_output_generated_on_clock( engine_handle, "postbus_rx_ack", "cpu_clock", 1 );
+
+    engine->register_input_signal( engine_handle, "postbus_rx_data", 32, (int **)&inputs.postbus_rx_data_ptr );
+    engine->register_input_used_on_clock( engine_handle, "postbus_rx_data", "cpu_clock", 1 );
+    engine->register_input_signal( engine_handle, "postbus_rx_type", 2, (int **)&inputs.postbus_rx_type_ptr );
+    engine->register_input_used_on_clock( engine_handle, "postbus_rx_type", "cpu_clock", 1 );
+    engine->register_input_signal( engine_handle, "postbus_tx_ack", 2, (int **)&inputs.postbus_tx_ack_ptr );
+    engine->register_input_used_on_clock( engine_handle, "postbus_tx_ack", "cpu_clock", 1 );
+//     void c_engine::register_comb_input( void *engine_handle, const char *name );
+//     void c_engine::register_comb_output( void *engine_handle, const char *name );
+//     void c_engine::register_state_desc( void *engine_handle, int static_desc, t_engine_state_desc *state_desc, void *data, const char *prefix );
 
     /*b Copy options and split for argc/argv
      */
     argv[0] = engine->get_option_string( engine_handle, "options", "" );
     args_string = sl_str_alloc_copy(argv[0] );
-    argv[1] = argv[0];
-    for (i=0,argc=1; args_string[i]; i++)
+    i=0; r=0; argc=1;
+    while (args_string[i])
     {
         if (args_string[i]==' ')
         {
-            args_string[i]=0;
-            argc++;
-            if (argc>=32) argc=31;
-            argv[argc] = args_string+i;
+            if (r)
+            {
+                args_string[i]=0;
+                r = 0;
+            }
+            i++;
+        }
+        else if (args_string[i]!=0)
+        {
+            if (!r)
+            {
+                argv[argc] = args_string+i;
+                r = 1;
+                argc++;
+                if (argc>=32) argc=31;
+            }
+            i++;
         }
     }
 
@@ -329,8 +360,11 @@ c_gip_cyc::c_gip_cyc( class c_engine *eng, void *eng_handle )
                 {
                     fprintf( stderr, "Failed to open file '%s'\n", argv[i] );
                 }
-                files_to_load[nfiles_to_load].name = argv[i];
-                files_to_load[nfiles_to_load++].fp = fp;
+                else
+                {
+                    files_to_load[nfiles_to_load].name = argv[i];
+                    files_to_load[nfiles_to_load++].fp = fp;
+                }
             }
             continue;
         }
@@ -450,12 +484,12 @@ c_gip_cyc::c_gip_cyc( class c_engine *eng, void *eng_handle )
     {
         if (files_to_load[i].binary)
         {
-            printf ("Loading binary file '%s' at %08x\n", files_to_load[i].name, files_to_load[i].addr);
+            fprintf( stderr, "Loading binary file '%s' at %08x\n", files_to_load[i].name, files_to_load[i].addr);
             gip->load_code_binary( files_to_load[i].fp, files_to_load[i].addr );
         }
         else
         {
-            printf ("Loading text file '%s' at %08x\n", files_to_load[i].name, files_to_load[i].addr);
+            fprintf( stderr, "Loading text file '%s' at %08x\n", files_to_load[i].name, files_to_load[i].addr);
             gip->load_code( files_to_load[i].fp, files_to_load[i].addr );
         }
     }
@@ -524,7 +558,7 @@ t_sl_error_level c_gip_cyc::delete_instance( void )
 */
 t_sl_error_level c_gip_cyc::reset( void )
 {
-fprintf (stderr, "Entry of %s at %s:%d\n", __func__, __FILE__, __LINE__);
+    ENTRY();
     gip->reset();
     evaluate_combinatorials();
     return error_level_okay;
@@ -534,7 +568,7 @@ fprintf (stderr, "Entry of %s at %s:%d\n", __func__, __FILE__, __LINE__);
 */
 t_sl_error_level c_gip_cyc::preclock( void )
 {
-fprintf (stderr, "Entry of %s at %s:%d\n", __func__, __FILE__, __LINE__);
+    ENTRY();
     evaluate_combinatorials();
     gip->preclock();
     return error_level_okay;
@@ -544,7 +578,7 @@ fprintf (stderr, "Entry of %s at %s:%d\n", __func__, __FILE__, __LINE__);
 */
 t_sl_error_level c_gip_cyc::clock( void )
 {
-fprintf (stderr, "Entry of %s at %s:%d\n", __func__, __FILE__, __LINE__);
+    ENTRY();
     gip->clock();
     evaluate_combinatorials();
     return error_level_okay;
@@ -554,10 +588,11 @@ fprintf (stderr, "Entry of %s at %s:%d\n", __func__, __FILE__, __LINE__);
 */
 t_sl_error_level c_gip_cyc::evaluate_combinatorials( void )
 {
-fprintf (stderr, "Entry of %s at %s:%d\n", __func__, __FILE__, __LINE__);
+    ENTRY();
+
     /*b Call GIP
     */
-    gip->comb();
+    gip->comb( (void *)&combinatorials.gip );
 
     return error_level_okay;
 }

@@ -11,9 +11,15 @@
 #  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
 #  for more details.
 
+setenv gip_mif "../../../../regressions/gip/bin/test1.gif"
 read_hw_file simple.hwex
 reset
-step 500
+step 50
+
+setenv gip_mif "../../../../regressions/gip/bin/test1.gif"
+read_hw_file simple.hwex
+reset
+step 50
 
 end
 

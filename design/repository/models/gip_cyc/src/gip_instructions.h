@@ -222,6 +222,27 @@ typedef enum
 
 } t_gip_special_reg;
 
+/*t t_gip_postbus_reg
+ */
+typedef enum
+{
+    gip_postbus_reg_fifo = 4, // bit that indicates FIFO 1 rather than FIFO 0
+
+    gip_postbus_reg_command_0 = 0, // Command register 0
+    gip_postbus_reg_tx_fifo_0 = 1, // Data FIFO write 0
+    gip_postbus_reg_rx_fifo_0 = 3, // Data FIFO read 0
+
+    gip_postbus_reg_command_1 = 4, // Command register 1
+    gip_postbus_reg_tx_fifo_1 = 5, // Data FIFO write 1
+    gip_postbus_reg_rx_fifo_1 = 7, // Data FIFO read 1
+
+    gip_postbus_reg_rx_fifo_config_0 = 8, // Data Rx FIFO config 0
+    gip_postbus_reg_tx_fifo_config_0 = 9, // Data Tx FIFO config 0
+    gip_postbus_reg_rx_fifo_config_1 = 12, // Data Rx FIFO config 1
+    gip_postbus_reg_tx_fifo_config_1 = 13, // Data Tx FIFO config 1
+
+} t_gip_postbus_reg;
+
 /*a Wrapper
  */
 #endif

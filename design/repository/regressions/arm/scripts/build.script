@@ -1,0 +1,10 @@
+SECTIONS
+{
+       . = 0x0;
+		.text : { obj/common__wrapper.o(.text) }
+       .text : { *(.text) }
+       . = 0x1000;
+       .data : { *(.data) }
+       .bss : { *(.bss) }
+}
+ENTRY(wrapper_entry_point)

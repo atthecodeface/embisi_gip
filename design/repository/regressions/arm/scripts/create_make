@@ -1,0 +1,136 @@
+#!/usr/bin/perl
+
+#a Copyright
+#  
+#  This file 'create_make' copyright Gavin J Stark 2003, 2004
+#  
+
+#a Main
+die "Syntax: create_make <model_list> <makefile>\n" unless ($#ARGV==1);
+
+$model_list = @ARGV[0];
+$makefile = @ARGV[1];
+
+#a Read the descriptor list
+open( desc, $model_list );
+$#tests = 0;
+$#commons = 0;
+while (<desc>)
+{
+    chomp;
+    $line = $_;
+    next if $line =~/^\s*#/;
+    next if $line =~/^\s*;/;
+    if ($line =~ /common\s+(\S*)\s+(.*)/) {
+        $common = $1;
+        $options = $2;
+        $asms = "";
+        $ccs = "";
+        foreach $option (split(/ /,$options)) {
+            if ($option =~ /cc:(.*)/) {
+                $ccs .= "$1@@@";
+            }
+            if ($option =~ /asm:(.*)/) {
+                $asms .= "$1@@@";
+            }
+        }
+        $commons[$#commons] = "$common $asms $ccs";
+        $#commons++;
+    }
+    if ($line =~ /test\s+(\S*)\s+(.*)/) {
+        $test = $1;
+        $options = $2;
+        $objs = "";
+        $asms = "";
+        $ccs = "";
+        foreach $option (split(/ /,$options)) {
+            if ($option =~ /cc:(.*)/) {
+                $objs .= "$test:$1@@@";
+                $ccs .= "$1@@@";
+            }
+            if ($option =~ /asm:(.*)/) {
+                $objs .= "$test:$1@@@";
+                $asms .= "$1@@@";
+            }
+            if ($option =~ /common:(.*)/) {
+                $objs .= "common:$1@@@";
+            }
+        }
+        $tests[$#tests] = "$test $objs $asms $ccs";
+        $#tests++;
+    }
+}
+close( desc );
+$#commons--;
+$#tests--;
+
+#a Output the models makefile
+open( make, ">$makefile" );
+print make  "TEST_BINARIES := \\\n";
+foreach $i (@tests) {
+    ($test, $objs, $asms, $ccs) = split(/ /,$i);
+    print make  "    bin/$test.bin \\\n";
+}
+print make  " \n";
+
+foreach $i (@commons) {
+    ($common, $asms, $ccs) = split(/ /,$i);
+    foreach $asm (split(/@@@/,$asms)) {
+        next if ($asm=~/^\s*$/);
+        print make "obj/common__$asm.o: src/common/$asm.s\n";
+        print make "\t\${ARM_CC} -c src/common/$asm.s -o obj/common__$asm.o\n";
+        print make "\n";
+    }
+    foreach $cc (split(/@@@/,$ccs)) {
+        next if ($cc=~/^\s*$/);
+        print make "obj/$common__$cc.o: src/common/$cc.c\n";
+        print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/common/$cc.c -o obj/$common__$cc.o\n";
+        print make "\n";
+    }
+}
+
+foreach $i (@tests) {
+    ($test, $objs, $asms, $ccs) = split(/ /,$i);
+    foreach $asm (split(/@@@/,$asms)) {
+        next if ($asm=~/^\s*$/);
+        print make "obj/${test}__$asm.o: src/$test/$asm.s\n";
+        print make "\t\${ARM_CC} -c src/$test/$asm.s -o obj/${test}__$asm.o\n";
+        print make "\n";
+    }
+    foreach $cc (split(/@@@/,$ccs)) {
+        next if ($cc=~/^\s*$/);
+        print make "obj/${test}__$cc.o: src/$test/$cc.c\n";
+        print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/$test/$cc.c -o obj/${test}__$cc.o\n";
+        print make "\n";
+    }
+    print make "bin/$test.bin: \\\n";
+    foreach $obj (split(/@@@/,$objs)) {
+        next if ($obj=~/^\s*$/);
+        if ($obj=~/^([^:]*):(.*)/) {
+            print make "\t\tobj/${1}__$2.o \\\n";
+        }
+    }
+    print make "\t\tscripts/build.script\n";
+    print make "\t\${ARM_LD} -T scripts/build.script -o obj/tmp.elf \\\n";
+    foreach $obj (split(/@@@/,$objs)) {
+        next if ($obj=~/^\s*$/);
+        if ($obj=~/^([^:]*):(.*)/) {
+            print make "\t\t\tobj/$1__$2.o \\\n";
+        }
+    }
+    print make "\n";
+    print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.bin obj/tmp.elf";
+    print make "\n";
+    print make "\n";
+}
+print make " \n";
+
+close( make );
+
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: perl ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

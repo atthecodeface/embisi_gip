@@ -5,10 +5,11 @@
 #a Targets
 all:
 
+clean: docclean simclean toolsclean
+
 sim: simulation
 
 doc: documentation
-
 
 .PHONY: simulation
 
@@ -22,6 +23,16 @@ simclean:
 
 documentation:
 	$(MAKE) -f Makefile.documentation
+
+docclean:
+	rm -rf documentation
+
+.PHONY: tools
+tools:
+	$(MAKE) -f Makefile.tools
+
+toolsclean:
+	$(MAKE) -f Makefile.tools clean
 
 #a Editor preferences and notes
 # Local Variables: ***

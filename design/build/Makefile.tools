@@ -1,0 +1,56 @@
+#a Copyright
+#  
+#  This file 'Makefile' copyright Embisi Inc., 2004
+#  
+
+#a Global variables
+CYCLICITY := ${CYCLICITY_ROOT}
+SRC_ROOT := ${TNBT_CVS_ROOT}/hardware/design/repository/tools/
+PREFIX_OBJ_DIR := tools/
+
+PREREQS = S
+include ${CYCLICITY}/scripts/makefile_hdr
+
+SUPPORT_COMMAND_OBJS := ${HARNESS_BATCH_OBJECTS} ${CYCLICITY_OBJS}
+SUPPORT_PYTHON_OBJS := ${HARNESS_GUI_OBJECTS} ${CYCLICITY_OBJS}
+
+ALL: serial_console
+
+${TARGET_DIR}/serial_console__flash.o : ${SRC_ROOT}/serial_console/flash.c
+	$(CXX) $(CXXFLAGS) -c -o ${TARGET_DIR}/serial_console__flash.o ${SRC_ROOT}/serial_console/flash.c
+
+${TARGET_DIR}/serial_console__serial.o : ${SRC_ROOT}/serial_console/serial.c
+	$(CXX) $(CXXFLAGS) -c -o ${TARGET_DIR}/serial_console__serial.o ${SRC_ROOT}/serial_console/serial.c
+
+${TARGET_DIR}/serial_console__main.o : ${SRC_ROOT}/serial_console/main.c
+	$(CXX) $(CXXFLAGS) -c -o ${TARGET_DIR}/serial_console__main.o ${SRC_ROOT}/serial_console/main.c
+
+${TARGET_DIR}/serial_console : ${TARGET_DIR}/serial_console__main.o ${TARGET_DIR}/serial_console__flash.o ${TARGET_DIR}/serial_console__serial.o
+	$(CXX)  $(LDFLAGS) -o ${TARGET_DIR}/serial_console ${SUPPORT_COMMAND_OBJS} ${TARGET_DIR}/serial_console__flash.o ${TARGET_DIR}/serial_console__serial.o ${TARGET_DIR}/serial_console__main.o -lcurses 
+
+serial_console: ${TARGET_DIR}/serial_console
+
+clean:
+	rm -f ${TARGET_DIR}/*cpp ${TARGET_DIR}/*o ${TARGET_DIR}/coverage.map ${CMDLINE_PROG} models.make make_depend
+
+backup:
+	tar zcvf backups/backup_`date +%y%m%d%H%M`.tgz Makefile ${SRCS} ${HDRS}
+
+depend: Makefile
+	touch make_depend
+	makedepend -f make_depend -- ${CFLAGS} -- ${SRCS}
+	rm -f make_depend.bak
+
+make_depend: Makefile ${CYCLICITY}/scripts/simulation_build_make
+	touch make_depend
+	makedepend -f make_depend -- ${CFLAGS} -- ${SRCS}
+	rm -f make_depend.bak
+
+include make_depend
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: Makefile ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

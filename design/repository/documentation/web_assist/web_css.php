@@ -123,6 +123,9 @@ PRE {
     border-color:red;
     border-width: 0px;
 }
+.data {
+    border:1px;
+}
 .linkhdr {
 	font-family:verdana;
     font-weight:bold;

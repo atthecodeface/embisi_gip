@@ -81,6 +81,8 @@ wire ext_bus_oe;
 wire ext_bus_we;
 wire [23:0]ext_bus_address;
 
+reg[31:0] drm_input_dq_low;
+reg[31:0] drm_input_dq_high;
     clock_generator ckgen( .sys_drm_clock_in(sys_drm_clock_in),
                            .int_output_drm_clock(int_output_drm_clock),
                            .int_output_drm_clock_90(int_output_drm_clock_90),
@@ -93,7 +95,7 @@ wire [23:0]ext_bus_address;
 
 ddr_dram_as_sram ddrs( .drm_clock(int_logic_drm_clock_buffered),
                        .slow_clock(int_logic_slow_clock_buffered),
-                       .drm_ctl_reset( switches[7] ),
+                       .drm_ctl_reset( system_reset ),
                        .sram_priority( sram_priority ),
                        .sram_read( sram_read ),
                        .sram_write( sram_write ),
@@ -115,10 +117,44 @@ ddr_dram_as_sram ddrs( .drm_clock(int_logic_drm_clock_buffered),
                        .next_dqm(drm_next_dqm),   // we run these at clock rate, not ddr
                        .next_dqoe(drm_next_dqoe), // we run these at clock rate, not ddr; it drives dq and dqs
                        .next_dqs_low(drm_next_dqs_low), // dqs strobes for low period of drm_clock
-                       .next_dqs_low(drm_next_dqs_high), // dqs strobes for low period of drm_clock
+                       .next_dqs_high(drm_next_dqs_high), // dqs strobes for low period of drm_clock
                        .input_dq_low(drm_input_dq_low), // last dq data during low period of drm_clock
                        .input_dq_high(drm_input_dq_high) // last dq data during high period of drm_clock
     );
+
+    always @(posedge int_output_drm_clock_90 or posedge system_reset)
+    begin
+    if (system_reset)
+    begin
+    drm_input_dq_high = 0;
+    end
+    else
+    begin
+        drm_input_dq_high = drm_dq[31:0];
+    end
+    end
+
+    always @(negedge int_output_drm_clock_90 or posedge system_reset)
+    begin
+    if (system_reset)
+    begin
+        drm_input_dq_low = 0;
+    end
+    else
+    begin
+        drm_input_dq_low = drm_dq[31:0];
+    end
+    end
+    // in the .ucf file we need ... INST "drm_input_dq_low_reg" IOB=TRUE; and INST "drm_input_dq_high_reg" IOB=TRUE;
+
+    always @(posedge int_output_drm_clock
+    FDDRCPE dqs_0( .PRE(0), .CLR(system_reset), .D0(drm_next_dqs_high[0]), .D1(drm_dqs_low), .C0(int_output_drm_clock), .C1(!int_output_drm_clock), .CE(1), .Q(drm_dqs_out[0]) );
+    FDDRCPE dqs_1( .PRE(0), .CLR(system_reset), .D0(drm_next_dqs_high[1]), .D1(drm_dqs_low[1]), .C0(int_output_drm_clock), .C1(!int_output_drm_clock), .CE(1), .Q(drm_dqs_out[0]) );
+    FDDRCPE dqs_2( .PRE(0), .CLR(system_reset), .D0(drm_next_dqs_high[2]), .D1(drm_dqs_low[2]), .C0(int_output_drm_clock), .C1(!int_output_drm_clock), .CE(1), .Q(drm_dqs_out[0]) );
+    FDDRCPE dqs_3( .PRE(0), .CLR(system_reset), .D0(drm_next_dqs_high[3]), .D1(drm_dqs_low[3]), .C0(int_output_drm_clock), .C1(!int_output_drm_clock), .CE(1), .Q(drm_dqs_out[0]) );
+    assign drm_
+    assign drm_dqs = drm_dqoe ? drm_dqs_out : 8'bz; //'
+    FDDRCPE dqs_0( .PRE(0), .CLR(system_reset), .D0(drm_next_dqs_high), .D1(drm_next_dqs_low), .C0(int_output_drm_clock), .C1(!int_output_drm_clock), .CE(1), .Q(drm_dqs[0]) );
 
 //    gip_simple body( .int_clock(global_clock),
 //                     .int_reset(switches[7]),

@@ -98,13 +98,14 @@ typedef enum
     gip_native_ins_subclass_shift_ror=3,
     gip_native_ins_subclass_shift_ror33=4, // possible only through imm ror of 0
 
-    gip_native_ins_subclass_memory_word_noindex = 0, // bits 9-11 of 0-11
+    gip_native_ins_subclass_memory_word_noindex = 0, // bits 9-11 of 0-11; extcmd may provide burst and pre/postindex byte/word
     gip_native_ins_subclass_memory_half_noindex = 1,
     gip_native_ins_subclass_memory_byte_noindex = 2,
-    gip_native_ins_subclass_memory_word_preindex_up = 4,
-    gip_native_ins_subclass_memory_word_preindex_down = 5,
-    gip_native_ins_subclass_memory_word_postindex_up = 6,
-    gip_native_ins_subclass_memory_word_postindex_down = 7,
+    gip_native_ins_subclass_memory_word_preindex_up_wb = 3, // store only
+    gip_native_ins_subclass_memory_word_preindex_up = 4, // ldr uses extreg rm to use preindex by rm, or extimm for full imm
+    gip_native_ins_subclass_memory_word_preindex_down = 5, // ldr uses extreg rm to use preindex by rm, or extimm for full imm
+    gip_native_ins_subclass_memory_word_postindex_up = 6, // store only writebacks rn as rd by default; ldr uses extreg rm to use preindex by rm, or extimm for full imm
+    gip_native_ins_subclass_memory_word_postindex_down = 7, // store only writebacks rn as rd by default; ldr uses extreg rm to use preindex by rm, or extimm for full imm
 
     gip_native_ins_subclass_branch_nolink = 0, // bit 11 of 0-11
     gip_native_ins_subclass_branch_link = 1,

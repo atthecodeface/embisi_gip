@@ -33,7 +33,7 @@ dprintf_do_char:
     mov r8, r8
     b dprintf_loop
 
-dprinf_done
+dprintf_done:    
     ldmfd sp!, {r4}
     mov pc, lr
     

@@ -3,24 +3,11 @@
 #include "../common/wrapper.h"
 #include "uart.h"
 #include "flash.h"
+#include "monitor.h"
 
 /*a Defines
  */
 #define MAX_ARGS (8)
-
-/*a Types
- */
-/*t t_command_fn
- */
-typedef int t_command_fn( int argc, unsigned int *args );
-
-/*t t_command
- */
-typedef struct
-{
-    const char *name;
-    t_command_fn *fn;
-} t_command;
 
 /*a Static functions
  */
@@ -50,7 +37,7 @@ static int command_read_location( int argc, unsigned int *args )
             {
                 uart_tx_nl();
             }
-            uart_tx_hex8( ptr );
+            uart_tx_hex8( ptr+i*sizeof(int) );
             uart_tx(':');
         }
         else
@@ -70,8 +57,7 @@ static int command_read_location( int argc, unsigned int *args )
 static int command_write_location( int argc, unsigned int *args )
 {
     unsigned int *ptr;
-    unsigned int v;
-    int i, j, max;
+    int i;
     if (argc<2)
         return 1;
 
@@ -195,7 +181,7 @@ static int command_flash_download( int argc, unsigned int *args )
  */
 /*v cmds
  */
-static const t_command cmds[] =
+static const t_command monitor_cmds[] =
 {
     {"mr", command_read_location},
     {"mw", command_write_location},
@@ -205,6 +191,7 @@ static const t_command cmds[] =
     {"fe", command_flash_erase},
     {"fb", command_flash_boot},
     {"fd", command_flash_download},
+    {(const char *)0, (t_command_fn *)0},
 };
 
 /*a Test entry point
@@ -217,10 +204,19 @@ extern int test_entry_point()
     int error;
     int length;
     char buffer[256];
-    int command;
+    const t_command *cmd;
+    t_command_chain cmd_chain, *chain;
     int argc;
     unsigned int args[MAX_ARGS];
+ 
+#ifdef LINUX
+    static int heap[65536];
+    fprintf(stderr,"256kB heap at %p\n",heap);
+#endif
 
+    cmd_chain.cmds = monitor_cmds;
+    cmd_chain.next = (t_command_chain *)0;
+    chain_extra_cmds( &cmd_chain );
     uart_init();
     while (1)
     {
@@ -250,7 +246,7 @@ extern int test_entry_point()
                         uart_tx(c);
                     }
                 }
-                if (length<sizeof(buffer)-1)
+                if (length<(int)(sizeof(buffer))-1)
                 {
                     buffer[length++] = c;
                     uart_tx(c);
@@ -262,27 +258,30 @@ extern int test_entry_point()
         /*b Parse the string
          */
         for (i=0; buffer[i]==' '; i++);
-        for (j=0; j<(sizeof(cmds)/sizeof(t_command)); j++)
+        cmd = (t_command *)0;
+        for (chain = &cmd_chain; (!cmd) && chain; chain=chain->next)
         {
-//            fprintf(stderr,"Compare buffer %s with command %s\n", buffer, cmds[j].name );
-            l = 1;
-            for (k=0; cmds[j].name[k]; k++)
+            for (j=0; (!cmd) && (chain->cmds[j].name); j++)
             {
-                if (cmds[j].name[k] != buffer[i+k])
+                //fprintf(stderr,"Compare buffer %s with command %s\n", buffer, chain->cmds[j].name );
+                l = 1;
+                for (k=0; chain->cmds[j].name[k]; k++)
                 {
-                    l = 0;
+                    if (chain->cmds[j].name[k] != buffer[i+k])
+                    {
+                        l = 0;
+                        break;
+                    }
+                }
+                if (l)
+                {
+                    cmd = &(chain->cmds[j]);
                     break;
                 }
             }
-            if (l)
-            {
-                break;
-            }
         }
-        command = -1;
-        if (l)
+        if (cmd)
         {
-            command = j;
             argc=0;
             while (buffer[i] && (argc<MAX_ARGS))
             {
@@ -304,10 +303,10 @@ extern int test_entry_point()
         /*b Obey the string
          */
         error = 1;
-        if (command>=0)
+        if (cmd)
         {
 //            fprintf(stderr,"Command %d\n", command);
-            error = cmds[command].fn( argc, args );
+            error = cmd->fn( argc, args );
         }
         if (error)
         {

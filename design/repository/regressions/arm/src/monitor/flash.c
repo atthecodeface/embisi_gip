@@ -9,7 +9,7 @@
 #define POLL_TIMEOUT (1024*1024)
 #define MASK_128kB (0x1ffff)
 #ifdef LINUX
-#define set_byte_inc( d, c ) {fprintf(stderr, "%08x <= %02x\n", d, c&0xff ); d++; }
+#define set_byte_inc( d, c ) {fprintf(stderr, "%08x <= %02x\n", (unsigned int)d, c&0xff ); d++; }
 #else
 #define set_byte_inc( d, c ) {*(d++) = c;}
 #endif
@@ -46,7 +46,6 @@ static unsigned int flash_poll_status( void )
 extern int flash_erase_block( unsigned int address )
 {
     unsigned int v;
-    int i;
 
     /*b Check address is aligned
      */
@@ -100,7 +99,7 @@ extern int flash_write_buffer( unsigned int address, unsigned char *buffer, int 
          */
         i = 32;
         if (i>length); i = length;
-        if (i>32-(address&0x1f)) i=32-(address&0x1f);
+        if (i>32-(int)((address&0x1f))) i=32-((int)(address&0x1f));
         i = (i+1)/2;
         if (i==0) break;
 
@@ -175,7 +174,7 @@ extern int flash_download( void )
                 c = uart_rx_byte();
                 if (c<32)
                     break;
-                if (length<sizeof(buffer)-1)
+                if (length<(int)(sizeof(buffer))-1)
                 {
                     buffer[length++] = c;
                 }
@@ -201,7 +200,7 @@ extern int flash_download( void )
 
         // commands coming down can be erase, write, read
         address = buffer[2] | (buffer[3]<<8) | (buffer[4]<<16) | (buffer[5]<<24);
-//        fprintf(stderr, "Address %08x length %d csum %02x buffer %02x %02x\n", address, length, csum, buffer[0], buffer[1] );
+        fprintf(stderr, "Address %08x length %d csum %02x buffer %02x %02x\n", address, length, csum, buffer[0], buffer[1] );
         result = 0;
         if ((length>=6) && (csum==0))
         {
@@ -361,7 +360,7 @@ extern int flash_boot( unsigned int address )
                 break;
             }
             case obj_type_regs:
-                for (i=0; (i<obj_status)&&(i<sizeof(regs)); i++)
+                for (i=0; (i<obj_status)&&(i<(int)sizeof(regs)); i++)
                 {
                     ((unsigned char *)regs)[i] = buffer[i+1];
                 }

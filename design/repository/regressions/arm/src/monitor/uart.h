@@ -22,6 +22,6 @@ extern void uart_tx_hex8( unsigned int a );
 #define uart_tx_nl() {putc('\n',stderr);}
 #define uart_tx_string(a) {fprintf(stderr,"%s",a);}
 #define uart_tx_string_nl(a) {fprintf(stderr,"%s\n",a);}
-#define uart_tx_hex8(a) {fprintf(stderr,"%08x", a);}
+#define uart_tx_hex8(a) {fprintf(stderr,"%08x", (unsigned int)a);}
 #define test_entry_point() main()
 #endif

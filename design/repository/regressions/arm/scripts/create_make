@@ -14,141 +14,95 @@ $makefile = @ARGV[1];
 #a Read the descriptor list
 open( desc, $model_list );
 $#tests = 0;
-$#commons = 0;
+$#asms = 0;
+$#ccs = 0;
 while (<desc>)
 {
     chomp;
     $line = $_;
     next if $line =~/^\s*#/;
     next if $line =~/^\s*;/;
-    if ($line =~ /common\s+(\S*)\s+(.*)/) {
-        $common = $1;
-        $options = $2;
-        $asms = "";
-        $ccs = "";
-        foreach $option (split(/ /,$options)) {
-            if ($option =~ /cc:(.*)/) {
-                $ccs .= "$1@@@";
-            }
-            if ($option =~ /asm:(.*)/) {
-                $asms .= "$1@@@";
-            }
-        }
-        $commons[$#commons] = "$common $asms $ccs";
-        $#commons++;
+    if ($line =~ /asm\s+(\S*)\s+(.*)/) {
+        $dir = $1;
+        $file = $2;
+        $asms[$#asms] = "$dir $file";
+        $#asms++;
     }
-    if ($line =~ /test\s+(\S*)\s+(.*)/) {
-        $test = $1;
-        $options = $2;
+    if ($line =~ /cc\s+(\S*)\s+(.*)/) {
+        $dir = $1;
+        $file = $2;
+        $ccs[$#ccs] = "$dir $file";
+        $#ccs++;
+    }
+    if ($line =~ /test\s+(\S*)\s+(\S*)\s+(.*)/) {
+        $type = $1;
+        $test = $2;
+        $options = $3;
         $objs = "";
-        $asms = "";
-        $ccs = "";
         foreach $option (split(/ /,$options)) {
-            if ($option =~ /cc:(.*)/) {
-                $objs .= "$test:$1@@@";
-                $ccs .= "$1@@@";
-            }
-            if ($option =~ /asm:(.*)/) {
-                $objs .= "$test:$1@@@";
-                $asms .= "$1@@@";
-            }
-            if ($option =~ /common:(.*)/) {
-                $objs .= "common:$1@@@";
+            if ($option =~ /(.*):(.*)/) {
+                $objs .= "$1:$2@@@";
             }
         }
-        $tests[$#tests] = "$test $objs $asms $ccs";
+        $tests[$#tests] = "$test $type $objs";
         $#tests++;
     }
 }
 close( desc );
-$#commons--;
+$#asms--;
+$#ccs--;
 $#tests--;
 
 #a Output the models makefile
 open( make, ">$makefile" );
 print make  "TEST_BINARIES := \\\n";
 foreach $i (@tests) {
-    ($test, $objs, $asms, $ccs) = split(/ /,$i);
-    print make  "    bin/$test.mif \\\n";
+    ($test, $type, $objs) = split(/ /,$i);
+    print make  "    bin/$test.$type.mif \\\n";
 }
 print make  " \n";
 
-foreach $i (@commons) {
-    ($common, $asms, $ccs) = split(/ /,$i);
-    foreach $asm (split(/@@@/,$asms)) {
-        next if ($asm=~/^\s*$/);
-        print make "obj/common__$asm.o: src/common/$asm.S\n";
-        print make "\t\${ARM_CC} -c src/common/$asm.S -o obj/common__$asm.o\n";
-        print make "\n";
-    }
-    foreach $cc (split(/@@@/,$ccs)) {
-        next if ($cc=~/^\s*$/);
-        print make "obj/$common__$cc.o: src/common/$cc.c\n";
-        print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/common/$cc.c -o obj/$common__$cc.o\n";
-        print make "\n";
-    }
+foreach $asm (@asms) {
+    next if ($asm=~/^\s*$/);
+    ($dir, $file) = split(/ /,$asm);
+    print make "obj/$dir.$file.o: src/$dir/$file.S\n";
+    print make "\t\${ARM_CC} -c src/$dir/$file.S -o obj/$dir.$file.o\n";
+    print make "\n";
+}
+
+foreach $cc (@ccs) {
+    next if ($cc=~/^\s*$/);
+    ($dir, $file) = split(/ /,$cc);
+    print make "obj/$dir.$file.o: src/$dir/$file.c\n";
+    print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/$dir/$file.c -o obj/$dir.$file.o\n";
+    print make "\n";
 }
 
 foreach $i (@tests) {
-    ($test, $objs, $asms, $ccs) = split(/ /,$i);
-    foreach $asm (split(/@@@/,$asms)) {
-        next if ($asm=~/^\s*$/);
-        print make "obj/${test}__$asm.o: src/$test/$asm.S\n";
-        print make "\t\${ARM_CC} -c src/$test/$asm.S -o obj/${test}__$asm.o\n";
-        print make "\n";
-    }
-    foreach $cc (split(/@@@/,$ccs)) {
-        next if ($cc=~/^\s*$/);
-        print make "obj/${test}__$cc.o: src/$test/$cc.c\n";
-        print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/$test/$cc.c -o obj/${test}__$cc.o\n";
-        print make "\n";
-    }
+    ($test, $type, $objs) = split(/ /,$i);
 
-    print make "bin/$test.bin: \\\n";
+    print make "bin/$test.$type.bin: \\\n";
     foreach $obj (split(/@@@/,$objs)) {
         next if ($obj=~/^\s*$/);
         if ($obj=~/^([^:]*):(.*)/) {
-            print make "\t\tobj/${1}__$2.o \\\n";
+            print make "\t\tobj/${1}.$2.o \\\n";
         }
     }
-    print make "\t\tscripts/build.script\n";
-    print make "\t\${ARM_LD} -T scripts/build.script --Map bin/$test.map -o obj/$test.elf \\\n";
+    print make "\t\tscripts/build.$type.script\n";
+    print make "\t\${ARM_LD} -T scripts/build.$type.script --Map bin/$test.$type.map -o obj/$test.$type.elf \\\n";
     foreach $obj (split(/@@@/,$objs)) {
         next if ($obj=~/^\s*$/);
         if ($obj=~/^([^:]*):(.*)/) {
-            print make "\t\t\tobj/$1__$2.o \\\n";
+            print make "\t\t\tobj/$1.$2.o \\\n";
         }
     }
     print make "\n";
-    print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.bin obj/$test.elf";
+    print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.$type.bin obj/$test.$type.elf";
     print make "\n";
     print make "\n";
-    print make "bin/$test.mif: bin/$test.bin\n";
-    print make "\t\${BIN_TO_MIF} -f bin/$test.bin -o bin/$test.mif\n";
-    print make "\t\${MIF_TO_CDL} -f bin/$test.mif -o bin/$test.cdl\n";
-    print make "\n";
-
-    print make "bin/$test.download.bin: \\\n";
-    foreach $obj (split(/@@@/,$objs)) {
-        next if ($obj=~/^\s*$/);
-        if ($obj=~/^([^:]*):(.*)/) {
-            print make "\t\tobj/${1}__$2.o \\\n";
-        }
-    }
-    print make "\t\tscripts/build.script\n";
-    print make "\t\${ARM_LD} -T scripts/build.script --Map bin/$test.map -o obj/$test.download.elf \\\n";
-    foreach $obj (split(/@@@/,$objs)) {
-        next if ($obj=~/^\s*$/);
-        if ($obj=~/^([^:]*):(.*)/) {
-            print make "\t\t\tobj/$1__$2.o \\\n";
-        }
-    }
-    print make "\n";
-    print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.download.bin obj/$test.download.elf";
-    print make "\n";
-    print make "\n";
-    print make "bin/$test.download.mif: bin/$test.download.bin\n";
-    print make "\t\${BIN_TO_MIF} -f bin/$test.download.bin -o bin/$test.download.mif\n";
+    print make "bin/$test.$type.mif: bin/$test.$type.bin\n";
+    print make "\t\${BIN_TO_MIF} -f bin/$test.$type.bin -o bin/$test.$type.mif\n";
+    print make "\t\${MIF_TO_CDL} -f bin/$test.$type.mif -o bin/$test.$type.cdl\n";
     print make "\n";
 
 }

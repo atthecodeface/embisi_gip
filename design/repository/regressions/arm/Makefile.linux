@@ -6,7 +6,7 @@
 #a Global variables
 CC := g++ -fno-inline-functions
 LD := g++ ${CYCLICITY_ROOT}/lib/linux/sl_support.o
-CC_FLAGS := -fomit-frame-pointer -g -DLINUX -I${CYCLICITY_ROOT}/support_libraries
+CC_FLAGS := -Wall -fomit-frame-pointer -g -DLINUX -I${CYCLICITY_ROOT}/support_libraries
 
 TEST_LIST := src/test_list
 CREATE_MAKE := scripts/create_make
@@ -15,7 +15,8 @@ ALL2: ALL
 
 #a Linux_Objects and dependencies
 TEST_BINARIES := \
-    linux_bin/monitor
+    linux_bin/monitor \
+	linux_bin/monitor_full
  
 linux_obj/monitor__monitor.o: src/monitor/monitor.c
 	${CC} ${CC_FLAGS} -c src/monitor/monitor.c -o linux_obj/monitor__monitor.o
@@ -26,12 +27,36 @@ linux_obj/monitor__flash.o: src/monitor/flash.c
 linux_obj/monitor__linux_flash.o: src/monitor/linux_flash.c
 	${CC} ${CC_FLAGS} -c src/monitor/linux_flash.c -o linux_obj/monitor__linux_flash.o
 
+linux_obj/monitor__memory.o: src/monitor/memory.c
+	${CC} ${CC_FLAGS} -c src/monitor/memory.c -o linux_obj/monitor__memory.o
+
+linux_obj/monitor__no_cmds.o: src/monitor/no_cmds.c
+	${CC} ${CC_FLAGS} -c src/monitor/no_cmds.c -o linux_obj/monitor__no_cmds.o
+
+linux_obj/monitor__all_cmds.o: src/monitor/all_cmds.c
+	${CC} ${CC_FLAGS} -c src/monitor/all_cmds.c -o linux_obj/monitor__all_cmds.o
+
 linux_bin/monitor: \
 		linux_obj/monitor__monitor.o \
+		linux_obj/monitor__no_cmds.o \
 		linux_obj/monitor__flash.o \
 		linux_obj/monitor__linux_flash.o
 	${LD}  -o linux_bin/monitor \
 			linux_obj/monitor__monitor.o \
+			linux_obj/monitor__no_cmds.o \
+			linux_obj/monitor__flash.o \
+			linux_obj/monitor__linux_flash.o
+
+linux_bin/monitor_full: \
+		linux_obj/monitor__monitor.o \
+		linux_obj/monitor__all_cmds.o \
+		linux_obj/monitor__memory.o \
+		linux_obj/monitor__flash.o \
+		linux_obj/monitor__linux_flash.o
+	${LD}  -o linux_bin/monitor_full \
+			linux_obj/monitor__monitor.o \
+			linux_obj/monitor__all_cmds.o \
+			linux_obj/monitor__memory.o \
 			linux_obj/monitor__flash.o \
 			linux_obj/monitor__linux_flash.o
 

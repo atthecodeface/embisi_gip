@@ -10,12 +10,10 @@ typedef enum
 {
     flash_mode_read_array,
     flash_mode_erase,
-    flash_mode_erase_confirmed,
     flash_mode_write_buffer_wait,
     flash_mode_write_buffer_ready,
     flash_mode_write_buffer_data,
     flash_mode_write_buffer_confirm,
-    flash_mode_write_buffer_confirmed,
     flash_mode_read_status,
 } t_flash_mode;
 
@@ -209,6 +207,8 @@ extern unsigned int flash_model_data_read( void )
         {
             flash.mode = flash_mode_write_buffer_ready;
         }
+        break;
+    default:
         break;
     }
 

@@ -53,6 +53,7 @@ class c_memory_model
     int c_memory_model::register_debug_handler( void *handle, t_memory_model_debug_fn debug_fn );
 	unsigned int c_memory_model::read_memory( unsigned int address );
 	void c_memory_model::write_memory( unsigned int address, unsigned int data, int bytes );
+	void c_memory_model::copy_string( char *dest, unsigned int address, int max_length );
     void c_memory_model::raise_memory_exception( t_memory_model_debug_action action, int write_not_read, unsigned int address, unsigned int data, int bytes );
 };
 

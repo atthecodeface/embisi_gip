@@ -335,7 +335,11 @@ static void gdb_ensure_connected( void )
     if (stub.client_socket == 0)
     {
         struct sockaddr_in caddr;
+        #ifdef LINUX
+        socklen_t caddr_len = sizeof(caddr);
+        #else
         int caddr_len = sizeof(caddr);
+        #endif
     
         printf ("Waiting for connection from gdb\n");   
         stub.client_socket = accept (stub.public_socket, (struct sockaddr *)&caddr, &caddr_len);

@@ -1,6 +1,8 @@
 OS_DIR := linux
+OS_FLAGS := -DLINUX
 ifeq ($(arch),cygwin)
     OS_DIR := cygwin
+	OS_FLAGS := -DCYGWIN
 endif
 objs_from_srcs = $(foreach SRC,${1},$(patsubst %.cpp,${OS_DIR}/%.o,${SRC:.y=.cpp}))
 
@@ -11,8 +13,8 @@ OBJS = $(call objs_from_srcs,${SRCS})
 DEBUG_FLAGS = -g
 CC = g++ 
 LINK = g++
-CFLAGS = ${DEBUG_FLAGS} -Wall
-CXXFLAGS = ${DEBUG_FLAGS} -Wall
+CFLAGS = ${DEBUG_FLAGS} ${OS_FLAGS} -Wall
+CXXFLAGS = ${DEBUG_FLAGS} ${OS_FLAGS} -Wall
 INCLUDES = -I/usr/include/tcl -I/usr/X11R6/include/X11 -I/usr/include
 NLIBS = -L/usr/X11R6/lib -ltk -ltcl -lX11 -ldl -lm
 LIBS= -lutil

@@ -49,7 +49,7 @@ public:
 private:
     /*b Internal instruction execution methods
      */
-    void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst );
+    void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buffer, int length );
     void c_gip_full::execute_int_memory_instruction( t_gip_mem_op gip_mem_op, unsigned int address, unsigned int data_in );
     void c_gip_full::execute_int_instruction( t_gip_instruction *inst, struct t_gip_pipeline_results *results );
 
@@ -76,6 +76,7 @@ private:
 
     /*b ARM Decode methods
      */
+    int c_gip_full::decode_arm_debug( void );
     int c_gip_full::decode_arm_alu( void );
     int c_gip_full::decode_arm_branch( void );
     int c_gip_full::decode_arm_ld_st( void );

@@ -178,6 +178,42 @@ void c_memory_model::write_memory( unsigned int address, unsigned int data, int 
     map_fns->write_fn( map_fns->handle, address, data, bytes );
 }
 
+/*f c_memory_model::copy_string
+ */
+void c_memory_model::copy_string( char *dest, unsigned int address, int max_length )
+{
+    int i;
+    t_memory_map_fns *map_fns;
+    unsigned int read_data;
+
+    for (i=0; i<max_length; i++, address++)
+    {
+        map_fns = private_data->model_fns[(address>>MAP_SHIFT)&(MAP_SIZE-1)];
+        if (!map_fns)
+        {
+            LOG( log_level_serious, "read unmapped memory for string copy", address, 0, 0 );
+            if (private_data->debug_fn)
+            {
+                private_data->debug_fn( private_data->debug_handle, memory_model_debug_action_unmapped_memory, 0, address, 0, 0 );
+            }
+            else
+            {
+                fprintf( stderr, "c_memory_model::read_memory:access to unmapped memory for string copy %08x - no debug trap set\n", address );
+            }
+            dest[0] = 0;
+            return;
+        }
+        read_data = map_fns->read_fn( map_fns->handle, address );
+        dest[i] = read_data>>((address&3)*8);
+        if (dest[i]==0)
+        {
+            break;
+        }
+//        fprintf(stderr, "Read char %02x at address %08x (data %08x)\n", dest[i], address, read_data );
+    }
+    dest[max_length-1] = 0;
+}
+
 /*a Memory exception handling
  */
 /*f c_memory_model::raise_memory_exception

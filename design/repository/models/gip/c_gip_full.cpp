@@ -1,5 +1,4 @@
 /*a To do
-  Correct ALU results setting with internal shift instructions
   Setting of condition passed correctly in -> cond instructions
   Reading of peripherals et al in RFR stage
   Writing of peripherals et al in RFW stage
@@ -201,6 +200,14 @@ typedef struct t_gip_full_alu_data
     unsigned int logic_result; // Result of the logical operation
     unsigned int alu_result; // Result of the ALU as a whole
 
+    unsigned int next_acc;
+    int next_c;
+    int next_z;
+    int next_v;
+    int next_n;
+    int next_p;
+    unsigned int next_shf;
+
     t_gip_ins_rd alu_rd;   // Type of register file write requested for the result of ALU operation
     t_gip_ins_rd mem_rd;   // Type of register file write requested for the result of ALU operation
     t_gip_mem_op gip_mem_op; // Type of memory operation the memory stage should perform in the next cycle
@@ -259,6 +266,7 @@ typedef struct t_private_data
 {
     c_memory_model *memory;
     int cycle;
+    int verbose;
 
     /*b Configuration of the pipeline
      */
@@ -371,6 +379,8 @@ static unsigned int rotate_right( unsigned int value, int by )
  */
 static unsigned int barrel_shift( int c_in, t_shf_type type, unsigned int val, int by, int *c_out )
 {
+    //printf("Barrel shift %08x.%d type %d by %02x\n", val, c_in, type, by );
+    by &= 0xff;
     if (by==0)
     {
         *c_out = c_in;
@@ -412,7 +422,7 @@ static unsigned int barrel_shift( int c_in, t_shf_type type, unsigned int val, i
             return 0;
         case shf_type_asr:
             *c_out = (val>>31)&1;
-            return ((val>>31)&1) ? 0xfffffff : 0;
+            return ((val>>31)&1) ? 0xffffffff : 0;
         case shf_type_ror:
             *c_out = (val>>31)&1;
             return val;
@@ -430,7 +440,7 @@ static unsigned int barrel_shift( int c_in, t_shf_type type, unsigned int val, i
         return val>>by;
     case shf_type_asr:
         *c_out = (((int)val)>>(by-1))&1;
-        return val>>by;
+        return (unsigned int)(((int)val)>>by);
     case shf_type_ror:
         *c_out = (val>>(by-1))&1;
         return rotate_right( val, by );
@@ -497,7 +507,7 @@ static unsigned int add_op( unsigned int a, unsigned int b, int c_in, int *c_out
 
 /*f c_gip_full::disassemble_int_instruction
  */
-void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst )
+void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buffer, int length )
 {
     char *op;
     char *cc;
@@ -904,7 +914,8 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst )
 
     /*b Display instruction
      */
-    printf("%s\n", text );
+    strncpy( buffer, text, length );
+    buffer[length-1] = 0;
 }
 
 /*a Constructors/destructors
@@ -919,6 +930,7 @@ c_gip_full::c_gip_full( c_memory_model *memory ) : c_execution_model_class( memo
 
     pd->cycle = 0;
     pd->memory = memory;
+    pd->verbose = 0;
 
     /*b Initialize the scheduler
      */
@@ -1034,7 +1046,6 @@ void c_gip_full::debug( int mask )
         if (address!=pd->last_address+4)
         {
             pd->last_address = address;
-            printf("%d *** 0x%08x:\n", pd->seq_count, address );
             pd->seq_count = 0;
         }
         else
@@ -1270,23 +1281,31 @@ void c_gip_full::rf_clock( void )
 {
     /*b Debug
      */
-    printf( "\t**:RFR IV %d P0 (%d/%02x) %08x P1 (%d/%02x) %08x Rd %d/%02x\n",
-            pd->rf.state.inst_valid,
-            pd->rf.state.inst.gip_ins_rn.type,
-            pd->rf.state.inst.gip_ins_rn.data.r,
-            pd->rf.read_port_0,
-            pd->rf.state.inst.rm_data.gip_ins_rm.type,
-            pd->rf.state.inst.rm_data.gip_ins_rm.data.r,
-            pd->rf.read_port_1,
-            pd->rf.state.inst.gip_ins_rd.type,
-            pd->rf.state.inst.gip_ins_rd.data.r );
-    printf("\t**:RFW ALU %d/%02x %08x MEM %d/%02x %08x\n",
-           pd->rf.state.alu_rd.type,
-           pd->rf.state.alu_rd.data.r,
-           pd->rf.state.alu_result,
-           pd->rf.state.mem_rd.type,
-           pd->rf.state.mem_rd.data.r,
-           pd->rf.state.mem_result );
+    if (pd->verbose)
+    {
+        char buffer[256];
+        disassemble_int_instruction( &pd->rf.state.inst, buffer, sizeof(buffer) );
+        printf( "\t**:RFR IV %d P0 (%d/%02x) %08x P1 (%d/%02x) %08x Rd %d/%02x\t:\t...%s\n",
+                pd->rf.state.inst_valid,
+                pd->rf.state.inst.gip_ins_rn.type,
+                pd->rf.state.inst.gip_ins_rn.data.r,
+                pd->rf.read_port_0,
+                pd->rf.state.inst.rm_data.gip_ins_rm.type,
+                pd->rf.state.inst.rm_data.gip_ins_rm.data.r,
+                pd->rf.read_port_1,
+                pd->rf.state.inst.gip_ins_rd.type,
+                pd->rf.state.inst.gip_ins_rd.data.r,
+                buffer
+            );
+        printf("\t**:RFW ALU %d/%02x %08x MEM %d/%02x %08x\n",
+               pd->rf.state.alu_rd.type,
+               pd->rf.state.alu_rd.data.r,
+               pd->rf.state.alu_result,
+               pd->rf.state.mem_rd.type,
+               pd->rf.state.mem_rd.data.r,
+               pd->rf.state.mem_result );
+    }
+
     /*b Copy next to current
      */
     memcpy( &pd->rf.state, &pd->rf.next_state, sizeof(pd->rf.state) );
@@ -1601,27 +1620,27 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
         break;
     }
 
-    /*b Perform shifter operation - operates on C, ALU A in, ALU B in
+    /*b Perform shifter operation - operates on C, ALU A in, ALU B in: what about accumulator?
      */
     switch (pd->alu.gip_alu_op)
     {
     case gip_alu_op_lsl:
-        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_lsl, pd->alu.state.alu_a_in, pd->alu.state.alu_b_in, &pd->alu.shf_carry );
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_lsl, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
         break;
     case gip_alu_op_lsr:
-        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_lsr, pd->alu.state.alu_a_in, pd->alu.state.alu_b_in, &pd->alu.shf_carry );
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_lsr, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
         break;
     case gip_alu_op_asr:
-        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_asr, pd->alu.state.alu_a_in, pd->alu.state.alu_b_in, &pd->alu.shf_carry );
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_asr, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
         break;
     case gip_alu_op_ror:
-        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_ror, pd->alu.state.alu_a_in, pd->alu.state.alu_b_in, &pd->alu.shf_carry );
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_ror, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
         break;
     case gip_alu_op_ror33:
-        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_rrx, pd->alu.state.alu_a_in, pd->alu.state.alu_b_in, &pd->alu.shf_carry );
+        pd->alu.shf_result = barrel_shift( pd->alu.state.c, shf_type_rrx, pd->alu.alu_op1, pd->alu.alu_op2, &pd->alu.shf_carry );
         break;
     case gip_alu_op_init:
-        pd->alu.shf_result = barrel_shift( 0&pd->alu.state.c, shf_type_lsr, pd->alu.state.alu_a_in, 0, &pd->alu.shf_carry );
+        pd->alu.shf_result = barrel_shift( 0&pd->alu.state.c, shf_type_lsr, pd->alu.alu_op1, 0, &pd->alu.shf_carry );
         break;
     case gip_alu_op_mla:
     case gip_alu_op_mlb:
@@ -1729,6 +1748,13 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
 
     /*b Update ALU result, accumulator, shifter and flags
      */
+    pd->alu.next_acc = pd->alu.state.acc;
+    pd->alu.next_c = pd->alu.state.c;
+    pd->alu.next_z = pd->alu.state.z;
+    pd->alu.next_v = pd->alu.state.v;
+    pd->alu.next_n = pd->alu.state.n;
+    pd->alu.next_p = pd->alu.state.p;
+    pd->alu.next_shf = pd->alu.state.shf;
     switch (pd->alu.gip_alu_op)
     {
     case gip_alu_op_mov:
@@ -1741,16 +1767,16 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
         pd->alu.alu_result = pd->alu.logic_result;
         if (pd->alu.set_p)
         {
-            pd->alu.next_state.c = pd->alu.state.p;
+            pd->alu.next_c = pd->alu.state.p;
         }
         if (pd->alu.set_zcvn)
         {
-            pd->alu.next_state.z = (pd->alu.logic_result==0);
-            pd->alu.next_state.n = ((pd->alu.logic_result&0x80000000)!=0);
+            pd->alu.next_z = (pd->alu.logic_result==0);
+            pd->alu.next_n = ((pd->alu.logic_result&0x80000000)!=0);
         }
         if (pd->alu.set_acc)
         {
-            pd->alu.next_state.acc = pd->alu.logic_result;
+            pd->alu.next_acc = pd->alu.logic_result;
         }
         break;
     case gip_alu_op_add:
@@ -1762,16 +1788,16 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
         pd->alu.alu_result = pd->alu.arith_result;
         if (pd->alu.set_zcvn)
         {
-            pd->alu.next_state.z = (pd->alu.arith_result==0);
-            pd->alu.next_state.n = ((pd->alu.arith_result&0x80000000)!=0);
-            pd->alu.next_state.c = pd->alu.alu_c;
-            pd->alu.next_state.v = pd->alu.alu_v;
+            pd->alu.next_z = (pd->alu.arith_result==0);
+            pd->alu.next_n = ((pd->alu.arith_result&0x80000000)!=0);
+            pd->alu.next_c = pd->alu.alu_c;
+            pd->alu.next_v = pd->alu.alu_v;
         }
         if (pd->alu.set_acc)
         {
-            pd->alu.next_state.acc = pd->alu.arith_result;
+            pd->alu.next_acc = pd->alu.arith_result;
         }
-        pd->alu.next_state.shf = 0;// should only be with the 'C' flag, but have not defined that yet
+        pd->alu.next_shf = 0;// should only be with the 'C' flag, but have not defined that yet
         break;
     case gip_alu_op_init:
     case gip_alu_op_mla:
@@ -1779,31 +1805,31 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
         pd->alu.alu_result = pd->alu.arith_result;
         if (pd->alu.set_zcvn)
         {
-            pd->alu.next_state.z = (pd->alu.arith_result==0);
-            pd->alu.next_state.n = ((pd->alu.arith_result&0x80000000)!=0);
-            pd->alu.next_state.c = pd->alu.alu_c;
-            pd->alu.next_state.v = pd->alu.alu_v;
+            pd->alu.next_z = (pd->alu.arith_result==0);
+            pd->alu.next_n = ((pd->alu.arith_result&0x80000000)!=0);
+            pd->alu.next_c = pd->alu.alu_c;
+            pd->alu.next_v = pd->alu.alu_v;
         }
         if (pd->alu.set_acc)
         {
-            pd->alu.next_state.acc = pd->alu.arith_result;
+            pd->alu.next_acc = pd->alu.arith_result;
         }
-        pd->alu.next_state.shf = pd->alu.shf_result;
-        pd->alu.next_state.p = pd->alu.shf_carry;
+        pd->alu.next_shf = pd->alu.shf_result;
+        pd->alu.next_p = pd->alu.shf_carry;
         break;
     case gip_alu_op_lsl:
     case gip_alu_op_lsr:
     case gip_alu_op_asr:
     case gip_alu_op_ror:
     case gip_alu_op_ror33:
-        pd->alu.next_state.shf = pd->alu.shf_result;
         if (pd->alu.set_zcvn)
         {
-            pd->alu.next_state.z = (pd->alu.shf_result==0);
-            pd->alu.next_state.n = ((pd->alu.shf_result&0x80000000)!=0);
-            pd->alu.next_state.c = pd->alu.shf_carry;
+            pd->alu.next_z = (pd->alu.shf_result==0);
+            pd->alu.next_n = ((pd->alu.shf_result&0x80000000)!=0);
+            pd->alu.next_c = pd->alu.shf_carry;
         }
-        pd->alu.next_state.p = pd->alu.shf_carry;
+        pd->alu.next_shf = pd->alu.shf_result;
+        pd->alu.next_p = pd->alu.shf_carry;
         break;
     case gip_alu_op_divst:
         break;
@@ -1947,24 +1973,13 @@ void c_gip_full::alu_preclock( void )
     if ( (pd->alu.accepting_rf_instruction) &&
          (pd->alu.state.inst_valid) )
     {
-        if (pd->alu.set_p)
-        {
-            pd->alu.next_state.c = pd->alu.state.p;
-        }
-        if (pd->alu.set_zcvn)
-        {
-            pd->alu.next_state.z = (pd->alu.logic_result==0);
-            pd->alu.next_state.n = ((pd->alu.logic_result&0x80000000)!=0);
-            pd->alu.next_state.c = pd->alu.alu_c; // not logical ops; use shf_carry for shift
-            pd->alu.next_state.v = pd->alu.alu_v; // not logical ops or shift
-        }
-        if (pd->alu.set_acc)
-        {
-            pd->alu.next_state.acc = pd->alu.alu_result; // arith_result for shift
-        }
-        pd->alu.next_state.shf = 0; // should only be ALU ops with the 'C' flag, but have not defined that yet
-        pd->alu.next_state.shf = pd->alu.shf_result; // shift ops
-        pd->alu.next_state.p = pd->alu.shf_carry;
+        pd->alu.next_state.c = pd->alu.next_c;
+        pd->alu.next_state.z = pd->alu.next_z;
+        pd->alu.next_state.v = pd->alu.next_v;
+        pd->alu.next_state.n = pd->alu.next_n;
+        pd->alu.next_state.p = pd->alu.next_p;
+        pd->alu.next_state.acc = pd->alu.next_acc;
+        pd->alu.next_state.shf = pd->alu.next_shf;
     }
 
     /*b Record condition passed indications
@@ -1984,18 +1999,25 @@ void c_gip_full::alu_clock( void )
 {
     /*b Debug
      */
-    printf( "\t**:ALU OP %d Op1 %08x Op2 %08x A %08x B %08x R %08x ACC %08x ARd %d/%02x MRd %d/%02x\n",
-            pd->alu.gip_alu_op,
-            pd->alu.alu_op1,
-            pd->alu.alu_op2,
-            pd->alu.state.alu_a_in,
-            pd->alu.state.alu_b_in,
-            pd->alu.alu_result,
-            pd->alu.state.acc,
-            pd->alu.alu_rd.type,
-            pd->alu.alu_rd.data.r,
-            pd->alu.mem_rd.type,
-            pd->alu.mem_rd.data.r);
+    if (pd->verbose)
+    {
+        char buffer[256];
+        disassemble_int_instruction( &pd->alu.state.inst, buffer, sizeof(buffer) );
+        printf( "\t**:ALU OP %d Op1 %08x Op2 %08x CP %d A %08x B %08x R %08x ACC %08x ARd %d/%02x MRd %d/%02x\t:\t...%s\n",
+                pd->alu.gip_alu_op,
+                pd->alu.alu_op1,
+                pd->alu.alu_op2,
+                pd->alu.condition_passed,
+                pd->alu.state.alu_a_in,
+                pd->alu.state.alu_b_in,
+                pd->alu.alu_result,
+                pd->alu.state.acc,
+                pd->alu.alu_rd.type,
+                pd->alu.alu_rd.data.r,
+                pd->alu.mem_rd.type,
+                pd->alu.mem_rd.data.r,
+                buffer );
+    }
 
     /*b Copy next to current
      */
@@ -2041,12 +2063,15 @@ void c_gip_full::mem_clock( void )
 
     /*b Debug
      */
-    printf( "\t**:MEM OP %d at %08x with %08x Rd %d/%02x\n",
-            pd->mem.state.gip_mem_op,
-            pd->mem.state.mem_address,
-            pd->mem.state.mem_data_in,
-            pd->mem.state.mem_rd.type,
-            pd->mem.state.mem_rd.data.r );
+    if (pd->verbose)
+    {
+        printf( "\t**:MEM OP %d at %08x with %08x Rd %d/%02x\n",
+                pd->mem.state.gip_mem_op,
+                pd->mem.state.mem_address,
+                pd->mem.state.mem_data_in,
+                pd->mem.state.mem_rd.type,
+                pd->mem.state.mem_rd.data.r );
+    }
 
     /*b Perform a memory write if required
      */
@@ -2113,8 +2138,11 @@ void c_gip_full::dec_comb( void )
     if ( pd->dec.state.pc_valid && (pd->dec.arm.state.cycle_of_opcode==0))
     {
         pd->dec.state.opcode = pd->memory->read_memory( pd->dec.state.pc );
-        arm_disassemble( pd->dec.state.pc, pd->dec.state.opcode, buffer );
-        printf( "%08x %08x: %s\n", pd->dec.state.pc, pd->dec.state.opcode, buffer );
+        if (pd->verbose)
+        {
+            arm_disassemble( pd->dec.state.pc, pd->dec.state.opcode, buffer );
+            printf( "%08x %08x: %s\n", pd->dec.state.pc, pd->dec.state.opcode, buffer );
+        }
     }
 
     /*b attempt to decode opcode, trying each instruction coding one at a time till we succeed
@@ -2127,7 +2155,8 @@ void c_gip_full::dec_comb( void )
     {
         pd->dec.arm.next_pc = pd->dec.state.pc;
         pd->dec.arm.next_cycle_of_opcode = pd->dec.arm.state.cycle_of_opcode+1;
-        if ( decode_arm_mul() ||
+        if ( decode_arm_debug() ||
+             decode_arm_mul() ||
              decode_arm_alu() ||
              decode_arm_ld_st() ||
              decode_arm_ldm_stm() ||
@@ -2149,8 +2178,8 @@ void c_gip_full::dec_comb( void )
              (pd->dec.inst.rm_data.gip_ins_rm.data.r == pd->dec.arm.state.reg_in_acc) &&
              (pd->dec.arm.state.acc_valid) )
         {
-            pd->dec.inst.gip_ins_rn.type = gip_ins_rnm_type_internal;
-            pd->dec.inst.gip_ins_rn.data.internal = gip_ins_rnm_int_acc;
+            pd->dec.inst.rm_data.gip_ins_rm.type = gip_ins_rnm_type_internal;
+            pd->dec.inst.rm_data.gip_ins_rm.data.internal = gip_ins_rnm_int_acc;
         }
     }
     else
@@ -2163,7 +2192,10 @@ void c_gip_full::dec_comb( void )
      */
     if (pd->gip_pipeline_results.write_pc)
     {
-        printf("Writing the pipeline (%08x)\n",pd->gip_pipeline_results.rfw_data);
+        if (pd->verbose)
+        {
+            printf("Writing the pipeline (%08x)\n",pd->gip_pipeline_results.rfw_data);
+        }
         pd->dec.arm.next_pc = pd->gip_pipeline_results.rfw_data;
     }
     if (pd->gip_pipeline_results.flush)
@@ -2210,11 +2242,55 @@ void c_gip_full::dec_clock( void )
 {
     /*b Debug
      */
-    printf( "\t**:DEC %08x (ARM c %d ACC %d/%02d)\n",
-            pd->dec.state.opcode,
-            pd->dec.arm.state.cycle_of_opcode,
-            pd->dec.arm.state.acc_valid,
-            pd->dec.arm.state.reg_in_acc);
+    if (pd->verbose)
+    {
+        char buffer[256];
+        disassemble_int_instruction( &pd->dec.inst, buffer, sizeof(buffer) );
+        printf( "\t**:DEC %08x (ARM c %d ACC %d/%02d)\t:\t... %s\n",
+                pd->dec.state.opcode,
+                pd->dec.arm.state.cycle_of_opcode,
+                pd->dec.arm.state.acc_valid,
+                pd->dec.arm.state.reg_in_acc,
+                buffer
+            );
+    }
+
+    /*b Handle simulation debug instructions
+     */
+    if ( (pd->rf.accepting_dec_instruction) ||
+         (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
+    {
+        if ( (pd->dec.state.pc_valid) &&
+             ((pd->dec.state.opcode&0xffffff00)==0xf0000000) )
+        {
+            switch (pd->dec.state.opcode&0xff)
+            {
+            case 0x90:
+                printf( "********************************************************************************\nTest passed\n********************************************************************************\n\n");
+                break;
+            case 0x91:
+                printf( "********************************************************************************\n--------------------------------------------------------------------------------\nTest failed\n--------------------------------------------------------------------------------\n\n");
+                break;
+            case 0xa0:
+                char buffer[256];
+                pd->memory->copy_string( buffer, pd->rf.state.regs[0], sizeof(buffer) );
+                printf( buffer, pd->rf.state.regs[1], pd->rf.state.regs[2], pd->rf.state.regs[3] );
+                break;
+            case 0xa1:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nDump regs\n");
+                debug(-1);
+                break;
+            case 0xa2:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose on\n");
+                pd->verbose = 1;
+                break;
+            case 0xa3:
+                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose off\n");
+                pd->verbose = 0;
+                break;
+            }
+        }
+    }
 
     /*b Copy current to next
      */
@@ -2260,8 +2336,10 @@ void c_gip_full::preclock( void )
  */
 void c_gip_full::clock( void )
 {
-//    debug(6);
-    disassemble_int_instruction( &pd->dec.inst );
+    if (pd->verbose)
+    {
+        debug(6);
+    }
 
     /*b Clock the stages
      */
@@ -2567,6 +2645,21 @@ t_gip_ins_subclass c_gip_full::map_shift( int shf_how, int imm, int amount )
 
 /*a ARM Decode functions
  */
+/*f c_gip_full::decode_arm_debug
+ */
+int c_gip_full::decode_arm_debug( void )
+{
+    /*b Check if instruction is 0xf00000..
+     */
+    if ((pd->dec.state.opcode&0xffffff00)==0xf0000000)
+    {
+        pd->dec.arm.next_cycle_of_opcode = 0;
+        pd->dec.arm.next_pc = pd->dec.state.pc+4;
+        return 1;
+    }
+    return 0;
+}
+
 /*f c_gip_full::decode_arm_alu
   ALU instructions map to one or more internal instructions
     Those that do not set the PC and are immediate or have a shift of LSL #0 map to one internal ALU instruction
@@ -2771,6 +2864,10 @@ int c_gip_full::decode_arm_alu( void )
         {
             pd->dec.arm.next_acc_valid = 0;
         }
+    }
+    else if ((gip_ins_rd.type==gip_ins_rd_type_register)  && (gip_ins_rd.data.r==pd->dec.arm.state.reg_in_acc))
+    {
+        pd->dec.arm.next_acc_valid = 0;
     }
 
     /*b Test for shift of 'LSL #0' or plain immediate

@@ -1,0 +1,14 @@
+SECTIONS
+{
+       . = 0x80000000;
+		.text : { obj/common.wrapper_download.o(.text) }
+		.text : { obj/common.support_download.o(.text) }
+       .text : { *(.text) }
+       .rodata : { *(.rodata) }
+       .rodata.str1.4 : { *(.rodata.str1.4) }
+/*       . = 0x80010000; - we don't need to separate read-only from read-write*/
+       .data : { *(.data) }
+/* note that .data is initialized, and .bss is expected to be zero */
+       .bss : { *(.bss) }
+}
+ENTRY(wrapper_entry_point)

@@ -18,7 +18,7 @@ extern module io_egress_control_cmd_fsm( clock int_clock "Internal system clock"
                                   input bit int_reset "Internal system reset",
                                   input bit[2] timestamp_segment,
                                   input bit[io_cmd_timestamp_sublength] timestamp,
-                                  input bit[io_cmd_timestamp_length] fifo_timestamp_data,
+                                  input bit[io_cmd_timestamp_length+1] fifo_timestamp_data,
 
                                   input bit cmd_fifo_empty,
                                   output bit cmd_timer_req,

@@ -9,6 +9,11 @@ typedef enum [2]
 } t_postbus_type;
 typedef bit[c_postbus_width] t_postbus_data;
 typedef bit[2] t_postbus_ack;
+typedef enum [2]
+{
+    postbus_ack_hold = 0,
+    postbus_ack_taken = 1,
+} t_postbus_ack_e;
 
 constant integer postbus_command_last_bit = 0; // bit 0 of first transaction word indicates its also the last
 constant integer postbus_command_route_start = 1; // bits 1-7 of first transaction word indicates the destination (routing information) for the transaction

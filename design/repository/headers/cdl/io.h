@@ -6,7 +6,7 @@
 
 /*a Constants
  */
-constant integer io_cmd_timestamp_length=24;
+constant integer io_cmd_timestamp_length=24; // But in the FIFO the next bit up is the 'immediate' bit, ignoring the timestamp entirely
 constant integer io_cmd_timestamp_sublength=io_cmd_timestamp_length/4;
 constant integer io_sram_log_size=11;
 

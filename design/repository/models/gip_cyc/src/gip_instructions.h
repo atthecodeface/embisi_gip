@@ -186,13 +186,16 @@ typedef struct t_gip_instruction
     int f; // flush rest of pipeline if the condition succeeds
     int d; // delay slot instruction - do not flush even if a flush is indicated
     unsigned int pc; // PC value for the instruction - for ARM emulation, PC+8 generally
+    int tag; // decoder-custom tag (presented as the instruction is executed in the pipeline results)
 } t_gip_instruction;
 
 /*t t_gip_pipeline_results
  */
 typedef struct t_gip_pipeline_results
 {
-    int flush; // If the instruction at the ALU stage issued a flush
+    int executing; // Indicates the instructon at the ALU stage is executing; which instruction this is may be determined by examining the tag
+    int flush; // If the instruction at the ALU stage issued a flush (and its condition passed)
+    int tag; // Tag of the instruction at the ALU stage (qualify with executing)
     int write_pc; // From the end of the pipeline, so that branches and jump tables may be handled
     unsigned int rfw_data; // To go with write_pc, the data being written; writes to the PC should always follow (or be simultaneous with) a flush
 } t_gip_pipeline_results;
@@ -226,20 +229,42 @@ typedef enum
  */
 typedef enum
 {
-    gip_postbus_reg_fifo = 4, // bit that indicates FIFO 1 rather than FIFO 0
+    gip_postbus_reg_fifo_bit = 2, // bit number that indicates FIFO
+    gip_postbus_reg_fifo_mask = 12, // bit mask that indicates FIFO
 
-    gip_postbus_reg_command_0 = 0, // Command register 0
-    gip_postbus_reg_tx_fifo_0 = 1, // Data FIFO write 0
+    gip_postbus_reg_fifo_0 = 0, // bit values that indicates FIFO 0
+    gip_postbus_reg_fifo_1 = 4, // bit values that indicates FIFO 1 rather than FIFO 0
+    gip_postbus_reg_fifo_2 = 8, // bit values that indicates FIFO 2 rather than FIFO 0
+    gip_postbus_reg_fifo_3 = 12, // bit values that indicates FIFO 3 rather than FIFO 0
+
+    gip_postbus_reg_status_0 = 0 , // Status register 0 - bit 0 is cmd 0 tx pending (cmd and data still in use), bit 1 is rx fifo ptrs differ, bits 8 thru 11 are all 4 bits of pending
+    gip_postbus_reg_command_0 = 1, // Command register 0
+    gip_postbus_reg_tx_fifo_0 = 2, // Data FIFO write 0
     gip_postbus_reg_rx_fifo_0 = 3, // Data FIFO read 0
 
-    gip_postbus_reg_command_1 = 4, // Command register 1
-    gip_postbus_reg_tx_fifo_1 = 5, // Data FIFO write 1
+    gip_postbus_reg_status_1 = 4 , // Status register 1
+    gip_postbus_reg_command_1 = 5, // Command register 1
+    gip_postbus_reg_tx_fifo_1 = 6, // Data FIFO write 1
     gip_postbus_reg_rx_fifo_1 = 7, // Data FIFO read 1
 
-    gip_postbus_reg_rx_fifo_config_0 = 8, // Data Rx FIFO config 0
-    gip_postbus_reg_tx_fifo_config_0 = 9, // Data Tx FIFO config 0
-    gip_postbus_reg_rx_fifo_config_1 = 12, // Data Rx FIFO config 1
-    gip_postbus_reg_tx_fifo_config_1 = 13, // Data Tx FIFO config 1
+    gip_postbus_reg_status_2 = 8 , // Status register 2
+    gip_postbus_reg_command_2 = 9, // Command register 2
+    gip_postbus_reg_tx_fifo_2 = 10, // Data FIFO write 2
+    gip_postbus_reg_rx_fifo_2 = 11, // Data FIFO read 2
+
+    gip_postbus_reg_status_3 = 12 , // Status register 3
+    gip_postbus_reg_command_3 = 13, // Command register 3
+    gip_postbus_reg_tx_fifo_3 = 14, // Data FIFO write 3
+    gip_postbus_reg_rx_fifo_3 = 15, // Data FIFO read 3
+
+    gip_postbus_reg_rx_fifo_config_0 = 16, // Data Rx FIFO config 0
+    gip_postbus_reg_tx_fifo_config_0 = 17, // Data Tx FIFO config 0
+    gip_postbus_reg_rx_fifo_config_1 = 20, // Data Rx FIFO config 1
+    gip_postbus_reg_tx_fifo_config_1 = 21, // Data Tx FIFO config 1
+    gip_postbus_reg_rx_fifo_config_2 = 24, // Data Rx FIFO config 2
+    gip_postbus_reg_tx_fifo_config_2 = 25, // Data Tx FIFO config 2
+    gip_postbus_reg_rx_fifo_config_3 = 26, // Data Rx FIFO config 3
+    gip_postbus_reg_tx_fifo_config_3 = 27, // Data Tx FIFO config 3
 
 } t_gip_postbus_reg;
 

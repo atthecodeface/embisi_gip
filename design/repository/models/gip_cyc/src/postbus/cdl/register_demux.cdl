@@ -27,12 +27,15 @@ typedef fsm
     buf_fsm_wait; // No buffers full, but in middle of transaction
 } t_buf_fsm;
 
+/*t t_buf_data
+ */
 typedef struct
 {
     t_postbus_data data;
     bit first;
     bit last;
 } t_buf_data;
+
 /*a postbus_register_demux module
  */
 module postbus_register_demux( clock int_clock, input bit int_reset,
@@ -111,7 +114,14 @@ module postbus_register_demux( clock int_clock, input bit int_reset,
                 case buf_fsm_0_rdy:
                 {
                     src_ack = 1;
-                    if (src_type!=postbus_word_type_idle)
+                    if (src_type==postbus_word_type_idle)
+                    {
+                        if (tgt_ack)
+                        {
+                            next_buf_state = buf_fsm_idle;
+                        }
+                    }
+                    else
                     {
                         if (tgt_ack)
                         {
@@ -128,7 +138,14 @@ module postbus_register_demux( clock int_clock, input bit int_reset,
                 {
                     src_ack = 1;
                     buffer_read = 1;
-                    if (src_type!=postbus_word_type_idle)
+                    if (src_type==postbus_word_type_idle)
+                    {
+                        if (tgt_ack)
+                        {
+                            next_buf_state = buf_fsm_idle;
+                        }
+                    }
+                    else
                     {
                         if (tgt_ack)
                         {
@@ -167,11 +184,11 @@ module postbus_register_demux( clock int_clock, input bit int_reset,
             tgt_type = postbus_word_type_data;
             if (buffer[buffer_read].last)
             {
-                tgt_type = postbus_word_type_start;
+                tgt_type = postbus_word_type_last;
             }
             if (buffer[buffer_read].first)
             {
-                tgt_type = postbus_word_type_last;
+                tgt_type = postbus_word_type_start;
             }
             if (buf_state==buf_fsm_idle)
             {
@@ -190,10 +207,10 @@ module postbus_register_demux( clock int_clock, input bit int_reset,
             tgt_type_3 = postbus_word_type_idle;
             full_switch (selected_target)
             {
-            case 0: {tgt_type_0 = tgt_type; tgt_ack=tgt_ack_0;}
-            case 1: {tgt_type_1 = tgt_type; tgt_ack=tgt_ack_1;}
-            case 2: {tgt_type_2 = tgt_type; tgt_ack=tgt_ack_2;}
-            case 3: {tgt_type_3 = tgt_type; tgt_ack=tgt_ack_3;}
+            case 0: {tgt_type_0 = tgt_type; tgt_ack=tgt_ack_0;assert (1,"PRD target 0"); }
+            case 1: {tgt_type_1 = tgt_type; tgt_ack=tgt_ack_1;assert (1,"PRD target 1");}
+            case 2: {tgt_type_2 = tgt_type; tgt_ack=tgt_ack_2;assert (1,"PRD target 2");}
+            case 3: {tgt_type_3 = tgt_type; tgt_ack=tgt_ack_3;assert (1,"PRD target 3");}
             }
         }
 

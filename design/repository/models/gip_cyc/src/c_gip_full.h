@@ -11,33 +11,10 @@
 #include "c_execution_model_class.h"
 #include "gip_instructions.h"
 #include "gip_internals.h"
+#include "postbus.h"
 
 /*a Types
  */
-/*t postbus
- */
-enum
-{
-    postbus_command_last_bit = 0, // bit 0 of first transaction word indicates its also the last
-    postbus_command_length_start = 1, // bit 1 of first transaction word indicates the length (to GIP)
-};
-
-typedef enum
-{
-    postbus_ack_hold = 0,
-    postbus_ack_taken = 1,
-} t_postbus_ack;
-
-typedef enum
-{
-    postbus_word_type_start = 0,
-    postbus_word_type_idle = 1,
-    postbus_word_type_hold = 1,
-    postbus_word_type_data = 2,
-    postbus_word_type_last = 3,
-} t_postbus_type;
-
-
 /*t t_gip_comb_data
  */
 typedef struct t_gip_comb_data
@@ -87,6 +64,10 @@ public:
     virtual int c_gip_full::unset_breakpoint( unsigned int address );
     virtual void c_gip_full::halt_cpu( void );
     virtual void c_gip_full::debug( int mask );
+
+    /*b Inputs
+     */
+    t_gip_inputs inputs;
 
 private:
     /*b Internal instruction execution methods
@@ -192,9 +173,6 @@ private:
     void c_gip_full::preclock( void );
     void c_gip_full::comb( void *data );
 
-    /*b Inputs
-     */
-    t_gip_inputs inputs;
 };
 
 /*a External functions

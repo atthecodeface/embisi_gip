@@ -1,0 +1,208 @@
+Flow control theory
+-------------------
+
+The theory is that there will be channels in the IO coprocessor, each
+of which has its own flow control.
+
+You will bundle the status of various IO blocks together on a single
+channel, and have a certain amount of credit on that channel, so that
+when a status message occurs that message will be sent (two words,
+probably) from the IO block FIFO to a GIP, and a semaphore will
+trigger on the GIP. The GIP can then examine the status to determine
+the source of the IO data, and it can then determine what to do.
+
+
+Example
+-------
+
+In a setup with 2 ethernet interfaces doing chaining, a pair of UARTs
+for debug, an LCD display, data gathering RX interface, and a keypad,
+how do we configure this setup?
+
+Two ethernet interfaces with chaining
+-------------------------------------
+
+Two ethernet interfaces with chaining basically assumes we are like a
+bump in the wire; no filtering is done on packets from one interface
+to the next. For packets sourced by us we are told which interface to
+transmit to; broadcast packets are received by us and forwarded;
+unicast packets are forwarded or received by us. It would be wise to
+attempt to learn which MAC addresses are on which side, in order to
+help determine which interface to transmit packets to.
+
+So, for ethernet receive, we will require a single thread for the
+postbus side of both
+interfaces. We will receive a status at the start of a packet
+indicating that some data has been received, and we should transfer
+that to memory (and look at it). So we will use a channel to manage
+that. A thread will wake up on receipt of such a message, and
+interpret it, fire back a command as flow control, and despatch to an
+appropriate routine. That will send a command to fetch the data from
+the FIFO, and the data will then be moved to local memory, whence
+another thread in the GIP will manage analysis and forwarding to main
+memory. Chaining is the responsibility of a chaining thread, which can
+manage the buffers required for passing the packet to the transmit
+thread. This thread should also learn the MAC addresses of each side
+of the wire.
+
+For ethernet transmit we have to send data and associated commands to
+the interface, and handle status messages in response. This requires a
+single thread to fetch data from the main memory system, and a single
+thread to interface to the postbus. The postbus thread will write
+commands and data to the postbus for transmission, and then wait for
+status (or more data from the memory side). An incoming status may
+allow for more data to be transmitted, or it may force an ethernet
+interface to be reset (on late collisions). Each incoming status must
+be acknowledged with a postbus command transmit.
+
+
+LCD display and data gathering
+------------------------------
+
+The LCD display and data gathering RX interface are real-time
+tasks, and so require a high priority thread to keep them running. The
+LCD display will be pushing out (say) 512 bytes of data per command
+and status; the GIP writes 512 bytes of data to the TX fifo, and
+writes in a command to push that data out, which will generate a
+status when it completes; with double-buffering, this should provide a
+full 512 bytes of display time to respond (status generation to
+receipt of data and then command). With a 320 by 200 display of 64k
+pixels at 8bpp at 30Hz, a byte is required 30*64k times per second, or
+at 1.92MB/s, i.e. two bytes every microsecond. So, 512 bytes is 250
+microseconds. For data gathering at 1MHz (say) for bursts, 512 bytes
+is 512 microseconds.
+
+So the LCD display and data gathering interface can share a GIP, using
+a single channel to a single GIP status FIFO which adds 1 each time a
+status message is received, and hits a semaphore. The semaphore wakes
+a high priority thread that reads any available status message and
+despatches either the LCD display thread or the gather rx data
+thread.
+
+The LCD display thread requests data from the main bus to
+memory, then deschedules pending that fetch completion; upon
+rescheduling it fires back the data to the transmit FIFO in the IO
+block in lumps, then it fires to the command FIFO for the LCD display
+to indicate the data is ready - no use of flow control required
+here.
+
+The data RX thread needs to send a message to the IO block to
+turn on the tap for received data; it sends commands requesting a
+certain amount of data from the receive FIFO, without flow control (an
+immediate fetch). Each block of data will signal the rx thread, which
+must push the data to memory, and then request more data from the
+receive FIFO, until it has taken all the data referred to by the first
+status.
+
+Resources required
+------------------
+
+One thread for status despatch, using one semaphore, two words of
+postbus rx FIFO and a receive slot, and a postbus command slot.
+
+One thread for the LCD display, with one semaphore to wake it hit by
+the despatch thread, one semaphore to wake it following a memory fetch completion, and
+one to signal it following sending data to the data
+transmit FIFO; 8 words of postbus transmit FIFO and a command slot.
+
+One thread for the data gathering RX, with one semaphore to wake it
+hit by the despatch thread, one semaphore to wake it following a
+memory fetch completion, and one to signal it following data arriving
+in the receive postbus FIFO; 8 words of postbus receive FIFO and a
+command slot.
+
+Keypad and dual UARTS
+---------------------
+
+The keypad and dual UARTS require lower rate servicing, and so can be
+multiplexed together more. They can share a postbus command slot. The
+UARTs provide a status message per received or transmitted byte. The
+keypad needs to have a command set to read the GPIO after some other
+GPIO lines have been set to certain values. So a single command slot
+is required, and a single receive slot, with 2 words of receive FIFO.
+
+
+Resource summary
+----------------
+
+Ethernet transmit:
+    1 thread postbus,   2(+) rx words, 1 rx slot,  2+8 tx words, 1 tx slot.
+    1 thread memory
+
+Ethernet receive:
+    1 thread postbus,   2+8 rx words, 2 rx slot,  0 tx words, 1 tx slot.
+    1 thread memory
+    1 thread chaining
+
+LCD and data gathering:
+    1 thread despatch,  2 rx words, 1 rx slot,  0 tx words, 1 tx slot.
+    1 thread LCD,       0 rx words, 0 rx slot,  8 tx words, 1 tx slot.
+    1 thread data,      8 rx words, 1 rx slot,  2 tx words, 1 tx slot.
+
+Keypads and uarts:
+    1 thread,           2 rx words, 1 rx slot,  2 tx words, 1 tx slot.
+
+Possible combinations
+---------------------
+
+Leaving the UARTs and keypad out of it (they can always run on the
+main GIP), it is feasible to achieve ethernet chaining with an LCD
+panel, for a total of:
+ 7 threads, 14 rx words, 4 rx slots, 18 tx words, 4 tx slots.
+
+
+IO coprocessor flow control information
+---------------------------------------
+
+So the IO coprocessor, to maintain the above, requires a number of
+receive channels which do different things.
+
+Looking at I/O transmit command and data FIFOs first, we see that
+basically these are a push structure, and no channels and flow control
+are used (as these are implied already by the I/O block).
+
+Looking at I/O receive, we are going to take a number of receive FIFO
+indications (data and status) and perform various operations when they
+get asserted in particular ways. Operations may be an automated fetch
+on a channel, an automated status send on a channel. Additionally
+commands may be sent for an immediate fetch (optionally including
+data) for a particular data or status I/O FIFO to return data on a
+non-flow controlled channel (which we can define as channel 0).
+
+So each data and status FIFO should have associated with it an action
+to perform to a particular channel when a particular event occurs on
+one of its FIFO indications. These actions may be:
+ 1. send FIFO status indications on channel
+ 2. fetch 'n' words of FIFO contents and send on channel
+ 3. do nothing
+
+The channels (which are fewer than the FIFOs supported) use flow
+control, and have associated with them a postbus destination route and
+other header information, including flow control (but note that the
+FIFO itself will set some bits, including signal number and
+destination FIFO). The flow control may
+be length based, or it may be block based. The channel will run
+through all the operations that it is being asked to do in round-robin
+order. The next operation to be performed will be checked against the
+flow control, and if the flow control supports it then the postbus
+operation will attempt to be performed. The postbus operations
+requested by multiple channels will be handled in priority order,
+channel 0 (which explicitly has no flow control) as highest.
+
+For our above scenario we have receive FIFOs for GPIO, UART, UART,
+ETx, ETx, ERx, ERx, LCD, Data (eight FIFOs). There are six channels
+used (ETx, 2ERx, 1LCD/Data, 1 Data, 1 GPIO/UARTs), although two of
+these (data and 1 ERx) require no flow control. So, we should be
+looking at supporting up to eight channels, one of which has no flow control.
+
+Notes
+-----
+NEED TO HAVE PENDING TX COMMAND BITS READABLE FOR BUSY-WAITING UNTIL A
+COMMAND GOES (for high priority/cooperative threads - why? can't we
+just wait for the semaphore? How about test-before-use, rather than wait-for-response)
+FOR RX HOW DO WE KNOW THERE IS DATA? (Can use flow control info in the
+status registers with 'add', or just have a 'ne' status bit)
+HOW DO WE IMPLEMENT A GLOBAL SHARED MUTEX with thread wake-up. Use a
+set of bits, one per thread that may want the mutex? I don't think
+that works as they have to be cleared at the correct time. Maybe for
+one mutex it works.

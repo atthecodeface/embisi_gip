@@ -246,6 +246,11 @@ c_gip_cyc::c_gip_cyc( class c_engine *eng, void *eng_handle )
     engine->register_input_used_on_clock( engine_handle, "postbus_rx_type", "cpu_clock", 1 );
     engine->register_input_signal( engine_handle, "postbus_tx_ack", 2, (int **)&inputs.postbus_tx_ack_ptr );
     engine->register_input_used_on_clock( engine_handle, "postbus_tx_ack", "cpu_clock", 1 );
+
+    combinatorials.gip.postbus_tx_type = postbus_word_type_idle;
+    combinatorials.gip.postbus_tx_data = 0;
+    combinatorials.gip.postbus_rx_ack = postbus_ack_taken;
+
 //     void c_engine::register_comb_input( void *engine_handle, const char *name );
 //     void c_engine::register_comb_output( void *engine_handle, const char *name );
 //     void c_engine::register_state_desc( void *engine_handle, int static_desc, t_engine_state_desc *state_desc, void *data, const char *prefix );
@@ -588,7 +593,15 @@ t_sl_error_level c_gip_cyc::clock( void )
 */
 t_sl_error_level c_gip_cyc::evaluate_combinatorials( void )
 {
+    c_gip_full *gip_full;
     ENTRY();
+
+    /*b Get inputs
+     */
+    gip_full = (c_gip_full *)gip;
+    gip_full->inputs.postbus_rx_data = inputs.postbus_rx_data_ptr[0];
+    gip_full->inputs.postbus_rx_type = inputs.postbus_rx_type_ptr[0];
+    gip_full->inputs.postbus_tx_ack = inputs.postbus_tx_ack_ptr[0];
 
     /*b Call GIP
     */

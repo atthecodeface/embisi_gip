@@ -30,8 +30,10 @@ module postbus_input_mux( clock int_clock, input bit int_reset,
 {
     /*b State and combinatorials
      */
-    clocked clock rising int_clock reset active_high int_reset t_arb_fsm state = arb_fsm_idle;
-    clocked clock rising int_clock reset active_high int_reset bit src_first_word = 0 "High if the source is presenting the first word of a transaction";
+    default clock rising int_clock;
+    default reset active_high int_reset;
+    clocked t_arb_fsm state = arb_fsm_idle;
+    clocked bit src_first_word = 0 "High if the source is presenting the first word of a transaction";
     comb t_arb_fsm next_state "Next state of FSM";
     comb bit wait "Set if a transfer is in place and the selected target indicates no acknowledge";
 
@@ -43,7 +45,7 @@ module postbus_input_mux( clock int_clock, input bit int_reset,
             wait = 0;
             if (state!=arb_fsm_idle)
             {
-                wait = (tgt_ack!=0);
+                wait = (tgt_ack==0);
             }
             full_switch (state)
                 {
@@ -52,7 +54,7 @@ module postbus_input_mux( clock int_clock, input bit int_reset,
                     if (src_type_3==postbus_word_type_start) { next_state = arb_fsm_src_3; }
                     if (src_type_2==postbus_word_type_start) { next_state = arb_fsm_src_2; }
                     if (src_type_1==postbus_word_type_start) { next_state = arb_fsm_src_1; }
-                    if (src_type_0==postbus_word_type_start) { next_state = arb_fsm_src_0; }
+                    if (src_type_0==postbus_word_type_start) { next_state = arb_fsm_src_0; assert (1,"Transition idle to 0"); }
                 }
                 case arb_fsm_src_0:
                 {
@@ -106,16 +108,13 @@ module postbus_input_mux( clock int_clock, input bit int_reset,
      */
     first_of_transaction "Determine first cycle of a transaction":
         {
-            if (next_state != state)
+            if (!wait)
+            {
+                src_first_word <= 0;
+            }
+            if ( (next_state != state) && (next_state!=arb_fsm_idle) )
             {
                 src_first_word <= 1;
-            }
-            else
-            {
-                if (!wait)
-                {
-                    src_first_word <= 0;
-                }
             }
         }
 
@@ -138,17 +137,17 @@ module postbus_input_mux( clock int_clock, input bit int_reset,
                 case arb_fsm_src_1: 
                 {
                     tgt_data = src_data_1;
-                    tgt_type = src_type_0;
+                    tgt_type = src_type_1;
                 }
                 case arb_fsm_src_2: 
                 {
                     tgt_data = src_data_2;
-                    tgt_type = src_type_0;
+                    tgt_type = src_type_2;
                 }
                 case arb_fsm_src_3: 
                 {
                     tgt_data = src_data_3;
-                    tgt_type = src_type_0;
+                    tgt_type = src_type_3;
                 }
                 }
         }

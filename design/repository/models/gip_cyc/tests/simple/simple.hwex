@@ -13,16 +13,61 @@ module postbus_input_mux "pim"
 module postbus_register_demux "prd"
 
 option_string "clock" "system_clock"
-option_string "inputs" "result[32]"
-option_string "outputs" "test_reset in[32]"
+option_string "inputs" ""
+option_string "outputs" "test_reset"
 option_string "filename" "gip_test_harness.th"
 module se_test_harness th
 
+option_int "monitor_level" 14
+module postbus_testbench pstmon_1
+
+option_int "monitor_level" 14
+module postbus_testbench pstmon_2
+
+option_int "monitor_level" 14
+module postbus_testbench pstmon_3
+
+# Create a postbus source that sends incrementing data every 60 clocks
+#Source is interval, channel, stream type, stream length, stream hdr, stream seed, stream value
+option_string "sources" "(50 0 i 4 0x1234567f 0 0)"
+#Put the source on a channel with transaction flow control, credit 3
+option_string "channels" "(t 13) (d 3) (t 3)"
+#Sink is stream type, stream length, stream hdr, stream seed, stream value
+option_string "sinks" "(~i 4 0x12345678 0 0)"
+module postbus_testbench pstsrc_1
+
+option_string "clock" "postbus_clock"
+option_string "inputs" "src_ack[2]"
+option_string "outputs" "src_data[32] src_type[2]"
+option_string "filename" "postbus_src_harness.th"
+module se_test_harness sth_2
+
+option_string "clock" "postbus_clock"
+option_string "inputs" "src_ack[2]"
+option_string "outputs" "src_data[32] src_type[2]"
+option_string "filename" "postbus_src_harness.th"
+module se_test_harness sth_3
+
+option_string "clock" "postbus_clock"
+option_string "inputs" "tgt_data[32] tgt_type[2]"
+option_string "outputs" "tgt_ack[2]"
+option_string "filename" "postbus_tgt_harness.th"
+module se_test_harness tth_2
+
+option_string "clock" "postbus_clock"
+option_string "inputs" "tgt_data[32] tgt_type[2]"
+option_string "outputs" "tgt_ack[2]"
+option_string "filename" "postbus_tgt_harness.th"
+module se_test_harness tth_3
+
+
 clock system_clock 0 1 1
 drive th.system_clock system_clock
-drive gip.cpu_clock system_clock
+drive prd.int_clock system_clock
+drive pim.int_clock system_clock
 
-wire in[32] result[32] reset
+
+wire system_reset
 wire mux_data[32] mux_type[2] mux_ack[2]
 wire src_data_3[32] src_type_3[2] src_ack_3[2]
 wire src_data_2[32] src_type_2[2] src_ack_2[2]
@@ -34,15 +79,48 @@ wire tgt_type_2[2] tgt_ack_2[2]
 wire tgt_type_1[2] tgt_ack_1[2]
 wire tgt_type_0[2] tgt_ack_0[2]
 
-drive reset th.test_reset
+drive system_reset th.test_reset
 
+#b GIP
+drive gip.cpu_clock system_clock
+
+drive gip.postbus_tx_ack src_ack_0
+drive src_type_0 gip.postbus_tx_type
+drive src_data_0 gip.postbus_tx_data
+
+drive tgt_ack_0 gip.postbus_rx_ack
+drive gip.postbus_rx_type tgt_type_0 
+drive gip.postbus_rx_data tgt_data
+
+#b PSTMON_1
+drive pstmon_1.int_clock system_clock
+drive pstmon_1.int_reset system_reset
+drive pstmon_1.mon_ack src_ack_0
+drive pstmon_1.mon_type src_type_0
+drive pstmon_1.mon_data src_data_0
+
+#b PSTMON_2
+drive pstmon_2.int_clock system_clock
+drive pstmon_2.int_reset system_reset
+drive pstmon_2.mon_ack mux_ack
+drive pstmon_2.mon_type mux_type
+drive pstmon_2.mon_data mux_data
+
+#b PSTMON_3
+drive pstmon_3.int_clock system_clock
+drive pstmon_3.int_reset system_reset
+drive pstmon_3.mon_ack tgt_ack_0
+drive pstmon_3.mon_type tgt_type_0
+drive pstmon_3.mon_data tgt_data
+
+#b PRD
 drive prd.tgt_ack_3 tgt_ack_3
 drive prd.tgt_ack_2 tgt_ack_2
 drive prd.tgt_ack_1 tgt_ack_1
 drive prd.tgt_ack_0 tgt_ack_0
 drive prd.src_data mux_data
 drive prd.src_type mux_type
-drive prd.int_reset reset
+drive prd.int_reset system_reset
 
 drive tgt_data prd.tgt_data
 drive tgt_type_3 prd.tgt_type_3
@@ -60,7 +138,7 @@ drive pim.src_data_1 src_data_1
 drive pim.src_type_1 src_type_1
 drive pim.src_data_0 src_data_0
 drive pim.src_type_0 src_type_0
-drive pim.int_reset reset
+drive pim.int_reset system_reset
 
 drive src_ack_3 pim.src_ack_3
 drive src_ack_2 pim.src_ack_2
@@ -69,13 +147,34 @@ drive src_ack_0 pim.src_ack_0
 drive mux_data pim.tgt_data
 drive mux_type pim.tgt_type
 
-drive gip.postbus_tx_ack src_ack_0
-drive src_type_0 gip.postbus_tx_type
-drive src_data_0 gip.postbus_tx_data
+drive pstsrc_1.int_clock system_clock
+drive pstsrc_1.int_reset system_reset
+drive pstsrc_1.src_ack src_ack_1
+drive src_data_1 pstsrc_1.src_data
+drive src_type_1 pstsrc_1.src_type
+drive tgt_ack_1 pstsrc_1.tgt_ack
+drive pstsrc_1.tgt_data tgt_data
+drive pstsrc_1.tgt_type tgt_type_1
 
-drive tgt_ack_0 gip.postbus_rx_ack
-drive gip.postbus_rx_type tgt_type_0 
-drive gip.postbus_rx_data tgt_data
+drive sth_2.postbus_clock system_clock
+drive sth_2.src_ack src_ack_2
+drive src_data_2 sth_2.src_data
+drive src_type_2 sth_2.src_type
+
+drive sth_3.postbus_clock system_clock
+drive sth_3.src_ack src_ack_3
+drive src_data_3 sth_3.src_data
+drive src_type_3 sth_3.src_type
+
+drive tth_2.postbus_clock system_clock
+drive tgt_ack_2 tth_2.tgt_ack 
+drive tth_2.tgt_data tgt_data 
+drive tth_2.tgt_type tgt_type_2
+
+drive tth_3.postbus_clock system_clock
+drive tgt_ack_3 tth_3.tgt_ack 
+drive tth_3.tgt_data tgt_data 
+drive tth_3.tgt_type tgt_type_3
 
 end
 

@@ -8,6 +8,7 @@ cdl src/postbus/cdl simple           model:simple_postbus_router  inc:src/postbu
 cdl src/postbus/cdl input_mux        model:postbus_input_mux      inc:src/postbus/cdl
 cdl src/postbus/cdl register_demux   model:postbus_register_demux inc:src/postbus/cdl
 c_model src c_gip_cyc
+c_model src c_postbus_testbench
 c_src src c_gip_full
 c_src src arm_dis
 c_src src c_execution_model_class

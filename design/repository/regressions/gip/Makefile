@@ -18,12 +18,15 @@ obj/tests.make: ${CREATE_MAKE} ${TEST_LIST}
 
 include obj/tests.make
 
-TEST_BINARIES := bin/gip_iram_0.mif
+TEST_BINARIES := bin/gip_iram_0.mif bin/gip_iram_1.mif
 
 ALL: $(TEST_BINARIES)
 
 bin/gip_iram_0.mif: src/gip_iram_0.S
 	$(GIP_AS) src/gip_iram_0.S bin/gip_iram_0.mif
+
+bin/gip_iram_1.mif: src/gip_iram_1.S
+	$(GIP_AS) src/gip_iram_1.S bin/gip_iram_1.mif
 
 obj/wrapper.o: src/common/wrapper.s
 	${ARMCC} -c src/common/wrapper.s -o obj/wrapper.o

@@ -10,14 +10,17 @@ module gip_core "gipc"
 #b Add GIP prefetch
 module gip_prefetch "gip_prefetch"
 
-#b Add instruction RAM
+#b Add GIP data interface
+module gip_data_ram "gip_data_ram"
+
+#b Add shared RAM
 option_int "verbose" 1
-option_int "size" 256
+option_int "size" 65536
 option_int "width" 32
-option_int "bits_per_enable" 32
+option_int "bits_per_enable" 8
 option_string "filename" env_string("gip_iram_mif")
-printf "GIP Instruction filename %s0%" env_string("gip_iram_mif")
-module se_sram_srw "instruction_sram"
+printf "GIP Shared filename %s0%" env_string("gip_iram_mif")
+module se_sram_srw "shared_sram"
 
 #b Add test harness
 option_string "clock" "system_clock"
@@ -43,7 +46,8 @@ drive gipc.gip_clock system_clock
 drive pst_rom.int_clock system_clock
 drive pst_rom_srm.sram_clock system_clock
 drive gip_prefetch.gip_clock system_clock
-drive instruction_sram.sram_clock system_clock
+drive gip_data_ram.gip_clock system_clock
+drive shared_sram.sram_clock system_clock
 
 #b Add wires
 wire system_reset
@@ -51,8 +55,17 @@ wire fetch_data_valid fetch_data[32] fetch_pc[32]
 wire fetch_op[2] fetch_16
 
 wire prefetch_op[2] prefetch_address[32]
-wire sram_read sram_read_address[32] sram_read_address_sub[8] sram_read_data[32]
-wire sram_write_enable sram_write_data[32]
+
+wire mem_alu_busy mem_read_data_valid mem_read_data[32]
+wire alu_mem_op[3] alu_mem_address[32] alu_mem_write_data[32] alu_mem_burst[4]
+
+wire sram_not_in_use_by_data
+
+wire isram_read isram_read_address[32]
+wire dsram_read_not_write dsram_address[32]
+
+wire sram_read_not_write sram_write_byte_enables[4] sram_address[32] sram_address_sub[16]
+wire sram_write_data[32] sram_read_data[32]
 
 wire pst_type_0[2] pst_data_0[32] pst_ack_0[2]
 wire pst_type_1[2] pst_data_1[32] pst_ack_1[2]
@@ -70,6 +83,15 @@ drive gipc.fetch_data fetch_data
 drive gipc.fetch_data_valid fetch_data_valid
 drive prefetch_op gipc.prefetch_op
 drive prefetch_address gipc.prefetch_address
+
+drive alu_mem_op gipc.alu_mem_op
+drive alu_mem_address gipc.alu_mem_address
+drive alu_mem_write_data gipc.alu_mem_write_data
+drive alu_mem_burst gipc.alu_mem_burst
+
+drive gipc.mem_alu_busy mem_alu_busy
+drive gipc.mem_read_data mem_read_data
+drive gipc.mem_read_data_valid mem_read_data_valid
 
 drive gipc.postbus_rx_type pst_type_1
 drive gipc.postbus_rx_data pst_data_1
@@ -90,19 +112,40 @@ drive gip_prefetch.prefetch_op prefetch_op
 drive gip_prefetch.prefetch_address prefetch_address
 drive gip_prefetch.fetch_16 fetch_16
 
-drive sram_read gip_prefetch.sram_read
-drive sram_read_address gip_prefetch.sram_read_address
+drive gip_prefetch.sram_granted sram_not_in_use_by_data
+drive isram_read gip_prefetch.sram_read
+drive isram_read_address gip_prefetch.sram_read_address
 drive gip_prefetch.sram_read_data sram_read_data
 
-#b Wire up instruction SRAM
-assign sram_write_enable 0
-assign sram_write_data 0
-extract sram_read_address_sub sram_read_address 2 8
-drive instruction_sram.write_data sram_write_data
-drive instruction_sram.read_not_write sram_read
-drive instruction_sram.write_enable sram_write_enable
-drive instruction_sram.address sram_read_address_sub
-drive sram_read_data instruction_sram.data_out
+#b Wire up shared SRAM
+mux sram_address          sram_not_in_use_by_data dsram_address        isram_read_address 
+mux sram_read_not_write   sram_not_in_use_by_data dsram_read_not_write isram_read         
+extract sram_address_sub sram_address 2 16
+
+drive shared_sram.read_not_write sram_read_not_write
+drive shared_sram.write_enable sram_write_byte_enables
+drive shared_sram.address sram_address_sub
+drive shared_sram.write_data sram_write_data
+drive sram_read_data shared_sram.data_out
+
+#b Wire up GIP data RAM i/f
+drive gip_data_ram.gip_reset system_reset
+
+drive sram_not_in_use_by_data gip_data_ram.sram_not_in_use
+drive dsram_read_not_write gip_data_ram.sram_read_not_write
+drive sram_write_byte_enables gip_data_ram.sram_write_byte_enables
+drive dsram_address gip_data_ram.sram_address
+drive sram_write_data gip_data_ram.sram_write_data
+drive gip_data_ram.sram_read_data sram_read_data
+
+drive gip_data_ram.alu_mem_op alu_mem_op
+drive gip_data_ram.alu_mem_address alu_mem_address
+drive gip_data_ram.alu_mem_write_data alu_mem_write_data
+drive gip_data_ram.alu_mem_burst alu_mem_burst
+
+drive mem_alu_busy gip_data_ram.mem_alu_busy
+drive mem_read_data gip_data_ram.mem_read_data
+drive mem_read_data_valid gip_data_ram.mem_read_data_valid
 
 #b Wire up postbus ROM
 drive pst_rom.int_reset system_reset

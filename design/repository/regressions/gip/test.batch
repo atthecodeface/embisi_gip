@@ -53,13 +53,28 @@ return
 #a Gip tests
 #f gip_tests
 gip_tests:
+#gosub gip_0
+gosub gip_1
+return
 
 #b gip_0
-#set run_length 40000000
+gip_0:
 set run_length 400
 set_string vcd_filename "gip_0"
 setenv "gip_iram_mif" "bin/gip_iram_0.mif"
-setenv "post_rom_mif" "post_rom_0.mif"
+setenv "gip_dram_mif" "data/none.mif"
+setenv "post_rom_mif" "data/none.mif"
+gosub gip_test
+return
+
+#b gip_1
+gip_1:
+#set run_length 40000000
+set run_length 400
+set_string vcd_filename "gip_1"
+setenv "gip_iram_mif" "bin/gip_iram_1.mif"
+setenv "gip_dram_mif" "data/gip_dram_1.mif"
+setenv "post_rom_mif" "data/none.mif"
 gosub gip_test
 return
 
@@ -72,8 +87,9 @@ read_hw_file gip.hwex
 beq vcd_create 0 gip_test_no_vcd    
 sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
 vcd_file_open "allsignals" vcd_full_filename
-vcd_file_add "allsignals" "gipc" "gip_prefetch" "instruction_sram"
-vcd_file_add "allsignals" "gipc.decode"
+vcd_file_add "allsignals" "gipc"
+vcd_file_add "allsignals" "gip_prefetch" "gip_data_ram" "shared_sram"
+vcd_file_add "allsignals" "gipc.decode" "gipc.rf" "gipc.alu"
 vcd_file_enable "allsignals"
 reset
 step run_length

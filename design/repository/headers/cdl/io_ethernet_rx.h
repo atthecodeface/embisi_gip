@@ -23,3 +23,29 @@ typedef enum [io_eth_rx_block_status_bits]
     io_eth_rx_status_framing_error = 5,
 } t_io_eth_tx_status;
 
+/*a Modules
+ */
+extern module ethernet_rx( clock io_clock,
+                    input bit io_reset,
+
+                    output bit[32] data_fifo_data,
+                    output t_io_rx_data_fifo_cmd data_fifo_cmd,
+                    output bit data_fifo_toggle,
+                    input bit data_fifo_full,
+
+                    output bit[32] status_fifo_data,
+                    output t_io_status_fifo_cmd status_fifo_cmd,
+                    output bit status_fifo_toggle,
+
+                    input bit mii_dv,
+                    input bit mii_err,
+                    input bit[4] mii_data
+    )
+{
+    timing to rising clock io_clock io_reset;
+    timing to rising clock io_clock data_fifo_full;
+    timing to rising clock io_clock mii_dv, mii_err, mii_data;
+    timing from rising clock io_clock data_fifo_data, data_fifo_cmd, data_fifo_toggle;
+    timing from rising clock io_clock status_fifo_data, status_fifo_cmd, status_fifo_toggle;
+}
+

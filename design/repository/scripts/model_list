@@ -6,6 +6,7 @@
 c_model test_benches/io_fifos c_io_fifos inc:headers/c
 c_model test_benches/postbus c_postbus_testbench inc:headers/c inc:test_benches/ethernet
 c_model test_benches/ethernet c_mii_testbench inc:headers/c
+c_model models/memories c_memory inc:headers/c
 cdl test_benches/postbus     simple              model:simple_postbus_router  inc:headers/cdl
 cdl test_benches/postbus     input_mux           model:postbus_input_mux      inc:headers/cdl
 cdl test_benches/postbus     register_demux      model:postbus_register_demux inc:headers/cdl
@@ -13,6 +14,11 @@ cdl units/io/src             ethernet_tx inc:headers/cdl
 cdl units/io/src             ethernet_rx inc:headers/cdl
 cdl units/io/src             fifo_ctrl_arb inc:headers/cdl
 cdl units/io/src             io_cmd_fifo_timer inc:headers/cdl inc:units/io/src
+cdl units/io/src             io_baud_rate_generator inc:headers/cdl
+cdl units/io/src             io_ingress_fifos inc:headers/cdl
+cdl units/io/src             io_ingress_control inc:headers/cdl
+cdl units/io/src             io_sync_request inc:headers/cdl
+cdl units/io/src             io_block inc:headers/cdl
 
 #c_model src c_gip_cyc
 #c_src src c_gip_full

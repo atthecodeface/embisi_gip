@@ -4,6 +4,7 @@
 //  RMII Tx 6 - TxCk, TxEn, TxD[2], TxCRS, TxCol
 //  RMII Rx 5 - RxCk, RxDv, RxD[2], RxEr
 //  GPIO 8 - (Ck), D[8] // on receive, when an input changes it is recorded; tx is purely set/clear/write
+// Would be nice to support oversampled audio out (e.g. 8-bit value through 4 output pins, possibly dithering bits 7, 5, 3, 1 of the 8-bit value to appropriate 4-bit value so that a simple 4-bit DAC outside generates 256 levels over 4 cycles)
 //   SPI -
 //   I2C - use GPIO
 //   I2O -

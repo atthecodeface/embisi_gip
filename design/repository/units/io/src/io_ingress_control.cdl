@@ -1,0 +1,302 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Includes
+ */
+include "io_ingress_fifos.h"
+include "io_ingress_control.h"
+
+/*a Types
+ */
+
+/*a Module
+ */
+module io_ingress_control( clock int_clock "Internal system clock",
+                           input bit int_reset "Internal system reset",
+
+                           input bit[4] status_req "Requests from status command toggles",
+                           output bit[4] status_ack "Acknowledges to status toggles",
+                           input bit[4] rx_data_req "Requests from Rx data toggles",
+                           output bit[4] rx_data_ack "Acknowledges to rx data toggles",
+
+                           output bit[2] current_fifo;
+                           output t_ingress_source 
+
+                           output t_ingress_fifo_op fifo_op "Operation to perform",
+                           output bit fifo_op_to_status "Asserted for status FIFO operations, deasserted for Rx Data FIFO operations",
+                           output bit fifo_address_from_read_ptr "Asserted if the FIFO address output should be for the read ptr of the specified FIFO, deasserted for write",
+                           output bit[2] fifo_to_access "Number of FIFO to access for operations",
+)
+{
+
+    /*b Default clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Combinatorials for current FIFO state for selected FIFO
+     */
+    comb bit inc_write_ptr;
+    comb bit set_flags;
+
+    comb bit[io_ingress_fifo_address_size] current_entries;
+    comb bit[io_ingress_fifo_address_size] current_read_ptr;
+    comb bit[io_ingress_fifo_address_size] current_write_ptr;
+    comb bit[io_ingress_fifo_address_size] current_base_address;
+    comb bit[io_ingress_fifo_address_size] current_size_m_one;
+    comb bit[io_ingress_fifo_address_size] current_watermark;
+
+    comb bit current_empty;
+    comb bit current_full;
+
+    /*b Combinatorials for next FIFO state on an operation
+     */
+    comb bit set_overflowed;
+    comb bit set_underflowed;
+    comb bit next_empty;
+    comb bit next_full;
+    comb bit next_watermark;
+    comb bit set_read_ptr;
+    comb bit set_write_ptr;
+    comb bit[io_ingress_fifo_address_size] next_ptr;
+    comb bit[io_ingress_fifo_address_size] next_entries;
+
+    /*b Fifo state registers
+     */
+    clocked t_sfifo_state[4] sfifo_state = { {empty=1, full=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0} };
+    clocked t_sfifo_cfg[4] sfifo_cfg = { { base_address=0, size_m_one=0 } };
+
+    clocked t_dfifo_state[4] dfifo_state = { {empty=1, full=0,  watermark=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0} };
+    clocked t_dfifo_cfg[4] dfifo_cfg = { {base_address=0, size_m_one=0, watermark=0 } };
+
+    /*b Drive outputs
+     */
+    fifo_outputs "Drive the outputs":
+        {
+            for (i; 4)
+            {
+                status_fifo_empty[i] = sfifo_state[i].empty;
+                status_fifo_full[i] = sfifo_state[i].full;
+                status_fifo_overflowed[i] = sfifo_state[i].overflowed;
+                status_fifo_underflowed[i] = sfifo_state[i].underflowed;
+            }
+
+            for (i; 4)
+            {
+                rx_data_fifo_empty[i] = dfifo_state[i].empty;
+                rx_data_fifo_full[i] = dfifo_state[i].full;
+                rx_data_fifo_watermark[i] = dfifo_state[i].watermark;
+                rx_data_fifo_overflowed[i] = dfifo_state[i].overflowed;
+                rx_data_fifo_underflowed[i] = dfifo_state[i].underflowed;
+            }
+        }
+
+    /*b Read data from current FIFO
+     */
+    read_current_fifo "Read data from current requested FIFO":
+        {
+            current_read_ptr = 0;
+            current_write_ptr = 0;
+            current_base_address = 0;
+            current_size_m_one = 0;
+            current_watermark = 0;
+            current_full = 0;
+            current_empty = 0;
+            
+            if (fifo_op_to_status)
+            {
+                current_read_ptr[io_ingress_fifo_address_size-1;0] = sfifo_state[ fifo_to_access ].read_ptr;
+                current_write_ptr[io_ingress_fifo_address_size-1;0] = sfifo_state[ fifo_to_access ].write_ptr;
+                current_base_address[io_ingress_fifo_address_size-1;0] = sfifo_cfg[ fifo_to_access ].base_address;
+                current_size_m_one[io_ingress_fifo_address_size-1;0] = sfifo_cfg[ fifo_to_access ].size_m_one;
+                current_full = sfifo_state[ fifo_to_access ].full;
+                current_empty = sfifo_state[ fifo_to_access ].empty;
+            }
+            else
+            {
+                current_read_ptr[io_ingress_fifo_address_size;0]     = dfifo_state[ fifo_to_access ].read_ptr;
+                current_write_ptr[io_ingress_fifo_address_size;0]    = dfifo_state[ fifo_to_access ].write_ptr;
+                current_base_address[io_ingress_fifo_address_size;0] = dfifo_cfg[ fifo_to_access ].base_address;
+                current_size_m_one[io_ingress_fifo_address_size;0]   = dfifo_cfg[ fifo_to_access ].size_m_one;
+                current_watermark[io_ingress_fifo_address_size;0]    = dfifo_cfg[ fifo_to_access ].watermark;
+                current_full = dfifo_state[ fifo_to_access ].full;
+                current_empty = dfifo_state[ fifo_to_access ].empty;
+            }
+        }
+
+    /*b Count number of entries in current FIFO
+     */
+    count_entries "Count number of entries in FIFO":
+        {
+            current_entries = current_write_ptr - current_read_ptr;
+            if (current_write_ptr < current_read_ptr)
+            {
+                current_entries = current_entries + current_size_m_one+1;
+            }
+            if ((current_write_ptr==current_read_ptr) && (current_full))
+            {
+                current_entries = current_entries + current_size_m_one+1;
+            }
+        }
+
+    /*b Calculate address for FIFO
+     */
+    calculate_address "Calculate address for FIFO SRAM access from ptr and base address":
+        {
+            if (fifo_address_from_read_ptr)
+            {
+                fifo_address = current_base_address + current_read_ptr;
+            }
+            else
+            {
+                fifo_address = current_base_address + current_write_ptr;
+            }
+            if (fifo_op_to_status)
+            {
+                fifo_address[io_ingress_fifo_address_size-1;1] = fifo_address[io_ingress_fifo_address_size-1;0];
+                fifo_address[0] = 0;
+            }
+        }
+
+    /*b Determine next state of current FIFO
+     */
+    next_fifo "Determine next state of FIFO assuming incrementing one or other ptr":
+        {
+            next_empty = current_empty;
+            next_full = current_full;
+            set_write_ptr = 0;
+            set_read_ptr = 0;
+            next_entries = current_entries;
+
+            if (inc_write_ptr)
+            {
+                if (current_write_ptr == current_size_m_one)
+                {
+                    next_ptr = 0;
+                }
+                else
+                {
+                    next_ptr = current_write_ptr+1;
+                }
+            }
+            else
+            {
+                if (current_read_ptr == current_size_m_one)
+                {
+                    next_ptr = 0;
+                }
+                else
+                {
+                    next_ptr = current_read_ptr+1;
+                }
+            }
+
+            if (inc_write_ptr)
+            {
+                if (current_full)
+                {
+                    set_overflowed = 1;
+                }
+                else
+                {
+                    next_entries = current_entries+1;
+                    next_full = (current_entries==current_size_m_one);
+                    next_empty = 0;
+                    set_write_ptr = 1;
+                }
+            }
+            else // inc read ptr instead - we only support one or the other (no revert on rx data FIFO)
+            {
+                if (current_empty)
+                {
+                    set_underflowed = 1;
+                }
+                else
+                {
+                    next_entries = current_entries-1;
+                    next_empty = (next_entries==0);
+                    next_full = 0;
+                }
+            }
+            next_watermark = next_full | (next_entries > current_size_m_one);
+        }
+
+    /*b Handle the FIFO operations
+     */
+    fifo_operation "Handle the FIFO":
+        {
+            set_flags = 0;
+            if (fifo_op_to_status)
+            {
+                full_switch (fifo_op)
+                    {
+                    case ingress_fifo_op_write_cfg:
+                    {
+                        sfifo_state[fifo_to_access] <= { empty=1, full=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
+                        sfifo_cfg[fifo_to_access] <= { base_address=cfg_base_address[io_ingress_fifo_address_size-1;0], size_m_one=cfg_size_m_one[io_ingress_fifo_address_size-1;0] };
+                    }
+                    case ingress_fifo_op_reset:
+                    {
+                        sfifo_state[fifo_to_access] <= { empty=1, full=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
+                    }
+                    case ingress_fifo_op_inc_write_ptr:
+                    {
+                        inc_write_ptr = 1;
+                        set_flags = 1;
+                    }
+                    case ingress_fifo_op_inc_read_ptr:
+                    {
+                        inc_write_ptr = 0;
+                        set_flags = 1;
+                    }
+                    }
+                if (set_flags)
+                {
+                    if (set_write_ptr) { sfifo_state[fifo_to_access].write_ptr <= next_ptr[io_ingress_fifo_address_size-1;0]; }
+                    if (set_read_ptr) { sfifo_state[fifo_to_access].read_ptr <= next_ptr[io_ingress_fifo_address_size-1;0]; }
+                    sfifo_state[fifo_to_access].full <= next_full;
+                    sfifo_state[fifo_to_access].empty <= next_empty;
+                    if (set_overflowed) { sfifo_state[fifo_to_access].overflowed <= 1; }
+                    if (set_underflowed) { sfifo_state[fifo_to_access].underflowed <= 1; }
+                }
+            }
+            else
+            {
+                full_switch (fifo_op)
+                    {
+                    case ingress_fifo_op_write_cfg:
+                    {
+                        dfifo_state[fifo_to_access] <= { empty=1, full=0, watermark=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
+                        dfifo_cfg[fifo_to_access] <= { base_address=cfg_base_address, size_m_one=cfg_size_m_one, watermark=cfg_watermark };
+                    }
+                    case ingress_fifo_op_reset:
+                    {
+                        dfifo_state[fifo_to_access] <= { empty=1, full=0, watermark=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
+                    }
+                    case ingress_fifo_op_inc_write_ptr:
+                    {
+                        inc_write_ptr = 1;
+                        set_flags = 1;
+                    }
+                    case ingress_fifo_op_inc_read_ptr:
+                    {
+                        inc_write_ptr = 0;
+                        set_flags = 1;
+                    }
+                    }
+                if (set_flags)
+                {
+                    if (set_write_ptr) { dfifo_state[fifo_to_access].write_ptr <= next_ptr; }
+                    if (set_read_ptr) { dfifo_state[fifo_to_access].read_ptr <= next_ptr; }
+                    dfifo_state[fifo_to_access].full <= next_full;
+                    dfifo_state[fifo_to_access].empty <= next_empty;
+                    if (set_overflowed) { dfifo_state[fifo_to_access].overflowed <= 1; }
+                    if (set_underflowed) { dfifo_state[fifo_to_access].underflowed <= 1; }
+                }
+            }
+        }
+}
+

@@ -1,0 +1,79 @@
+#a Copyright
+#  
+#  This file 'eth_0.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add GIP prefetch
+module gip_prefetch "gip_prefetch"
+
+#b Add test harness
+option_string "clock" "system_clock"
+option_string "inputs" "fetch_data[32] fetch_data_valid"
+option_string "outputs" "test_reset fetch_op[2] prefetch_op[2] prefetch_address[32]"
+option_string "filename" "gip_prefetch.th"
+module se_test_harness "th"
+
+#b Add instruction RAM
+option_int "size" 256
+option_int "width" 32
+option_int "bits_per_enable" 32
+module se_sram_srw "instruction_sram"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+clock system_clock 0 1 1
+drive th.system_clock system_clock
+drive gip_prefetch.gip_clock system_clock
+drive instruction_sram.sram_clock system_clock
+
+#b Add wires
+wire system_reset
+wire fetch_data_valid fetch_data[32]
+wire fetch_op[2] fetch_16
+wire prefetch_op[2] prefetch_address[32]
+wire sram_read sram_read_address[32] sram_read_address_sub[8] sram_read_data[32]
+wire sram_write_enable sram_write_data[32]
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+drive th.fetch_data_valid fetch_data_valid
+drive th.fetch_data fetch_data
+drive fetch_op th.fetch_op
+drive prefetch_op th.prefetch_op
+drive prefetch_address th.prefetch_address
+
+#b Wire up GIP prefetch
+drive gip_prefetch.gip_reset system_reset
+drive fetch_data gip_prefetch.fetch_data
+drive fetch_data_valid gip_prefetch.fetch_data_valid
+
+assign fetch_16 1
+drive gip_prefetch.fetch_op fetch_op
+drive gip_prefetch.prefetch_op prefetch_op
+drive gip_prefetch.prefetch_address prefetch_address
+drive gip_prefetch.fetch_16 fetch_16
+
+drive sram_read gip_prefetch.sram_read
+drive sram_read_address gip_prefetch.sram_read_address
+drive gip_prefetch.sram_read_data sram_read_data
+
+#b Wire up instruction SRAM
+assign sram_write_enable 0
+assign sram_write_data 0
+extract sram_read_address_sub sram_read_address 2 8
+drive instruction_sram.write_data sram_write_data
+drive instruction_sram.read_not_write sram_read
+drive instruction_sram.write_enable sram_write_enable
+drive instruction_sram.address sram_read_address_sub
+drive sram_read_data instruction_sram.data_out
+
+#b End
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

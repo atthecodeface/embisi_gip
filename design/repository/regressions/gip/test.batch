@@ -1,0 +1,96 @@
+#a Copyright
+#  
+#  This file 'test.batch' copyright Gavin J Stark 2003, 2004
+#  
+
+#a Variables
+int run_length
+int vcd_create
+string vcd_full_filename
+string vcd_filename
+
+set vcd_create 1
+
+#a Main
+#gosub gip_prefetch_tests
+gosub gip_tests
+end
+
+#a Gip prefetch tests
+#f gip_prefetch_tests
+gip_prefetch_tests:
+
+#b gip_prefetch_0
+set run_length 40000
+set_string vcd_filename "gip_prefetch_0"
+gosub gip_prefetch_test
+
+#b Done
+return
+
+#a Gip prefetch subroutines
+#f gip_prefetch_test
+gip_prefetch_test:
+
+read_hw_file gip_prefetch.hwex
+
+beq vcd_create 0 gip_prefetch_test_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "gip_prefetch" "instruction_sram"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+gip_prefetch_test_no_vcd:
+reset
+step run_length
+return
+
+
+#a Gip tests
+#f gip_tests
+gip_tests:
+
+#b gip_0
+#set run_length 40000000
+set run_length 400
+set_string vcd_filename "gip_0"
+setenv "gip_iram_mif" "bin/gip_iram_0.mif"
+setenv "post_rom_mif" "post_rom_0.mif"
+gosub gip_test
+return
+
+#a Gip subroutines
+#f gip_test
+gip_test:
+
+read_hw_file gip.hwex
+
+beq vcd_create 0 gip_test_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "gipc" "gip_prefetch" "instruction_sram"
+vcd_file_add "allsignals" "gipc.decode"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+gip_test_no_vcd:
+reset
+step run_length
+return
+
+
+#b Done
+return
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***

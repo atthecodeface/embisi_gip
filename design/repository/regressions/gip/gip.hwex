@@ -1,0 +1,136 @@
+#a Copyright
+#  
+#  This file 'eth_0.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add GIP core
+module gip_core "gipc"
+
+#b Add GIP prefetch
+module gip_prefetch "gip_prefetch"
+
+#b Add instruction RAM
+option_int "verbose" 1
+option_int "size" 256
+option_int "width" 32
+option_int "bits_per_enable" 32
+option_string "filename" env_string("gip_iram_mif")
+printf "GIP Instruction filename %s0%" env_string("gip_iram_mif")
+module se_sram_srw "instruction_sram"
+
+#b Add test harness
+option_string "clock" "system_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset"
+option_string "filename" "rom.th"
+module se_test_harness "th"
+
+#b Add postbus rom
+module postbus_rom_source "pst_rom"
+option_string "filename" env_string("post_rom_mif")
+printf "Postbus ROM filename %s0%" env_string("post_rom_mif")
+option_int "size" 256
+option_int "width" 32
+option_int "bits_per_enable" 32
+module se_sram_srw "pst_rom_srm"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+clock system_clock 0 1 1
+drive th.system_clock system_clock
+drive gipc.gip_clock system_clock
+drive pst_rom.int_clock system_clock
+drive pst_rom_srm.sram_clock system_clock
+drive gip_prefetch.gip_clock system_clock
+drive instruction_sram.sram_clock system_clock
+
+#b Add wires
+wire system_reset
+wire fetch_data_valid fetch_data[32] fetch_pc[32]
+wire fetch_op[2] fetch_16
+
+wire prefetch_op[2] prefetch_address[32]
+wire sram_read sram_read_address[32] sram_read_address_sub[8] sram_read_data[32]
+wire sram_write_enable sram_write_data[32]
+
+wire pst_type_0[2] pst_data_0[32] pst_ack_0[2]
+wire pst_type_1[2] pst_data_1[32] pst_ack_1[2]
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+
+#b Wire up GIP core
+drive gipc.gip_reset system_reset
+
+drive fetch_op gipc.fetch_op
+drive fetch_16 gipc.fetch_16
+drive gipc.fetch_pc fetch_pc
+drive gipc.fetch_data fetch_data
+drive gipc.fetch_data_valid fetch_data_valid
+drive prefetch_op gipc.prefetch_op
+drive prefetch_address gipc.prefetch_address
+
+drive gipc.postbus_rx_type pst_type_1
+drive gipc.postbus_rx_data pst_data_1
+drive pst_ack_1 gipc.postbus_rx_ack
+
+drive pst_type_0 gipc.postbus_tx_type
+drive pst_data_0 gipc.postbus_tx_data
+drive gipc.postbus_tx_ack pst_ack_0
+
+#b Wire up GIP prefetch
+drive gip_prefetch.gip_reset system_reset
+drive fetch_pc gip_prefetch.fetch_pc
+drive fetch_data gip_prefetch.fetch_data
+drive fetch_data_valid gip_prefetch.fetch_data_valid
+
+drive gip_prefetch.fetch_op fetch_op
+drive gip_prefetch.prefetch_op prefetch_op
+drive gip_prefetch.prefetch_address prefetch_address
+drive gip_prefetch.fetch_16 fetch_16
+
+drive sram_read gip_prefetch.sram_read
+drive sram_read_address gip_prefetch.sram_read_address
+drive gip_prefetch.sram_read_data sram_read_data
+
+#b Wire up instruction SRAM
+assign sram_write_enable 0
+assign sram_write_data 0
+extract sram_read_address_sub sram_read_address 2 8
+drive instruction_sram.write_data sram_write_data
+drive instruction_sram.read_not_write sram_read
+drive instruction_sram.write_enable sram_write_enable
+drive instruction_sram.address sram_read_address_sub
+drive sram_read_data instruction_sram.data_out
+
+#b Wire up postbus ROM
+drive pst_rom.int_reset system_reset
+
+drive pst_type_1 pst_rom.postbus_type
+drive pst_data_1 pst_rom.postbus_data
+drive pst_rom.postbus_ack pst_ack_1
+
+wire pst_rom_read pst_rom_address[8] pst_rom_read_data[32] pst_rom_write_data[32] pst_rom_write_enable
+
+drive pst_rom_read pst_rom.rom_read
+drive pst_rom_address pst_rom.rom_address
+drive pst_rom.rom_data pst_rom_read_data
+
+assign pst_rom_write_enable 0
+assign pst_rom_write_data 0
+drive pst_rom_srm.write_data pst_rom_write_data
+drive pst_rom_srm.read_not_write pst_rom_read
+drive pst_rom_srm.write_enable pst_rom_write_enable
+drive pst_rom_srm.address pst_rom_address
+drive pst_rom_read_data pst_rom_srm.data_out
+
+#b End
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

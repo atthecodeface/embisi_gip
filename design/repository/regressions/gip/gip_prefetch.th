@@ -1,0 +1,217 @@
+#a Copyright
+#  
+#  This file 'rom.th' copyright Gavin J Stark 2003, 2004
+#  
+
+#a Main
+int address
+
+#b Header
+printf "Simple GIP prefetch test"
+
+#b Reset
+reset "test_reset" 1
+
+wait 1
+
+# Drive this/none
+drive fetch_op 0
+drive prefetch_op 0
+drive prefetch_address 0
+
+wait 1
+
+reset "test_reset" 0
+
+wait 5
+
+gosub this_none
+wait 3
+
+#b Run some transactions
+set address 100
+gosub this_new
+wait 1
+
+gosub last_seq
+wait 1
+
+gosub seq_seq
+wait 3
+
+gosub hold_seq
+wait 2
+
+gosub seq_seq
+wait 1
+
+gosub hold_seq
+wait 2
+
+gosub seq_seq
+wait 1
+
+
+set address 202
+gosub seq_new
+wait 1
+
+gosub hold_seq
+wait 1
+
+gosub last_seq
+wait 1
+
+gosub hold_seq
+wait 1
+
+
+set address 302
+gosub this_new
+wait 1
+
+gosub hold_seq
+wait 1
+
+gosub last_seq
+wait 1
+
+gosub seq_seq
+wait 1
+
+gosub seq_hold
+wait 10
+
+gosub seq_seq
+wait 2
+
+gosub hold_hold
+wait 3
+
+gosub hold_seq
+wait 2
+
+gosub seq_hold
+wait 4
+
+gosub seq_seq
+wait 3
+
+gosub seq_hold
+wait 2
+
+
+set address 400
+gosub seq_new
+wait 1
+gosub seq_seq
+wait 1
+gosub last_seq
+wait 1
+gosub seq_seq
+wait 6
+gosub seq_hold
+wait 7
+
+set address 502
+gosub seq_new
+wait 1
+gosub seq_hold
+wait 1
+gosub last_hold
+wait 1
+gosub seq_hold
+wait 4
+
+set address 602
+gosub seq_new
+wait 1
+gosub last_hold
+wait 1
+gosub seq_hold
+wait 7
+
+
+
+
+gosub this_none
+wait 1
+
+end
+
+#a Fetch subroutines
+#b this_none - this/none
+this_none:
+drive fetch_op 0
+drive prefetch_op 0
+drive prefetch_address address
+return
+
+#b this_new - this/new
+this_new:
+drive fetch_op 0
+drive prefetch_op 1
+drive prefetch_address address
+return
+
+#b last_seq
+last_seq:
+drive fetch_op 1
+drive prefetch_op 3
+return
+
+#b last_hold
+last_hold:
+drive fetch_op 1
+drive prefetch_op 2
+return
+
+#b hold_seq
+hold_seq:
+drive fetch_op 3
+drive prefetch_op 3
+return
+
+#b hold_hold
+hold_hold:
+drive fetch_op 3
+drive prefetch_op 2
+return
+
+#b seq_seq
+seq_seq:
+drive fetch_op 2
+drive prefetch_op 3
+return
+
+#b seq_new
+seq_new:
+drive fetch_op 2
+drive prefetch_op 1
+drive prefetch_address address
+return
+
+#b seq_hold
+seq_hold:
+drive fetch_op 2
+drive prefetch_op 2
+return
+
+#a Pass and fail
+test_pass:
+
+pass 0 "Test succeeded"
+
+end
+
+test_fail:
+printf "Test failed %d0% %d1%" global_cycle() input("result")
+fail global_cycle() "**************************************************************************** Test failed"
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

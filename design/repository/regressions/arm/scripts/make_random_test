@@ -1,0 +1,167 @@
+#!/usr/bin/perl
+
+#a Static variables
+#v randoms
+$RAND_MAX = 1024*1024;
+$random_seed = 6;
+
+#v Registers
+$r_w0 = "r0";
+$r_w1 = "r1";
+$r_w2 = "r2";
+$r_lc = "r3";
+$r_addr_rw = "r4";
+$r_addr_ro = "r5";
+$r_nz_0 = "r6";
+$r_nz_1 = "r7";
+$r_nz_2 = "r8";
+$r_crc0 = "r9";
+$r_crc1 = "r10";
+$r_crc2 = "r11";
+
+$rw_base = 0x1000;
+$rw_mask = 0x0fff;
+
+$ro_base = 0x2000;
+$ro_mask = 0x0fff;
+
+#v cc
+@cc = ("eq", "ne", "vc", "vs", "ls", "lo", "hi", "hs", "gt", "ge", "lt", "le", "mi", "pl", "nv", "" );
+
+#v nz_ops
+@nz_ops = ("xor", "add", "adc", "rsb", "rsc", "sub", "sbc" );
+
+#v shft_ops
+@shft_ops = ("lsl", "asl", "asr", "ror");
+
+#v r_nzs
+@r_nzs = ($r_nz_0, $r_nz_1, $r_nz_2);
+
+#a Support functions for random immediates, conditions, etc
+#f random_cc
+sub random_cc {
+    my($cc_num) = int(rand(16));
+    return $cc[$cc_num];
+}
+
+#f random_immediate
+sub random_immediate {
+    my ($v) = int(rand(256));
+    my ($shf) = int(rand(16));
+    return ($v<<$shf) | ($v>>(32-$shf));
+}
+
+#a Output functions
+#f set_flags_according_to
+sub set_flags_according_to {
+    my( $OUT, $r_nz, $r_v, $r_c ) = @_;
+    print $OUT " mov $r_w0, #0x4000000\n";
+    print $OUT " tst $r_nz, #1\n";
+    print $OUT " addnes $r_w0, $r_w0, $r_w0\n";
+    print $OUT " movs $r_w0, $r_c, lsr #1\n";
+        print $OUT " mov $r_w0, $r_nz, ror $#2\n";
+        print $OUT " ands $r_w0, $r_w0, #0xc0000000\n";
+}
+
+#f output_wrapper
+sub output_wrapper {
+    my ($OUT, $loop_count, $base_rw, $base_ro, $rand_test, $random_seed) = @_;
+
+    print $OUT " stmfd (sp!), lr\n";
+    print $OUT " mov $r_lc, #$loop_count\n";
+    print $OUT " mov $r_crc0, #0\n";
+    print $OUT " mov $r_crc1, #1\n";
+    print $OUT " mov $r_crc2, #2\n";
+    print $OUT " mov $r_addr_rw, #$base_rw\n";
+    print $OUT " mov $r_addr_ro, #$base_ro\n";
+    print $OUT " mov $r_nz_0, #0x55\n";
+    print $OUT " orr $r_nz_0, $r_nz_0, $r_nz_0, LSL #8\n";
+        print $OUT " orr $r_nz_0, $r_nz_0, $r_nz_0, LSL #16\n";
+        print $OUT " mov $r_nz_1, #0xaa\n";
+        print $OUT " orr $r_nz_1, $r_nz_1, $r_nz_1, ROR #8\n";
+        print $OUT " orr $r_nz_1, $r_nz_1, $r_nz_1, ROR #16\n";
+        print $OUT " mov $r_nz_2, #0x5a\n";
+        print $OUT " orr $r_nz_2, $r_nz_2, $r_nz_2, LSL #16\n";
+        print $OUT " orr $r_nz_2, $r_nz_2, $r_nz_2, ROR #8\n";
+        print $OUT ".loop:\n";
+
+    for ($i=0; $i<$rand_test; $i++) {
+        set_flags_according_to( $OUT, $r_crc0, $r_crc1, $r_crc2 );
+        print $OUT " bl test_$i\n";
+    }
+
+    print $OUT " subs $r_lc, $r_lc, #1\n";
+    print $OUT " bne loop\n";
+    print $OUT " mov r0, #.msg\n";
+    print $OUT " mov r1, $r_crc0\n";
+    print $OUT " mov r2, $r_crc1\n";
+    print $OUT " mov r3, $r_crc2\n";
+    print $OUT " bl dprintf\n";
+    print $OUT " ldmfd (sp!), pc\n";
+    print $OUT ".msg: .asciz \"Random test returning %08x %08x %08x\\n\"\n";
+    return;
+}
+
+#f output_condition_test
+sub output_condition_test {
+    my ($OUT, $random_seed )=@_;
+    my ($i);
+
+    srand($random_seed);
+    my ($use_imm) = int(rand(2));
+    my ($set_flags) = int(rand(2));
+    my ($use_reg_shift) = int(rand(2));
+    print $OUT " ; condition_test seed $random_seed use_imm $use_imm set_flags $set_flags use_reg_shift $use_reg_shift\n";
+    for ($i=0; $i<16; $i++) {
+        $ins = $nz_ops[int(rand($#nz_ops+1))];
+        $sign = "";
+        $sign = "s" if ($set_flags);
+        $rd = $r_nzs[int(rand($#r_nzs+1))];
+        $rn = $r_nzs[int(rand($#r_nzs+1))];
+        $rm = $r_nzs[int(rand($#r_nzs+1))];
+        if (($use_imm) && (rand(2)>1)) {
+            $rm = sprintf("#%08x",random_immediate());
+        }
+        if (($use_reg_shift) && (rand(2)>1)) {
+            $rm = $r_nzs[int(rand($#r_nzs+1))].", ".$shft_ops[int(rand($#shft_ops+1))];
+            if (rand(2)>1) {
+                $rm = $rm." #".int(rand(32));
+            } else {
+                $rm = $rm." ".$r_nzs[int(rand($#r_nzs+1))];
+            }
+        }
+        print $OUT " $ins$cc[$i]$sign $rd, $rn, $rm\n";
+    }
+    print $OUT " add$sign $r_crc0, $r_crc0, $r_nz_0\n";
+    print $OUT " sub$sign $r_crc1, $r_crc1, $r_nz_1\n";
+    print $OUT " xor$sign $r_crc2, $r_crc2, $r_nz_2\n";
+    print $OUT " mov pc, lr\n";
+}
+
+#f output_test
+sub output_test {
+    my ($OUT, $test_number, $test_type, $test_seed) = @_;
+    print $OUT "\n\n; Test $test_number type $test_type seed $test_seed\n";
+    print $OUT ".test_$test_number:\n";
+    output_condition_test( $OUT, $test_seed );
+}
+
+#f Main
+$rand_test = 5;
+$loop_count = 5;
+$random_seed = 1;
+srand($random_seed);
+
+for ($i=0; $i<$rand_test*2+10; $i++) {
+    $random[$i] = int(rand($RAND_MAX));
+}
+output_wrapper( STDOUT, $loop_count, $rw_base, $ro_base, $rand_test, $random[0] );
+shift @random;
+
+for ($i=0; $i<$rand_test; $i++) {
+    $random_test_type = shift @random;
+    $random_test_seed = shift @random;
+    output_test( STDOUT, $i, $random_test_type, $random_test_seed );
+}
+
+exit;

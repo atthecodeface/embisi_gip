@@ -270,7 +270,7 @@ t_sl_error_level c_rf::comb( void )
         }
         else
         {
-            fprintf(stderr,"c_rf::Out of range read\n");
+            fprintf(stderr,"c_rf::Out of range read port 0 (wanted %d of %d)\n", inputs.rf_rd_addr_0[0], rf_size);
         }
         //fprintf(stderr,"c_rf(%p)::clock_posedge_int_clock:Reading address %04x data %08x\n", this, posedge_int_clock_state.sram_address, posedge_int_clock_state.sram_read_data[0] );
     }
@@ -288,7 +288,7 @@ t_sl_error_level c_rf::comb( void )
         }
         else
         {
-            fprintf(stderr,"c_rf::Out of range read\n");
+            fprintf(stderr,"c_rf::Out of range read port 1 (wanted %08x of %d)\n", inputs.rf_rd_addr_1[0], rf_size);
         }
         //fprintf(stderr,"c_rf(%p)::clock_posedge_int_clock:Reading address %04x data %08x\n", this, posedge_int_clock_state.sram_address, posedge_int_clock_state.sram_read_data[0] );
     }

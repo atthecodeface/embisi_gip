@@ -419,5 +419,6 @@ extern int test_entry_point()
             }
         }
     }
+    dprintf( "ALU tests complete, failures %d", failure, 0, 0 );
     return failure;
 }

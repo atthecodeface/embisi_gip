@@ -83,5 +83,6 @@ extern int test_entry_point()
             }
         }
     }
+    dprintf( "Factorial tests complete, failures %d", failure, 0, 0 );
     return failure;
 }

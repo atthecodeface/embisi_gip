@@ -22,7 +22,8 @@ gip_prefetch_tests:
 
 #b gip_prefetch_0
 set run_length 40000
-set_string vcd_filename "gip_prefetch_0"
+set_string vcd_filename "gip_prefetch_0"s
+setenv "memory_log_size" 16
 gosub gip_prefetch_test
 
 #b Done
@@ -53,15 +54,27 @@ return
 #a Gip tests
 #f gip_tests
 gip_tests:
+
+setenv "verbose_level" 1
+
 #gosub gip_0
 #gosub gip_1
-gosub gip_2
+
+set vcd_create 1
+gosub gip_linux
+return
+
+set vcd_create 0
+gosub gip_memory
+gosub gip_factorial
+gosub gip_arm_alu
 return
 
 #b gip_0
 gip_0:
 set run_length 400
 set_string vcd_filename "gip_0"
+setenv "memory_log_size" 16
 setenv "gip_iram_mif" "bin/gip_iram_0.mif"
 setenv "gip_dram_mif" "data/none.mif"
 setenv "post_rom_mif" "data/none.mif"
@@ -73,17 +86,19 @@ gip_1:
 #set run_length 40000000
 set run_length 400
 set_string vcd_filename "gip_1"
+setenv "memory_log_size" 16
 setenv "gip_iram_mif" "bin/gip_iram_1.mif"
 setenv "gip_dram_mif" "data/gip_dram_1.mif"
 setenv "post_rom_mif" "data/none.mif"
 gosub gip_test
 return
 
-#b gip_2
-gip_2:
+#b gip_memory
+gip_memory:
 #set run_length 40000000
-set run_length 4000
-set_string vcd_filename "gip_2"
+set run_length 10000
+set_string vcd_filename "gip_memory"
+setenv "memory_log_size" 16
 setenv "gip_iram_mif" "../arm/bin/memory.mif"
 setenv "gip_dram_mif" "data/none.mif"
 setenv "post_rom_mif" "data/none.mif"
@@ -92,8 +107,9 @@ return
 
 #b gip_factorial
 gip_factorial:
-set run_length 40000
-set_string vcd_filename "gip_factorail"
+set run_length 10000
+set_string vcd_filename "gip_factorial"
+setenv "memory_log_size" 16
 setenv "gip_iram_mif" "../arm/bin/factorial.mif"
 setenv "gip_dram_mif" "data/none.mif"
 setenv "post_rom_mif" "data/none.mif"
@@ -102,9 +118,24 @@ return
 
 #b gip_arm_alu
 gip_arm_alu:
-set run_length 72000
+set run_length 80000
 set_string vcd_filename "gip_arm_alu"
+setenv "memory_log_size" 16
 setenv "gip_iram_mif" "../arm/bin/alu.mif"
+setenv "gip_dram_mif" "data/none.mif"
+setenv "post_rom_mif" "data/none.mif"
+gosub gip_test
+return
+
+#b gip_linux
+gip_linux:
+set run_length 100
+set_string vcd_filename "gip_linux"
+# 16 MB of RAM!
+setenv "memory_log_size" 22
+# 64 MB of RAM!
+setenv "memory_log_size" 24
+setenv "gip_iram_mif" "/home/localgjs/tnbt_cvs_trees/software/os/linux/combined.mif"
 setenv "gip_dram_mif" "data/none.mif"
 setenv "post_rom_mif" "data/none.mif"
 gosub gip_test

@@ -108,7 +108,7 @@ module gip_decode_native( input bit[16] opcode,
             /*b Map rd to instruction rd; pc if that is 15; but if extended, to full given extension
              */
             native_mapped_rd.type = gip_ins_r_type_register;
-            native_mapped_rd.r[4] = 0;
+            native_mapped_rd.r = 0;
             native_mapped_rd.r[4;0] = rd;
             if (rd==15) { native_mapped_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; }
             if (extended_rd.type!=gip_ins_r_type_no_override) { native_mapped_rd = extended_rd; }
@@ -118,7 +118,7 @@ module gip_decode_native( input bit[16] opcode,
             /*b Map rn to instruction rd; acc if that is 15; but if extended, to full given extension
              */
             native_mapped_rn.type = gip_ins_r_type_register;
-            native_mapped_rn.r[4] = 0;
+            native_mapped_rn.r = 0;
             native_mapped_rn.r[4;0] = rd;
             if (rd==15) { native_mapped_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
             if (extended_rn.type!=gip_ins_r_type_no_override) { native_mapped_rn = extended_rn; }
@@ -126,7 +126,7 @@ module gip_decode_native( input bit[16] opcode,
             /*b Map rm to instruction rm; pc if that is 15; but if extended, to full given extension
              */
             native_mapped_rm.type = gip_ins_r_type_register;
-            native_mapped_rm.r[4] = 0;
+            native_mapped_rm.r = 0;
             native_mapped_rm.r[4;0] = rm;
             if (rm==15) { native_mapped_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
             native_mapped_rm_full_extend = native_mapped_rm;
@@ -332,7 +332,7 @@ module gip_decode_native( input bit[16] opcode,
                      */
                     else
                     {
-                        full_switch (alu_mode)
+                        part_switch (alu_mode)
                         {
                             /*b Bit mode
                              */
@@ -504,7 +504,9 @@ module gip_decode_native( input bit[16] opcode,
                     }
                     /*b Get arithmetic operation for requested subclass
                      */
-                    full_switch (ins_subclass_full)
+                    inst.gip_ins_class = gip_ins_class_arith;
+                    inst.gip_ins_subclass = gip_ins_subclass_arith_sub;
+                    part_switch (ins_subclass_full)
                         {
                         case gip_native_ins_subclass_cond_eq:
                         case gip_native_ins_subclass_cond_ne:
@@ -557,7 +559,7 @@ module gip_decode_native( input bit[16] opcode,
                     /*b Get target condition
                      */
                     inst.gip_ins_rd.type = gip_ins_r_type_internal;
-                    full_switch (ins_subclass_full)
+                    part_switch (ins_subclass_full)
                         {
                         case gip_native_ins_subclass_cond_eq:
                         case gip_native_ins_subclass_cond_allset:
@@ -996,6 +998,10 @@ module gip_decode_native( input bit[16] opcode,
                 }
                 /*b Done all instructions
                  */
+                default:
+                {
+                    pc_op = gip_pc_op_sequential;
+                }
                 }
         }
 

@@ -123,7 +123,7 @@ foreach $i (@tests) {
     print make "\n";
     print make "\n";
     print make "bin/$test.mif: bin/$test.bin\n";
-    print make "\t\${BIN_TO_MIF} bin/$test.bin bin/$test.mif\n";
+    print make "\t\${BIN_TO_MIF} -f bin/$test.bin -o bin/$test.mif\n";
     print make "\n";
 }
 print make " \n";

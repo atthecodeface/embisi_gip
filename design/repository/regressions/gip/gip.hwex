@@ -7,6 +7,10 @@
 #b Add GIP core
 module gip_core "gipc"
 
+#b Add GIP core prefetch if compliance checker
+option_int "verbose_level" env_int("verbose_level")
+module gipc_prefetch_if_comp "gipc_prefetch_if_comp"
+
 #b Add GIP prefetch
 module gip_prefetch "gip_prefetch"
 
@@ -14,14 +18,21 @@ module gip_prefetch "gip_prefetch"
 module gip_data_ram "gip_data_ram"
 
 #b Add shared RAM
-option_int "verbose" 1
-option_int "size" 65536
+option_int "verbose" 0
+int sram_address_log_size
+int sram_address_size
+set sram_address_log_size env_int("memory_log_size")
+set sram_address_size 1
+for i 1 sram_address_log_size 1
+add sram_address_size sram_address_size sram_address_size
+next i
+option_int "size" sram_address_size
 option_int "width" 32
 option_int "bits_per_enable" 8
 option_int "dprintf_action_address" 0xf000
 option_int "dprintf_data_address" 0xf004
 option_string "filename" env_string("gip_iram_mif")
-printf "GIP Shared filename %s0%" env_string("gip_iram_mif")
+printf "GIP Shared filename %s0% size %d1% words" env_string("gip_iram_mif") sram_address_size
 module se_sram_srw "shared_sram"
 
 #b Add test harness
@@ -47,6 +58,7 @@ drive th.system_clock system_clock
 drive gipc.gip_clock system_clock
 drive pst_rom.int_clock system_clock
 drive pst_rom_srm.sram_clock system_clock
+drive gipc_prefetch_if_comp.int_clock system_clock
 drive gip_prefetch.gip_clock system_clock
 drive gip_data_ram.gip_clock system_clock
 drive shared_sram.sram_clock system_clock
@@ -66,7 +78,7 @@ wire sram_not_in_use_by_data
 wire isram_read isram_read_address[32]
 wire dsram_read_not_write dsram_address[32]
 
-wire sram_read_not_write sram_write_byte_enables[4] sram_address[32] sram_address_sub[16]
+wire sram_read_not_write sram_write_byte_enables[4] sram_address[32] sram_address_sub[sram_address_log_size]
 wire sram_write_data[32] sram_read_data[32]
 
 wire pst_type_0[2] pst_data_0[32] pst_ack_0[2]
@@ -103,6 +115,16 @@ drive pst_type_0 gipc.postbus_tx_type
 drive pst_data_0 gipc.postbus_tx_data
 drive gipc.postbus_tx_ack pst_ack_0
 
+#b Wire up GIP prefetch if compliance checker
+drive gipc_prefetch_if_comp.int_reset system_reset
+drive gipc_prefetch_if_comp.fetch_16 fetch_16
+drive gipc_prefetch_if_comp.fetch_op fetch_op
+drive gipc_prefetch_if_comp.prefetch_op prefetch_op
+drive gipc_prefetch_if_comp.prefetch_address prefetch_address
+drive gipc_prefetch_if_comp.fetch_data_valid fetch_data_valid
+drive gipc_prefetch_if_comp.fetch_data fetch_data
+drive gipc_prefetch_if_comp.fetch_pc fetch_pc
+
 #b Wire up GIP prefetch
 drive gip_prefetch.gip_reset system_reset
 drive fetch_pc gip_prefetch.fetch_pc
@@ -122,7 +144,7 @@ drive gip_prefetch.sram_read_data sram_read_data
 #b Wire up shared SRAM
 mux sram_address          sram_not_in_use_by_data dsram_address        isram_read_address 
 mux sram_read_not_write   sram_not_in_use_by_data dsram_read_not_write isram_read         
-extract sram_address_sub sram_address 2 16
+extract sram_address_sub sram_address 2 sram_address_log_size
 
 drive shared_sram.read_not_write sram_read_not_write
 drive shared_sram.write_enable sram_write_byte_enables

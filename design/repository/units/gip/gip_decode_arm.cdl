@@ -308,7 +308,7 @@ module gip_decode_arm( input bit[32] opcode,
              */
             rd_is_pc = 0;
             arm_mapped_rd.type = gip_ins_r_type_register;
-            arm_mapped_rd.r[4] = 0;
+            arm_mapped_rd.r = 0;
             arm_mapped_rd.r[4;0] = alu_rd;
             if (alu_rd==15) { arm_mapped_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; rd_is_pc = 1;}
             if (extended_rd.type!=gip_ins_r_type_no_override) { arm_mapped_rd = extended_rd; }
@@ -316,7 +316,7 @@ module gip_decode_arm( input bit[32] opcode,
             /*b Map rn to instruction rn; acc if that is 15; but if extended, to full given extension
              */
             arm_mapped_rn.type = gip_ins_r_type_register;
-            arm_mapped_rn.r[4] = 0;
+            arm_mapped_rn.r = 0;
             arm_mapped_rn.r[4;0] = alu_rn;
             if (alu_rn==15) { arm_mapped_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; } // differs from native - should native match?
             if (extended_rn.type!=gip_ins_r_type_no_override) { arm_mapped_rn = extended_rn; }
@@ -324,7 +324,7 @@ module gip_decode_arm( input bit[32] opcode,
             /*b Map rm to instruction rm; pc if that is 15; but if extended, to full given extension
              */
             arm_mapped_rm.type = gip_ins_r_type_register;
-            arm_mapped_rm.r[4] = 0;
+            arm_mapped_rm.r = 0;
             arm_mapped_rm.r[4;0] = alu_rm;
             if (alu_rm==15) { arm_mapped_rm = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; } // Differs from native
             if (extended_rm.type!=gip_ins_r_type_no_override)
@@ -337,13 +337,13 @@ module gip_decode_arm( input bit[32] opcode,
             /*b Map rs to instruction rs; always the specified register (no extensions, PC not allowed)
              */
             arm_mapped_rs.type = gip_ins_r_type_register;
-            arm_mapped_rs.r[4] = 0;
+            arm_mapped_rs.r = 0;
             arm_mapped_rs.r[4;0] = alu_rs;
 
             /*b Map bottom bit set reg to instruction reg; no extenstions, PC allowed
              */
             arm_mapped_bottom_bit_set.type = gip_ins_r_type_register;
-            arm_mapped_bottom_bit_set.r[4] = 0;
+            arm_mapped_bottom_bit_set.r = 0;
             arm_mapped_bottom_bit_set.r[4;0] = ldm_stm_bottom_bit_set;
             if (ldm_stm_bottom_bit_set==15) { arm_mapped_bottom_bit_set = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; }
         }

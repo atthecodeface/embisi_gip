@@ -123,5 +123,6 @@ extern int test_entry_point()
             }
         }
     }
+    dprintf( "Memory tests complete, failures %d", failure, 0, 0 );
     return failure;
 }

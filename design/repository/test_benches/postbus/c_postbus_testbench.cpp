@@ -31,7 +31,7 @@
         error_arg_type_const_string, string,\
         error_arg_type_none );}}
 
-/*a Types for pcostbus_testbench
+/*a Types for postbus_testbench
 */
 /*t t_src_fsm
 */
@@ -326,8 +326,7 @@ c_postbus_testbench::c_postbus_testbench( class c_engine *eng, void *eng_handle 
 
     num_channels = 0;
     option_string = engine->get_option_string( engine_handle, "channels", "" );
-    string_copy = (char *)malloc(strlen(option_string)+1);
-    argc = sl_str_split( option_string, string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
+    argc = sl_str_split( option_string, &string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
     for (i=0; i<argc; i++)
     {
         if (argv[i][0]=='(') // We expect FC type, initial FC credit
@@ -349,8 +348,7 @@ c_postbus_testbench::c_postbus_testbench( class c_engine *eng, void *eng_handle 
 
     num_sources = 0;
     option_string = engine->get_option_string( engine_handle, "sources", "" );
-    string_copy = (char *)malloc(strlen(option_string)+1);
-    argc = sl_str_split( option_string, string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
+    argc = sl_str_split( option_string, &string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
     for (i=0; (i<argc) && (num_sources<MAX_SOURCES); i++)
     {
         if (argv[i][0]=='(') // We expect interval, channel, stream type (i/~i,r/~r...), stream length, stream hdr, stream seed, stream value
@@ -377,8 +375,7 @@ c_postbus_testbench::c_postbus_testbench( class c_engine *eng, void *eng_handle 
 
     num_sinks = 0;
     option_string = engine->get_option_string( engine_handle, "sinks", "" );
-    string_copy = (char *)malloc(strlen(option_string)+1);
-    argc = sl_str_split( option_string, string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
+    argc = sl_str_split( option_string, &string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
     for (i=0; (i<argc) && (num_sinks<MAX_SINKS); i++)
     {
         sinks[num_sinks].data_stream = sl_data_stream_create( argv[i] );
@@ -719,20 +716,20 @@ t_sl_error_level c_postbus_testbench::preclock_posedge_int_clock( void )
                     next_posedge_int_clock_state.src_fsm = src_fsm_last;
                     if (sources[src].ready_to_clock)
                     {
-                        sl_data_stream_next_data( sources[src].data_stream );
+                        sl_data_stream_next_data_word( sources[src].data_stream );
                         sources[src].ready_to_clock = 0;
                     }
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data(sources[src].data_stream);
+                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data_word(sources[src].data_stream);
                 }
                 else
                 {
                     next_posedge_int_clock_state.src_fsm = src_fsm_data;
                     if (sources[src].ready_to_clock)
                     {
-                        sl_data_stream_next_data( sources[src].data_stream );
+                        sl_data_stream_next_data_word( sources[src].data_stream );
                         sources[src].ready_to_clock = 0;
                     }
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data(sources[src].data_stream);
+                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data_word(sources[src].data_stream);
                 }
             }
             break;
@@ -746,20 +743,20 @@ t_sl_error_level c_postbus_testbench::preclock_posedge_int_clock( void )
                     next_posedge_int_clock_state.src_fsm = src_fsm_last;
                     if (sources[src].ready_to_clock)
                     {
-                        sl_data_stream_next_data( sources[src].data_stream );
+                        sl_data_stream_next_data_word( sources[src].data_stream );
                         sources[src].ready_to_clock = 0;
                     }
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data(sources[src].data_stream);
+                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data_word(sources[src].data_stream);
                 }
                 else
                 {
                     next_posedge_int_clock_state.src_fsm = src_fsm_data;
                     if (sources[src].ready_to_clock)
                     {
-                        sl_data_stream_next_data( sources[src].data_stream );
+                        sl_data_stream_next_data_word( sources[src].data_stream );
                         sources[src].ready_to_clock = 0;
                     }
-                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data(sources[src].data_stream);
+                    next_posedge_int_clock_state.src_data = sl_data_stream_packet_data_word(sources[src].data_stream);
                 }
             }
             break;

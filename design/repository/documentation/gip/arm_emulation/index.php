@@ -27,7 +27,7 @@ The ARM instruction classes in general are as follows:
 </tr>
 
 <tr>
-<th>Data processing</th>
+<th><a href="data_processing.php">Data processing</a></th>
 <td>ALU, Shift, and combined instructions</td>
 <td>Operations with a register-speciifed shift may not use the PC for any register other than the destination register</td>
 </tr>
@@ -45,7 +45,7 @@ The ARM instruction classes in general are as follows:
 </tr>
 
 <tr>
-<th>Single Data Transfer</th>
+<th><a href="single_data_transfer.php">Single Data Transfer</a></th>
 <td>Load or store from register plus offset, possibly shifted</td>
 <td>&nbsp;</td>
 </tr>
@@ -57,13 +57,13 @@ The ARM instruction classes in general are as follows:
 </tr>
 
 <tr>
-<th>Block data transfer</th>
+<th><a href="block_data_transfer.php">Block data transfer</a></th>
 <td>Load or Store multiple</td>
 <td>&nbsp;</td>
 </tr>
 
 <tr>
-<th>Branch</th>
+<th><a href="branch.php">Branch</a></th>
 <td>Branch with or without link</td>
 <td>&nbsp;</td>
 </tr>
@@ -95,48 +95,12 @@ The ARM instruction classes in general are as follows:
 </table>
 </p>
 
+Note that any ARM instruction that has a 'NV' condition is emulated as a single NOP instruction in the internal instruction set.
+
 <p>
+
 In addition, there are some instructions that the GIP implements in addition to the standard 32-bit
 ARM instruction set, to support the microkernel and software emulation features required for the OS.
-
-<table>
-
-<tr>
-<th>Instruction</th>
-<th>Description</th>
-</tr>
-
-<tr>
-<th></th>
-<td></td>
-</tr>
-
-<tr>
-<th></th>
-<td></td>
-</tr>
-
-<tr>
-<th></th>
-<td></td>
-</tr>
-
-<tr>
-<th></th>
-<td></td>
-</tr>
-
-<tr>
-<th></th>
-<td></td>
-</tr>
-
-<tr>
-<th></th>
-<td></td>
-</tr>
-
-</table>
 
 </p>
 

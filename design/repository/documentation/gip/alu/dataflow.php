@@ -34,13 +34,13 @@ analysis of the previous sections to show what sources are required for what, an
 <td>Rn</td>
 <td>A or ACC</td>
 <td>
-ALU Rd, Rm, Rn cycle 1
+ALU Rd, Rn, Rm cycle 1
 <br>
-ALU Rd, Rm, #I cycle 1
+ALU Rd, Rn, #I cycle 1
 <br>
-ALU Rd, Rm, Rn, SHF Rs cycle 2
+ALU Rd, Rn, Rm, SHF Rs cycle 2
 <br>
-ALU Rd, Rm, Rn, SHF #S cycle 2
+ALU Rd, Rn, Rm, SHF #S cycle 2
 <br>
 MLA cycle 1
 <br>
@@ -64,7 +64,7 @@ LDR|STR Rd, [Rn], +/-Rm, SHF #S cycle 2
 <td>Rs</td>
 <td>A or ACC</td>
 <td>
-ALU Rd, Rm, Rn, SHF Rs cycle 1
+ALU Rd, Rn, Rm, SHF Rs cycle 1
 </td>
 </tr>
 
@@ -78,7 +78,7 @@ ALU Rd, Rm, Rn, SHF Rs cycle 1
 <td>S (imm shift)</td>
 <td>A</td>
 <td>
-ALU Rd, Rm, Rn, SHF #S cycle 1
+ALU Rd, Rn, Rm, SHF #S cycle 1
 <br>
 LDR|STR Rd, [Rn, +/-Rm, SHF #S]{!} cycle 1
 <br>
@@ -122,11 +122,11 @@ steps require Rs to be present and then rotate it; A is generally loaded on ever
 <td>Rm</td>
 <td>B or ACC</td>
 <td>
-ALU Rd, Rm, Rn cycle 1
+ALU Rd, Rn, Rm cycle 1
 <br>
-ALU Rd, Rm, Rn, SHF Rs cycle 1
+ALU Rd, Rn, Rm, SHF Rs cycle 1
 <br>
-ALU Rd, Rm, Rn, SHF #S cycle 1
+ALU Rd, Rn, Rm, SHF #S cycle 1
 <br>
 MUL|MLA cycle 1
 <br>
@@ -146,9 +146,9 @@ LDR|STR Rd, [Rn], +/-Rm, SHF #S cycle 1
 <td>SHF</td>
 <td>SHF</td>
 <td>
-ALU Rd, Rm, Rn, SHF Rs cycle 2
+ALU Rd, Rn, Rm, SHF Rs cycle 2
 <br>
-ALU Rd, Rm, Rn, SHF #S cycle 2
+ALU Rd, Rn, Rm, SHF #S cycle 2
 <br>
 LDR|STR Rd, [Rn, +/-Rm, SHF #S]{!} cycle 1
 <br>
@@ -160,11 +160,11 @@ LDR|STR Rd, [Rn], +/-Rm, SHF #S cycle 1
 <td>I (immediate)</td>
 <td>B</td>
 <td>
-ALU Rd, Rm, #I cycle 1
+ALU Rd, Rn, #I cycle 1
 <br>
-ALU Rd, Rm, Rn, SHF Rs cycle 2
+ALU Rd, Rn, Rm, SHF Rs cycle 2
 <br>
-ALU Rd, Rm, Rn, SHF #S cycle 2
+ALU Rd, Rn, Rm, SHF #S cycle 2
 <br>
 LDR|STR Rd, [Rn, #+/-I]{!} cycle 1
 <br>
@@ -235,13 +235,13 @@ LDM|STMDA cycle 1
 
 <tr>
 <th>ILSL</th>
-<td>Op2 &lt;&lt; Op1[8;0]</td>
+<td>Op1 &lt;&lt; Op2[8;0]</td>
 <td>
-Take bottom 8 bits of Op1
+Take bottom 8 bits of Op2
 <br>
-If zero, carry out is zero, result is Op2
+If zero, carry out is zero, result is Op1
 <br>
-If one to thirtytwo, result is Op2 shifted left by that amount, carry out is last bit shifted out
+If one to thirtytwo, result is Op1 shifted left by that amount, carry out is last bit shifted out
 <br>
 If greater than thirtytwo, result is zero, carry out is zero
 </td>
@@ -258,13 +258,13 @@ LDR|STR Rd, [Rn], +-Rm, LSL #S
 
 <tr>
 <th>ILSR</th>
-<td>Op2 &gt;&gt; Op1[8;0]</td>
+<td>Op1 &gt;&gt; Op2[8;0]</td>
 <td>
-Take bottom 8 bits of Op1
+Take bottom 8 bits of Op2
 <br>
-If zero, carry out is zero, result is Op2
+If zero, carry out is zero, result is Op1
 <br>
-If one to thirtytwo, result is Op2 shifted right by that amount, carry out is last bit shifted out
+If one to thirtytwo, result is Op1 shifted right by that amount, carry out is last bit shifted out
 <br>
 If greater than thirtytwo, result is zero, carry out is zero
 </td>
@@ -281,15 +281,15 @@ LDR|STR Rd, [Rn], +-Rm, LSR #S
 
 <tr>
 <th>IASR</th>
-<td>Op2 &gt;&gt;&gt; Op1[8;0]</td>
+<td>Op1 &gt;&gt;&gt; Op2[8;0]</td>
 <td>
-Take bottom 8 bits of Op1
+Take bottom 8 bits of Op2
 <br>
-If zero, carry out is zero, result is Op2
+If zero, carry out is zero, result is Op1
 <br>
-If one to thirtytwo, result is Op2 arithmetically shifted right by that amount, carry out is last bit shifted out
+If one to thirtytwo, result is Op1 arithmetically shifted right by that amount, carry out is last bit shifted out
 <br>
-If greater than thirtytwo, result is 32 copies of Op2[31], carry out is Op2[31]; the sign bit of Op2.
+If greater than thirtytwo, result is 32 copies of Op1[31], carry out is Op1[31]; the sign bit of Op1.
 </td>
 <td>
 ALU Rd, Rn, Rm, ASR #S
@@ -304,13 +304,13 @@ LDR|STR Rd, [Rn], +-Rm, ASR #S
 
 <tr>
 <th>IROR</th>
-<td>Op2 rotate right Op1[8;0]</td>
+<td>Op1 rotate right Op2[8;0]</td>
 <td>
-Take bottom 8 bits of Op1
+Take bottom 8 bits of Op2
 <br>
-If zero, carry out is zero, result is Op2
+If zero, carry out is zero, result is Op1
 <br>
-Else take bottom five bits of Op1; if zero, use thirytwo; result is Op2 rotated right by this number; carry out is last bit rotated
+Else take bottom five bits of Op2; if zero, use thirytwo; result is Op1 rotated right by this number; carry out is last bit rotated
 </td>
 <td>
 ALU Rd, Rn, Rm, ROR #S
@@ -325,11 +325,11 @@ LDR|STR Rd, [Rn], +-Rm, ROR #S
 
 <tr>
 <th>IRRX</th>
-<td>Op2,C rotate right 1</td>
+<td>Op1,C rotate right 1</td>
 <td>
-Shift Op2 right by one bit as the result, but make bit 31 of the result equal to C
+Shift Op1 right by one bit as the result, but make bit 31 of the result equal to C
 <br>
-Make carry out equal to Op2[0].
+Make carry out equal to Op1[0].
 </td>
 <td>
 ALU Rd, Rn, Rm, RRX

@@ -11,7 +11,7 @@ $page_background = "#567dff";
 $footer_background = "#567dff";
 $footer_color = "#ddddff";
 
-$nav_width = 130;
+$nav_width = 190;
 $nav_background = "#567dff";
 $nav_color1 = "#ddddff";
 

@@ -71,7 +71,7 @@ h4 {
 }
 .body {
     font-family: Verdana, Tahoma, Arial;
-	font-size:14pt;
+	font-size:10pt;
 	color: <?php echo $text_color2;?>;
     margin-top:12pt;
     margin-bottom:0;
@@ -124,7 +124,7 @@ PRE {
     border-width: 0px;
 }
 .data {
-    border:1px;
+    border:  1px solid red;
 }
 .linkhdr {
 	font-family:verdana;

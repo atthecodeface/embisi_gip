@@ -37,6 +37,11 @@ The instruction set is documented in OpenOffice
 </tr>
 
 <tr>
+<th><a href="instruction_set/index.php">Instruction set</a></th>
+<td>The instruction set and its encoding</td>
+</tr>
+
+<tr>
 <th><a href="rf/index.php">RF</a></th>
 <td>Register file, with information on read ports, write ports, and register scoreboarding</td>
 </tr>

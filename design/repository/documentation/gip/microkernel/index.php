@@ -3,7 +3,7 @@
 include "web_locals.php";
 include "${toplevel}web_assist/web_globals.php";
 
-site_set_location("gip.microkernel");
+site_set_location($site_location);
 
 $page_title = "GIP Documentation";
 
@@ -16,70 +16,87 @@ page_sp();
 
 <?php page_section( "overview", "Overview" ); ?>
 
-<pre>
-Two + n threads:
+<p>
 
-n hardware threads, which are GIP code, which present requests in some
-form to the microkernel for particularly pieces of ARM code to be
-executed.
+The microkernel provides the capability of a GIP to support a full-blown OS with hardware interrupts.
+</p>
 
-Microkernel thread, which is GIP code, which takes requests from
+<p>
+
+The basic implementation requires three classes of thread:
+
+<ul>
+<li>Microkernel thread (one instance)
+<li>ARM mode code thread (one instance for all user and supervisor code)
+<li>Hardware interrupt code threads (one instance per hardware interrupt type)
+</ul>
+
+The operation can be summarized fairly simply. Assume the GIP is totally idle.
+A hardware interrupt comes in, starting a hardware interrupt thread. This thread
+handles the interrupt provisionally, and signals the microkernel thread to schedule.
+The microkernel thread schedules, notices a hardware interrupt has occurred, then
+it arranges the parameters for the ARM mode code thread, manages some local interrupt
+enable masks, allows the ARM mode code thread to be scheduled, and then deschedules itself.
+This lets the ARM mode code thread schedule, and it runs the interrupt driver code. On completion
+it 'exits from IRQ mode', by messaging the microkernel thread and then descheduling.
+The microkernel thread gets scheduled, notes what has happened, clears interrupt masks, and everything
+continues from the start.
+
+</p>
+
+<p>
+The microkernel is basically responsible for scheduling the ARM mode code thread, and if any
+preemption is required, or mode switching (on a system call, for example) then the microkernel is
+responsible for that. The basic communication between them is scheduling management; this is akin to interrupt
+management, except it contains more information than 'disable', 'restore', 'enter' and 'exit' from interrupt routines, which
+is what interrupt masking generally provides for.
+</p>
+
+
+<?php page_section( "microkernel_thread", "Microkernel Thread" ); ?>
+
+<p>
+The microkernel thread, which is written in GIP 16-bit code, takes requests from
 hardware threads and the ARM thread, and despatches execution of ARM
-code. Microkernel is responsible for ARM register 'banking'; R13 and
+code. The microkernel thread is responsible for ARM register 'banking': R13 and
 R14 management.
+</p>
 
-ARM execution thread, which runs OS code, application code, etc. All
-the ARM code.
-
-
-
-Hardware threads should be equal top priority, nonpreemptable.
-Microkernel thread should be second priority, preemptable by hardware
-threads.
-ARM thread should be lowest priority, preemptable by any of the above.
-
-Software interrupts are explicit communications between the ARm thread
-then microkernel thread.  Hardware interrupts as far as the OS is
-concerned are effectively internally generated within the microkernel,
-using messages from the hardware threads.
-
-So there are two entry points in to the microkernel thread, and as its
+<p>
+So there are two entry points in to the microkernel thread, and as it is
 a single thread they are mutually exclusive (i.e. not reentrant). As
 the hardware only supports a single event to wake up a hardware
 thread, we will have to have a differentiating mechanism and a single
 mutex/semaphore to wake the microkernel; the suggested mechanism would
 be a register with 32 bits which provides for 31 different hardware
 interrupt sources and one software interrupt source.
+</p>
 
-A SWI always deschedules the ARM exeuction thread. 
+<p>
+A SWI always deschedules the ARM execution thread. 
+</p>
 
+<p>
 Hardware interrupts occur through the messaging to the microkernel
 entry point, and the microkernel will 'deschedule' the ARM thread,
 replace it with the ARM hardware interrupt handler code, and then
 return to its entry point waiting for a SWI ONLY (as hardware
 interrupts are disabled).
+</p>
 
-
-
-
-Hardware thread state machine
-
-1. Wait for stuff on a register or something from an external device (or
-other GIP)
-
-2. Get stuff from that register; if it has enough, or a packet, or something
-then notify the microkernel that there is something to do by setting
-a bit in the which interrupts register and the microkernel event occurred thing.
-
-3. return, but keep giving it stuff.
-
-
+<p>
 The microkernel thread wakes up on the event occurred.
+</p>
 
+<p>
 It clears the event.
+</p>
 
+<p>
 It reads and clears the 'which interrupts register' atomically.
+</p>
 
+<p>
 It then invokes the ARM thread with each interrupt vector requested
 if linux interrupts are enabled. (Question; can we do this instead
 with a mutex? We would need to have an atomic read and write
@@ -88,19 +105,23 @@ descheduling be handled well if the requested mutex is not available?
 That should only happen for the microkernel thread, as the ARM thread
 can only run if the microkernel thread is not running, and the
 microkernel thread would then not own the mutex)
+</p>
 
+<p>
 What is the prod to the microkernel though? Sounds like a
 semaphore. No, its an event
+</p>
 
+<p>
 We will have an atomic test/set bit that can be read and written in a
 single instruction, and it will have an associated change action
 response mechanism that can be dynamically configured, such that
 particular edges on the value of the bit can be set to invoke a
 corresponding event (which may also be forced to occur by other
 sources too including from other processors).
+</p>
 
-
-
+<p>
 Microkernel on entry from SWI from kernel mode occurs only, we
 believe, from init to do an exec; from user mode for all other SWI
 calls (probably). From user mode code the portable kernel code has to
@@ -110,79 +131,54 @@ Currently the ARM Linux layer, on entry to a SWI or on an interrupt,
 pushes all sixteen uesr mode registers (inc PC) on to the kernel
 stack. We may want to change that from the kernel stack to save
 accesses to SDRAM.
+</p>
+
+<?php page_section( "arm_code_thread", "ARM Mode Code Thread" ); ?>
+
+<p>
+ARM execution thread, which runs OS code, application code, etc. All
+the ARM code.
+</p>
+
+<?php page_section( "interrupt_threads", "Hardware interrupt threads" ); ?>
+
+<p>
+The basic operation of a hardware interrupt thread is:
+
+<ol>
+<li>Wait for stuff on a register or something from an external device (or
+other GIP)
+
+<li>Get stuff from that register; if it has enough, or a packet, or something
+then notify the microkernel that there is something to do by setting
+a bit in the which interrupts register and the microkernel event occurred thing.
+
+<li>Return, but keep giving it stuff.
+
+</ol>
 
 
+</p>
 
+<?php page_section( "system_calls", "System calls" ); ?>
 
+<p>
+Software interrupts are explicit communications between the ARm thread
+then microkernel thread.  Hardware interrupts as far as the OS is
+concerned are effectively internally generated within the microkernel,
+using messages from the hardware threads.
+</p>
 
-----------------------------------------------------------------------------
+<?php page_section( "thread_priorities", "Thread priorities" ); ?>
 
-So, summary:
+<p>
+Hardware threads should be equal top priority, nonpreemptable.
+Microkernel thread should be second priority, preemptable by hardware
+threads.
+ARM thread should be lowest priority, preemptable by any of the above.
+</p>
 
-We wil use one internal event, and an atomic test/set bit. The event
-can be triggered or cleared with a GIP instruction. The atomic
-test/set bit can be read, set-and-read, cleared-and-read,
-written-and-read, or just written. Additionally an 'interest' may be
-registered with the atomic test/set bit such that if the 'interest' is
-met (such as rising edge) when a transaction is performed to the bit,
-then the event is triggered.
-
-We will have a PC stack/triple in the GIP which holds the PCs of the
-three levels of process: high (hardware), medium (microkernel), low (ARM).
-
-The atomic test/set bit is used to disable interrupts; if it is high,
-then interrupts are disabled. If it is low, then interrupts are
-enabled. Note that this means that the interrupt enable must be
-managed appropriately with the internal scheduler...
-
-Undefined ARM instructions will cause the PC to be stored in the PC
-stack, a specified internal event to be triggered, and the thread to be descheduled.
-
-The hardware 'interrupt' threads schedule on an external event from hardware,
-generate data, put in a buffer, mark a bit in a shared interrupt
-register corresponding to their interrupt number, and trigger the
-internal event, before descheduling back to the external event.
-
-The microkernel operates in two states: interrupt in action, and no
-interrupt in action. Initially no interrupt is in action. In this
-state it waits for the internal event to trigger. When this occurs, it
-first checks to see if an undefined ARM instruction is pending. (How
-does it do this?) If it is, then the action for that undefined
-instruction is taken (more below ?). Then the shared interrupt
-register is read and cleared atomically (with a block scheduling
-instruction), and the internal trigger event is reset. If there are
-any hardware interrupts to be handled (mask the read shared interrupt
-register) then they are handled one at a time. This is done by first
-setting the atomic test/set bit, to mark interrupts as disabled. Then
-the ARM thread is restarted with the hardware vector number for the
-relevant interrupt, with the previous ARM registers (including flags
-and PC) pushed on to a stack of some form. The microkernel then
-configures the atomic test/set bit interest to be 'interrupt being
-enabled', pushes the vector information on to the interrupt vector stack, and
-deschedules, now in its second state 'interrupt in action'.
-
-When the event triggers now, in 'interrupt in action', it could be for
-one of four reasons:
-
-1. Interrupts being reenabled by hardware interrupt handler. In this
-   case other interrupts may have to be looked at and so on; this is
-   very similar to return from interrupt, except that the top of the
-   interrupt vector stack is not popped.
-
-2. Hardware interrupts from hardware threads; if this occurs and
-   interrupts are disabled (as should be the case here) then they are
-   ignored, and left for later (when interrupts are reenabled).
-
-3. Return from interrupt, which looks like an undefined
-   instruction. This recovers the top interrupt vector stack
-   information, and then tries to execute the next highest priority
-   interrupt. If none are available, then interrupts are
-   reenabled. Control is returned to the ARM using the information
-   from the interrupt vector stack, and the microkernel enters its 'no
-   interrupt in action' state.
-
-4. SWI or other system call, through an undefined instruction. This
-   causes the standard behaviour for 'no interrupt in action'.
+<?php page_section( "communication_primitives", "Communication primitives" ); ?>
 
 
 
@@ -201,16 +197,7 @@ We can have one instruction that loads 'r12' with 'r17, #...' and pc
 with 'r18, #entryptr<<2' - we can use a quarter of the SWI instruction
 decode.
 
-</pre>
-
 <?php
 page_ep();
 
 include "${toplevel}web_assist/web_footer.php"; ?>
-
-
-
-
-
-
-

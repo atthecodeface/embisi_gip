@@ -103,8 +103,8 @@ carry flag
 </tr>
 
 <tr>
-<th>RORX</th>
-<th>Extended rotate right</th>
+<th>ROR33</th>
+<th>33-bit rotate right</th>
 <td>Op2,C ROR #1</td>
 <td>Rotate right 33-bit value by one bit;<br>&nbsp;carry out is bit rotated out of
 Op2</td>

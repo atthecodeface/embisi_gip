@@ -16,6 +16,42 @@ page_sp();
 
 <?php page_section( "overview", "Overview" ); ?>
 
+<p>
+This area describes the GIP internal instruction set, which is executed by the GIP execution pipeline on behalf of
+the native 16-bit GIP instruction set decoder and the ARM 32-bit instruction emulation system.
+</p>
+
+<p>
+There are a few basic classes of instruction:
+
+<ul>
+
+<li> ALU / shift instructions (including multiply/divide steps)
+
+<li> Memory reads
+
+<li> Memory writes
+
+<li> Coprocessor reads
+
+<li> Coprocessor writes
+
+<li> Coprocessor to memory transfers
+
+<li> Memory to coprocessor transfers
+
+<li> Memory commands (prefetch, flush, and such like)
+
+<li> Coprocessor/memory DMA commands
+
+</ul>
+
+Note that there are no flow control instructions; in fact, there is no specific program counter in the internal instruction set, and it does not issue any fetches, as that is the responsibility of the decoder or emulator feeding internal instructions to the pipeline.
+
+</p>
+
+<?php page_section( "instruction_encoding", "Instruction Encoding" ); ?>
+
 <table class=data>
 <tr>
 <th>Field
@@ -103,191 +139,305 @@ page_sp();
 <tr>
 <th>
 IADD[CC][S][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IADC[CC][S][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 ISUB[CC][S][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 ISBC[CC][S][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IRSB[CC][S][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IRSC[CC][S][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IADD[S][A] Rn, Rm/Imm -> {cond}
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 ISUB[S][A] Rn, Rm/Imm -> {cond}
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IRSB[S][A] Rn, Rm/Imm -> {cond}
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IAND[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IORR[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IXOR[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IBIC[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IORN[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IMOV[CC][S][P][A] Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IMVN[CC][S][P][A] Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IAND[S][P][A] Rn, Rm/Imm -> {cond}
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IORR[S][P][A] Rn, Rm/Imm -> {cond}
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IXOR[S][P][A] Rn, Rm/Imm -> {cond}
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IBIC[S][P][A] Rn, Rm/Imm -> {cond}
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IORN[S][P][A] Rn, Rm/Imm -> {cond}
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 ILSL[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 ILSR[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IASR[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IROR[CC][S][P][A] Rn, Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 IROR33[CC][S][P][A] Rn -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 ICPRD[CC] Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 ICPWR[CC] Rn, Rm/Imm
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
 ICPCMD[CC] Rm/Imm
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ILDR[CC][A] (Rn, [-]Rm/Imm) -> Rfw
+ILDR[CC][A] #k (Rn, [-]Rm/Imm) -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ILDR[CC][A] (Rn), [-]Rm/Imm -> Rfw (?)
+ILDR[CC][A] #k (Rn), [-]Rm/Imm -> Rfw (?)
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ILDR[CC]B[A][L][U] (Rn, [-]Rm/Imm) -> Rfw
+ILDR[CC]B[A][L][U] #k (Rn, [-]Rm/Imm) -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ILDR[CC]B[A][L][U] (Rn), [-]Rm/Imm -> Rfw (?)
+ILDR[CC]B[A][L][U] #k (Rn), [-]Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ILDR[CC]H[A][L][U] (Rn, [-]Rm/Imm) -> Rfw
+ILDR[CC]H[A][L][U] #k (Rn, [-]Rm/Imm) -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ILDR[CC]H[A][L][U] (Rn), [-]Rm/Imm -> Rfw (?)
+ILDR[CC]H[A][L][U] #k (Rn), [-]Rm/Imm -> Rfw
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ISTR[CC][A] (Rn) <- Rm/Imm (Rn->Rfw)
+ISTR[CC][A] #k (Rn), #-4/0/+4 <- Rm/Imm [(Rn->Rfw)]
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ISTR[CC]B[A][L][U] (Rn) <- Rm/Imm (Rn->Rfw)
+ISTR[CC]B[A][L][U] #k (Rn), #-4/0/+4 <- Rm/Imm [(Rn->Rfw)]
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 <tr>
 <th>
-ISTR[CC]H[A][L][U] (Rn) <- Rm/Imm (Rn->Rfw)
+ISTR[CC]H[A][L][U] #k (Rn), #-2/0/+2 <- Rm/Imm [(Rn->Rfw)]
+</th>
+<td></td>
+<td>CC</td>
 </tr>
 
 </table>
@@ -295,6 +445,105 @@ ISTR[CC]H[A][L][U] (Rn) <- Rm/Imm (Rn->Rfw)
 Still missing:
 XMC (word, block), XCM (word, block), XORFIRSTONE, XORLASTONE, INIT, MULFIRST, MULSTEP, DIVSTEP, BITCOUNT, MEMCMD (prefetch, writeback, writeback_and_invalidate, flush, fill buffer from address, write buffer to address,
 Sticky flags
+
+<table class=data>
+<tr>
+<th>CC
+<th>Meaning
+<th>Flags
+</tr>
+
+<tr>
+<th>AL</th>
+<td>Always</td>
+<td>1</td>
+</tr>
+
+<tr>
+<th>EQ</th>
+<td>equal</td>
+<td>Z</td>
+</tr>
+
+<tr>
+<th>NE</th>
+<td>not equal</td>
+<td>!Z</td>
+</tr>
+
+<tr>
+<th>CS</th>
+<td>carry set</td>
+<td>C</td>
+</tr>
+
+<tr>
+<th>CC</th>
+<td>carry clear</td>
+<td>!C</td>
+</tr>
+
+<tr>
+<th>MI</th>
+<td>negative</td>
+<td>N</td>
+</tr>
+
+<tr>
+<th>PL</th>
+<td>positive</td>
+<td>!N</td>
+</tr>
+
+<tr>
+<th>VS</th>
+<td>overflow set</td>
+<td>V</td>
+</tr>
+
+<tr>
+<th>VC</th>
+<td>overflow clear</td>
+<td>!V</td>
+</tr>
+
+<tr>
+<th>LS</th>
+<td>lower or same</td>
+<td>!C | Z</td>
+</tr>
+
+<tr>
+<th>HI</th>
+<td>higher</td>
+<td>C & !Z</td>
+</tr>
+
+<tr>
+<th>GT</th>
+<td>(C&!V) | (!C&V)</td>
+<td></td>
+</tr>
+
+<tr>
+<th>GE</th>
+<td>(C&!V) | (!C&V) | Z</td>
+<td></td>
+</tr>
+
+<tr>
+<th>LT</th>
+<td>(!C&V) | (C&V)</td>
+<td></td>
+</tr>
+
+<tr>
+<th>LE</th>
+<td>(!C&V) | (C&V) | Z</td>
+<td></td>
+</tr>
+
+</table>
 
 
 <?php

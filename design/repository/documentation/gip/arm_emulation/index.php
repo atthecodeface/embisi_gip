@@ -95,6 +95,51 @@ The ARM instruction classes in general are as follows:
 </table>
 </p>
 
+<p>
+In addition, there are some instructions that the GIP implements in addition to the standard 32-bit
+ARM instruction set, to support the microkernel and software emulation features required for the OS.
+
+<table>
+
+<tr>
+<th>Instruction</th>
+<th>Description</th>
+</tr>
+
+<tr>
+<th></th>
+<td></td>
+</tr>
+
+<tr>
+<th></th>
+<td></td>
+</tr>
+
+<tr>
+<th></th>
+<td></td>
+</tr>
+
+<tr>
+<th></th>
+<td></td>
+</tr>
+
+<tr>
+<th></th>
+<td></td>
+</tr>
+
+<tr>
+<th></th>
+<td></td>
+</tr>
+
+</table>
+
+</p>
+
 <?php
 page_ep();
 

@@ -15,6 +15,9 @@ site_map( "implementation", "implementation.php", "Implementation" );
 site_pop();
 site_map( "arm_emulation", "arm_emulation", "ARM emulation" );
 site_map( "microkernel", "microkernel", "Microkernel" );
+site_push( "microkernel/" );
+site_map( "detailed_operation", "detailed_operation", "Detailed Operation" );
+site_pop();
 site_pop();
 /*
 site_map( "company", "company", "Company" );

@@ -1,0 +1,20 @@
+MODEL "apb_devices" incremental_synthesis=yes;
+
+MODEL "gip_core" incremental_synthesis=yes;
+
+MODEL "gip_data_ram" incremental_synthesis=yes;
+
+MODEL "gip_periph_apb" incremental_synthesis=yes;
+
+MODEL "gip_prefetch" incremental_synthesis=yes;
+
+MODEL "gip_simple_boot_rom" incremental_synthesis=yes;
+
+MODEL "ddr_dram_as_sram" incremental_synthesis=yes;
+
+MODEL "postbus_rom_source" incremental_synthesis=yes;
+
+MODEL "postbus_test_rom_contents" incremental_synthesis=yes;
+
+MODEL "fpga_wrapper" incremental_synthesis=yes;
+

@@ -1,372 +1,686 @@
-gip_simple
-led 0 is clock_enable - not very useful
-other leds just count
-bottom 2 switches set UART speed to /261, /131, /66, /8
-switch 2 disables rxd
-
-fpga_wrapper
-switch 7 is reset
-
-monitor.c
-Calls uart_init, then uart_tx('a'), uart_tx('b'), uart_poll...
-uart_rx_poll() does uart_tx_hex8(tx_av)
-uart_tx ignores tx_av, but does decrement it
-uart_rx_poll
-
-monitor_just_prints_ab000003e8_1220_wed.bit
-This flashes LEDs, but does nothing else. Not UART activity, with Rx disabled or not
-This was built from scratch
-
-
-Added an inline UART tx of '*\n' to start of test_entry_point in monitor.c before uart_init
-Made gip_simple toggle LED[0] on clock_enable, which is clock/(4096*switches[8;0])
-Made LED[1] reflect uart txd
-Made LED[2] reflect uart txd
-Made baud rate 2 be very slow - 10Hz (which is 160Hz at x16, or 5000000/160=31250 = 16h7a12
-
-Rebuilt with resynthesize of fpga_wrapper; missed gip_simple_boot_rom
-
-this gives monitor_first_tx_star_1300_wed.bit
-This flashes the bottom LED independently of the switch settings. This indicates the switches are not all correct?
-The TxD and RxD LEDS are on all the time
-Ah. Bug in the clock divide code - was using the wrong bits to wrap toggle.
-
-Rebuilt with resynthesize of gip_simple_boot_rom and fpga_wrapper; also had to touch fpga_wrapper.v to make it do anything
-Started build at 13:11
-Finished build at 13:22
-
-This does no better
-
-Perhaps we have a clock skew issue? The clock divider output register appears to be being duplicated.
-That would not account for the LED not handling the divide properly though.
-
-Rebuilt with global clock BUFG for internal derived clock: started 01:51, finished at 02:01
-No improvement. There is a bug in the clock divider code. Try again.
-
-Add new toggle on baud enable/64
-Make LEDS[0 to 3] clock divider, baud enable, txd, rxd
-
-Started build at 14:16
-This one now flashes the LEDs correctly (using the switches okay), but the TxD and RxD are always on.
-So, no code running.
-
-New code load; added to wrapper.S an additional '*\n' in hard code write at the beginning.
-
-Build started at 14:52
-
-No progress
-It still has an incorrect clock
-Fixed that eventually...
-Still does no UART, but the LEDs are running fine.
-Cannot seem to get anything from UART with other bit files. Time to reset the UART with some data in it.
-
-Weds 19:16
-
-Built a new image with io_uart having tx_pend permanently asserted. This boots, and the TxD light indicates the stop bits, correctly.
-However, the PC is not receiving them!
-
-Weds 7:46
-
-Built a new image with the Tx data and config set to 0x2a, 1 start, 1 stop bit, 8 data bits - a stream of *s
-We got some stars once!!!
-
-Weds 8:02
-
-Built a new image with the baud rate 1 less - maybe its a timing issue?
-This works (once there was room for placement)
-Helps to do 'stty -F /dev/ttyS0 raw'
-and 'stty -F /dev/ttyS0 -ispeed 2400' and use the '01' setting
-
-Now. Back to turn off the UART initial output
-
-Built Weds 11pm.
-
-This outputs just a single star. Don't know why it does just one, or indeed where this one is coming from. Is the GIP executing some code? The first items of code should output '*\n'. But no '\n' yet.
-
-Try to output '!\n' from the GIP code, and remove the 'overwrite with *' in io_uart...
-
-Build Weds 11:15pm
-
-With this, nothing comes out of the UART. Strange, as this would seem to indicate that more changed.
-
-Rebuild with the 'overwrite with *' in io_uart
-
-Built Weds 11:45pm
-
-Still nothing. Maybe its something to do with the boot rom code change? Weird...
-
-Revert that change (in the wrapper), and rebuild everything overnight from scratch.
-
-Building Weds 11:55pm
-
-Thurs am. Now we get the stream of '*'s again. Why? pend_start is not driven high all the time, so this implies there is something supplying things to the command fifo.
-
-Try remove the overwrite, and rebuild from scratch.
-
-Build start at 10:29am Thurs
-Build finished at 10:45am Thurs
-
-Wow!
-We get:
-*\n
-*\nab\ncde*\n
-with the last line repeated lots of times.
-The first star and newline comes from wrapper_entry_point; that is location 0
-The *\n then comes from the entry to test_entry_point, where the UART tx is hard coded
-a comes from the start of the prompt loop
-b comes from the UART rx polling loop
-\n comes from exiting the UART rx polling loop with rx_byte less than 32
-c comes from having exited the UART rx polling loop
-d comes after parsing the input buffer
-e comes before obeying the command
-The command is probably executed by jumping to location zero...
-
-Now, maybe the SRAM model for the main SRAM is wrong?
-Try adding a load and store to the wrapper...
-Store a number 0x12345678
-read it back to a different register
-output that with an equivalent to tx_hex8
-Also make the initial '*' be a '!'
-
-Clean up project files, rebuild from scratch as before:
-Build start at 11:05am Thurs
-Build finished and downloaded at 11:27am Thurs
-
-We now get:
-!\n
-\16/\00/\0a/\65/\00/\2a/\00/\2a/
-\n
-a\n
-ab\n
-b\n
-cdcde\0\0\n
-
-We were expecting:
-!\n
-\16/\00/\0a/\96/
-*\nab\ncde* etc
-
-Hm. Probably overwriting the buffer; after 6 characters? Possibly, since we have a very tight apparent loop.
-Try adding a long delay (1/240s, or about 4000us, or 20000 cycles, i.e. a loop 5000 (8192) times per character)
-Changed wrapper to add delay, and monitor at start of polling loop
-
-Build started at 11:36
-Download complete at 12:01
-Well, the code seems to work better now...
-We get:
-!\n
-\16/\00/\0a/\96/
-*\nab\ncdeeeeeeeeee
-
-With e repeating forever
-
-Now, how about putting some of the Rx stuff back in?
-Well, it is actually in, but rx_rdy must be 1. Don't know why. So, add some display of rx_rdy and &rx_rdy.
-(Note the initial read/write is working okay)
-Also, put delay_char in wrapper, and call it from uart_tx to ensure there is no overwriting
-
-Build started at 12:11
-Build downloaded at 12:35
-!\n
-\16/\00/\0a/\96/
-*\n
-ab00000000e1a03e25ffffffffcde!\n
-
-It would seem, then, that ldr r5, [pc, #296] actually does ldr r5, [pc]. (Opcode e59f5128).
-bug in the RTL, or in Xilinx? Hm. Try in simulation now.
-
-In simulation we get:
-!\n
-\16/\00/\0a/\96/
-*\n
-ab00000000000100000000003dfcde\n
-?f\n
-
-Hm. So something up with ldr [thing, #offset] - offset is ignored, but only in emulation. Hm.
-
-Well, there was something in a Xilinx answer tip about the following may be dubious:
-a = (b?c:d) | (e?f:g);
-And we have that for ld; change that in the CDL, and rebuild.
-
-Build started at 1:18
-Download done at 01:43
-
-Now we get:
-!\n
-\16/\00/\0a/\96/
-*\n
-ab00000000 00010000 000003df cde\n
-?f\n
-
-So there is a bug in Xilinx there with those expressions.
-Rebuild gip_decode_arm with different logic for those expressions.
-Also remove the immediate 'break' in the UART polling loop
-Also remove the 'b' from the polling loop, and some of the debug tx8s for rx_rdy and tx_av
-
-Build started at 2:45pm
-Downloaded at 15:00pm
-
-Read and write work well.
-With Minicom, though, we need cr/lf, not just lf, so need to add that.
-
-Build Fri 0930am
-Ooops. forgot to build the verilog. Try again
-Build Fri 1250am
-Works fantastically!
-
-
-Monday
-Added APB ext bus peripheral, and 3 commands to read/write it.
-Appears to work in simulation.
-Time to try it in FPGA
-The wrapper has to have more added to it - output enable buffers for tristate data_av bus, etc
-
-Build Monday 1300 - added all the logic, we hope
-Finally built at 14:30
-
-The eb commands are in; forgot to make the chip select readable!
-We need to do:
-ebc fff
-eba 40000000
-ebd
-eba
-eba 40000000
-ebd 12345678
-ebd deadbeef
-eba 40000000
-ebd
-ebd
-Success!
-
-Now it is time to see if we can figure out how to use the flash
-First, we need to write to it to check its status
-(Note we should be holding FLASH_RST# high - it will be pulled high, but we should pull it up in the wrapper - it is pin L10)
-We need to write a device command to the flash
-First, read id codes. This is a write of 0x90 to any address, followed by a read of 0 or 1 for mfr and device codes.
-ebc 3ff
-eba 0
-ebd 90
-ebd 0
-ebd 1
-
-For the first ebd we get 89 - which claims to be Intel, but I think it should be Micron. Hm
-The second one returns 0 - which is odd. We expect 17 for 64Mbit. Hm.
-
-Now try reading the status register.
-eba 0
-ebd 70
-ebd
-
-Hm odd again.
-We expect 8b1000000, but we get 0
-This would imply the write state machine is busy.
-
-Try put it back to read array
-eba 0
-ebd ff
-That works
-Now putting it in to reading the status registers returns 80, correctly.
-
-Try erasing block 0
-Write 20 to a block address, then d0 to the same. Then read the status.
-So:
-ebc 3ff
-eba 0
-ebd 20
-ebd d0
-ebd 70
-ebd
-The ebd returns 'b0', for ready, successful erase, successful program
-
-Now read the data back...
-ebc fff
-eba 0
-ebd ff
-ebd
-Now we get ebd returning ffff! Yay!
-
-Clear the status, and check it.
-ebd 50
-ebd 70
-ebd
-
-We get 80, so okay
-
-Now program a word simply
-ebc 3ff
-ebd 40
-eba 0
-ebd 1234
-ebd ff
-eba 0
-ebd
-
-Yay! We get back 1234!
-Look again at the device id
-ebd 90
-eba 0
-ebd
-eba 1
-ebd
-Aha! The device is word addressed! We get 17 for the type - 64Mbit!
-
-Time to write the real boot loader
-
-Wednesday.
-Written boot loader and flash device handler.
-Time to build it: 1:15pm
-
-Ooops. NOPs not long enough. Try again.
-
-Build at 2:47
-Nope, timeout probably not long enough
-fe 0
-returns an error, but then the status is okay
-fe 1
-does indeed erase block 1 (byte address 20000, eba 10000)
-
-Rebuild, with longer timeout (1024*1024)
-Start build at 3:45
-Loaded at 4:10pm
-Seems to erase flash okay now
-Flash download seems to write to the flash, but not at the incrementing addresses.
-If I do:
-wA@@@ABCDEFGHIJKLMNOPQRSTUVWXYZ
-Then I would expect to write to word 1 (okay... I'll make that byte 1), with data 01 02 03 04 05 06 07... 19 1a
-What actually gets written is to word 1 the data 0f 10, and to word 17 the data 19 1a
-So we do need to increment the address in the write here - so fix the config in the right places
-Also, we need to check the 16-byte boundary stuff.
-Rebuild start at 4:30
-
-Build complete at 17:53. This appears to work
-
-Friday 3:30
-Built curses-based front end
-Added data writes to the monitor, tested with linux sim
-Added checksum to fd commands, as I want to make sure they work
-Flash writes in the front-end will focus on 256-byte boundaries
+gip_ddr
+After much struggling, we have LVDS25 outputs for the clocks.
+Note that the FPGA has a bad pinout, and so has clk_0 inverted on the output buffer
+The IO standard specification MUST go in the ucf file - it does not work in the source code
+
+To do hierarchical placement by block, you must define 'model's in the .xcf file for the synthesis pass such that the models all are 'incremental_synthesis=yes'.
+Each model is a verilog module name (not instance name)
+Then in the .ucf file you assign area groups, and instances of the above models can be assigned to those area groups.
+
+We started a build at 11:30
+Done by 12:06
+
+In this build we need to check the pins have the correct locations.
+They do have flops in the pads for the DQ pins and A pins; there is about 3ns of routing delay to the pad from the last gate
+The DQS pins have a dual flop in the pad with the same input signal for both; this seems wrong; same clock also, which may be correct. Actually the input data signals are both high. Hm. DQS low is always 0, but high toggles.
+The DQM pins have flops in the pads
+The DQ pads do not have any input signals attached to them though; this seems wrong also.
+Look for the clocks...
+int_input_drm_clock_buffered exists with its DCM and its BUFG, feeding back to the DCM. But the 90degree phase shift clock is gone.
+Ah, we are using the wrong clock name in the fpga_wrapper for the inputs. That one solved.
+Actually, instantiate the pads by hand - it cannot hurt.
+
+Note that the UART has the incorrect baud rate in this run; the divider is specced for 5MHz, but it is running at 83MHz/12.
+1200 baud needs a divider of 361 2/3, 2400 181, 4800 90, 9600 45. Let's put in 9600 and 2400.
+We also want to check the timing between the clock domains somehow.
+The timing from fetched_opcode to buffered_address in the DRAM controller is 35ns, way down on 140+.
+The clock output skew on the DDR clocks is 1ns. Why?
+
+After this build we want one that has the correct baud rate for the UART, which should then run
+If this fails to run, we can go back to having an SRAM for the stack area, and have the DDR as extra memory
+
+Tues midnight...
+
+Build done.
+We now instantiate pads, have the correct UART speed, etc.
+
+Problems though
+The dq pads have the output enable register in the IOB! Yay!
+The clock-to-out times are awful.
+DQS pads have HIGH as the data!
+(DQS 0 has drm_next_dqs_high for O1, high for O2; DQS 1 & 3 has high for both)
+CKE pins do not include the flop
+DQS pads do not include the flop for tristate
+DQM pins do not exist
+
+Timing analysis notes
+Component names
+ddr_dram_a<2> - address IOB, using pins O1, OTCLK1, SR
+ddr_dram_ba<2> - bank address IOB, using pins O1, OTCLK1, SR
+ddr_dram_s_n<1> - select IOB, using pins O1, OTCLK1, SR
+ddr_dram_cas_n - control IOB, using pins O1, OTCLK1, SR
+ddr_dram_ras_n - control IOB, using pins O1, OTCLK1, SR
+ddr_dram_we_n - control IOB, using pins O1, OTCLK1, SR
+ddr_dram_dq<26> - data IOB, using pins IQ1, ICLK1, T1, O1, O2, OTCLK1, OTCLK2, SR
+ddr_dram_cke<1> - clock enable IOB, using pin O1
+ddr_dram_dqs<0> - strobe IOB, using pins T1, O1, O2, OTCLK1, OTCLK2, SR
+ddr_dram_dqs<3> - strobe IOB, using pins T1, O1, O2, OTCLK1, OTCLK2, SR
+sys_drm_clock_fb_out (X0Y42) - clock feedback out, using pins O1
+ddr_dram_clk_1 (and _n) (X0Y35) - clock 1, using pins O1 (on main IOB)
+ddr_dram_clk_0_n (and no _n) (X0Y224) - clock 0, using pins O1 (on main IOB)
+
+Fixes
+Controller was not driving all strobes; it is now
+dqs pads should have tristate in flop; added 4 distinct net names, each with equivalent removal 'no'
+dqm pads now have drivers; they have different logic, and constant drive, so no equivalent removal issue
+added equivalent register removal for ddr_dram_cke<0> and ddr_dram_cke_0 (and 0/1); the latter is probably correct
+
+Want to ensure that clk skews are okay (clk0, clk1 out)
+Want to ensure that input clock delta from output clock is okay
+Want to ensure DQ input pad times - these are on the P&R report
+Want to ensure DQS output strobe times - these are on the P&R report
+Want to ensure DQ and DQM output times - these are on the P&R report
+Want to ensure A/BA/CAS/RAS/WE/SE output times - these are on the P&R report
+Want to ensure logic clocks fast enough
+
+Added 'ddr_dram_counter_is_zero' register to pipeline some of the comparisons; we were not meeting timing on pins
+
+The clock problem we have is clk_0/1 out have a delay of 5.3ns on the clock from the GBUF, while pads have 1.9ns. Why?
+Also, we need to check on the feedback output.
+Well its all screwy.
+Rebuild the clock scheme with a double clock to clock generate in the clock output pads. Blurgh.
+
+Have to recheck fpga_wrapper_leds now.
+
+(The constraints need the areas put back in (.ucf))
+(The ddr_dram_as_sram.cdl needs -1 in its counter to start)
+
+Do we need to set a fast slew rate? - we added it to the feedback clock
+
+Build at 7:pm Weds
+Constant output from the serial port.
+
+Added back in SRAM, fixed wait to the main system (it was only asserted during ROM accesses, not the other way round).
+Fixed -1 for the start counter for ddr dram controller to give cke low time.
+Rebuild at 8:30pm Weds
+Outputs OK> at both 1200 and 9600 baud. No input working though. Unclear if memory reads and write are working.
+
+Fixed dram_current_access, which was tied low; should have no effect, though.
+
+Added more debug code back in to the front of the wrapper. Now it outputs !\n and then the results of the read and write of memory
+Also basically took out the DRAM from any accesses to the memory subsystem.
+Build at 9:42 Weds.
+Built and runs, gives the initial output, but takes no further input
+Old builds do not take input either. Hm. Reboot the kitchen vaio
+Aaargh, The RxD Disable Switch!
+
+Okay, old builds work. Try the new one...
+That goes now.
+Rebuild with accesses to the DRAM in the memory subsystem enabled
+
+Thursday am. Downloaded
+It runs now. sram/rom is working
+The DRAM reads/writes do not work.
+In fact if you do an 'mr' instuction it seems to return the number of spaces in the UART FIFO, which is probably the last SRAM read or write.
+Independent of address...
+Maybe an unidentified latch issue?
+No - the warnings are fine (did some minor tweaks, nothing functional)
+But, the last data written is what we last drove out on the dram pads; it comes through the design.
+So that may well be being held by the bus (or we are driving it out still)
+Time to look at the simulation waveforms, and recheck the pad logic
+Why would this data be on the bus? We have not done any writes.
+Aaargh. DQ pins were not inverting their tristate.
+
+Okay, so the DRAM does this:
+
+80000010:ff00ff00 ff00ff00 ff00ff00 ff08ff00 ff00ff00 ff00ff00 ff00ff00 7f00ff00
+mw 80000010 0
+80000010:00ffffff ff00ff00 ff00ff00 ff08ff00 ff00ff00 ff00ff00 ff00ff00 7f00ff00
+mw 80000010 fffffff
+80000010:0ffffeff ff00ff00 ff00ff00 ff08ff00 ff00ff00 ff00ff00 ff00ff00 ff00ff00
+mw 80000010 55555555
+80000010:55ffffff ff00ff00 ff00ff00 ff08ff00 ff00ff00 ff00ff00 ff00ff00 ff00ff00
+mw 80000014 aaaaaaaa
+80000010:55ffffff aaffffff ff00ff00 ff08ff00 ff00ff00 ff00ff00 ff00ff00 ff00ff00
+mw 80000010 0
+80000010:00fffeff aaffffff ff00ff00 ff08ff00 ff00ff00 ff00ff00 ff00ff00 ff00ff00
+mw 80000010 fffffff
+80000010:0ffffeff aaffffff ff00ff00 ff08ff00 ff00ff00 ff00ff00 ff00ff00 7f00ff00
+
+This implies that writing to a bank is correctly writing the top 8 bits and reading it back
+Reading back is also consistent; that is presumably working
+Writing, though, may be dubious
+
+It seems dqoe is going away one cycle too early. Oh, no, its not.
+
+However, with a CAS latency of 2.5 the read data is valid some 6.75 ns after the DRAM clock edge,
+which is during the clock low period (obviously).
+Our input clock phase shifted by 90 degrees (3ns) is based on the feedback clock. This in turn is about 2.2ns after the internal clock,
+(due to clock-to-out and pad delay); also we have pad-to-in delay, for the input clock what we are locking to, and bufg skew. (90 phase to 0 phase)
+So our input clock is 5.2+ up to 1ns after our internal clock edge. Dubious to use its falling edge for clocking data we use on our clock, as it must be close to that edge.
+The input data is valid 0.75ns after the clock at the DRAM, which is about 1.7ns+0.75ns after our internal clock, and is valid for 4.5ns. So we
+should be clocking it any time from 2.25 after our internal clock to 6.2ns; however, there is input setup and hold time.
+Most important note, though, is the data is supposed to be stable
+
+It is probably time to use the phase shift inputs on the clocks, and stop fussing with the feedback.
+To do this we just want to supply the input clocking clock at around 4ns after our internal clock; this provides 2ns for the falling edge data to propagate to internal registers, which is not enough,
+but its enough for the rising edge registers we are using with CL of 2.5
+
+We are getting the correct read data in; running the Xilinx program first gives us solid data, and we can read that reliably.
+Writing is then obviously unreliable.
+Hm.
+When we read back the stuff from the Xilinx writes, we get (revaddr)
+80000000:08000000 18000000 28000000 38000000 48000000 58000000 68000000 78000000
+This is the bottom 32-bits of the second 64-bit word.
+
+Strangely enough after our build has run we have to power cycle the board for the DRAM test to work.
+
+Hm.
+Its definitely writes that are messed up. Maybe our writes of the modes are bad too and we put it in some strange test mode?
+
+So, time to go to a single clock for the dram side of things (get rid of the logic clock)
+logic clock has a delay of 2.128ns from output clock (this might be helping some input timings? hope not)
+Check the output hold time on we_n
+(we_n has a clock with 1.964ns of delay from output_drm_clock)
+The DCM at X0Y0 generates double_clock and output_clock, with fb from double_clock_buffered (delay of 2.402ns on the FB wire, 0.853 from DCM to GBUF, plus intrinsic)
+So double_clock leads double_clock_buffered by 3.257+gbuf_int
+output_clock is in phase with double_clock, so it leads double_clock_buffered by 3.257+gbuf_int
+output_clock_buffered is then 0.839+gbuf_int+to_pin_delay; thus at the pad output_clock_buffered leads double_clock_buffered by 3.257+gbuf_int-gbuf_int-0.839-to_pin_delay, or 2.416-to_pin_delay
+so for we_n its clock is 2.416-1.964ns ahead of double_clock_buffered at the FB pin of DCM at X0Y0, i.e. 0.452ns ahead
+The clk_0 pin is registered with the double clock, but has a clock delay of 1.934ns, so is 2.402-1.934 ahead of double_clock_buffered; i.e. 0.468ns.
+The clk_1 pin is registered with the double clock, but has a clock delay of 1.993ns, so is 2.402-1.993 ahead of double_clock_buffered; i.e. 0.409ns.
+Now its clock-to-out is probably faster than the we_n pin, but this is clearly a low hold time output.
+This actually suggests that the we_n pin for half the DRAMs is worse; this kinda fits the failure.
+ras_n has a clock delay to the pin of 1.921, cas_n 1.926, s_n[1] 1.926, s_n[0] 1.964
+
+To fix this we want to run another output clock to the outputs to give hold time, or pull the double clock in.
+All we are looking to do is supply hold time for the control signals to the double clock.
+So add a 90 degree phase clock to the control signals, and double register them.
+Remove the logic clock as that is not helping timing analysis, and probably not the design.
+
+Okay, had some issues with builds; had to take out the period specification for everything but the initial clock.
+It has synthesised
+We need to look at some timing logs to ensure that timing is met; also, we should place the SRAM at some point.
+We might need to move the DRAM control logic around.
+Aaaagh! cke and dqs pins share a clock! aaargh
+
+Rebuilt with quarter clock for output; this still reads, but writes are as bad. (Friday am). No change really.
+Also, we still cannot run the DRAM test after our program.  
+It turns out that we are writing quite well the first word of two, but the second is being badly written.
+
+Maybe its bounce on the dqs strobe? Try putting DCI on all the outputs; this looks right as the schematic has the
+VRN/VRP resistors, and there is no local termination
+
+Wow. That burned hot. Had to turn it off.
+
+Took out the DCI. Nowhere near as hot.
+Hm.
+
+mw 80010000 01020304
+mw 80010004 02030405
+mw 80010008 03040506
+mw 8001000c 05060708
+mw 80010010 06070809
+mw 80010014 0708090a
+mw 80010018 0a0b0c0d
+mw 8001001c 0b0c0d0e
+mw 80010020 10203040
+mw 80010024 20304050
+mw 80010028 30405060
+mw 8001002c 50607080
+mw 80010030 60708090
+mw 80010034 708090a0
+mw 80010038 a0b0c0d0
+mw 8001003c b0c0d0e0
+Power cycle
+cal
+DDR test> peek 40000 100
+00040000(88004000):   0102f704  96fa2ffe  01fffeff  fe7ffeff
+00040010(88004010):   0203fe05  337354f7  02ffffff  fe7ffeff
+00040020(88004020):   0304f306  00aa02fb  03fffeff  fe7ffeff
+00040030(88004030):   0506f50c  417318dd  05ffffff  fe7ffeff
+00040040(88004040):   060ffe09  a0fe406a  06ffffff  fe7ffeff
+00040050(88004050):   0708fb0a  0de9755f  07fffcff  fe7ffeff
+00040060(88004060):   0a0bfa0d  87eb7afe  0affffff  fe7ffeff
+00040070(88004070):   0b0cff0e  605b057d  0bfffeff  fe7ffeff
+00040080(88004080):   1020fc40  20ea4036  10ffffff  fefffeff
+00040090(88004090):   0030f650  00ff6a57  20fffeff  fe7ffeff
+000400a0(880040a0):   1042be60  05b9a2bf  30fffeff  fe7ffeff
+000400b0(880040b0):   5060d680  e2d137d7  50fffeff  f67ffeff
+000400c0(880040c0):   6070f690  116c0ce7  60ffbeff  fe7ffeff
+000400d0(880040d0):   5080fea0  00ff049f  70fffeff  fe7ffeff
+000400e0(880040e0):   a0b0f2d0  04fa22cb  a0fffeff  fe7feeff
+000400f0(880040f0):   b0c0fee0  203510dc  b0fffeff  fe7ffeff
+
+From this it looks like byte 3 is fine (except bit 5) in both halves of the RAM
+Question is why is the second half of the RAM being written at all? Should I drive its pins? Probably. How about copying the low pins? This is DQM, DQS, and DQ.
+
+Tried booting the new one then running the test program; no reads/writes. The test program cal'd okay.
+Now do the writes above and reads
+OK > mr 80010000 40
+80010000:cde0e3ec cde0e3ec 978aef10 978aef10 cde0e3ec cde0e3ec 978aef10 978aef10
+80010000:cde0e3ec cde0e3ec 978aef10 978aef10 cde0e3ec cde0e3ec 978aef10 978aef10
+80010000:f574ff24 f574ff24 e100fe40 e100fe40 f574ff24 f574ff24 e100fe40 e100fe40
+80010000:f574ff24 f574ff24 e100fe40 e100fe40 f574ff24 f574ff24 e100fe40 e100fe40
+80010000:cde0e3ec cde0e3ec 978aef10 978aef10 cde0e3ec cde0e3ec 978aef10 978aef10
+80010000:cde0e3ec cde0e3ec 978aef10 978aef10 cde0e3ec cde0e3ec 978aef10 978aef10
+80010000:f574ff24 f574ff24 e100fe40 e100fe40 f574ff24 f574ff24 e100fe40 e100fe40
+80010000:f574ff24 f574ff24 e100fe40 e100fe40 f574ff24 f574ff24 e100fe40 e100fe40
+
+Hmm. Seems that there is something really weird going on.
+
+Cal and plot work after this though; the hold time issue must be gone.
+Maybe we are now being struck by actual read issues?
+
+The second dram select was not asserted for the initialization; this should not help.
+Try again, with SSTL2_I for the drive (half strength SSTL2) and DCI on the DQS pins only.
+This should be okay for our low-speed interface
+
+Hmm. cal does not work now. Seems that SSTL2_I does not do...
+Try with SSTL2_II, and DCI on the DQS pins (hopefully get back to working reads...)
+
+Build Friday 8pm
+Download Saturday 2pm
+
+No writes work now; reads get back the same data all the time, in pairs. Same weird thing as before.
+Plot and cal work, though.
+
+After out writes...
+peek 40000 100
+00040000(88004000):   b99f00e7  96fa2ffe  06bd40ff  92bea2be
+00040010(88004010):   80ff447e  337754f7  9759266d  087f107e
+00040020(88004020):   52db42f2  00aa02fb  ebef06ff  c0aa00ab
+00040030(88004030):   24c718fd  417318dd  47bf17dc  6a3f5844
+00040040(88004040):   02cd00fe  a0fe406a  80bf820b  062525ef
+00040050(88004050):   4061c2f7  45e9745f  41d554b5  927cd5cf
+00040060(88004060):   48ef42df  85eb7afe  8cecc2cb  50aa69fb
+00040070(88004070):   e81288c5  685b057d  65f988fd  96fff17f
+00040080(88004080):   964e0ae6  20ea4036  e2ed6852  02e840eb
+00040090(88004090):   d1b501ff  02ffea57  2a759277  50177cfa
+000400a0(880040a0):   01be21cb  05b9a2bf  84ba28fb  23eb02ca
+000400b0(880040b0):   44bf3877  e2d135d7  14570137  217d645f
+000400c0(880040c0):   826c135c  116c04e7  69ef814b  61b7c1e8
+000400d0(880040d0):   9e5ec16b  00ff049f  50bec2fb  a05716fd
+000400e0(880040e0):   71b8d08a  04fa22cb  63cf00ea  0ca728ab
+000400f0(880040f0):   381e4962  003510dc  21dd2b9e  73de0d77
+mr 80010000 100
+80010000:06bd407f 9759266d ebef06ff 47bf17dc 80bf820b 41d554b5 8cecc2cb 65f988fd
+80010000:e2ed6852 2a759277 84ba28fb 14570137 69ef814b 50bec2fb 63cf00ea 21dd2b9e
+80010000:2ee7a2be 846700cd a0bf028e 049e22d7 01ef617e 26be009c c9f100ef 12779076
+80010000:0aab02df 0d6b34f7 60ca4a6b 517b44ef 04cf05ff 93d700f0 2ebf1237 e0fd7246
+80010000:424e01b7 7dd54b7d 157bc1ad 54b7a7f1 b6be4069 8ff50615 202b0027 269f105f
+80010000:2cbd03ee 227394fe 24a845fe c0fd011f d2fe887e b457d01f 3af204f5 e9979553
+80010000:8376229b 844f14b1 26ae8acd 4aef18e1 18ff91ab 3b661a3f 837f64b7 1bcd01c3
+80010000:20ae2cf7 32eb85d1 83ae84fb 156718e7 08b708fe 18d78557 272a06b8 677b1d6e
+80010000:02bb48ff 95d7387c 18ef00f5 cc772079 08fe41ef 979980db 22ef46ab 841d15ff
+80010000:08ea84cf 3074407d 089ea1b6 94d52355 018912f8 94de18cf 94bf301d 55f6f7b7
+80010000:883780ee 35bd447d 18fb00fb 5d211dc3 2c3f00fe e9ff08be 009b30fe 594f4470
+80010000:28ae066f c5688275 aa6d08f5 84d22eef 80e385f7 45f7a92f 8c6e10bf 207504a3
+Hmm.
+Sounds like out init did not work.
+Try the writes again
+OK > mr 80010000 40
+80010000:fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff
+80010000:fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff
+80010000:2ee7a2be 846700cd a0bf028e 049e22d7 01ef617e 26be009c c9f100ef 12779076
+Now the test program
+
+We do have a minor issue with the dram placement. Let's fix that, and move on to the coe and ethernet; leave the DDR for when we have the oscilloscope
+Arrgh dq and dqs probably have the wrong io type - put them correct in the ucf
+
+Now we boot...
+mr 80010000 40
+80010000:06bd40ff 9779266d c9ef06ff 43ff17dc 00bf860f 41f554b5 8cecc2cb 65f988fd
+80010000:e2ed6872 2a759277 80ba08fb 14570137 29ef804b 50bec2fb 63cf00ea 21dd2b9e
+80010000:2ee7a2be 846740cd a0bf028e 049e22d7 01ef617e 26be009c c9f100ef 10779076
+80010000:0aef02df 0d6f34f7 60ce0a6b 517b45ef 04cf05ff 93d700f0 2ebf1237 c0fd7046
+80010000:424e01b7 6dd5487d 157bc1ad 54b7a7f1 a6be4069 8ff52615 20ab00a7 24bf105f
+80010000:2cbd03ee 227394fe 24a845ee 40fd011f d0fe887e b457d01f 3af204f5 e9979573
+80010000:8376229b 844f14b1 02ae8acd 4aef18e1 18ff91eb 3b661a3f 837f64b7 1bcd01c3
+80010000:20ae0cf7 30eb85f1 83ae84fb 156718e7 08b708fe 18d78557 272a06b8 677b1d6e
+OK >
+mw 80010000 01020304
+mw 80010004 02030405
+mw 80010008 03040506
+mw 8001000c 05060708
+mw 80010010 06070809
+mw 80010014 0708090a
+mw 80010018 0a0b0c0d
+mw 8001001c 0b0c0d0e
+mw 80010020 10203040
+mw 80010024 20304050
+mw 80010028 30405060
+mw 8001002c 50607080
+mw 80010030 60708090
+mw 80010034 708090a0
+mw 80010038 a0b0c0d0
+mw 8001003c b0c0d0e0
+OK > mr 80010000 40
+80010000:01bd40ff 02ffffff 03fffeff 05ffffff 06ffffdf 07fffedf 0affffff 0bfffeff
+80010000:10ffffff 20fffeff 30fffeff 50fffedf 60fffedf 70fffeff a0fffedf b0fffeff
+Well, that looks like a consistent write of the top byte.
+Cannot cal.
+Darn.
+Well that's just broken ain't it.
+
+Upgrade to 6.0.3i
 
 Rebuild
-Downloads some tests! Yay!
+Turns out that there is no DCI on the DQS pins yet... the ucf overrode the verilog.
 
-Now for the larger SRAM model.
-We will use the DDR interface, with a CAS latency of 2, but running the data as effectively SDR (i.e. the same data in adjacent memory locations)
-Also we will run it at 32-bits wide, so halving the memory capacity.
-We have a 128MB DRAM DIMM, so we will have an effective addressable SRAM of 32MB - which is okay, as we only want 1MB of ROM, and 1MB of RAM
-We need to put some memory protection on it.
-We will run the memory at either 83MHz or 100MHz, using a clock synthesis from the 125MHz DRAM DIMM clock.
-We will run the internals at a factor of 8 down from this (maybe 10 - depends on DRAM specs for write-to-active and read-to-active with autoprecharge on)
-The DRAM will run one cycle for each internal access request
-The data memory will have highest priority; then refresh; then prefetch
-Prefetch will also be a single cycle (of 8-10 DRAM clocks)
-We will use a DCM for frequency synthesis, and another then to generate 0, 90, 180 and 270 clock outputs; the 0 and 180 go to the CK and CK# pins
-A third DCM is then used for internal DRAM clock generation, with the GBUF driving the clock feeding back in to the FB0 pin to get the main DRAM clock generation with very little skew to the CK and CK# pins (on the inside)
-For output data, we are going to hold the data stable for a three CK cycles, and strobe L-H-L at the double data rate with a DDR output buffer
-For input data, which is supposed to be valid for the central portion of a CK h/l period (with 750ps Tac of invalid to each edge), we need to strobe the
-incoming data at roughly 2ns prior to the end of the CK h/l period at the DIMM (allowing for 1.25ns of sampling skew (550ps), clk tree skew (110ps), package skew (130ps)).
-Here is the guess part: if our input to output clock delay is less than 1ns, then clocking at 3ns prior to the clock edge of the internal clock will suffice.
-At 83MHz the clock period is 12ns, so a 90/270 degree clock is 3ns prior/after the external edge.
-If that works well, we can push the clock up to 100MHz perhaps.
-The alternative is to use some dynamic skewing mechanism to get the input to output clock delay negated.
-We will need to place items by hand, select STTL-II output pads, and so on.
+OK > mr 80010000 40
+80010000:7ffbffff 7ffbffff 7ff3ffff 7ffbffff 7ffbffff 7ffbffff 7ff3ffff 7ffbffff
+80010000:2cbd03ef 2cbd03ef 04aa05fe 7ffbffff 7ffbffff 7ffbffff 7ffbffff 7ffbffff
+80010000:7ff3ffff 7ffbffff 7ff3ffff 02af8afd 8176229b 8176229b 02af8afd 02af8afd
+80010000:20ff0cff 20ff0cff 83af80fb 83af80fb 20ff0cff 20ff0cff 83af80fb 83af80fb
+do the writes
+OK > mr 80010000 40
+80010000:fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff
+80010000:fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff
+80010000:8176229b 7ff3ffff 7ffbffff 7ffbffff 7ffbffff 7ffbffff 7ffbffff 02af8afd
+80010000:20ff0cff 20ff0cff 83af80fb 83af80fb 20ff0cff 20ff0cff 83af80fb 83af80fb
+80010000:fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff
+80010000:fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff fefffeff
+80010000:8176229b 8176229b 02af8afd 02af8afd 8176229b 8176229b 02af8afd 02af8afd
+80010000:20ff0cff 20ff0cff 83af80fb 83af80fb 20ff0cff 20ff0cff 83af80fb 83af80fb
+The data read actually changes between some resets.
+I suspect a timing issue on the read path. Clocks not happy. Something like that.
+peek 40000 100
+00040000(88004000):   bb83bc62  dfa06fa8  7709f43a  f600b632
+00040010(88004010):   cf86ed4a  f300fc43  d720b705  7e10b07e
+00040020(88004020):   dac252d2  bd8012ea  cf27fe11  f222e3a9
+00040030(88004030):   e5c43c18  6f20d99d  ff29174c  fb00d904
+00040040(88004040):   d3090514  f5e5db48  2fa8c608  ef0cb7a9
+00040050(88004050):   cc00e2e3  fd01f554  75c55411  fb08f481
+00040060(88004060):   cbab4a5e  ff00fa92  bc8ccf4a  df00e939
+00040070(88004070):   fc02cf40  fe40257c  6588bce1  9e10775d
+00040080(88004080):   df0a5bc0  e3ca4c30  fe807c82  bb0851a3
+00040090(88004090):   d5a45f63  5d606b16  6e14f620  ff11f9e8
+000400a0(880040a0):   51883d4a  fd00a2f5  bca848f0  af42aac0
+000400b0(880040b0):   6e007b11  fe9037c7  57400f10  730df759
+000400c0(880040c0):   cf40734c  3348bcc2  ff8ff74a  fd14e9e0
+000400d0(880040d0):   ff04d52b  aa388401  f330de89  ff006fac
+000400e0(880040e0):   7538d208  7d922acb  f784b960  bda0208a
+000400f0(880040f0):   bf286b00  3a35955c  efddbf11  bb420f67
 
+Well, that's another whoops from Avnet.
+Looking at the pins on the DDR socket it seems that clk1 is reversed.
+So there will have been an issue with the banks getting different commands, and data strobes being wrong.
+Does not really explain everything.
+It would have meant clk 1 was inverted; still should have had hold time and setup on commands
+Data was stable.
+And as it happens I do not trust the mechanism I used for inverting the clock 0; probably both clocks were inverted.
+It will be nice to have them the same, though.
+Aaargh. Nope, clk 1 was not inverted. So probably the two clocks were different, which could have messed things up.
+Rebuild with clk 0 inverted at the register to what it used to be so that its clock out is truly valid, and keeping clk1 the same as before.
+
+Focus on the clocks, then on writes - we can read back with the ROM
+Then get reads to work
+
+So, build with the clocks 'fixed' - I am not sure about the phase, though.
+
+Do the writes
+
+DDR test> peek 40000 100
+00040000(88004000):   01000100  96fa00fe  06bd407f  12bea2fd
+00040010(88004010):   00000000  337554f7  fefffeff  fefffeff
+00040020(88004020):   01000100  00aa02fb  fafffeff  fefffeff
+00040030(88004030):   01000100  417318dd  fefffeff  fefffeff
+00040040(88004040):   00880080  a0fe406a  fefffeff  fefffeff
+00040050(88004050):   01000100  4de9745f  fefffcff  fefffeff
+00040060(88004060):   00000000  87eb3afe  befffeff  fefffeff
+00040070(88004070):   01000100  685b057d  fefffeff  fefffeff
+00040080(88004080):   00000000  20ea4036  fefffeff  fefffeff
+00040090(88004090):   00000000  02ffea57  fefffeff  fefffeff
+000400a0(880040a0):   00020000  05b9a2bf  eefffeff  fefffeff
+000400b0(880040b0):   00000080  e2d135d7  fcfffeff  f6fffeff
+000400c0(880040c0):   00000080  116c04e7  fefffeff  fefffeff
+000400d0(880040d0):   00800080  00ff049f  fefffeff  fefffeff
+000400e0(880040e0):   00800080  04fa22cb  fefffeff  feffeeff
+000400f0(880040f0):   00800080  003510dc  fefffeff  fefffeff
+Now it should have written two addresses (0 and 2), and the words should be 01020304, 02030405, 03040506, 05060708
+So it seems the command is getting out correctly here, but the strobes must be dubious
+Try to clear the memory, then download, and reread, to see what changes
+fill 40000 100 55555555
+Do writes
+DDR test> peek 40000 100
+00040000(88004000):   ff00fd00  df00ff00  ff01ff00  ff00f710
+00040010(88004010):   ff00ff40  ff00fd40  df04ff04  ff10fd05
+00040020(88004020):   ff40df50  ff00fd00  ff05ff10  ff00ff01
+00040030(88004030):   f740ff10  ff00fd00  ff00d700  ff00fd05
+00040040(88004040):   ff00df04  fd40df04  7f00ff04  ff50f700
+00040050(88004050):   fd00ff01  ff00ff10  ff007d10  ff00fd01
+00040060(88004060):   ff00ff00  fd00fd00  f700ff00  ff00f701
+00040070(88004070):   7f04ff00  ff00ff44  f700ff01  ff107f14
+fill 0 1000000 55555555
+do writes
+power cycle
+peek 40000 100
+00040000(88004000):   01000100  d5555555  ffffffff  fe7ffeff
+00040010(88004010):   00000000  75515555  fefffeff  fe7ffeff
+00040020(88004020):   01000100  55155555  fafffeff  fe7ffeff
+00040030(88004030):   01000104  55515555  fefffeff  fe7ffeff
+00040040(88004040):   00880080  d5555554  fefffeff  fe7ffeff
+00040050(88004050):   01000100  5d415555  fefffcff  fe7ffeff
+00040060(88004060):   00000000  55555555  befffeff  fe7ffeff
+00040070(88004070):   01000100  55555555  fefffeff  fe7ffeff
+00040080(88004080):   00000000  55555555  fefffeff  fefffeff
+00040090(88004090):   00000000  55555555  fefffeff  fe7ffeff
+000400a0(880040a0):   00020000  55555555  eefffeff  fe7ffeff
+000400b0(880040b0):   00000080  75555755  fcfffeff  f67ffeff
+000400c0(880040c0):   00000080  55555d55  fefffeff  fe7ffeff
+000400d0(880040d0):   00800080  55555555  fefffeff  fe7ffeff
+000400e0(880040e0):   00800080  55555551  fefffeff  fe7feeff
+000400f0(880040f0):   00800080  75555555  fefffeff  fe7ffeff
+
+Change the clock phase to be a bit more reliable - check it actually places clock_gen_int_drm_clock_phase at slice_x68y0
+Before checking, we get the same data as above...
+DDR test> peek 40000 100
+00040000(88004000):   01000100  d5555555  fefffeff  fefffeff
+00040010(88004010):   00000000  75515555  fefffeff  fefffeff
+00040020(88004020):   01000100  55155555  fafffeff  fefffeff
+00040030(88004030):   01000100  55515555  fefffeff  fefffeff
+00040040(88004040):   00080000  d5555554  fefffeff  fefffeff
+00040050(88004050):   01000100  5d415555  fefffcff  fefffeff
+00040060(88004060):   00000000  55555555  befffeff  fefffeff
+00040070(88004070):   01000100  55555555  fefffeff  fefffeff
+00040080(88004080):   00000000  55555555  fefffeff  fefffeff
+00040090(88004090):   00000000  55555555  fefffeff  fefffeff
+000400a0(880040a0):   00000000  55555555  eefffeff  fefffeff
+000400b0(880040b0):   00000080  75555755  fcfffeff  f6fffeff
+000400c0(880040c0):   00000080  55555d55  fefffeff  fefffeff
+000400d0(880040d0):   00800080  55555555  fefffeff  fefffeff
+000400e0(880040e0):   00800080  55555551  fefffeff  fefffeff
+000400f0(880040f0):   00800080  75555555  fefffeff  fefffeff
+
+On the oscilloscope with the test program
+cke is at 2.37V
+clk is 125MHz (8ns), 2V swing
+via on resistor is ck#
+mark on left of pkg is pin 25 (nc next to cs# at 24)
+mark on right of pkg is pin 46 (ck#)
+
+refresh...
+cs# goes low about 1ns before ck# falling centre voltage
+cs# low for 184ns, 23 clock periods
+cs# goes high about .8ns before ck# falling centre voltage
+ras# goes low 84ns after cs#, and is low for 8ns, with some ringing just under 0.5V)
+cas# is the same as ras#
+
+write...
+strobe goes low 4ns before we&cas&address (we/cas/address on ch 2)
+strobe goes low about 1ns after ck rises past half way (ck on ch2)
+strobe low for 10ns
+strobe goes high for 4ns
+strobe goes low for 4ns
+strobe rises about 1ns before pin 45 (ck) falls past half way (ck on ch2)
+strobe rise time is 2ns
+strobe fall time is 2ns
+we/cas/address low for 8ns
+
+clock...
+clk on ch 1, clk on ch2
+ch2 is squished (1V range)
+clk on ch 1, clk# on ch2
+ch2 is squished (1V range)
+
+our test...
+clock...
+our clock has a 1V swing at best.
+and clk and clkn seem to be the same thing
+
+So, our clock should be SSTL2-II or -I?
+rebuild
+download at 3:35pm Weds
+Clock is now -0.7V to 2.7V. Hmm, a bit much, really.
+However, across the resistor we do not get +ve and -ve clock; we have a difference of 2ns.
+Take out the DIMM
+We still have the same issue. The clock delta between +ve and -ve clock is 2ns
+-ve clock leads +ve clock by 2ns, to be precise.
+
+Add async reset for the flops - it could be a tool issue, as the synthesized logic actually looks good, but differs between the two
+
+That did not help
+
+We do have a long path for the phase thingy - let's add two flops on the path, and place them (int_drm_clock_phase_1_...
+
+Trying something more dramatic.
+
+It seems that the double_clock is actually running at 250MHz for some reason.
+
+This is not corroborated with a toggle on the clk_n pin; with clk_n <= !clk_n, we get it low for 4ns then high for 8ns, and repeating.
+So a 166MHz clock, but with +-2ns of jitter.
+
+The problem may be the initial 125 to 83 MHz generation; this has up to 750ps of jitter on the output, and the next DLL needs at most 300ps jitter.
+So the DLLs may be 'locking', but not actually locking properly from a duty-cycle perspective.
+Time to move over to 125MHz on the DRAM clock. Never mind reads for now.
+So, use the -ve edge of the double clock to supply 1/4 clock hold time on control signals as before.
+Use the +ve edge of the double clock to generate the clock out
+Use the single clock to clock the logic and register the control outputs; ensure we have less than 2ns from those registers to the IOBs for the outputs. (Place them?)
+Use DDR registers on the single clock to clock the output strobes
+Use SDR registers for the data and dqm pin outputs.
+
+So, we have moved over. Also put boot rom code in a .coe file for init in a RAM
+Now 2 DCMs, and the clock divider, and some initial hand placement.
+Build ready at 1:35 Thursday
+int_drm_clock_buffered net to divided_clock register is 1.85ns
+divided_clock register out to gbuf input is 1.00ns
+So, int_slow_logic is 2.85ns after int_drm_clock_buffered
+Typical clock delay to central block (e.g. block RAM for boot ROM) is 1.823ns from there
+We have a 5ns delay on int_drm_clock_phase_1; this is on the 250MHz clock, i.e. it has a 4ns cycle time; this is an error that needs fixing
+The clock delay for that is 2.131ns
+The delay to int_drm_clock_phase_2 is 2.604ns, with the clock at 2.089ns, so no issues there.
+This has a 3.713ns delay to ddr_dram_clk_1_1 (clk at 2.153ns)
+It has a 3.815ns delay to ddr_dram_clk_1 pad (clk at 1.993ns)
+There is only 2.134 delay to ddr_dram_clk_0 pad (clk at 1.934ns)
+And only 1.752ns delay to ddr_dram_clk_0_1 (clk at 2.081ns)
+So we should move '2' down by about 1/6th of the distance between the clock pads, i.e. about 10% of the chip (which is 160 slices bottom to top)
+And add '3' and '4', and place '3' at '1', '4' at '2', then place '1' and '2' along the way to '3' (plcae 1 at X50Y0, 2 at X20Y0)
+
+The boot ROM is also 8 blocks, spread all over. We need to tidy that up - ah, we had not placement at all
+Check ddr_hold_a_11 as the highest up placed reg - 1.902ns delay, which is not too much (quarter clock at 8ns) (this goes 33 slices up)
+Check ddr_hold_ba_0 as the lowest placed reg - 1.779ns delay, which again is not too much (quarter clock at 8ns)
+The inputs to the 'hold_ba_0' register itself all seem to have plenty of time on an 8ns clock
+
+Build started at 1:55pm Thursday
+Data ready at 2:40pm
+
+Seems that int_drm_clock_phase_2 to int_drm_clock_phase_3 is a touch too long - its 4.654ns (from all_clock_periods.twr); we have 0.7ns slack in 1-to-2, and in 3-to-4, so we cal just pull the gap in a touch
+We are missing the 125MHz clock on ckgen_cke_last_of_logic to drm_cke_0 (2 paths) by 3.2ns; this may be driven a lot by the ckgen_cke_last_of_logic delay of 3.2ns and 3.7ns for drm_next_cke and its fanout,
+we also miss on ddr_dram_state_FFd11 to drm_hold_a_2 by 2.116ns; ddr_dram_state_FFd4 to drm_hold_a_2 by 2.016ns; the first to drm_hold_a_4 by 1.983ns
+On the quarter-clock hold time things we are missing on ddr_dram_a_6 by 0.9ns, ddr_dram_a_8 by 0.8ns, a1, a_11, ba_1, s_n_1, a0, we_n; we just don't have a long time here. Can we push these to half-clock?
+clock-to-out on the clock pins is about 1.85ns
+clock-to-out on the control pins is about 2ns
+
+To fix cke_last_of_logic we will duplicate the logic and push the DRAM copy much closer to its use; its input path currently has 3ns of net delay on it, with the LUT plus 0.8ns extra delay before that, so we can move it 2ns closer. (to X45)
+The clock_phase issue is that 1 and 2 are swapped; we will swap them back (1 at 50, 2 at 20 is correct)
+We will try pushing the control signals to half-clock; that will fix them.
+For the ddr_dram_state stuff; we are kind of stuck, but we will shrink the area given to the body_main_ram and make it squarer; this will reduce wire lengths
+We could move the init stuff out to a separate state machine and do a fast decode for transactions, but that is more work than I want at present.
+
+Build started at 3:30pm Thursday
+Done at 3:50pm Thursday
+We are missing the 125MHz clock on ckgen_cke_last_of_logic to drm_cke_0 (2 paths) by 2.5ns; this may be driven a lot by the ckgen_cke_last_of_logic delay of 2.9ns and 3.0for drm_next_cke and its fanout
+also for cke_1, by 2.2ns
+We are missing the 125MHz clock on ckgen_cke_last_of_logic to hold_s_n_0 (1.763), 1.4 on we_n, ...
+We meet the quarter-clock times (now half-clock times) by 1.0ns
+We have a clock failure on clk_1 for the 250MHz clock now; seems that phase_4 to clk_1_1 has a net delay of 4.797ns! Probably due to shifting the bulk logic somehow. Not much slack on dram_clk_0_1 to dram_clk_0_n, either
+phase_2 to phase_3 has a time of 3.7ns - okay; phase_4 to clk_0 pad is 3.0ns
+
+Split out cke_last_of_logic with an extra pipe stage to fix its issues
+Strangely enough the clk_1_1 net delay is way higher than clk_1_n delay, and they are next to each other. There are two routing systems at work here. Let's place the clk_1_1 at around Y60, and do the same for clk_0_1 at Y75
+
+Build started at 4:26 pm
+Done at 4:45pm
+Now we have 5 timing errors (endpoints): drm_cke_0 (0.753), drm_cke_1 (0.553), drm_hold_s_n_0 (0.36ns), drm_hold_a_3 (0.34ns), and something with less than 0.2ns failure
+
+Leaving the timing errors in, our clock is too strong - it is -1V to 2.7V; it is probably breaking the DRAM...
+The clock is single ended; we will change to SSTL2_I_DCI, and lose the 'fast' aspects
+
+Much better
+Shall change all the control and dqm signals to SSTL2_I
+Hmm. not enough swing now for the control signals - looks like they go 2.5V to 1.2V, but they need to drop below 1.13V.
+
+Switch back to SSTL2_II
+Also, rebuild with the DRAM init in a sub-FSM, to improve timings to the control signals also.
+
+Build at 3pm Friday
+
+Still got 4 timing failures: drm_hold_a_1 at 1.06ns, drm_hold_a_5 at 0.618ns, drm_hold_a_3 at 0.446ns, drm_hold_a7 at 0.183ns
+drm_hold_a_1 was at Y40 - pull it up to Y59; drm_hold_a_3 was at Y44 - pull it up to Y59 also
+drm_hold_a_5 was at Y52 - pull it up to Y61; drm_hold_a_7 was at Y52 - pull it up to Y61 also
+
+Now timing clean (this build...)
+
+Still no luck
+It seems that the dqs pins are always high. Could it be the DCI type?
+
+Nope.
+Even tying the tristate enable low get's us nowhere.
+
+Ah. We are only driving strobes 0 thru 3; let's do all of them
+
+Now we do the writes, and we read back...
+
+mw 80010000 01020304
+mw 80010004 02030405
+mw 80010008 03040506
+mw 8001000c 05060708
+mw 80010010 06070809
+mw 80010014 0708090a
+mw 80010018 0a0b0c0d
+mw 8001001c 0b0c0d0e
+mw 80010020 10203040
+mw 80010024 20304050
+mw 80010028 30405060
+mw 8001002c 50607080
+mw 80010030 60708090
+mw 80010034 708090a0
+mw 80010038 a0b0c0d0
+mw 8001003c b0c0d0e0
+mr 80010000 40
+80010000:01020304 02030405 03040506 05060708 06070809 0708090a 0a0b0c0d 0b0c0d0e
+80010000:10203040 20304050 30405060 50607080 60708090 708090a0 a0b0c0d0 b0c0d0e0
+80010000:00ac42a2 b85338ab 2ffb083d 8a413a7d 027de4ef 51c48f77 e9fe0003 01e745d7
+80010000:00fe21e6 12bf0eeb 00ad80a1 18ff0377 a08fc08c c7a71afc 896f12b2 41e3ccd1
+80010000:02cd08fe b4bd3292 b3df48f5 19ec11f7 18bc208c d02117ff 82ea10e7 1a2f4e7b
+80010000:08b342e7 c9d906f5 88af98fa 74df5fdf 9b3f2a2c 1c3c0452 ac8f01d4 085e489f
+80010000:02fa9072 d58e217f 08ff00bb d07f3065 02af91e7 0451297e a0e2c4e9 07a357df
+80010000:52ab00b1 459c80ff 42af07dd 66f50656 0ce681ec 31d182b3 89bf21ff b0db80f6
+OK >
+But still, the avnet test cannot calibrate now. Wonder why?
+After power-cycle
+peek 40000 100
+00040000(88004000):   01020304  96fa2ffe  01020304  12bea2be
+00040010(88004010):   02030405  337754f7  02130405  087f107e
+00040020(88004020):   03040506  00aa02fb  03040506  c0aa00ab
+00040030(88004030):   05060708  417318dd  05060708  6a3f5844
+00040040(88004040):   060f0809  a0fe406a  06070809  062525ef
+00040050(88004050):   0708090a  0de9745f  0708090a  927cd5cf
+00040060(88004060):   0a0b0c0d  87eb3afe  0a2b0c0d  50aa69fb
+00040070(88004070):   0b0c0d0e  685b057d  0b0c0d2e  96fff17f
+00040080(88004080):   10203040  20ea4036  10203040  02ea40eb
+00040090(88004090):   20304050  08ffea57  20304050  50177cfa
+000400a0(880040a0):   30425060  05b9a2bf  30405068  6beb02ca
+000400b0(880040b0):   50607080  e0d135d7  50707080  317d645f
+000400c0(880040c0):   60708090  116c04e7  60708090  61b7c1e8
+000400d0(880040d0):   508090a0  00ff049f  708090a0  a05716fd
+000400e0(880040e0):   a0b0c0d0  04fa22cb  a0b0c0d0  0ca728ab
+000400f0(880040f0):   b0c0d0e0  103510dc  b0c0d0e0  13de0d77
+
+Looks good!
+
+Once that has been done, we will push on to the ethernet
+
+
+Note: programming the systemace takes an hour and a half

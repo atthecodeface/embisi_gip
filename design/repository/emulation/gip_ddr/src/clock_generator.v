@@ -112,12 +112,9 @@
 
 //
 // The structure of the DCMs is...
-// DCM 1: take 125MHz, generate 83MHz
-// DCM 2: take 83MHz, generate 166MHz (int_double_drm_clock), int_output_drm_clock and int_output_drm_clock_90
-// DCM 3: mirror DCM 2, generate int_logic_drm_clock_buffered using a GBUF with the feedback
-// DCM 4: take input pin CLK and generate int_input_drm_clock_90
+// DCM 1: take 125MHz, generate 250MHz and 125MHz in sync, with gbufs on both, feeding back the 125MHz so it is locked
+// DCM 2: take 125MHz, generate a phase shifted version for clocking the input data from the DRAM
 // We also divide by 12 to get our internal clock frequency
-// DCM 5: take divided clock and generate zero-skew to internal clock tree using a GBUF with the feedback
 
 //a clock_generator module
 module clock_generator(
@@ -126,15 +123,14 @@ module clock_generator(
     system_reset_out, // this is asserted when all the DLLs are locked
 
     int_double_drm_clock_buffered, // use for clock out generation only
-    int_output_drm_clock_phase,    // use for clock out generation only; register !this value to get the clock out
-    int_output_drm_clock_buffered, // use for clocking outputs only
+    int_drm_clock_phase,       // use for clock out generation only; register this value to get the clock out
+    int_drm_clock_buffered,    // use for clocking outputs only
+    int_drm_clock_90_buffered, // use for clocking control outputs after their 'next values' are registered on drm_clock_buffered
 
-    feedback_ddr_clock, // feed back from the LVDS input pads for the clock out; this gives us a gauge of the pin at the DDR
-    int_input_drm_clock_90_buffered, // use for dq input clocking only
+    int_input_drm_clock_buffered, // use for dq input clocking only
 
-    int_logic_drm_clock_buffered, // use for all pads and internal DRAM logic, tight skew to output_drm_clock
     int_logic_slow_clock_buffered,
-    cke_last_of_logic,
+    cke_next_will_be_last_of_logic,
 
     info
 );
@@ -145,77 +141,44 @@ module clock_generator(
     output system_reset_out;
 
     output int_double_drm_clock_buffered; // divide by 2 to generate the output clock - register int_output_dram_clock_phase
-    output int_output_drm_clock_phase; // 90 degree shifted output_drm_clock, so it can be registered by the double clock
-    output int_output_drm_clock_buffered;
+    output int_drm_clock_phase; // value that can be registered on int_double_drm_clock_buffered to regenerate int_drm_clock_buffered
+    output int_drm_clock_buffered;
+    output int_drm_clock_90_buffered;
 
-    input feedback_ddr_clock;
-    output int_input_drm_clock_90_buffered; // buffered version of the fedback DDR clock, out of phase by 90
+    output int_input_drm_clock_buffered; // buffered version of the fedback DDR clock, out of phase by 90
 
-    output int_logic_drm_clock_buffered;
     output int_logic_slow_clock_buffered;
-    output cke_last_of_logic; // asserted if the clock edge happening is the last of the logic clock low
+    output cke_next_will_be_last_of_logic; // asserted if the clock edge happening is the next-to-last of the logic clock low
 
     output [3:0] info;
 
 //b Wires
-    wire [4:0]dcm_locked;
-    assign info = dcm_locked[4:1];
+    wire [1:0]dcm_locked;
+    assign info = {2'b0, dcm_locked[1:0]}; //'
 
 //b DCM 1
 //
-// Generate the main clock frequency (83MHz)
-// This can sit at either DCM_X0Y0 (bottom left) or DCM_X5Y0 (bottom right)
-// It only generates a single signal that has a single target
-// input SDR clock is in bank 5 (IO_L96N_5); this is middle of bank 5 (which is bottom at left)
-// We can use the 5th on the bottom, DCM_X4Y0
-// We don't want to use DCM_X3Y0, as that is right next to the GBUFs
-DCM clk_freq_gen(       .CLKIN (sys_drm_clock_in),
-                        .CLKFX (int_starting_drm_clock),
-                        .LOCKED (dcm_locked[0] )
-    );
-//synthesis attribute LOC of clk_freq_gen is "DCM_X4Y0";
-//synthesis attribute PERIOD of sys_drm_clock_in is "8 ns";
-
-// Multiply up from 125MHz/8ns to 500MHz/2ns
-// Divide from 500MHz/ns to 83MHz/12ns
-// Gavin added the next line at 11pm Sunday
-// synthesis attribute CLKIN_PERIOD of clk_freq_gen is "8 ns";
-// synthesis attribute CLKFX_MULTIPLY of clk_freq_gen is 4;
-// synthesis attribute CLKFX_DIVIDE of clk_freq_gen is 6;
-// synthesis attribute CLKIN_DIVIDE_BY_2 of clk_freq_gen is 0;
-// synthesis attribute CLKOUT_PHASE_SHIFT of clk_freq_gen is "NONE"; 
-// synthesis attribute DESKEW_ADJUST of clk_freq_gen is "SYSTEM_SYNCHRONOUS";
-// synthesis attribute DFS_FREQUENCY_MODE of clk_freq_gen is "LOW";
-// synthesis attribute DLL_FREQUENCY_MODE of clk_freq_gen is "LOW";
-// synthesis attribute DSS_MODE of clk_freq_gen is "NONE"; 
-// synthesis attribute DUTY_CYCLE_CORRECTION of clk_freq_gen is "FALSE";
-// synthesis attribute PHASE_SHIFT of clk_freq_gen is 0;
-// synthesis attribute STARTUP_WAIT of clk_freq_gen is 1;
-
-BUFG drm_clock_buffer( .I(int_starting_drm_clock), .O(int_starting_drm_clock_buffered) );
-//synthesis attribute clock_signal of int_starting_drm_clock_buffered is yes;
-//synthesis attribute PERIOD of int_starting_drm_clock_buffered is "12 ns";
-
-
-//b DCM 2
-//
-// Generate the output DRAM clocks with 0, 90, 180 and 270 phase
-// This should go relatively near the DRAM pads; we don't want too much net between int_output_drm_clock and DCM3
-// So this connects to DCM3, and should be relatively near the DRAM DQ and DQS pins
+// Generate the logic and output DRAM clocks with 0
+// This should go relatively near the DRAM pads
 // DQ is split between banks 6 and 7; then again all the outputs are...
 // Bank 7 is right balls at the top, bank 6 is right balls at the bottom (top view)
 // I think this is bank 7 on left at top, bank 6 on left at bottom
-// The best place would then be DCM_X0Y0, the bottom left DCM
-DCM clk_phases_gen(       .CLKIN (int_starting_drm_clock_buffered),
-                          .CLKFB (int_double_drm_clock_buffered),
-                          .CLK0 (int_output_drm_clock),
-                          .CLK90 (int_output_drm_clock_phase),
-                          .CLK2X (int_double_drm_clock),
-                          .LOCKED (dcm_locked[1] )
+// The best place would then be DCM_X0Y0, the bottom left DCM; although all the gbufs are central, so X2Y0 is better
+DCM clk_phases_gen(       .CLKIN (sys_drm_clock_in),
+                          .CLKFB (int_drm_clock_buffered), // our reference signal, 4ns high, 4ns low
+                          .CLK0 (int_drm_clock), // -4 to -2ns before int_drm_clock_buffered (dependent on gbuf delay; likely around 2.8ns)
+                          .CLK180 (int_drm_clock_90), // -2ns to +0ns around int_drm_clock_buffered (+2ns from clk0)
+                          .CLK2X (int_double_drm_clock), // -4 to -2ns before int_drm_clock_buffered, (dependent on gbuf delay; likely around 2.8ns)
+                          .LOCKED (dcm_locked[0] )
     );
-//synthesis attribute LOC of clk_phases_gen is "DCM_X0Y0";
+//synthesis attribute LOC of clk_phases_gen is "DCM_X2Y0";
 
-// synthesis attribute CLK_FEEDBACK of clk_phases_gen is "2X";
+// synthesis attribute CLK_FEEDBACK of clk_phases_gen is "1X";
+// synthesis attribute CLKIN_PERIOD of clk_phases_gen is 8;
+// synthesis attribute CLKFX_MULTIPLY of clk_phases_gen is 2;
+// synthesis attribute CLKFX_DIVIDE of clk_phases_gen is 1;
+// synthesis attribute CLKIN_DIVIDE_BY_2 of clk_phases_gen is 0;
+// synthesis attribute CLKDV_DIVIDE of clk_phases_gen is 2;
 // synthesis attribute CLKOUT_PHASE_SHIFT of clk_phases_gen is "NONE"; 
 // synthesis attribute DESKEW_ADJUST of clk_phases_gen is "SYSTEM_SYNCHRONOUS";
 // synthesis attribute DFS_FREQUENCY_MODE of clk_phases_gen is "LOW";
@@ -225,115 +188,85 @@ DCM clk_phases_gen(       .CLKIN (int_starting_drm_clock_buffered),
 // synthesis attribute PHASE_SHIFT of clk_phases_gen is 0;
 // synthesis attribute STARTUP_WAIT of clk_phases_gen is 1;
 
-BUFG drm_double_clock_buffer( .I(int_double_drm_clock), .O(int_double_drm_clock_buffered) );
+BUFG drm_clock_buffer( .I(int_drm_clock), .O(int_drm_clock_buffered) ); // reference clock, 4ns high, 4ns low
+BUFG drm_clock_90_buffer( .I(int_drm_clock_90), .O(int_drm_clock_90_buffered) ); // +1.5ns to +2.5ns after int_drm_clock_buffered
+BUFG drm_double_clock_buffer( .I(int_double_drm_clock), .O(int_double_drm_clock_buffered) ); // 2ns high, 2ns low, starting -0.5 to +0.5 around int_drm_clock_buffered (skew in gbufs)
 //synthesis attribute clock_signal of int_double_drm_clock_buffered is yes;
-//synthesis attribute PERIOD of int_double_drm_clock_buffered is "12 ns";
-BUFG drm_output_clock_buffer( .I(int_output_drm_clock), .O(int_output_drm_clock_buffered) );
-//synthesis attribute clock_signal of int_output_drm_clock_buffered is yes;
-//synthesis attribute PERIOD of int_output_drm_clock_buffered is "12 ns";
+//synthesis attribute clock_signal of int_drm_clock_buffered is yes;
+//synthesis attribute clock_signal of int_drm_clock_90_buffered is yes;
+// on rising int_double_drm_clock_buffered, int_drm_clock_buffered toggles, and int_drm_clock contains the value it will toggle to as it leads the buffered version
+// on rising int_double_drm_clock_buffered, if we register int_drm_clock, we will get a copy of int_drm_clock_buffered
+// if we call this int_drm_clock_phase and somebody registers this, then they register it on int_double_drm_clock_buffered, they will get the inverse, as they are a double clock period away (one half of the drm clock)
+// so we want to do an inversion first, so clients only have to register the phase to regenerate the clock.
+reg int_drm_clock_phase;
+always @(posedge int_double_drm_clock_buffered) begin int_drm_clock_phase <= !int_drm_clock; end // int_drm_clock is guaranteed to be -0.5<>+0.5ns - (1.5<>2.5)ns, or -3ns to -1ns before int_double_drm_clock_buffered
 
-//b DCM 3
-// we don't need a DCM for this - just load up the output clock, its fine.
-assign int_logic_drm_clock_buffered = int_output_drm_clock_buffered;
-
-//synthesis attribute clock_signal of int_logic_drm_clock_buffered is yes;
-//synthesis attribute PERIOD of int_logic_drm_clock_buffered is "12 ns";
-
+//b DCM 2
 //
 // Generate the internal input pin clock
-// this uses the clk LVDS input pins to generate a clock to buffer the input data
-// the LVDS input pins are AF29/AE28(IO_L24NP_6) ck1 and P27/N27(IO_L68NP_7)
-// Actually we use a dedicated feedback pin which is in bank 5...
 // This should be placed near its input
-// The pads are IO_(L|R)([0-9][0-9])(N|P)_(B)
-// $1 = L|R (must also be top or bottom) I think
-// $2 = pad number (0 at bottom/top of left, 96 in middle)
-// $3 = N or P for which of LVDS pair
-// $4 = bank number
-// Lets put it at the top on the left, DCM_X0Y1. Hm, there is a warning about this, since we are using bank 5 for the input clock pin
-// Try instead at DCM_X5Y0
-DCM dram_input_pin_gen(       .CLKIN (feedback_ddr_clock),
-                              .RST (system_reset_in),
+// we skew by 1/3 of a clock for now; not too important why yet till we get to reads
+DCM dram_input_pin_gen(       .CLKIN (sys_drm_clock_in),
                               .CLK0 (int_input_drm_clock),
-                              .CLK90 (int_input_drm_clock_90),
                               .CLKFB (int_input_drm_clock_buffered),
-                              .LOCKED (dcm_locked[3] )
+                              .LOCKED (dcm_locked[1] )
                     );
-// synthesis attribute LOC of dram_input_pin_gen is "DCM_X5Y0";
+// synthesis attribute LOC of dram_input_pin_gen is "DCM_X3Y0";
 
 // synthesis attribute CLK_FEEDBACK of dram_input_pin_gen is "1X"; 
+// synthesis attribute CLKIN_PERIOD of dram_input_pin_gen is "8 ns";
+// synthesis attribute CLKFX_MULTIPLY of dram_input_pin_gen is 2;
+// synthesis attribute CLKFX_DIVIDE of dram_input_pin_gen is 1;
 // synthesis attribute CLKIN_DIVIDE_BY_2 of dram_input_pin_gen is 0;
-// synthesis attribute CLKOUT_PHASE_SHIFT of dram_input_pin_gen is "NONE"; 
+// synthesis attribute CLKOUT_PHASE_SHIFT of dram_input_pin_gen is "FIXED"; 
 // synthesis attribute DESKEW_ADJUST of dram_input_pin_gen is "SYSTEM_SYNCHRONOUS";
 // synthesis attribute DFS_FREQUENCY_MODE of dram_input_pin_gen is "LOW"; 
 // synthesis attribute DLL_FREQUENCY_MODE of dram_input_pin_gen is "LOW"; 
 // synthesis attribute DSS_MODE of dram_input_pin_gen is "NONE"; 
 // synthesis attribute DUTY_CYCLE_CORRECTION of dram_input_pin_gen is "FALSE";
-// synthesis attribute PHASE_SHIFT of dram_input_pin_gen is 0;
+// synthesis attribute PHASE_SHIFT of dram_input_pin_gen is 80;
 // synthesis attribute STARTUP_WAIT of dram_input_pin_gen is 1;
 
 BUFG drm_input_clock_buffer( .I(int_input_drm_clock), .O(int_input_drm_clock_buffered) );
-BUFG drm_input_90_clock_buffer( .I(int_input_drm_clock_90), .O(int_input_drm_clock_90_buffered) );
 
 //synthesis attribute clock_signal of int_input_drm_clock_buffered is yes;
-//synthesis attribute clock_signal of int_input_drm_clock_90_buffered is yes;
-//synthesis attribute PERIOD of int_input_drm_clock_buffered is "12 ns";
-//synthesis attribute PERIOD of int_input_drm_clock_90_buffered is "12 ns";
 
-
-//b DCM 5 and divider (actually no DCM as we are below ClkMin for the DCM!)
+//b Clock divider
 //
 // Divide the internal logic DRAM clock, and generate two enables
-// Put the DCM in the middle at the bottom (DCM_X3Y0), so that it drives the BUFG well
-// The logic gates should be right next to it
+// The logic gates should be right next to the DCMs and GBUFs
 reg [3:0]clock_divider;
 reg divided_clock;
-reg cke_last_of_logic;
-always @(posedge int_logic_drm_clock_buffered)
+reg cke_next_will_be_last_of_logic;
+reg cke_last_of_logic_int; // duplicate so that there is a local copy for the divider, and a copy to be placed for the dram logic; this will take a good load off the signal
+always @(posedge int_drm_clock_buffered)
 begin
     clock_divider <= clock_divider+1;
-    cke_last_of_logic <= 0;
-    if (clock_divider==10)
+    cke_next_will_be_last_of_logic <= 0;
+    cke_last_of_logic_int <= 0;
+    if (clock_divider==9)
     begin
-        cke_last_of_logic <= 1;
+        cke_next_will_be_last_of_logic <= 1;
+    end
+    if (cke_next_will_be_last_of_logic)
+    begin
+        cke_last_of_logic_int <= 1;
     end
     if (clock_divider==5)
     begin
         divided_clock <= 0;
     end
-    if (cke_last_of_logic)
+    if (cke_last_of_logic_int)
     begin
         clock_divider <= 0;
         divided_clock <= 1;
     end
 end
+// synthesis attribute equivalent_register_removal of cke_last_of_logic_int is "no" ;
 
-// Run a DCM on the output to get zero skew from this to the clock tree
-//DCM slow_logic_gen(     .CLKIN (divided_clock),
-//                        .RST (system_reset_in),
-//                        .CLK0 (int_logic_slow_clock),
-//                        .CLKFB (int_logic_slow_clock_buffered),
-//                        .LOCKED (dcm_locked[4] )
-//                );
-assign dcm_locked[4] = 1;
 assign int_logic_slow_clock = divided_clock;
-//no synthesis attribute LOC of slow_logic_gen is "DCM_X3Y0";
-
-// no synthesis attribute CLK_FEEDBACK of slow_logic_gen is "1X"; 
-// no synthesis attribute CLKIN_DIVIDE_BY_2 of slow_logic_gen is 0;
-// no synthesis attribute CLKOUT_PHASE_SHIFT of slow_logic_gen is "NONE"; 
-// no synthesis attribute DESKEW_ADJUST of slow_logic_gen is "SYSTEM_SYNCHRONOUS";
-// no synthesis attribute DFS_FREQUENCY_MODE of slow_logic_gen is "LOW"; 
-// no synthesis attribute DLL_FREQUENCY_MODE of slow_logic_gen is "LOW"; 
-// no synthesis attribute DSS_MODE of slow_logic_gen is "NONE"; 
-// no synthesis attribute DUTY_CYCLE_CORRECTION of slow_logic_gen is "FALSE";// (TRUE, FALSE)
-// no synthesis attribute PHASE_SHIFT of slow_logic_gen is 0;
-// no synthesis attribute STARTUP_WAIT of slow_logic_gen is 1;
-
 BUFG slow_logic_clock_buffer( .I(int_logic_slow_clock), .O(int_logic_slow_clock_buffered) );
-
 //synthesis attribute clock_signal of int_logic_slow_clock_buffered is yes;
-//synthesis attribute PERIOD of int_logic_slow_clock_buffered is "100 ns";
 
 //b Reset output
 //
@@ -346,7 +279,7 @@ begin
     end
     else
     begin
-        if (dcm_locked==5'b11111) //'
+        if (dcm_locked==2'b11) //'
         begin
             system_reset_out <= 0;
         end
@@ -355,147 +288,3 @@ end
 
 //b End module
 endmodule
-
-//a Sample DCM
-// Generate the main clock frequency (83MHz) and its inverse
-//DCM clk_freq_gen(       .CLKIN (sys_drm_clock_in),
-//                        //.CLK0 (int_drm_clock),
-//                        //.CLK180 (int_drm_clock_n), 
-//                        //.CLK270 (user_CLK270),
-//                        //.CLK2X (user_CLK2X),
-//                        //.CLK2X180 (user_CLK2X180),
-//                        //.CLK90 (user_CLK90), 
-//                        //.CLKDV (user_CLKDV),
-//                        .CLKFX (int_output_drm_clock),
-//                        .CLKFX180 (int_output_drm_clock_n),
-//                        //.LOCKED (user_LOCKED),
-//                        //.PSDONE (user_PSDONE),
-//                        //.STATUS (user_STATUS),
-//                        //.CLKFB (user_CLKFB), 
-//                        //.DSSEN (user_DSSEN),
-//                        //.PSCLK (user_PSCLK),
-//                        //.PSEN (user_PSEN),
-//                        //.PSINCDEC (user_PSINCDEC),
-//                        //.RST (user_RST)
-//    );
-////defparam clk_freq_gen.CLK_FEEDBACK => "string_value"; None needed, as we are running FX
-////defparam clk_freq_gen.CLKDV_DIVIDE = integer_value; //(1.5,2,2.5,3,4,5,8,16)
-//defparam clk_freq_gen.CLKFX_MULTIPLY => 4; // Multiply up from 125MHz/8ns to 500MHz/2ns
-//defparam clk_freq_gen.CLKFX_DIVIDE => 6; // Divide from 500MHz/ns to 83MHz/12ns
-//defparam clk_freq_gen.CLKIN_DIVIDE_BY_2 => FALSE;
-//defparam clk_freq_gen.CLKOUT_PHASE_SHIFT => "NONE"; 
-//defparam clk_freq_gen.DESKEW_ADJUST => "SYSTEM_SYNCHRONOUS";
-//defparam clk_freq_gen.DFS_FREQUENCY_MODE => "LOW";  // Low frequency mode
-//defparam clk_freq_gen.DLL_FREQUENCY_MODE => "LOW";   // Low frequency mode
-//defparam clk_freq_gen.DSS_MODE => "NONE"; 
-//defparam clk_freq_gen.DUTY_CYCLE_CORRECTION => "FALSE";// (TRUE, FALSE)
-//defparam clk_freq_gen.PHASE_SHIFT => 0;
-//
-//defparam clk_freq_gen.STARTUP_WAIT => TRUE; // (TRUE, FALSE)
-
-
-//b Phase shift DCM 4
-//old //
-//old // Generate the internal input pin clock
-//old // this uses the main clock, and does a fine phase shift by 1/3 of a clock (i.e. 4ns)
-//old // this balances clock-to-out delay of 2ns, Tac of 0.75ns, and some trace delay
-//old DCM dram_input_pin_gen(       .CLKIN (int_output_drm_clock_buffered),
-//old                               .RST (system_reset_in),
-//old                               .CLK0 (int_input_drm_clock_90),
-//old                               .CLKFB (int_input_drm_clock_90_buffered),
-//old                               .LOCKED (dcm_locked[3] )
-//old                     );
-//old //ssynthesis attribute LOC of dram_input_pin_gen is "DCM_X5Y0";
-//old 
-//old // ssynthesis attribute CLK_FEEDBACK of dram_input_pin_gen is "1X"; 
-//old // ssynthesis attribute CLKIN_DIVIDE_BY_2 of dram_input_pin_gen is 0;
-//old // ssynthesis attribute CLKOUT_PHASE_SHIFT of dram_input_pin_gen is "FIXED"; 
-//old // ssynthesis attribute DESKEW_ADJUST of dram_input_pin_gen is "SYSTEM_SYNCHRONOUS";
-//old // ssynthesis attribute DFS_FREQUENCY_MODE of dram_input_pin_gen is "LOW"; 
-//old // ssynthesis attribute DLL_FREQUENCY_MODE of dram_input_pin_gen is "LOW"; 
-//old // ssynthesis attribute DSS_MODE of dram_input_pin_gen is "NONE"; 
-//old // ssynthesis attribute DUTY_CYCLE_CORRECTION of dram_input_pin_gen is "FALSE";
-//old // ssynthesis attribute PHASE_SHIFT of dram_input_pin_gen is 96;
-//old // ssynthesis attribute STARTUP_WAIT of dram_input_pin_gen is 1;
-//old 
-//old BUFG drm_input_clock_buffer( .I(int_input_drm_clock), .O(int_input_drm_clock_buffered) );
-//old BUFG drm_input_90_clock_buffer( .I(int_input_drm_clock_90), .O(int_input_drm_clock_90_buffered) );
-//old 
-//old //ssynthesis attribute clock_signal of int_input_drm_clock_buffered is yes;
-//old //ssynthesis attribute clock_signal of int_input_drm_clock_90_buffered is yes;
-//old //ssynthesis attribute PERIOD of int_input_drm_clock_buffered is "12 ns";
-//old //ssynthesis attribute PERIOD of int_input_drm_clock_90_buffered is "12 ns";
-
-//a Old DCM 4
-//b DCM 4
-//old //
-//old // Generate the internal input pin clock
-//old // this uses the clk LVDS input pins to generate a clock to buffer the input data
-//old // the LVDS input pins are AF29/AE28(IO_L24NP_6) ck1 and P27/N27(IO_L68NP_7)
-//old // Actually we use a dedicated feedback pin which is in bank 5...
-//old // This should be placed near its input
-//old // The pads are IO_(L|R)([0-9][0-9])(N|P)_(B)
-//old // $1 = L|R (must also be top or bottom) I think
-//old // $2 = pad number (0 at bottom/top of left, 96 in middle)
-//old // $3 = N or P for which of LVDS pair
-//old // $4 = bank number
-//old // Lets put it at the top on the left, DCM_X0Y1. Hm, there is a warning about this, since we are using bank 5 for the input clock pin
-//old // Try instead at DCM_X5Y0
-//old DCM dram_input_pin_gen(       .CLKIN (feedback_ddr_clock),
-//old                               .RST (system_reset_in),
-//old                               .CLK0 (int_input_drm_clock),
-//old                               .CLK90 (int_input_drm_clock_90),
-//old                               .CLKFB (int_input_drm_clock_buffered),
-//old                               .LOCKED (dcm_locked[3] )
-//old                     );
-//old // ssynthesis attribute LOC of dram_input_pin_gen is "DCM_X5Y0";
-//old 
-//old // ssynthesis attribute CLK_FEEDBACK of dram_input_pin_gen is "1X"; 
-//old // ssynthesis attribute CLKIN_DIVIDE_BY_2 of dram_input_pin_gen is 0;
-//old // ssynthesis attribute CLKOUT_PHASE_SHIFT of dram_input_pin_gen is "NONE"; 
-//old // ssynthesis attribute DESKEW_ADJUST of dram_input_pin_gen is "SYSTEM_SYNCHRONOUS";
-//old // ssynthesis attribute DFS_FREQUENCY_MODE of dram_input_pin_gen is "LOW"; 
-//old // ssynthesis attribute DLL_FREQUENCY_MODE of dram_input_pin_gen is "LOW"; 
-//old // ssynthesis attribute DSS_MODE of dram_input_pin_gen is "NONE"; 
-//old // ssynthesis attribute DUTY_CYCLE_CORRECTION of dram_input_pin_gen is "FALSE";
-//old // ssynthesis attribute PHASE_SHIFT of dram_input_pin_gen is 0;
-//old // ssynthesis attribute STARTUP_WAIT of dram_input_pin_gen is 1;
-//old 
-//old BUFG drm_input_clock_buffer( .I(int_input_drm_clock), .O(int_input_drm_clock_buffered) );
-//old BUFG drm_input_90_clock_buffer( .I(int_input_drm_clock_90), .O(int_input_drm_clock_90_buffered) );
-//old 
-//old //ssynthesis attribute clock_signal of int_input_drm_clock_buffered is yes;
-//old //ssynthesis attribute clock_signal of int_input_drm_clock_90_buffered is yes;
-//old //ssynthesis attribute PERIOD of int_input_drm_clock_buffered is "12 ns";
-//old //ssynthesis attribute PERIOD of int_input_drm_clock_90_buffered is "12 ns";
-//old 
-//old 
-
-//a Old DCM 3
-//old //b DCM 3
-//old //
-//old // Generate the internal logic DRAM clock
-//old // This does not need to be close to any pads, but the related logic will be on the left side near the pads
-//old // It connects to DCM2 at DCM_X0Y0, and a GBUF; so use DCM_X2Y0
-//old DCM dram_logic_gen(       .CLKIN (int_output_drm_clock_buffered),
-//old                           .CLK0 (int_logic_drm_clock),
-//old                           .CLKFB (int_logic_drm_clock_buffered),
-//old                           .LOCKED (dcm_locked[2] )
-//old                     );
-//old //ssynthesis attribute LOC of dram_logic_gen is "DCM_X2Y0";
-//old 
-//old // ssynthesis attribute CLK_FEEDBACK of dram_logic_gen is "1X"; 
-//old // ssynthesis attribute CLKIN_DIVIDE_BY_2 of dram_logic_gen is 0;
-//old // ssynthesis attribute CLKOUT_PHASE_SHIFT of dram_logic_gen is "NONE"; 
-//old // ssynthesis attribute DESKEW_ADJUST of dram_logic_gen is "SYSTEM_SYNCHRONOUS";
-//old // ssynthesis attribute DFS_FREQUENCY_MODE of dram_logic_gen is "LOW"; 
-//old // ssynthesis attribute DLL_FREQUENCY_MODE of dram_logic_gen is "LOW"; 
-//old // ssynthesis attribute DSS_MODE of dram_logic_gen is "NONE"; 
-//old // ssynthesis attribute DUTY_CYCLE_CORRECTION of dram_logic_gen is "FALSE";
-//old // ssynthesis attribute PHASE_SHIFT of dram_logic_gen is 0;
-//old // ssynthesis attribute STARTUP_WAIT of dram_logic_gen is 1;
-//old 
-//old BUFG drm_logic_clock_buffer( .I(int_logic_drm_clock), .O(int_logic_drm_clock_buffered) );
-//old 
-//old //ssynthesis attribute clock_signal of int_logic_drm_clock_buffered is yes;
-//old //ssynthesis attribute PERIOD of int_logic_drm_clock_buffered is "12 ns";

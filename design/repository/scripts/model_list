@@ -7,6 +7,7 @@ c_model test_benches/io_fifos c_io_fifos inc:headers/c
 c_model test_benches/postbus c_postbus_testbench inc:headers/c inc:test_benches/ethernet
 c_model test_benches/ethernet c_mii_testbench inc:headers/c
 c_model test_benches/gip      c_gipc_prefetch_if_comp inc:headers/c
+c_model test_benches/gip      c_gipc_pipeline_trace inc:headers/c
 
 c_model models/memories c_memory inc:headers/c
 c_model models/memories c_rf inc:headers/c

@@ -7,8 +7,14 @@
 #b Add GIP core
 module gip_core "gipc"
 
-#b Add GIP core prefetch if compliance checker
+#b Add GIP core trace
 option_int "verbose_level" env_int("verbose_level")
+option_string "gipc_path" "gipc"
+module gipc_pipeline_trace "gipc_pipeline_trace"
+
+#b Add GIP core prefetch if compliance checker
+#option_int "verbose_level" env_int("verbose_level")
+option_int "verbose_level" 0
 module gipc_prefetch_if_comp "gipc_prefetch_if_comp"
 
 #b Add GIP prefetch
@@ -58,6 +64,7 @@ drive th.system_clock system_clock
 drive gipc.gip_clock system_clock
 drive pst_rom.int_clock system_clock
 drive pst_rom_srm.sram_clock system_clock
+drive gipc_pipeline_trace.int_clock system_clock
 drive gipc_prefetch_if_comp.int_clock system_clock
 drive gip_prefetch.gip_clock system_clock
 drive gip_data_ram.gip_clock system_clock

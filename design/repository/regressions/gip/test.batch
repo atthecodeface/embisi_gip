@@ -60,7 +60,7 @@ setenv "verbose_level" 1
 #gosub gip_0
 #gosub gip_1
 
-set vcd_create 1
+set vcd_create 0
 gosub gip_linux
 return
 
@@ -129,7 +129,7 @@ return
 
 #b gip_linux
 gip_linux:
-set run_length 100
+set run_length 200000
 set_string vcd_filename "gip_linux"
 # 16 MB of RAM!
 setenv "memory_log_size" 22

@@ -1,0 +1,37 @@
+#a Copyright
+#  
+#  This file 'simple.hwex' copyright Gavin J Stark 2004
+#  
+
+option_string "options" "-f fred.gif"
+module gip_cyc gip
+#module tie_high gip
+
+option_string "clock" system_clock
+option_string "inputs" "result[32]"
+option_string "outputs" "test_reset in[32]"
+option_string "filename" gip_test_harness.th
+module se_test_harness th
+
+clock system_clock 0 1 1
+drive th.system_clock system_clock
+drive gip.cpu_clock system_clock
+
+wire in[32] result[32] reset
+
+drive reset th.test_reset
+
+#drive gip.data_in in
+#drive in th.in
+
+#drive result gip.sum
+#drive th.result result
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

@@ -35,9 +35,10 @@ site_map( "block_data_transfer", "block_data_transfer.php", "Block data transfer
 site_pop();
 site_map( "microkernel", "microkernel", "Microkernel" );
 site_push( "microkernel/" );
+site_map( "linux", "linux.php", "Linux operation" );
+site_map( "communication", "communication.php", "Communication primitives" );
 site_map( "outline_operation", "outline_operation.php", "Outline Operation" );
 site_map( "detailed_operation", "detailed_operation.php", "Detailed Operation" );
-site_map( "linux", "linux.php", "Linux operation" );
 site_map( "outline_code", "outline_code.php", "Outline code" );
 site_pop();
 site_pop();

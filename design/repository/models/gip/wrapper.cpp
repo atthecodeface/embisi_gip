@@ -498,7 +498,7 @@ extern int main( int argc, char **argv )
 //            if (instruction_count > time_to_next_irq)
 //                instruction_count = time_to_next_irq;
 	    
-            int actual_count = gip->arm_step( &okay, instruction_count );
+            int actual_count = gip->step( &okay, instruction_count );
 
 //            time_to_next_irq -= actual_count;
 
@@ -541,7 +541,7 @@ extern int main( int argc, char **argv )
 //	    if (instruction_count > 500) instruction_count = 500;
             if (instruction_count > 50) instruction_count = 50;
 	    
-            actual_count = gip->arm_step( &okay, instruction_count );
+            actual_count = gip->step( &okay, instruction_count );
             cycles -= actual_count;
             total_instructions += actual_count;
 	    

@@ -820,6 +820,58 @@ IMVN[CC][S][P][A][F] Rm/Imm -> Rd
 </tr>
 
 <tr>
+<th align=left>
+IXORFIRST[CC][S][P][A][F] Rn, Rm/Imm -> Rd
+</th>
+<td>Logic</td>
+<td>XORF</td>
+<td>SP</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IXORLAST[CC][S][P][A][F] Rn, Rm/Imm -> Rd
+</th>
+<td>Logic</td>
+<td>XORL</td>
+<td>SP</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IANDCOUNT[CC][S][P][A][F] Rn, Rm/Imm -> Rd
+</th>
+<td>Logic</td>
+<td>ANDC</td>
+<td>SP</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IANDXOR[CC][S][P][A][F] Rn, Rm/Imm -> Rd
+</th>
+<td>Logic</td>
+<td>ANDX</td>
+<td>SP</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
 <th colspan=8>Immediate comparison</th>
 </tr>
 
@@ -920,6 +972,19 @@ IORN[CC][S][P][A][F] Rn, Rm/Imm -> {cond}
 </th>
 <td>Logic</td>
 <td>ORN</td>
+<td>SP</td>
+<td>CC</td>
+<td>cond</td>
+<td>A</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+IANDXOR[CC][S][P][A][F] Rn, Rm/Imm -> {cond}
+</th>
+<td>Logic</td>
+<td>ANDX</td>
 <td>SP</td>
 <td>CC</td>
 <td>cond</td>
@@ -1615,11 +1680,100 @@ ISTR[CC]H[A][S] #k (Rn, #-SHF) <- Rm/Imm [-> Rd]
 </tr>
 
 
+
+<tr>
+<th colspan=8>Scheduler operations</th>
+</tr>
+
+<tr>
+<th align=left>
+ISCHDSEMOR[CC][A] Rm/Imm [-> Rd]
+</th>
+<td>Scheduler</td>
+<td>OR</td>
+<td>00</td>
+<td>CC</td>
+<td>000000</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISCHDSEMBIC[CC][A] Rm/Imm [-> Rd]
+</th>
+<td>Scheduler</td>
+<td>BIC</td>
+<td>00</td>
+<td>CC</td>
+<td>000000</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISCHDSEMXOR[CC][A] Rm/Imm [-> Rd]
+</th>
+<td>Scheduler</td>
+<td>XOR</td>
+<td>00</td>
+<td>CC</td>
+<td>000000</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISCHDINFO[CC][A] Rm/Imm [-> Rd]
+</th>
+<td>Scheduler</td>
+<td>???</td>
+<td>00</td>
+<td>CC</td>
+<td>000000</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISCHDPC[CC][A] Rm/Imm [-> Rd]
+</th>
+<td>Scheduler</td>
+<td>???</td>
+<td>00</td>
+<td>CC</td>
+<td>000000</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISCHDRESTART[CC][A] Rm/Imm [-> Rd]
+</th>
+<td>Scheduler</td>
+<td>???</td>
+<td>00</td>
+<td>CC</td>
+<td>000000</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+
 </table>
 
 Still missing:
-XMC (word, block), XCM (word, block), EORFIRSTONE, EORLASTONE, BITCOUNT, TESTALLSET, TESTANYCLEAR, MEMCMD (prefetch, writeback, writeback_and_invalidate, flush, fill buffer from address, write buffer to address,
+XMC (word, block), XCM (word, block), MEMCMD (prefetch, writeback, writeback_and_invalidate, flush, fill buffer from address, write buffer to address,
 Sticky flags
+
+TestAllSet where you want to test that the bits specified by #0x123 are all set in R4 is down with IANDXOR R4, #0x1234 -> EQ. This ANDs R4 with 0x1234 and then XORs the result with 0x1234, and if the result is zero then TestAllSet passes.
+TestAllClear is equivalent to IAND R4, #0x1234 -> EQ
+TestAnySet is IAND R4, #0x1234 -> NE
+TestAnyClear is IANDXOR R4, #0x1234 -> NE
 
 
    condition passed shadow size, L=little-endian, u=unaligned will come from pipeline configuration, as do sticky flags.

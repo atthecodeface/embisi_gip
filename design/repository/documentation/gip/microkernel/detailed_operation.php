@@ -14,6 +14,92 @@ page_header( "ARM Emulation Microkernel" );
 page_sp();
 ?>
 
+<?php page_section( "states", "States" ); ?>
+
+The microkernel has six states, and transitions between them according to the following table:
+
+<table border=1>
+<tr><th>State</th><th>Primitive / event</th><th>Action</th><th>Next state</th></tr>
+
+<tr>
+<th>User state</th>
+<td>SystemCall</td>
+<td>Disable interrupts, save R0, R13, R14, set R13 to system mode R13, R14 to return address, R0 to system call number, change to SystemState, set ARM mode code thread PC to system call vectoring routine</td>
+<td>System state, interrupts disabled</td>
+</tr>
+
+<tr>
+<th>User state</th>
+<td>UndefinedInstruction</td>
+<td>Disable interrupts, save R0, R13, R14, set R13 to system mode R13, R14 to return address, R0 to instruction, change to SystemState, set ARM mode code thread PC to undefined instruction routine</td>
+<td>System state, interrupts disabled</td>
+</tr>
+
+<tr>
+<th>User state</th>
+<td>HardwareInterrupt</td>
+<td>Disable interrupts, save R0, R13, R14, PC, set R13 to system mode R13, R0 to interrupt number, change to SystemState, set ARM mode code thread PC to user mode interrupt routine</td>
+<td>System state, interrupts disabled</td>
+</tr>
+
+<tr>
+<th>System state, interrupts enabled</th>
+<td>HardwareInterrupt</td>
+<td>Disable interrupts, save R0, R13, R14, PC, set R0 to interrupt number, set ARM mode code thread PC to system mode interrupt routine</td>
+<td>System state, interrupts disabled</td>
+</tr>
+
+<tr>
+<th>System state, interrupts disabled</th>
+<td>HardwareInterrupt</td>
+<td>Do nothing</td>
+<td>System state, interrupts disabled</td>
+</tr>
+
+<tr>
+<th>System state, interrupts disabled</th>
+<td>Interrupts reenabled, hardware interrupt pending</td>
+<td>Disable interrupts, save R0, R13, R14, PC, set R0 to interrupt number, set ARM mode code thread PC to system mode interrupt routine</td>
+<td>System state, interrupts disabled</td>
+</tr>
+
+<tr>
+<th>System state, interrupts disabled</th>
+<td>Interrupts reenabled, no hardware interrupt pending</td>
+<td>Do nothing</td>
+<td>System state, interrupts enabled</td>
+</tr>
+
+<tr>
+<th>System state, interrupts enabled</th>
+<td>ReturnFromInterruptToUser</td>
+<td>Recover R13, R14 from user bank; set ARM mode code thread PC and flags to interrupted PC and flags, change to UserState</td>
+<td>User state</td>
+</tr>
+
+<tr>
+<th>System state, interrupts disabled</th>
+<td>ReturnFromInterruptToUser</td>
+<td>Recover R13, R14 from user bank; set ARM mode code thread PC and flags to interrupted PC and flags, change to UserState, enable interrupts</td>
+<td>User state</td>
+</tr>
+
+<tr>
+<th>System state, interrupts enabled</th>
+<td>ReturnFromInterruptToSystem</td>
+<td>Set ARM mode code thread PC and flags to interrupted PC and flags</td>
+<td>System state, interrupts enabled</td>
+</tr>
+
+<tr>
+<th>System state, interrupts disabled</th>
+<td>ReturnFromInterruptToSystem</td>
+<td>Set ARM mode code thread PC and flags to interrupted PC and flags, enable interrupts</td>
+<td>System state, interrupts enabled</td>
+</tr>
+
+</table>
+
 <?php page_section( "modes", "Modes" ); ?>
 
 The microkernel has a concept of which 'mode' the ARM is running in, but it is primitive. It has a flag that it keeps in memory (or register?) that is 1 for SVC mode, 0 for user mode.

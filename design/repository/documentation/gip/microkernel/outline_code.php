@@ -17,8 +17,11 @@ page_sp();
 <?php page_section( "outline_code", "Outline code" ); ?>
 
 The microkernel is effectively a state machine. In standard running
-there will be an ARM mode code thread running a user process, and
-the microkernel will be in 'user' state. From this state it may get a system call from the ARM code, and enter 'system call' state; in 'system call' state it may then receive hardware interrupts, or schedule a different user process, or a return from system call.
+there will be an ARM mode code thread running a user process, and the
+microkernel will be in 'user' state. From this state it may get a
+system call from the ARM code, and enter 'system call' state; in
+'system call' state it may then receive hardware interrupts, or
+schedule a different user process, or a return from system call.
 
 The main entry point for the microkernel is entered on a semaphore
 going high. This semaphore may be triggered by a SWI or by a hardware
@@ -44,7 +47,7 @@ which will reenable interrupts, and check to see if the ARM thread
 needs to be restarted.
 
 
-<?php page_section( "despatch", "Despatch" ); ?>
+<?php page_section( "user_mode", "User mode" ); ?>
 
 This is the code that occurs when the microkernel was idling, and when
 either a hardware or software interrupt occurs.  It examines the
@@ -52,7 +55,27 @@ source of the interrupt, clearing the indication atomically. It then
 despatches to the correct routines until all the interrupt sources are
 handled.
 
-<?php code_format( "gip", "code/despatch.s" );?>
+<?php code_format( "gip", "code/user_mode.s" );?>
+
+<?php page_section( "system_mode_no_interrupts", "System mode no interrupts pending" ); ?>
+
+This is the code that occurs when the microkernel was idling, and when
+either a hardware or software interrupt occurs.  It examines the
+source of the interrupt, clearing the indication atomically. It then
+despatches to the correct routines until all the interrupt sources are
+handled.
+
+<?php code_format( "gip", "code/system_mode_no_interrupt_pending.s" );?>
+
+<?php page_section( "system_mode_interrupts", "System mode with interrupts pending" ); ?>
+
+This is the code that occurs when the microkernel was idling, and when
+either a hardware or software interrupt occurs.  It examines the
+source of the interrupt, clearing the indication atomically. It then
+despatches to the correct routines until all the interrupt sources are
+handled.
+
+<?php code_format( "gip", "code/system_mode_interrupt_pending.s" );?>
 
 <?php page_section( "swi_entry", "SWI entry code" ); ?>
 

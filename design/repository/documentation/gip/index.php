@@ -68,6 +68,11 @@ The instruction set is documented in OpenOffice
 
 </table>
 
+
+<?php page_section( "construction", "Construction" );?>
+
+It should be noted that each stage of the pipeline registers its inputs immediately (possibly with clock enabled flops), and produces combinatorial outputs. There are no combinatorial input-to-output paths in the pipeline stages.
+
 <?php
 page_ep();
 

@@ -18,7 +18,6 @@
 #define SET_ZNC(pd, res, car) {pd->z=(res==0);pd->n=(res&0x80000000)?1:0;pd->c=car;}
 #define SET_ZNCV(pd, res, car, ovr) {pd->z=(res==0);pd->n=(res&0x80000000)?1:0;pd->c=car;pd->v=ovr;}
 #define MAX_BREAKPOINTS (8)
-#define MAX_TRACING (8)
 #define MAX_INTERRUPTS (8)
 #define SET_DEBUGGING_ENABLED(pd) {pd->debugging_enabled = (pd->breakpoints_enabled != 0) || (pd->halt);}
 #define MAX_REGISTERS (32)
@@ -27,21 +26,6 @@
 
 /*a Types
  */
-/*t t_log_data
- */
-typedef struct t_log_data
-{
-    unsigned int address;
-    unsigned int opcode;
-    int conditional;
-    int condition_passed;
-    int sequential;
-    int branch;
-    int rfr;
-    int rfw;
-    int sign;
-} t_log_data;
-
 /*t t_shf_type
  */
 typedef enum
@@ -53,13 +37,23 @@ typedef enum
     shf_type_rrx=4,
 } t_shf_type;
 
-/*t t_gip_pipeline_single_data
+/*t t_gip_sch_thread - Per thread register file storage
  */
-typedef struct t_gip_pipeline_single_data
+typedef struct t_gip_sch_thread
+{
+    unsigned int restart_pc;
+    int flag_dependencies; // 4-bit field indicating which sempahores are important
+    int register_map;
+    int processor_mode; // 1 for ARM, 0 for GIP native
+    int running; // 1 if the thread has been scheduled and is running (or is currently preempted)
+} t_gip_sch_thread;
+
+/*t t_private_data
+ */
+typedef struct t_private_data
 {
     c_memory_model *memory;
     int cycle;
-    t_log_data log;
 
     /*b Configuration of the pipeline
      */
@@ -68,6 +62,17 @@ typedef struct t_gip_pipeline_single_data
     int sticky_c;
     int sticky_n;
     int cp_trail_2; // Assert to have a 'condition passed' trail of 2, else it is one.
+
+    /*b State of the scheduler
+     */
+    t_gip_sch_thread sch_thread_data[8]; // 'Register file' of thread data for all eight threads
+    unsigned int sch_semaphores;
+    int sch_mode; // 0 is round-robin cooperative, 1 is prioritized cooperative, 2 is full-blown prioritized preemption
+    int sch_thread; // Actual thread number that is currently running
+    int sch_running; // 1 if a thread is running, 0 otherwise
+
+    /*b Combinatorials in the scheduler
+     */
 
     /*b State in the pipeline guaranteed by the design
      */
@@ -115,10 +120,6 @@ typedef struct t_gip_pipeline_single_data
     int debugging_enabled;
     int breakpoints_enabled;
     unsigned int breakpoint_addresses[ MAX_BREAKPOINTS ];
-    int tracing_enabled; // If 0, no tracing, else tracing is performed
-    FILE *trace_file;
-    unsigned int trace_region_starts[ MAX_TRACING ]; // inclusive start address of area to trace - up to MAX_TRACING areas
-    unsigned int trace_region_ends[ MAX_TRACING ]; // exclusive end address of area to trace - up to MAX_TRACING areas
     int halt;
     
     int interrupt_handler[MAX_INTERRUPTS];
@@ -129,7 +130,7 @@ typedef struct t_gip_pipeline_single_data
     int super;
 
     struct microkernel * ukernel;
-} t_gip_pipeline_single_data;
+} t_private_data;
 
 /*a Static variables
  */
@@ -138,7 +139,7 @@ typedef struct t_gip_pipeline_single_data
  */
 /*f is_condition_met
  */
-static int is_condition_met( t_gip_ins_cc gip_ins_cc, t_gip_pipeline_single_data *pd )
+static int is_condition_met( t_gip_ins_cc gip_ins_cc, t_private_data *pd )
 {
     switch (gip_ins_cc)
     {
@@ -206,7 +207,7 @@ static unsigned int rotate_right( unsigned int value, int by )
 
 /*f barrel_shift
  */
-unsigned int barrel_shift( int c_in, t_shf_type type, unsigned int val, int by, int *c_out )
+static unsigned int barrel_shift( int c_in, t_shf_type type, unsigned int val, int by, int *c_out )
 {
     if (by==0)
     {
@@ -332,88 +333,34 @@ static unsigned int add_op( unsigned int a, unsigned int b, int c_in, int *c_out
     return (result_hi<<16) | result_lo;
 }
 
-/*a Log methods
- */
-/*f c_gip_pipeline_single::log
- */
-void c_gip_pipeline_single::log( char *reason, unsigned int arg )
-{
-    if (!strcmp(reason, "address"))
-    {
-        pd->log.address = arg;
-    }
-    else if (!strcmp(reason, "opcode"))
-    {
-        pd->log.opcode = arg;
-    }
-    else if (!strcmp(reason, "conditional"))
-    {
-        pd->log.conditional = arg;
-    }
-    else if (!strcmp(reason, "condition_passed"))
-    {
-        pd->log.condition_passed = arg;
-    }
-    else if (!strcmp(reason, "branch"))
-    {
-        pd->log.branch = arg;
-    }
-    else if (!strcmp(reason, "rfr"))
-    {
-        pd->log.rfr |= (1<<arg);
-    }
-    else if (!strcmp(reason, "rfw"))
-    {
-        pd->log.rfw |= (1<<arg);
-    }
-    else if (!strcmp(reason, "sign"))
-    {
-        pd->log.sign = arg;
-    }
-}
-
-/*f c_gip_pipeline_single::log_display
- */
-void c_gip_pipeline_single::log_display( FILE *f )
-{
-    fprintf( f, "%08x %08x %1d %1d %1d %04x %04x %1d",
-             pd->log.address,
-             pd->log.opcode,
-             pd->log.sequential,
-             pd->log.conditional,
-             pd->log.condition_passed,
-             pd->log.rfr,
-             pd->log.rfw,
-             pd->log.sign
-        );
-    fprintf( f, "\n" );
-}
-
-/*f c_gip_pipeline_single::log_reset
- */
-void c_gip_pipeline_single::log_reset( void )
-{
-    pd->log.sequential = !pd->log.branch;
-    pd->log.conditional = 0;
-    pd->log.condition_passed = 1;
-    pd->log.branch = 0;
-    pd->log.rfr = 0;
-    pd->log.rfw = 0;
-    pd->log.sign = 0;
-}
-
 /*a Constructors/destructors
  */
 /*f c_gip_pipeline_single::c_gip_pipeline_single
  */
-c_gip_pipeline_single::c_gip_pipeline_single( c_memory_model *memory )
+c_gip_pipeline_single::c_gip_pipeline_single( c_memory_model *memory ) : c_execution_model_class( memory )
 {
     int i;
 
-    pd = (t_gip_pipeline_single_data *)malloc(sizeof(t_gip_pipeline_single_data));
+    printf("This %p pd %p\n", this, &pd );
+    fflush(stdout);
+    pd = (t_private_data *)malloc(sizeof(t_private_data));
     //memset (pd, 0, sizeof(*pd));
     pd->cycle = 0;
     pd->memory = memory;
+
+    for (i=0; i<8; i++)
+    {
+        pd->sch_thread_data[i].restart_pc = 0;
+        pd->sch_thread_data[i].flag_dependencies = 0;
+        pd->sch_thread_data[i].register_map = 0;
+        pd->sch_thread_data[i].processor_mode = 0;
+        pd->sch_thread_data[i].running = 0;
+    }
+    pd->sch_semaphores = 1;
+    pd->sch_mode = 0;
+    pd->sch_thread_data[0].running = 1;
+    pd->sch_thread = 0;
+    pd->sch_running = 0;
 
     pd->pc = 0;
     for (i=0; i<MAX_REGISTERS; i++)
@@ -429,7 +376,6 @@ c_gip_pipeline_single::c_gip_pipeline_single( c_memory_model *memory )
     pd->p = 0;
     pd->cp = 0;
 
-    pd->trace_file = NULL;
     pd->last_address = 0;
     pd->seq_count = 0;
     /*
@@ -460,7 +406,7 @@ c_gip_pipeline_single::c_gip_pipeline_single( c_memory_model *memory )
 
 /*f c_gip_pipeline_single::~c_gip_pipeline_single
  */
-c_gip_pipeline_single::~c_gip_pipeline_single( void )
+c_gip_pipeline_single::~c_gip_pipeline_single()
 {
 }
 
@@ -548,10 +494,10 @@ void c_gip_pipeline_single::debug( int mask )
 
 /*a Public level methods
  */
-/*f c_gip_pipeline_single:arm_step
+/*f c_gip_pipeline_single:step
   Returns number of instructions executed
  */
-int c_gip_pipeline_single::arm_step( int *reason, int requested_count )
+int c_gip_pipeline_single::step( int *reason, int requested_count )
 {
     int i;
     unsigned int opcode;
@@ -1366,7 +1312,7 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
     if ( (inst->gip_ins_class==gip_ins_class_arith) &&
          (inst->gip_ins_subclass==gip_ins_subclass_arith_mlb) )
     {
-        pd->alu_b_in = pd->alu_b_in<<2;// MLB in RF read stage implies shift left by 2; but only if it moves to the ALU stage, which it does here
+        pd->alu_b_in = pd->alu_b_in<<2;// An MLB instruction in RF read stage implies shift left by 2; but only if it moves to the ALU stage, which it does here
     }
     else if (inst->rm_is_imm)
     {
@@ -3093,90 +3039,5 @@ void c_gip_pipeline_single::halt_cpu( void )
     pd->debugging_enabled = 1;
     pd->halt = 1;
     printf("c_gip_pipeline_single::halt_cpu\n");
-}
-
-/*a Trace interface
- */
-/*f c_gip_pipeline_single::trace_output
- */
-void c_gip_pipeline_single::trace_output( char *format, ... )
-{
-    va_list args;
-    va_start( args, format );
-
-    if (pd->trace_file)
-    {
-        vfprintf( pd->trace_file, format, args );
-        fflush (pd->trace_file);
-    }
-    else
-    {
-        vprintf( format, args );
-    }
-
-    va_end(args);
-}
-
-/*f c_gip_pipeline_single::trace_set_file
- */
-int c_gip_pipeline_single::trace_set_file( char *filename )
-{
-    if (pd->trace_file)
-    {
-        fclose( pd->trace_file );
-        pd->trace_file = NULL;
-    }
-    if (filename)
-    {
-        pd->trace_file = fopen( filename, "w+" );
-    }
-    return (pd->trace_file!=NULL);
-}
-
-/*f c_gip_pipeline_single::trace_region
- */
-int c_gip_pipeline_single::trace_region( int region, unsigned int start_address, unsigned int end_address )
-{
-    if ((region<0) || (region>=MAX_TRACING))
-        return 0;
-    pd->trace_region_starts[region] = start_address;
-    pd->trace_region_ends[region] = end_address;
-    pd->tracing_enabled = 1;
-    printf ("Tracing enabled from %x to %x\n", start_address, end_address);
-    return 1;
-}
-
-/*f c_gip_pipeline_single::trace_region_stop
- */
-int c_gip_pipeline_single::trace_region_stop( int region )
-{
-    if ((region<0) || (region>=MAX_TRACING))
-        return 0;
-    return trace_restart();
-}
-
-/*f c_gip_pipeline_single::trace_all_stop
- */
-int c_gip_pipeline_single::trace_all_stop( void )
-{
-    pd->tracing_enabled = 0;
-    return 1;
-}
-
-/*f c_gip_pipeline_single::trace_restart
- */
-int c_gip_pipeline_single::trace_restart( void )
-{
-    int i;
-
-    pd->tracing_enabled = 0;
-    for (i=0; i<MAX_TRACING; i++)
-    {
-        if (pd->trace_region_starts[i] != pd->trace_region_ends[i])
-        {
-            pd->tracing_enabled = 1;
-        }
-    }
-    return 1;
 }
 

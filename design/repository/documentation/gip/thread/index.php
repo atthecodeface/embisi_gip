@@ -3,7 +3,7 @@
 include "web_locals.php";
 include "${toplevel}web_assist/web_globals.php";
 
-site_set_location($location);
+site_set_location($site_location);
 
 $page_title = "GIP Documentation";
 
@@ -61,6 +61,130 @@ appropriately set the thread becomes schedulable. The thread is
 expected to start running (if it actually gets scheduled) at a
 specified PC in a specified mode (GIP or ARM, sticky flags, ...); this
 data is stored in the scheduler register file.
+
+<?php page_section( "state", "State" ); ?>
+
+The GIP contains the following per-thread state:
+
+<table border=1>
+
+<tr><th>Size</th><th>Description</th></tr>
+
+<tr><th>4</th><td>Signalling semaphores</td></tr>
+<tr><th>1</th><td>Restart mode - 0 for native, 1 for ARM mode</td></tr>
+<tr><th>32</th><td>Program counter to restart at (full 32 bits seems over the top)</td></tr>
+<tr><th>8</th><td>Restart interest - which of the four signalling flags are interesting, and what their values should be</td></tr>
+<tr><th>1</th><td>Running</td></tr>
+<tr><th>?</th><td>Pipeline configuration - sticky flags, native GIP decode mode, etc; not too many, and not highly valued</td></tr>
+</table>
+
+The signalling flags can be viewed as a whole as a 32-bit register,
+known as SchedulingSignallingSemaphores. As such the flags are numbered
+from 0 to 31, with 0 to 3 being for thread 0, 4 to 7 for thread 1, and
+so on. Individual flags may be signalled using GIP instructions.
+
+<p>
+
+Furthermore the scheduler maintains a round-robin state of 3 bits of
+the next thread to run; this state is used when the current thread is
+accepted for running by the GIP, the scheduler works on scheduling the
+next thread. It will start with the round-robin thread number given.
+
+<p>
+
+Also the scheduler has a bit indicating whether it is running preempting or cooperatively.
+
+<p>
+
+The scheduler maintains the knowledge of the currently running thread.
+
+<p>
+
+The scheduler also determines what thread to run next, and registers that.
+
+<?php page_section( "operations", "Operations" ); ?>
+
+<dl>
+
+<dt>Clear flag
+
+<dd>
+
+ISCHDSEMBIC[CC][A] Rm/Imm [-> Rd]
+
+<br>
+
+This uses the semaphore flags in the mode currently specified for the
+system, reads them, performs a BIC operation with the specified
+operand, and can put the result in Rd. To clear a particular sempahore based on a register
+set the accumulator to 1 shl semaphore number and do ISCHSEMBIC Acc; to do a particular semaphore from an immediate value do ISCHSEMBIC #1 shl semaphore.
+
+<dt>Toggle flag
+
+<dd>
+
+Use ISCHSEMXOR, similar to clearing flags
+
+<dt>Set flag (flag absolute, register based, relative to thread 'n')
+
+<dd>
+
+Use ISCHSEMOR, similar to clearing flags
+
+<dt>Read and set/clear/toggle flag
+
+<dd>
+
+Use an atomic pair with a read followed by a set/clear/toggle
+
+<dt>Read all signalling flags
+
+<dd>
+
+Use ISCHSEMOR #0 -> Rd
+
+<dt>Specify thread to operate on
+
+<dd>
+
+May specify current thread or other thread. Takes 2 clock ticks to take effect.
+
+<dt>Read restart info for operation thread
+
+<dd>
+
+ISCHINFO -> Rd
+
+<dt>Read restart program counter for operation thread
+
+<dd>
+
+ISCHPC -> Rd
+
+<dt>Write restart/running info for operation thread
+
+<dd>
+
+ISCHINFO Rm/Imm
+
+<dt>Write restart program counter for operation thread
+
+<dd>
+
+ISCHPC Rm/Imm
+
+<br>
+
+If the thread specified is currently preempted then that thread is descheduled.
+
+<dt>Write restart info and program counter for running thread and deschedule (clears running bit)
+
+<dd>
+
+ISCHRESTART Rm/Imm + PC somehow
+
+
+</dl>
 
 <?php
 page_ep();

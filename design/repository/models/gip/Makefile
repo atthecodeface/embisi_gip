@@ -5,7 +5,7 @@ endif
 objs_from_srcs = $(foreach SRC,${1},$(patsubst %.cpp,${OS_DIR}/%.o,${SRC:.y=.cpp}))
 
 PROG = arm
-SRCS = arm_dis.cpp c_gip_pipeline_single.cpp wrapper.cpp c_memory_model.cpp c_ram_model.cpp c_mmio_model.cpp symbols.cpp gdb_stub.cpp console.cpp ether.cpp microkernel.cpp syscalls.cpp
+SRCS = arm_dis.cpp c_execution_model_class.cpp c_gip_full.cpp c_gip_pipeline_single.cpp wrapper.cpp c_memory_model.cpp c_ram_model.cpp c_mmio_model.cpp symbols.cpp gdb_stub.cpp console.cpp ether.cpp microkernel.cpp syscalls.cpp
 OBJS = $(call objs_from_srcs,${SRCS})
 
 DEBUG_FLAGS = -g
@@ -46,10 +46,10 @@ backup:
 
 depend: ${SRCS} Makefile
 	touch make_depend
-	makedepend -f make_depend -- ${CFLAGS} -- $(SRCS)
+	makedepend -f make_depend -p ${OS_DIR}/ -- ${CFLAGS} -- $(SRCS)
 
 make_depend: Makefile
 	touch make_depend
-	makedepend -f make_depend -- ${CFLAGS} -- $(SRCS)
+	makedepend -f make_depend -p ${OS_DIR}/ -- ${CFLAGS} -- $(SRCS)
 
 include make_depend

@@ -8,6 +8,7 @@
 
 /*a Includes
  */
+#include "c_execution_model_class.h"
 #include "gip_instructions.h"
 #include "gip_internals.h"
 
@@ -26,7 +27,7 @@ enum
 
 /*t	c_gip_pipeline_single
 */
-class c_gip_pipeline_single
+class c_gip_pipeline_single : public c_execution_model_class
 {
 public:
 
@@ -34,33 +35,27 @@ public:
      */
     c_gip_pipeline_single::c_gip_pipeline_single( class c_memory_model *memory_model );
     c_gip_pipeline_single::~c_gip_pipeline_single();
-    int c_gip_pipeline_single::arm_step( int *reason, int requested_count );
 
-    /*b Debug methods
+    /*b Execution methods
      */
-    void c_gip_pipeline_single::set_register( int r, unsigned int value );
-    unsigned int c_gip_pipeline_single::get_register( int r );
-    void c_gip_pipeline_single::set_flags( int value, int mask );
-    int c_gip_pipeline_single::get_flags( void );
-    int c_gip_pipeline_single::set_breakpoint( unsigned int address );
-    int c_gip_pipeline_single::unset_breakpoint( unsigned int address );
-    void c_gip_pipeline_single::halt_cpu( void );
-    void c_gip_pipeline_single::debug( int mask );
-
-    /*a Trace methods
-     */
-    void c_gip_pipeline_single::trace_output( char *format, ... );
-    int c_gip_pipeline_single::trace_set_file( char *filename );
-    int c_gip_pipeline_single::trace_region( int region, unsigned int start_address, unsigned int end_address );
-    int c_gip_pipeline_single::trace_region_stop( int region );
-    int c_gip_pipeline_single::trace_all_stop( void );
-    int c_gip_pipeline_single::trace_restart( void );
+    virtual int c_gip_pipeline_single::step( int *reason, int requested_count );
 
     /*b Code loading methods
      */
-    void c_gip_pipeline_single::load_code( FILE *f, unsigned int base_address );
-    void c_gip_pipeline_single::load_code_binary( FILE *f, unsigned int base_address );
-    void c_gip_pipeline_single::load_symbol_table( char *filename );
+    virtual void c_gip_pipeline_single::load_code( FILE *f, unsigned int base_address );
+    virtual void c_gip_pipeline_single::load_code_binary( FILE *f, unsigned int base_address );
+    virtual void c_gip_pipeline_single::load_symbol_table( char *filename );
+
+    /*b Debug methods
+     */
+    virtual void c_gip_pipeline_single::set_register( int r, unsigned int value );
+    virtual unsigned int c_gip_pipeline_single::get_register( int r );
+    virtual void c_gip_pipeline_single::set_flags( int value, int mask );
+    virtual int c_gip_pipeline_single::get_flags( void );
+    virtual int c_gip_pipeline_single::set_breakpoint( unsigned int address );
+    virtual int c_gip_pipeline_single::unset_breakpoint( unsigned int address );
+    virtual void c_gip_pipeline_single::halt_cpu( void );
+    virtual void c_gip_pipeline_single::debug( int mask );
 
 private:
     /*b Internal instruction execution methods
@@ -96,13 +91,7 @@ private:
     int c_gip_pipeline_single::execute_arm_mul( unsigned int opcode );
     int c_gip_pipeline_single::execute_arm_trace( unsigned int opcode );
 
-    /*b Log methods
-     */
-    void c_gip_pipeline_single::log( char *reason, unsigned int arg );
-    void c_gip_pipeline_single::log_display( FILE *f );
-    void c_gip_pipeline_single::log_reset( void );
 
-    struct t_gip_pipeline_single_data *pd;
 };
 
 /*a External functions

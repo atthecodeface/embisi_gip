@@ -33,6 +33,20 @@ carry flag
 </tr>
 
 <tr>
+<th>MOV</th>
+<th>Move</th>
+<td>Op2</td>
+<td>Move an operand</td>
+</tr>
+
+<tr>
+<th>MVN</th>
+<th>Negate</th>
+<td>~Op2</td>
+<td>Ones complement an operand</td>
+</tr>
+
+<tr>
 <th>AND</th>
 <th>And</th>
 <td>Op1 & Op2</td>
@@ -68,10 +82,31 @@ carry flag
 </tr>
 
 <tr>
-<th>XORCNT</th>
-<th>XOR and zero-count</th>
+<th>ANDX</th>
+<th>AND and then XOR operands</th>
+<td>(Op1 & Op2)^Op2</td>
+<td>AND Op1 and Op2, then XOR the result with Op2</td>
+</tr>
+
+<tr>
+<th>ANDC</th>
+<th>AND and count number ones in result</th>
 <td>ZC(Op1 ^ Op2)</td>
-<td>Exclusive-or Op1 and Op2<br>&nbsp;and count number of leading zeros in result</td>
+<td>AND Op1 and Op2<br>&nbsp;and count number of ones in result (0 to 32)</td>
+</tr>
+
+<tr>
+<th>XORF</th>
+<th>XOR and count zeros from left</th>
+<td>LZC(Op1 ^ Op2)</td>
+<td>Exclusive-or Op1 and Op2<br>&nbsp;and count number of leading zeros in result (0 to 32)</td>
+</tr>
+
+<tr>
+<th>XORL</th>
+<th>XOR and count zeros from right</th>
+<td>TZC(Op1 ^ Op2)</td>
+<td>Exclusive-or Op1 and Op2<br>&nbsp;and count number of trailing zeros in result (0 to 32)</td>
 </tr>
 
 <tr>

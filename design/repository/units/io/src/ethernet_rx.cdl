@@ -5,6 +5,11 @@
   Add collision handling? This is handled with mii_err
  */
 
+/*a Includes
+ */
+include "io_cmd.h"
+include "io_ethernet_rx.h"
+
 /*a Constants
  */
 
@@ -29,7 +34,20 @@ typedef struct
     t_data_fsm state;
     bit[3] counter;
     bit[6] bytes_in_block;
+    bit[10] blocks_in_packet;
 } t_data_fsm_data;
+
+/*t t_status_to_write
+ */
+typedef enum [3]
+{
+    status_to_write_block,
+    status_to_write_packet_fcs_ok,
+    status_to_write_packet_fcs_bad,
+    status_to_write_fifo_overrun,
+    status_to_write_odd_nybbles,
+    status_to_write_rx_err,
+} t_status_to_write;
 
 /*a ethernet_rx module
  */
@@ -37,12 +55,13 @@ module ethernet_rx( clock io_clock,
                     input bit io_reset,
 
                     output bit[32] data_fifo_data,
-                    output bit data_fifo_write,
+                    output t_io_rx_data_fifo_cmd data_fifo_cmd,
+                    output bit data_fifo_toggle,
                     input bit data_fifo_full,
 
-                    input bit status_fifo_full,
                     output bit[32] status_fifo_data,
-                    output bit status_fifo_write,
+                    output t_io_status_fifo_cmd status_fifo_cmd,
+                    output bit status_fifo_toggle,
 
                     input bit mii_dv, // goes high during the preamble OR at the latest at the start of the SFD
                     input bit mii_err, // if goes high with dv, then abort the receive; wait until dv goes low
@@ -61,7 +80,7 @@ It starts off idle, and when data is received the state machine checks for pream
 
 This flow means that every nybble from just after the SFD to the final nybble of the FCS is sent. The FCS valid indication is included in the final status of a packet
 
-FIFO OVERRUN?
+FIFO OVERRUN? Do not let the FIFO overrun, as the best approach; however, data fifo overrun is indicated in the status, and is detected if we issue a write to the data FIFO when it indicates full: note that this means protecting the status FIFO from overrun is most important if any overrun can occur
 
 1. Idle
 2. valid data received (without error), preamble or sfd -> wait for end of sfd; if data valid and error, or data valid and not preamble or sfd indication, then it is a framing error
@@ -69,10 +88,10 @@ FIFO OVERRUN?
 4. store nybbles, calculate FCS, until 7 nybbles received; then go to 5. However, if not data valid, go to state 6 (if even nybbles received) or framing error (if odd nybbles received)
 5. store eighth nybble, calculate FCS; copy to storage register, increment words written, and write to data FIFO; if 16 words written write status also; go back to 4. However, if not data valid then hit framing error instead (as half-way through a byte)
 
-6. Wanted to store an odd nybble in the holding register, but it was not valid; must be end of packet! Record 'FCS correct' status. Record length of packet. Wait in this state until nybble count reaches 'x' (for last status and data to be written).
-7. Send final word of data to FIFO (if bottom length bits are not zero), and status; wait for 'x' clocks, then return to idle.
+6. Wanted to store an odd nybble in the holding register, but it was not valid; must be end of packet! Record 'FCS correct' status. Record length of packet. Wait in this state for up to 8 counts, shifting data up (also for last status and data to be written).
+7. Send final word of data to FIFO (if there is some), and write status; wait for 8 clocks, then return to idle.
 
-Framing errors occurring in the packet (bad SFD, data valid going away mid-byte) cause the framing error state to be entered; this sends a status message indicating the number of words written, and the reason for the framing error; it waits for 'x', then returns to idle.
+Framing errors occurring in the packet or data FIFO overun (bad SFD, data valid going away mid-byte) cause the framing error state to be entered; this sends a status message indicating the number of words written, and the reason for the framing error; it waits for 8 cycles then returns to idle.
 
 "
 {
@@ -90,23 +109,29 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
 
     /*b State and combinatorials for the data FSM
      */
-    clocked   t_data_fsm_data   data_fsm = {state=data_fsm_idle, counter=0, bytes_in_block=0} "Actual FSM state the receive data FSM is in";
+    clocked   t_data_fsm_data   data_fsm = {state=data_fsm_idle, counter=0, bytes_in_block=0, blocks_in_packet=0} "Actual FSM state the receive data FSM is in";
     comb   t_data_fsm_data      next_data_fsm "Next state for the data FSM";
-    comb bit word_complete;
-    comb bit block_complete;
+    comb bit word_complete      "Indicates a word needs to be written to the data FSM";
 
     /*b State and combinatorials for the data path, including FCS
      */
     comb      bit[4]        data_for_fcs "Data nybble XOR FCS bits that are the effective feedback into the FCS calculation";
     clocked   bit[32]       fcs = 32hffffffff "FCS store, initialized to all 1's";
     comb      bit[32]       next_fcs "Combinatorial value for next FCS, particularly during calculation: may be overridden by initialization or shift-register values";
+    comb      bit           fcs_ok "Asserted if the current FCS value indicates a correct FCS for a packet";
 
-    clocked bit[28] data_register = 0;
-    clocked bit[32] data_fifo_data = 0;
-    clocked bit data_fifo_write = 0;
+    clocked bit[32] data_register = 0;
+    comb bit[32] next_data_register;
+    clocked bit[32] data_fifo_data = 0 "Data to write to the data fifo";
+//    comb t_io_rx_data_fifo_cmd data_fifo_cmd "Command to perform to data FIFO - we only do writes of data";
+    clocked bit data_fifo_toggle = 0 "Toggled to indicate that the data in data_fifo_data should be written to the data FIFO";
 
-    clocked bit[32] status_fifo_data = 0;
-    clocked bit status_fifo_write = 0;
+//    clocked bit[32] status_fifo_data = 0 "Data to write to status FIFO";
+    clocked bit status_fifo_toggle = 0 "Toggled to indicate a write to the status FIFO should occur";
+//    comb t_io_status_fifo_cmd status_fifo_cmd;
+    clocked bit status_write = 0 "Asserted if we should write status to the status FIFO; should always have at least 7 clock ticks between assertions";
+    clocked t_status_to_write status_to_write = status_to_write_block      "Status we should write if status_write is high";
+    clocked t_status_to_write status_being_written = status_to_write_block "Status type we are writing";
 
 registers:
     {
@@ -114,93 +139,152 @@ registers:
         r_mii_rx_dv <= mii_dv;
         r_mii_rx_err <= mii_err;
 
-        data_register[4; 0] <= r_mii_rx_data;
-        data_register[4; 4] <= data_register[4; 0];
-        data_register[4; 8] <= data_register[4; 4];
-        data_register[4;12] <= data_register[4; 8];
-        data_register[4;16] <= data_register[4;12];
-        data_register[4;20] <= data_register[4;16];
-        data_register[4;24] <= data_register[4;20];
-        data_register[4;28] <= data_register[4;24];
+        next_data_register[4; 0] = data_register[4; 4];
+        next_data_register[4; 4] = r_mii_rx_data;
+        next_data_register[4; 8] = data_register[4;12];
+        next_data_register[4;12] = data_register[4; 0];
+        next_data_register[4;16] = data_register[4;20];
+        next_data_register[4;20] = data_register[4; 8];
+        next_data_register[4;24] = data_register[4;28];
+        next_data_register[4;28] = data_register[4;16];
 
+        data_register <= next_data_register;
+
+        data_fifo_cmd = io_rx_data_fifo_cmd_write_fifo;
         if (word_complete)
         {
-            data_fifo_data[ 4;0] <= r_mii_rx_data;
-            data_fifo_data[28;4] <= data_register;
-            data_fifo_write <= ~data_fifo_write;
+            data_fifo_data <= next_data_register;
+            data_fifo_toggle <= ~data_fifo_toggle;
         }
-        if (block_complete)
+
+        status_fifo_cmd = io_status_fifo_cmd_write_fifo;
+        if (status_write)
         {
-            status_fifo_data <= 0;
-            status_fifo_write <= ~status_fifo_write;
+            status_fifo_toggle <= ~status_fifo_toggle;
+            status_being_written <= status_to_write;
         }
+        if (data_fsm.state==data_fsm_idle)
+        {
+            status_being_written <= status_to_write_block; // So we hold stable outputs
+        }
+        status_fifo_data = 0;
+        status_fifo_data[io_eth_rx_block_byte_length_bits; io_eth_rx_sfd_block_byte_length_start_bit] = 0;
+        status_fifo_data[6; io_eth_rx_sfd_block_byte_length_start_bit] = data_fsm.bytes_in_block;
+        status_fifo_data[io_eth_rx_packet_byte_length_bits; io_eth_rx_sfd_packet_length_start_bit] = 0;
+        status_fifo_data[6; io_eth_rx_sfd_packet_length_start_bit] = data_fsm.bytes_in_block;
+        status_fifo_data[10; io_eth_rx_sfd_packet_length_start_bit+6] = data_fsm.blocks_in_packet;
+        full_switch (status_being_written)
+            {
+            case status_to_write_block: // Only mid-packet; always have received 64 bytes!, and the state in data_fsm is unstable and so should be blocked from status FIFO
+            {
+                status_fifo_data[io_eth_rx_block_byte_length_bits; io_eth_rx_sfd_block_byte_length_start_bit] = 64;
+                status_fifo_data[6; io_eth_rx_sfd_packet_length_start_bit] = 0;
+                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_block_complete;
+            }
+            case status_to_write_packet_fcs_bad: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+            {
+                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_fcs_bad;
+            }
+            case status_to_write_packet_fcs_ok: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+            {
+                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_fcs_ok;
+            }
+            case status_to_write_fifo_overrun: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+            {
+                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_fifo_overrun;
+            }
+            case status_to_write_odd_nybbles: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+            {
+                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_odd_nybbles;
+            }
+            case status_to_write_rx_err:
+            {
+                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_block_complete;
+            }
+            }
     }
 
-    /*b Data FSM, block_complete and word_complete indications
+    /*b Data FSM, block_complete and word_complete indications; block_complete is a subset of word_complete
      */
     data_fsm "Data FSM":
         {
             next_data_fsm = {state=data_fsm.state, bytes_in_block=data_fsm.bytes_in_block, counter=data_fsm.counter+1};
-            block_complete = 0;
+            data_fsm <= next_data_fsm;
             word_complete = 0;
+            status_write <= 0;
             full_switch (data_fsm.state)
                 {
                 case data_fsm_idle:
                 {
+                    next_data_fsm.counter = 0;
                     if ( r_mii_rx_dv )
                     {
                         if (r_mii_rx_err)
                         {
                             next_data_fsm.state = data_fsm_framing_error;
                         }
-                        elsif (r_mii_rx_data==4hd) // Preamble
+                        elsif (r_mii_rx_data==4h5) // Preamble
                             {
                                 next_data_fsm.state = data_fsm_wait_for_end_of_sfd;
-                                next_data_fsm.counter = 0;
-                            }
-                        elsif (r_mii_rx_data==4h5) // SFD
-                            {
-                                next_data_fsm.state = data_fsm_wait_for_end_of_sfd;
-                                next_data_fsm.counter = 1; // as we have already received one SFD nybble
                             }
                         else
                         {
-                            next_data_fsm.state = data_fsm_framing_error;
+                            next_data_fsm.state = data_fsm_idle;
                         }
                     }
                 }
                 case data_fsm_wait_for_end_of_sfd:
                 {
-                    if ( !r_mii_rx_dv || r_mii_rx_err || (r_mii_rx_data!=4h5))
+                    next_data_fsm.counter = 0;
+                    next_data_fsm.bytes_in_block = 0;
+                    next_data_fsm.blocks_in_packet = 0;
+                    if ( r_mii_rx_dv )
                     {
-                        next_data_fsm.state = data_fsm_framing_error;
-                    }
-                    elsif (data_fsm.counter==1)
+                        if (r_mii_rx_err)
                         {
-                            next_data_fsm.state = data_fsm_reading_data;
-                            next_data_fsm.counter = 0;
-                            next_data_fsm.bytes_in_block = 0;
+                            next_data_fsm.state = data_fsm_framing_error;
                         }
+                        elsif (r_mii_rx_data==4h5) // Preamble
+                            {
+                                next_data_fsm.state = data_fsm_wait_for_end_of_sfd;
+                            }
+                        elsif (r_mii_rx_data==4hd) // SFD
+                            {
+                                next_data_fsm.state = data_fsm_reading_data;
+                            }
+                        else
+                        {
+                            next_data_fsm.state = data_fsm_idle;
+                        }
+                    }
+                    else
+                    {
+                        next_data_fsm.state = data_fsm_idle;
+                    }
                 }
                 case data_fsm_reading_data:
                 {
                     if ( !r_mii_rx_dv )
                     {
-                        if (data_fsm.counter[0]==0) // Data valid taken away mid-byte
+                        if (data_fsm.counter[0]==0)
                         {
-                            next_data_fsm.state = data_fsm_framing_error;
+                            next_data_fsm.state = data_fsm_packet_complete_waiting; // Don't reset count - we want to wait in the next state until counter[4;0]==0 (i.e. 1 to 7 cycles)
+                            status_to_write <= fcs_ok ? status_to_write_packet_fcs_bad : status_to_write_packet_fcs_ok;
                         }
-                        else
+                        else // Data valid taken away mid-byte
                         {
                             next_data_fsm.counter = 0;
-                            next_data_fsm.state = data_fsm_packet_complete_waiting;
+                            next_data_fsm.state = data_fsm_framing_error;
+                            status_to_write <= status_to_write_odd_nybbles;
                         }
                     }
                     else
                     {
                         if ( r_mii_rx_err ) // Error in the nybble
                         {
+                            next_data_fsm.counter = 0;
                             next_data_fsm.state = data_fsm_framing_error;
+                            status_to_write <= status_to_write_rx_err;
                         }
                         else
                         {
@@ -217,16 +301,26 @@ registers:
                 }
                 case data_fsm_reading_data_last_nybble_of_word: // 7th nybble of a word should be ready; if not we have a framing error, if we do write the word and a status if we hit the 16th word
                 {
+                    next_data_fsm.counter = 0;
                     if ( !r_mii_rx_dv ) // Data valid taken away mid-byte
                     {
                         next_data_fsm.state = data_fsm_framing_error;
+                        status_to_write <= status_to_write_odd_nybbles;
                     }
                     else
                     {
                         if ( r_mii_rx_err ) // Error in the nybble
                         {
                             next_data_fsm.state = data_fsm_framing_error;
+                            status_to_write <= status_to_write_rx_err;
                         }
+                        elsif (data_fifo_full)
+                            {
+                                assert(0,"Ethernet receive data fifo full");
+                                next_data_fsm.counter = 0;
+                                next_data_fsm.state = data_fsm_framing_error;
+                                status_to_write <= status_to_write_fifo_overrun;
+                            }
                         else
                         {
                             next_data_fsm.bytes_in_block = data_fsm.bytes_in_block+1;
@@ -234,62 +328,75 @@ registers:
                             word_complete = 1;
                             if (next_data_fsm.bytes_in_block==0) // Read a whole block - tell the status FIFO
                             {
-                                block_complete = 1;
+                                next_data_fsm.blocks_in_packet = data_fsm.blocks_in_packet+1;
+                                status_to_write <= status_to_write_block;
+                                status_write <= 1;
                             }
                         }
                     }
                 }
-                case data_fsm_packet_complete_waiting:
+                case data_fsm_packet_complete_waiting: // Shifting the data up - guarantees a gap between last word write/block write and next one, also; we sit in here for from 1 to 7 cycles
                 {
-                    if (data_fsm.counter == 5)
+                    if (data_fsm.counter == 7)
                     {
                         next_data_fsm.state = data_fsm_packet_complete;
-                    }
-                }
-                case data_fsm_packet_complete: // Wrote a whole packet except last word; write last word (if any bytes ready) and write status giving full status of packet
-                {
-                    if (data_fsm.bytes_in_block[2;0]!=0)
-                    {
-                        word_complete = 1; // DO WE HAVE TO SHIFT THE DATA UP?!?
-                    }
-                    block_complete = 1;
-                    next_data_fsm.state = data_fsm_idle;
-                }
-                case data_fsm_framing_error: // Framing error; indicate with a status. Wait for status and data FIFO to complete any pending writes, then write last word (if any bytes ready) and write status
-                {
-                    if (data_fsm.counter == 5)
-                    {
                         if (data_fsm.bytes_in_block[2;0]!=0)
                         {
-                            word_complete = 1; // DO WE HAVE TO SHIFT THE DATA UP?!?
+                            word_complete = 1; // Data will have been shifted up to top nybble during the waiting state; but there is no word if we were given a precise word-length packet. Hm.
                         }
-                        block_complete = 1;
+                    }
+                }
+                case data_fsm_packet_complete: // Always entered with counter of 0. Wrote a whole packet except last word; write last word (if any bytes ready) and write status giving full status of packet
+                {
+                    if (data_fsm.counter==0)
+                    {
+                        status_write <= 1; // Guaranteed to be 8 cycles or more from last block_complete
+                    }
+                    if (data_fsm.counter==7)
+                    {
                         next_data_fsm.state = data_fsm_idle;
+                    }
+                }
+                case data_fsm_framing_error: // Framing error; we enter with counter of 0, and wait for 8 cycles, then we present a status. Wait for status and data FIFO to complete any pending writes, then write last word (if any bytes ready) and write status
+                {
+                    if (r_mii_rx_dv)
+                    {
+                        next_data_fsm.counter = 0;
+                    }
+                    else
+                    {
+                        if (data_fsm.counter == 7)
+                        {
+                            next_data_fsm.state = data_fsm_idle;
+                        }
                     }
                 }
                 }
         }
 
-    /*b FCS calculation - fcs, next_fcs, data_for_fcs
+    /*b FCS calculation - fcs, next_fcs, data_for_fcs, fcs_ok
      */
     fcs "Calculate FCS from transmit nybbles":
         {
             next_fcs[4;0] = 0;
             next_fcs[28;4] = fcs[28;0];
-            data_for_fcs = fcs[4;28] ^ r_mii_rx_data;
-            if (data_for_fcs[0])
+            data_for_fcs[0] = fcs[31] ^ r_mii_rx_data[0]; // Bit 0 is the first on the wire, so it goes with bit 31 of the FCS
+            data_for_fcs[1] = fcs[30] ^ r_mii_rx_data[1]; // Bit 1 comes next, so it takes bit 30 of FCS
+            data_for_fcs[2] = fcs[29] ^ r_mii_rx_data[2]; // etc
+            data_for_fcs[3] = fcs[28] ^ r_mii_rx_data[3];
+            if (data_for_fcs[3])
             {
                 next_fcs = next_fcs ^ 32b00000100110000010001110110110111; // poly is 32.26.23.22.16.12.11.10.8.7.5.4.2.1.0
             }
-            if (data_for_fcs[1])
+            if (data_for_fcs[2])
             {
                 next_fcs = next_fcs ^ 32b00001001100000100011101101101110; // rotate in one bit
             }
-            if (data_for_fcs[2])
+            if (data_for_fcs[1])
             {
                 next_fcs = next_fcs ^ 32b00010011000001000111011011011100; // rotate in two bits
             }
-            if (data_for_fcs[3])
+            if (data_for_fcs[0])
             {
                 next_fcs = next_fcs ^ 32b00100110000010001110110110111000; // rotate in three bits
             }
@@ -306,6 +413,7 @@ registers:
                     fcs <= fcs;
                 }
                 }
+            fcs_ok = (fcs==32hc704dd7b);
         }
 
     /*b All done

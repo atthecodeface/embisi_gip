@@ -1,0 +1,1274 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+   
+  <meta http-equiv="content-type"
+ content="text/html; charset=ISO-8859-1">
+  <title>GTKWave</title>
+</head>
+  <body bgcolor="#ffffff" text="#000000">
+ 
+<h1>Welcome to GTKWave</h1>
+  
+<table cellpadding="4" cellspacing="0" border="0">
+   <tbody>
+     <tr>
+       <td bgcolor="#c00000"><font color="#ffffff" face="arial" size="5"><b> 
+Important Note</b></font>       
+      <table cellpadding="10" cellspacing="3" border="0">
+         <tbody>
+           <tr>
+             <td bgcolor="#ffa0a0">             
+            <p><font face="arial" size="3" color="#000000"> Future development
+and maintenance of GTKWave is now continuing at the <a
+ href="http://www.cs.man.ac.uk/amulet/tools/gtkwave/index.html">AMULET Group</a>
+.   This has been a very fun and rewarding project, but due to purported
+conflicts of interest at work and other reasons, the time to pass on the
+torch has arrived.  This is the last official release in the 1.3.x series
+and will be the last release in which I am the maintainer.   Thanks for all
+the constructive feedback from everyone since the initial release in 1998.
+ With that being said, the information and source/binaries  available on
+this page exist solely for historical reasons. </font>             </p>
+            </td>
+           </tr>
+         
+        </tbody>       
+      </table>
+       </td>
+     </tr>
+   
+  </tbody> 
+</table>
+  
+<p> GTKWave is a fully featured  <a href="http://www.gtk.org">GTK+</a>  
+v1.2 based wave viewer for Unix and Win32 which reads   <a
+ href="./LXT_Explained.html">LXT</a>  files as well as standard Verilog VCD/EVCD
+files and allows  their viewing.   You can grab version 1.3.21 <a
+ href="../gtkwave-current.tgz"> here</a> .</p>
+ 
+<p>If you have difficulty in downloading the GTKWave tarball properly, get 
+it from  <a href="../gtkwave-current.tgz.bin"> here</a>  and rename the file
+so it doesn't have the ".bin" extension. </p>
+ 
+<p>The Win32 version is now available (and has been for quite some time) on
+ <a
+ href="http://www.geocities.com/SiliconValley/Campus/3216/GTKWave/gtkwave-win32.html"> 
+The Win32 GTKWave Homepage</a> , thanks to <a
+ href="mailto:udif@bigfoot.com">Udi Finkelstein</a> .  A ready-to-run all
+libraries included Pentium-Pro optimized version of the binary may be found
+ locally <a href="./gtkwave9x.html"> here</a>. Ports to other platforms which
+GTK supports should be trivial.</p>
+  
+<center><img align="middle" src="./w1.gif"
+ alt="[GTKWave Analyzer Image]" width="710" height="427">
+ </center>
+ 
+<center><i>A sample trace with the Thin Ice theme and <a
+ href="./sample_rcfile.txt"> user-defined colors</a> .</i></center>
+ 
+<hr><br>
+ 
+<table cellpadding="4" cellspacing="0" border="0">
+   <tbody>
+     <tr>
+       <td bgcolor="#9090ff"><font color="#ffffff" face="arial" size="5"><b> 
+Online Help</b></font>       
+      <table cellpadding="10" cellspacing="3" border="0">
+         <tbody>
+           <tr>
+             <td bgcolor="#b0b0ff">             
+            <p><font face="arial" size="3" color="#000000">Online help is 
+available for every menu function in GTKWave.  In order to access online help,
+select <b>Help-Wave Help</b> from the menu and then select any menu  option
+in order to see the menu option's description.  Click the <b>Close Help</b>
+button in the help requester to revert to normal GTKWave menu operation. 
+            </font></p>
+             
+            <p><font face="arial" size="3" color="#000000">What follows below 
+is the listing of every menu item description. </font></p>
+             
+            <center>             
+            <table width="710" cellpadding="4" cellspacing="0"
+ border="0">
+               <tbody>
+                 <tr>
+                   <td bgcolor="#485a97"><font color="#ffffff"
+ face="arial"><b> File Menu</b></font>                   
+                  <table width="710" cellpadding="10" cellspacing="3"
+ border="0">
+                     <tbody>
+                       <tr>
+                         <td bgcolor="#6a7cb9"><font face="arial"
+ size="2" color="#ffffff"><img align="left" src="./file_menu.gif"
+ alt="[File Menu Image]" width="167" height="116">
+                         </font>                         
+                        <hr><li><font face="arial" size="2"
+ color="#ffffff"><b> Open New Viewer</b> will open a file requester that
+will ask for the name of a VCD or LXT file to view.  This will fork off a
+new viewer process.  (Unix only.) </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Print To File</b>  will open up a requester that will allow you to select 
+print options (PS or MIF; Letter, A4, or Legal; Full or Minimal). After selecting 
+the options you want, a file requester will ask for the name of the output 
+file to generate that reflects the current main window display's contents. 
+                          </font>                           
+                          <p><font face="arial" size="2" color="#ffffff"> 
+[A sample ps file generated by this option may be grabbed by clicking on the
+picture below..] <a href="./w.ps">                           
+                          <center><br>
+                           <img align="middle" border="0"
+ src="./wps.gif" alt="[Sample Postscript Image]" width="350"
+ height="111">
+                           </center>
+                           </a>                           </font></p>
+                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Read Save File</b> will open a file requester that will ask for the name
+of a GTKWave save file.  The contents of the save file will determine which
+traces and vectors as well as their format (binary, decimal, hex, reverse,
+etc.) are to be appended to the display.  Note that the marker positional
+data and zoom factor present in the save file will replace any current settings. 
+ </font>                           
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w6.gif"
+ alt="[Read Save File Image]" width="455" height="408">
+                           </font></center>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Write Save File</b> will open a file requester that will ask for the name
+ of a GTKWave save file.  The contents of the save file generated will be 
+the traces as well as their format (binary, decimal, hex, reverse, etc.) which
+are currently a part of the display.  Marker positional data and the zoom
+factor are also a part of the save file.  </font>                       
+   
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Quit</b> exits GTKWave after an additional confirmation requester is given 
+the OK to quit. </font>                           
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w7.gif"
+ alt="[Quit Program Image]" width="310" height="87">
+                           </font></center>
+                         </li>
+                         </td>
+                       </tr>
+                     
+                    </tbody>                   
+                  </table>
+                   </td>
+                 </tr>
+               
+              </tbody>             
+            </table>
+             <font face="arial" size="3" color="#000000"><br>
+             
+            <table width="710" cellpadding="4" cellspacing="0"
+ border="0">
+               <tbody>
+                 <tr>
+                   <td bgcolor="#485a97"><font color="#ffffff"
+ face="arial"><b> Edit Menu</b></font>                   
+                  <table width="710" cellpadding="10" cellspacing="3"
+ border="0">
+                     <tbody>
+                       <tr>
+                         <td bgcolor="#6a7cb9"><font face="arial"
+ size="2" color="#ffffff"><img align="left" src="./edit_menu.gif"
+ alt="[Edit Menu Image]" width="266" height="472">
+                         </font>                         
+                        <hr><li><font face="arial" size="2"
+ color="#ffffff"><b> Set Trace Max Hier</b> sets the maximum hierarchy depth
+(counting from the  right with bit numbers or ranges ignored) that is displayable
+for trace names.  Zero indicates that no truncation will be performed (default).
+ Note that any aliased signals (prefix of a "+") will not have truncated
+names.  </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Insert Blank</b> inserts a blank trace after the last highlighted trace. If
+no traces are highlighted, the blank is inserted after the last trace.  Note
+that this function is disabled when Pattern Search is active. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Insert Comment</b> inserts a comment trace after the last highlighted trace. 
+If no  traces are highlighted, the comment is inserted after the last trace. 
+ Note that this function is disabled when Pattern Search is active. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Alias Highlighted Trace</b> only works when at least one trace has been highlighted. 
+ With this function, you will be prompted for an alias name for the first 
+highlighted trace.  After successfully aliasing a trace, the aliased trace 
+will be unhighlighted. Single bits will be marked with a leading "+" and vectors
+will have no such designation.  The purpose of this is to provide a fast
+method of determining which trace names are real and which ones are aliases.
+ Note that this function is disabled when Pattern Search is active.     
+                      </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Remove Highlighted Aliases</b> only works when at least one trace has been
+ highlighted.  Any aliased traces will have their names restored to their
+original names.  As vectors get their names from aliases, vector aliases
+will not be removed.  Note that this function is disabled when Pattern Search
+is active.                            </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Cut</b> removes highlighted signals from the display and places them in an
+ offscreen cut buffer for later Paste operations.  Cut implicitly destroys
+ the previous contents of the cut buffer.  Note that this function is disabled 
+when Pattern Search is active. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Paste</b> pastes signals from an offscreen cut buffer and places them in a
+group after the last highlighted signal, or at the end of the display if
+ no signal is highlighted. Paste implicitly destroys the previous contents
+ of the cut buffer.  Note that this function is disabled when Pattern Search 
+is active. </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Expand</b> decomposes the highlighted signals into their individual bits. 
+The resulting bits are converted to traces and inserted after the last highlighted 
+trace.  The original unexpanded traces will be placed in the cut buffer.
+It will function seemingly randomly when used upon real valued single-bit
+traces. When used upon multi-bit vectors that contain real valued traces,
+those traces will expand to their normal "correct" values, not individual
+bits.  Note that this function is disabled when Pattern Search is active.
+                          </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Combine Down</b> coalesces the highlighted signals into a single vector named 
+"(Vector)" in a top to bottom fashion placed after the last highlighted trace. 
+ The original traces will be placed in the cut buffer. It will function seemingly 
+randomly when used upon real valued single-bit traces.  Note that this function 
+is disabled when Pattern Search is active. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Combine Up</b> coalesces the highlighted signals into a single vector named 
+"(Vector)" in a bottom to top fashion placed after the last highlighted trace. 
+ The original traces will be placed in the cut buffer. It will function seemingly 
+randomly when used upon real valued single-bit traces.  Note that this function 
+is disabled when Pattern Search is active. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Reduce Single Bit Vectors</b> decomposes the highlighted traces into their 
+individual bits only if the highlighted traces are one bit wide vectors. In
+effect, this function allows single-bit vectors to be viewed as signals. The
+resulting bits are converted to traces and inserted after the last converted 
+trace with the pre-conversion traces being placed in the cut buffer.  Note 
+that this function is disabled when Pattern Search is active.  </font>  
+                        
+                          <hr>                           
+                          <table width="380" cellpadding="4"
+ cellspacing="0" border="0">
+                             <tbody>
+                               <tr>
+                                 <td bgcolor="#666666"><font
+ color="#ffffff" face="arial"><b> Data Format Submenu</b></font>        
+                        
+                                <table width="380" cellpadding="10"
+ cellspacing="3" border="0">
+                                   <tbody>
+                                     <tr>
+                                       <td bgcolor="#888888"><font
+ face="arial" size="2" color="#ffffff"><img align="left"
+ src="./data_format.gif" alt="[Data Format Submenu Image]" width="152"
+ height="184">
+                                       </font>                          
+            
+                                      <hr><li><font face="arial"
+ size="2" color="#ffffff"><b> Hex</b> will step through all highlighted traces
+and ensure that vectors with this qualifier will be displayed with hexadecimal
+values. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Decimal</b> will step through all highlighted traces
+and ensure that vectors with this qualifier will be displayed with decimal
+values. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Signed Decimal</b> will step through all highlighted
+traces and ensure that  vectors with this qualifier will be displayed as
+sign extended decimal values.                                          </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Binary</b> will step through all highlighted traces
+and ensure that vectors with this qualifier will be displayed with binary
+values. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Octal</b> will step through all highlighted traces and
+ensure that vectors with this qualifier will be displayed with octal values.
+                                        </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> ASCII</b> will step through all highlighted traces and
+ensure that vectors with this qualifier will be displayed with ASCII values.
+                                        </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Right Justify-On</b> will step through all highlighted
+traces and ensure that vectors with this qualifier will be displayed right
+justified. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Right Justify-Off</b> will step through all highlighted
+traces and ensure that vectors with this qualifier will not be displayed
+right justified. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Invert-On</b> will step through all highlighted traces
+and ensure that bits and vectors with this qualifier will be displayed with
+1's and 0's inverted.                                          </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Invert-Off</b> will step through all highlighted traces
+and ensure that bits and vectors with this qualifier will not be displayed
+with 1's and 0's inverted.                                          </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Reverse Bits-On</b> will step through all highlighted
+traces and ensure that vectors with this qualifier will be displayed in reversed
+bit order. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Reverse Bits-Off</b> will step through all highlighted
+traces and ensure that vectors with this qualifier will not be displayed
+in reversed bit order.                                          </font></li>
+                                       </td>
+                                     </tr>
+                                   
+                                  </tbody>                              
+  
+                                </table>
+                                 </td>
+                               </tr>
+                             
+                            </tbody>                           
+                          </table>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Show-Change All Highlighted</b> provides an easy means of changing trace
+attributes en masse. Various functions are provided in a Show-Change requester.
+                          </font>                           
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w8.gif"
+ alt="[Show-Change All Image]" width="309" height="290">
+                           </font></center>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Show-Change First Highlighted</b> provides a means of changing trace attributes 
+for the first highlighted trace.  Various functions are provided in a Show-Change 
+requester.  When a function is applied, the trace will be unhighlighted.
+                            </font>                           
+                          <hr>                           
+                          <table width="380" cellpadding="4"
+ cellspacing="0" border="0">
+                             <tbody>
+                               <tr>
+                                 <td bgcolor="#666666"><font
+ color="#ffffff" face="arial"><b> Time Warp Submenu</b></font>          
+                      
+                                <table width="380" cellpadding="10"
+ cellspacing="3" border="0">
+                                   <tbody>
+                                     <tr>
+                                       <td bgcolor="#888888"><font
+ face="arial" size="2" color="#ffffff"><img align="left"
+ src="./warp_submenu.gif" alt="[Time Warp Submenu Image]" width="102"
+ height="64">
+                                       </font>                          
+            
+                                      <hr><li><font face="arial"
+ size="2" color="#ffffff"><b> Warp Marked</b> offsets all highlighted traces
+by the amount of time entered in the requester.  (Positive values will shift
+traces to the right.) Note that warp operations to not persist after a combine
+operation. Attempting to shift greater than the absolute value of total simulation
+time will cap the shift magnitude at the length of simulation. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Unwarp Marked</b> removes all offsets on all highlighted
+traces. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Unwarp All</b> unconditionally removes all offsets on
+all traces. </font></li>
+                                       </td>
+                                     </tr>
+                                   
+                                  </tbody>                              
+  
+                                </table>
+                                 </td>
+                               </tr>
+                             
+                            </tbody>                           
+                          </table>
+                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Exclude</b> causes the waveform data for all currently highlighted traces 
+to be blanked out. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Show</b> causes the waveform data for all currently highlighted traces to 
+be displayed as normal if the exclude attribute is currently set on the highlighted 
+traces. </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Highlight Regexp</b> brings up a text requester that will ask for a regular
+ expression that may contain POSIX regular expressions.  All traces meeting 
+this criteria will be highlighted. </font>                           
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w12.gif"
+ alt="[Regexp Highlight Image]" width="310" height="87">
+                           </font></center>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+UnHighlight Regexp</b> brings up a text requester that will ask for a regular
+ expression that may contain text with POSIX regular expressions.  All traces
+ meeting this criteria will be unhighlighted if they are currently highlighted.
+                           </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Highlight All</b> simply highlights all displayed traces. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+UnHighlight All</b> simply unhighlights all displayed traces. </font>   
+                       
+                          <hr>                           
+                          <table width="400" cellpadding="4"
+ cellspacing="0" border="0">
+                             <tbody>
+                               <tr>
+                                 <td bgcolor="#666666"><font
+ color="#ffffff" face="arial"><b> Sort Submenu</b></font>               
+                 
+                                <table width="400" cellpadding="10"
+ cellspacing="3" border="0">
+                                   <tbody>
+                                     <tr>
+                                       <td bgcolor="#888888"><font
+ face="arial" size="2" color="#ffffff"><img align="left"
+ src="./sort_submenu.gif" alt="[Sort Submenu Image]" width="156"
+ height="84">
+                                       </font>                          
+            
+                                      <hr><li><font face="arial"
+ size="2" color="#ffffff"><b> Alphabetize All</b> alphabetizes all displayed
+traces.  Blank traces are sorted to the bottom. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Alphabetize All (CaseIns)</b> alphabetizes all displayed
+traces without regard to case.  Blank traces are sorted to the bottom. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Sigsort All</b> sorts all displayed traces with the
+numeric parts being taken into account.  Blank traces are sorted to the bottom.
+                                        </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Reverse All</b> reverses all displayed traces unconditionally.
+                                        </font></li>
+                                       </td>
+                                     </tr>
+                                   
+                                  </tbody>                              
+  
+                                </table>
+                                 </td>
+                               </tr>
+                             
+                            </tbody>                           
+                          </table>
+                         </li>
+                         </td>
+                       </tr>
+                     
+                    </tbody>                   
+                  </table>
+                   </td>
+                 </tr>
+               
+              </tbody>             
+            </table>
+             <br>
+             
+            <table width="710" cellpadding="4" cellspacing="0"
+ border="0">
+               <tbody>
+                 <tr>
+                   <td bgcolor="#485a97"><font color="#ffffff"
+ face="arial"><b> Search Menu</b></font>                   
+                  <table width="710" cellpadding="10" cellspacing="3"
+ border="0">
+                     <tbody>
+                       <tr>
+                         <td bgcolor="#6a7cb9"><font face="arial"
+ size="2" color="#ffffff"><img align="left" src="./search_menu.gif"
+ alt="[Search Menu Image]" width="252" height="168">
+                         </font>                         
+                        <hr><li><font face="arial" size="2"
+ color="#ffffff"><b> Pattern Search</b> only works when at least one trace
+is highlighted.  A requester will appear that lists all the selected traces
+(maximum of 500) and allows various criteria to be specified for each trace.
+ Searches can go forward or backward from the primary (unnamed) marker. 
+If the primary marker has not been set, the search starts at the beginning
+of the displayed data ("From") for a forwards search and starts at the end
+of the displayed data ("To") for a backwards search. "Mark" and "Clear" are
+used to modify the normal time vertical markings such that they can be used
+to indicate all the times that a specific pattern  search condition is true
+(e.g., every upclock of a specific signal). </font>                     
+     
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w5.gif"
+ alt="[Pattern Search Image]" width="430" height="398">
+                           </font></center>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Signal Search Regexp</b>  provides an easy means of adding traces to the display.
+Various functions are provided in the Signal Search requester which allow
+searching using POSIX regular expressions and bundling (coalescing individual
+bits into a single vector).  Note that this function is disabled when Pattern
+Search is active.  [Recently this function has been kneecapped such that
+it will return a maximum of 10000 hits.  This is because the performance of
+gtkclists degrade significantly past lists of that size.] </font>       
+                   
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w3.gif"
+ alt="[Signal Search Image]" width="412" height="475">
+                           </font></center>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Signal Search Hierarchy</b> provides an easy means of adding traces to the 
+display in a text based treelike fashion. Note that this function is disabled 
+when Pattern Search is active. </font>                           
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./hierarchy.gif"
+ alt="[Hierarchy Search Image]" width="237" height="435">
+                           </font></center>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Signal Search Tree</b> provides an easy means of adding traces to the display.
+ Various functions are provided in the Signal Search Tree requester which
+allow searching a treelike hierarchy and bundling (coalescing individual
+bits into a single vector).  Note that this function is disabled when Pattern
+Search is active. </font>                           
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w4.gif"
+ alt="[Signal Search Tree Image]" width="412" height="379">
+                           </font></center>
+                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Autocoalesce</b> when enabled allows the wave viewer to reconstruct split 
+vectors. Split vectors will be indicated by a "[]" prefix in the search requesters.
+                           </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Autocoalesce Reversal</b> causes split vectors to be reconstructed in reverse 
+order (only if autocoalesce is also active).  This is necessary with some
+ simulators. Split vectors will be indicated by a "[]" prefix in the search 
+requesters. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Autoname Bundles On</b> modifies the bundle up/down operations in the hierarchy 
+and tree searches such that a NULL bundle name is implicitly created which 
+informs GTKWave to create bundle and signal names based on the position in 
+the hierarchy.  </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Autoname Bundles Off</b> modifies the bundle up/down operations in the hierarchy 
+and tree searches such that a NULL bundle name is not implicitly created. 
+ This informs GTKWave to create bundle and signal names based on the position 
+in the hierarchy only if the user enters a zero-length bundle name.  This 
+behavior is the default.  </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Search Hierarchy Grouping</b>  when enabled ensures that new members added 
+to the ``Tree Search'' and ``Hierarchy Search'' widgets are added alphanumerically: 
+first hierarchy names as a group followed by signal names as a group. This 
+is the default and is recommended.  When disabled, hierarchy names and signal 
+names are interleaved together in strict alphanumerical ordering. Note that 
+due to the caching mechanism  in ``Tree Search'', dynamically changing this 
+flag when the widget is active may not produce immediately obvious results. 
+ Closing the widget then opening it up again will ensure that it follows the
+behavior of this flag. </font></li>
+                         </td>
+                       </tr>
+                     
+                    </tbody>                   
+                  </table>
+                   </td>
+                 </tr>
+               
+              </tbody>             
+            </table>
+             <br>
+             
+            <table width="710" cellpadding="4" cellspacing="0"
+ border="0">
+               <tbody>
+                 <tr>
+                   <td bgcolor="#485a97"><font color="#ffffff"
+ face="arial"><b> Time Menu</b></font>                   
+                  <table width="710" cellpadding="10" cellspacing="3"
+ border="0">
+                     <tbody>
+                       <tr>
+                         <td bgcolor="#6a7cb9"><font face="arial"
+ size="2" color="#ffffff"><img align="left" src="./time_menu.gif"
+ alt="[Time Menu Image]" width="124" height="124">
+                         </font>                         
+                        <hr><li><font face="arial" size="2"
+ color="#ffffff"><b> Move To Time</b> scrolls the waveform display such that
+the left border is the time entered in the requester. </font>           
+               
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w13.gif"
+ alt="[Move To Time Image]" width="210" height="87">
+                           </font></center>
+                           
+                          <p>                           
+                          <table width="380" cellpadding="4"
+ cellspacing="0" border="0">
+                             <tbody>
+                               <tr>
+                                 <td bgcolor="#666666"><font
+ color="#ffffff" face="arial"><b> Zoom Submenu</b></font>               
+                 
+                                <table width="380" cellpadding="10"
+ cellspacing="3" border="0">
+                                   <tbody>
+                                     <tr>
+                                       <td bgcolor="#888888"><font
+ face="arial" size="2" color="#ffffff"><img align="left"
+ src="./zoom_submenu.gif" alt="[Zoom Submenu Image]" width="167"
+ height="164">
+                                       </font>                          
+            
+                                      <hr><li><font face="arial"
+ size="2" color="#ffffff"><b> Zoom Amount</b> allows entry of zero or a negative
+value for the display zoom.  Zero is no magnification. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Zoom Base</b> allows entry of a zoom base for the zoom
+(magnification per integer step) Allowable values are 1.5 to 10.0. Default
+is 2.0. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Zoom In</b> is used to increase the zoom factor. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Zoom Out</b> is used to decrease the zoom factor. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Zoom Best Fit</b> attempts a "best fit" to get the whole
+trace onscreen.  Note that the trace may be more or less than a whole screen
+since this isn't a "perfect fit."  This works much better than it did in
+previous versions of GTKWave since the zoom amounts are floating point now.
+ NOTE: You can also use the 3rd mouse button to do a "drag zoom" that allows
+an extremely fine  granularity for zooming.  This is similar to the zooming
+allowed on HP storage scopes. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Zoom To Start</b> is used to jump scroll to the trace's
+beginning. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Zoom To End</b> is used to jump scroll to the trace's
+end. </font></li>
+                                       <li><font face="arial" size="2"
+ color="#ffffff"><b> Undo Zoom</b> is used to revert to the previous zoom
+value used.  Undo only  works one level deep. </font></li>
+                                       </td>
+                                     </tr>
+                                   
+                                  </tbody>                              
+  
+                                </table>
+                                 </td>
+                               </tr>
+                             
+                            </tbody>                           
+                          </table>
+                           </p>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Fetch Size</b> brings up a requester which allows input of the number of ticks
+used for fetch/discard operations.  Default is 100. </font>             
+             
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w11.gif"
+ alt="[New Fetch Size Image]" width="210" height="87">
+                           </font></center>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Fetch Right</b> increases the "To" time, which allows more of the trace to 
+be displayed if the "From" and "To" times do not match the actual bounds of
+the trace. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Fetch Left</b> decreases the "From" time, which allows more of the trace
+to be displayed if the "From" and "To" times do not match the actual bounds 
+of the trace. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Discard Right</b> decreases the "To" time, which allows less of the trace
+to be displayed. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Discard Left</b> increases the "From" time, which allows less of the trace 
+to be displayed. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Shift Right</b> scrolls the display window right one tick worth of data. 
+The net action is that the data scrolls left a tick. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Shift Left</b> scrolls the display window left one tick worth of data.  The
+ net action is that the data scrolls right a tick. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Page Right</b> scrolls the display window right one page worth of data.  The
+net action is that the data scrolls left a page. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Page Left</b> scrolls the display window left one page worth of data.  The 
+net action is that the data scrolls right a page. </font></li>
+                         </td>
+                       </tr>
+                     
+                    </tbody>                   
+                  </table>
+                   </td>
+                 </tr>
+               
+              </tbody>             
+            </table>
+             <br>
+             
+            <table width="710" cellpadding="4" cellspacing="0"
+ border="0">
+               <tbody>
+                 <tr>
+                   <td bgcolor="#485a97"><font color="#ffffff"
+ face="arial"><b> Markers Menu</b></font>                   
+                  <table width="710" cellpadding="10" cellspacing="3"
+ border="0">
+                     <tbody>
+                       <tr>
+                         <td bgcolor="#6a7cb9"><font face="arial"
+ size="2" color="#ffffff"><img align="middle" src="./markers_menu.gif"
+ alt="[Markers Menu Image]" width="278" height="128">
+                         </font>                         
+                        <hr><li><font face="arial" size="2"
+ color="#ffffff"><b> Show-Change Marker Data</b> displays and allows the
+modification of the times  for all 26 named markers.  The time for each marker
+must be unique. </font>                           
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="right" src="./w9.gif" alt="[Markers Image]"
+ width="211" height="370">
+                           </font></center>
+                         </li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Drop Named Marker</b> drops a named marker where the current primary (unnamed)
+ marker is placed.  A maximum of 26 named markers are allowed and the times
+ for all must be different. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Collect Named Marker</b> collects a named marker where the current primary
+ (unnamed) marker is placed if there is a named marker at its position. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Collect All Named Markers</b> simply collects any and all named markers which
+ have been dropped. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Delete Primary Marker</b> removes the primary marker from the display if
+present.                            </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Wave Scrolling On</b> allows movement of the primary marker beyond screen 
+boundaries which causes the wave window to scroll. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Wave Scrolling Off</b> disallows movement of the primary marker beyond screen 
+boundaries. </font></li>
+                         </td>
+                       </tr>
+                     
+                    </tbody>                   
+                  </table>
+                   </td>
+                 </tr>
+               
+              </tbody>             
+            </table>
+             <br>
+             
+            <table width="710" cellpadding="4" cellspacing="0"
+ border="0">
+               <tbody>
+                 <tr>
+                   <td bgcolor="#485a97"><font color="#ffffff"
+ face="arial"><b> View Menu</b></font>                   
+                  <table width="710" cellpadding="10" cellspacing="3"
+ border="0">
+                     <tbody>
+                       <tr>
+                         <td bgcolor="#6a7cb9"><font face="arial"
+ size="2" color="#ffffff"><img align="left" src="./view_menu.gif"
+ alt="[View Menu Image]" width="262" height="280">
+                         </font>                         
+                        <hr><li><font face="arial" size="2"
+ color="#ffffff"><b> Show Grid</b> enables the drawing of gridlines in the
+waveform display if they are turned off. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Hide Grid</b> disables the drawing of gridlines in the waveform display if
+ they are turned on. </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Show Base Symbols</b> enables the display of leading base symbols ('$' for 
+hex, '%' for binary, '#' for octal if they are turned off. Base symbols are 
+displayed by default. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Hide Base Symbols</b> disables the drawing of leading base symbols if they 
+are turned on.  </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Enable Dynamic Resize</b> allows GTKWave to dynamically resize the signal 
+window for you.  This can be helpful during numerous signal additions and/or 
+deletions.  This is the default behavior.  </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Disable Dynamic Resize</b> disallows GTKWave to dynamically resize the signal 
+window for you.  </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Center Zooms</b> configures zoom in/out operations such that all zooms use 
+the center  of the display as the fixed zoom origin if the primary (unnamed) 
+marker is not present,  otherwise, the primary marker is used as the center 
+origin.  (Center Zooms the default zoom behavior.) </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Left Justified Zooms</b> configures zoom in/out operations such that all zooms
+use the left margin of the display as the fixed zoom origin. </font>    
+                      
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Toggle Max-Marker</b> allows you to switch between the maximum time and marker 
+time for display in the upper right corner of the main window.  Default behavior 
+is that the maximum time is displayed. </font>                          
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Enable Constant Marker Update</b>- allows GTKWave to dynamically show the
+ changing values of the traces under the primary marker while it is being
+dragged across the screen.  This works best with dynamic resizing disabled.
+ </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Disable Constant Marker Update</b>- restricts GTKWave to only update the trace
+values when the left mouse button is initially pressed then again when it
+is released. This is the default behavior.  </font>                     
+     
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Draw Flatcapped Vectors</b>- draws vector transitions that have sharp edges. 
+This is the default.  </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Draw Roundcapped Vectors</b>- draws vector transitions that have sloping edges.
+                          </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Left Justify Signals</b>- draws signal names flushed to the left border of 
+the signal window. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Right Justify Signals</b>- draws signal names flushed to the right ("equals") 
+side of the signal window. </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Zoom Pow10 Snap</b>- snaps time values to a power of ten boundary when active. 
+ Fractional zooms are internally stored, but what is actually displayed will 
+be rounded up/down to the nearest power of 10.   This only works when the 
+ticks per frame is greater than 100 units. </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Full Precision</b>- does not round time values when the number of ticks per 
+pixel onscreen is greater than 10 when active.  The default is that this feature
+is disabled. </font>                           
+                          <hr></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Remove Pattern Marks</b> removes any vertical traces on the display caused 
+by the Mark feature in pattern search and reverts to the normal format. </font></li>
+                         </td>
+                       </tr>
+                     
+                    </tbody>                   
+                  </table>
+                   </td>
+                 </tr>
+               
+              </tbody>             
+            </table>
+             <br>
+             
+            <table width="710" cellpadding="4" cellspacing="0"
+ border="0">
+               <tbody>
+                 <tr>
+                   <td bgcolor="#485a97"><font color="#ffffff"
+ face="arial"><b> Help Menu</b></font>                   
+                  <table width="710" cellpadding="10" cellspacing="3"
+ border="0">
+                     <tbody>
+                       <tr>
+                         <td bgcolor="#6a7cb9"><font face="arial"
+ size="2" color="#ffffff"><img align="middle" src="./help_menu.gif"
+ alt="[Help Menu Image]" width="139" height="44">
+                         </font>                         
+                        <hr><li><font face="arial" size="2"
+ color="#ffffff"><b> Wave Help</b> is already active.  It's this window.
+ (To exit, simply hit the "Close Help" button at the bottom of the window.)
+                          </font></li>
+                         <li><font face="arial" size="2" color="#ffffff"><b> 
+Wave Version</b> merely brings up a requester which indicates the current
+ version of this program. </font>                           
+                          <center><font face="arial" size="2"
+ color="#ffffff"><img align="middle" src="./w10.gif"
+ alt="[Wave Version Image]" width="310" height="87">
+                           </font></center>
+                         </li>
+                         </td>
+                       </tr>
+                     
+                    </tbody>                   
+                  </table>
+                   </td>
+                 </tr>
+               
+              </tbody>             
+            </table>
+             </font></center>
+             </td>
+           </tr>
+         
+        </tbody>       
+      </table>
+       </td>
+     </tr>
+   
+  </tbody> 
+</table>
+ <br>
+ 
+<table cellpadding="4" cellspacing="0" border="0">
+   <tbody>
+     <tr>
+       <td bgcolor="#a0a0a0"><font color="#ffffff" face="arial" size="5"><b> 
+Environment Customization</b></font>       
+      <table cellpadding="10" cellspacing="3" border="0">
+         <tbody>
+           <tr>
+             <td bgcolor="#c0c0c0">             
+            <p><font face="arial" size="3" color="#000000">Customizing your 
+environment in gtkwave is quite easy with the <tt>.gtkwaverc</tt> file.  The
+search path for the file is first the current working directory then the
+effective user's home directory. It is simply a series of variable definitions, 
+one per line, which modify the behavior of specific features in GTKWave. 
+A sample <tt>.gtkwaverc</tt> file that works well with modelsim may be found
+ in the <tt>examples/vcd_mti</tt> directory.  Note that you will probably 
+want to edit the file so that the <tt>max_hier</tt> is <tt>0</tt> (infinite).
+ The format for each line is:  </font></p>
+             
+            <p><font face="arial" size="3" color="#000000"><tt>variable value</tt></font></p>
+             
+            <p><font face="arial" size="3" color="#000000">...where at least 
+one space separates the case insensitive variable name from its value.  (NOTE: 
+multiple word variable names <i> will have</i> an underscore between words 
+and you may substitute the case insensitive strings of <tt>ON</tt> and any 
+            <tt>Y</tt> prefixed word for the value of <tt>1</tt> [enable feature],
+and <tt>OFF</tt> and any <tt>N</tt> prefixed word for the value of <tt>0</tt>
+[disable feature].) </font></p>
+             
+            <p><font face="arial" size="3" color="#000000">Lines that start 
+with <tt>#</tt> are considered comment lines and are ignored. </font></p>
+             
+            <p><font face="arial" size="3" color="#000000">Currently supported 
+variables are listed in the table below... </font></p>
+             
+            <center>             
+            <table width="710" cellpadding="4" cellspacing="0"
+ border="0">
+               <tbody>
+                 <tr>
+                   <td bgcolor="#485a97"><font color="#ffffff"
+ face="arial"><b> Environment Variables</b></font>                   
+                  <table width="710" cellpadding="10" cellspacing="3"
+ border="0">
+                     <tbody>
+                       <tr>
+                         <td bgcolor="#6a7cb9"><font face="arial"
+ size="2" color="#ffffff"><li><b><tt> alt_hier_delimeter</tt></b>- This allows
+another character in addition to the <tt>hier_delimeter</tt> to be used to
+delimit levels in the hierarchy for VCD.  Only the first character in the
+value is significant.  Note that this is normally off.  The intended use
+is to resolve the hierarchies of netlist based models that often contain
+slashes to delimit hierarchy inside of <tt>$var</tt> statements. </li>
+                         <li><b><tt>append_vcd_hier</tt></b>- Allows the
+specification of a prefix hierarchy for VCD files.  This can be done in "pieces,"
+so that multiple layers of hierarchy are prepended to symbol names with the
+most significant addition occurring first (see <tt>.gtkwaverc</tt> in the
+                          <tt> examples/vcd</tt> directory).  The intended
+use of this is to have the ability to add "project" prefixes which allow
+easier selection of everything from the tree hierarchy. </li>
+                         <li><b><tt>atomic_vectors</tt></b>- Speeds up vcd 
+loading and takes up less memory.  The downside is that atomic vectors are
+ treated internally as a single bit and can't be coalesced into larger vectors 
+or split up.  Because of this single bit nature, the <tt>bundle down</tt> 
+ and <tt>bundle up</tt> operations when used in <tt>Signal Search Regexp</tt> 
+, <tt>Signal Search Hierarchy</tt>, and <tt>Signal Search Tree</tt> will perfom
+seemingly unpredictably.                            
+                          <p> Note that savefiles are largely incompatible 
+between atomic and non-atomic modes (i.e., signal information is stored differently). 
+ This variable normally defaults to "on" and it is suggested that it remain 
+there unless vector splitting is a necessity. </p>
+                         </li>
+                         <li><b><tt>autocoalesce</tt></b>- A nonzero value 
+enables autocoalescing of VCD vectors when applicable.  This may be toggled 
+dynamically during wave viewer usage. </li>
+                         <li><b><tt>autocoalesce_reversal</tt></b> causes 
+split vectors to be reconstructed in reverse order (only if autocoalesce is
+also active).   </li>
+                         <li><b><tt>autoname_bundles</tt></b>- A nonzero
+value indicates that GTKWave will create its own bundle names rather than
+prompting the user for them.                            
+                          <p>                           
+                          <table width="380" cellpadding="4"
+ cellspacing="0" border="0">
+                             <tbody>
+                               <tr>
+                                 <td bgcolor="#666666"><font
+ color="#ffffff" face="arial"><b> Environment Variables for Color</b></font> 
+                                
+                                <table width="380" cellpadding="10"
+ cellspacing="3" border="0">
+                                   <tbody>
+                                     <tr>
+                                       <td bgcolor="#888888"><font
+ face="arial" size="2" color="#ffffff">  The colors available to the wave
+window graphics contexts are also adjustable by listing one of the following
+color variables trailed by at least one space then a six digit hex RGB number
+(e.g., <tt>color_back ffffff</tt>).  Additionally, standard X11 color value
+strings can be used (e.g., <tt>color_back steel blue</tt>), but don't put
+them in quotation marks as spaces <i>are</i> handled properly: <li><b><tt>color_back</tt></b>-
+background color </li>
+                                       <li><b><tt>color_grid</tt></b>- grid 
+color (use Alt-G/Shift-Alt-G to show/hide grid) </li>
+                                       <li><b><tt>color_trans</tt></b>- trace 
+color when transitioning </li>
+                                       <li><b><tt>color_high</tt></b>- trace 
+color when high </li>
+                                       <li><b><tt>color_low</tt></b>- trace 
+color when low </li>
+                                       <li><b><tt>color_mid</tt></b>- trace 
+color when floating ("Z") </li>
+                                       <li><b><tt>color_x</tt></b>- trace 
+color when undefined ("X") </li>
+                                       <li><b><tt>color_xfill</tt></b>- trace 
+color (inside of box) when undefined ("X") </li>
+                                       <li><b><tt>color_vbox</tt></b>- vector 
+color (horizontal) </li>
+                                       <li><b><tt>color_vtrans</tt></b>-
+vector color (verticals/transitions) </li>
+                                       <li><b><tt>color_value</tt></b>- text 
+color for vector values </li>
+                                       <li><b><tt>color_time</tt></b>- text 
+color for timebar </li>
+                                       <li><b><tt>color_timeb</tt></b>- text 
+color for timebar's background </li>
+                                       <li><b><tt>color_umark</tt></b>- color 
+of the unnamed (primary) marker </li>
+                                       <li><b><tt>color_mark</tt></b>- color 
+of the named markers                                          
+                                        <p>...if the above variables are unspecified,
+the defaults (standard GTK color shadings) are used on a per-unspecified variable
+basis. </p>
+                                       </li>
+                                       </font></td>
+                                     </tr>
+                                   
+                                  </tbody>                              
+  
+                                </table>
+                                 </td>
+                               </tr>
+                             
+                            </tbody>                           
+                          </table>
+                           </p>
+                         </li>
+                         <li><b><tt>constant_marker_update</tt></b>- A nonzero 
+value indicates that the values for traces listed in the signal window are 
+to be updated constantly when the left mouse button is being held down rather 
+than  only when it is first pressed then when released (which is the default).
+                         </li>
+                         <li><b><tt>convert_to_reals</tt></b>- Converts all 
+integer and parameter VCD declarations to real-valued ones when set to a nonzero/yes
+value. The positive aspect of this is that integers and parameters will take
+up less space in memory and will automatically display in decimal format.
+ The negative aspect of this is that integers and parameters will       
+                   <i>only</i> be displayable as decimals and can't be bit
+reversed, inverted, etc. </li>
+                         <li><b><tt>disable_tooltips</tt></b>- A nonzero
+value indicates that tooltip pop up bubbles should be disabled.  A zero value
+indicates that tooltips should be active (default). </li>
+                         <li><b><tt>do_initial_zoom_fit</tt></b>- A nonzero 
+value indicates that the trace should initially be crunched to fit the screen. 
+ A zero value indicates that the initial zoom should be zero (default). 
+                        </li>
+                         <li><b><tt>dynamic_resizing</tt></b>- A nonzero
+value indicates that dynamic resizing should be initially enabled (default).
+ A zero value indicates that dynamic resizing should be initially disabled.
+                        </li>
+                         <li><b><tt>enable_ghost_marker</tt></b>- lets the 
+user turn on/off the ghost marker during primary marker dragging. Default 
+is enabled. </li>
+                         <li><b><tt>enable_horiz_grid</tt></b>- A nonzero 
+value indicates that when grid drawing is enabled, horizontal lines are to 
+be drawn.  This is the default.  </li>
+                         <li><b><tt>enable_vcd_autosave</tt></b>- causes
+the vcd loader to automatically generate a <tt>.sav</tt> file (<tt>vcd_autosave.sav</tt> 
+) in the cwd if a save file is not specified on the command line.  Note that 
+this mirrors the VCD <tt>$var</tt> defs and no attempt is made to coalesce 
+split bitvectors back together. </li>
+                         <li><b><tt>enable_vert_grid</tt></b>- A nonzero
+value indicates that when grid drawing is enabled, vertical lines are to
+be drawn.  This is the default.  Note that all possible combinations of 
+                          <tt>enable_horiz_grid</tt>  and <tt>enable_vert_grid</tt>
+values are acceptable. </li>
+                         <li><b><tt>fontname_signals</tt></b>- When followed 
+by an argument, this indicates the name of the X11 font that you wish to use
+for signals. You may generate appropriate fontnames using the <tt>xfontsel</tt> 
+ program. </li>
+                         <li><b><tt>fontname_waves</tt></b>- When followed 
+by an argument, this indicates the name of the X11 font that you wish to use
+for waves. You may generate appropriate fontnames using the <tt>xfontsel</tt> 
+ program.  Note that the signal font must be taller than the wave font or 
+the viewer will complain then terminate. </li>
+                         <li><b><tt>force_toolbars</tt></b>- When enabled, 
+this forces everything above the signal and wave windows to be rendered as 
+toolbars.  This allows for them to be detached which allows for more usable 
+wave viewer space.  By default this is off. </li>
+                         <li><b><tt>hier_delimeter</tt></b>- This allows
+characters other than <tt>'/'</tt> to be used to delimit levels in the hierarchy.
+ Only the first character in the value is significant. </li>
+                         <li><b><tt>hier_max_level</tt></b>- Sets the maximum 
+hierarchy depth (from the right side) to display for trace names.  Note that 
+a value of zero  displays the full hierarchy name. </li>
+                         <li><b><tt>hpane_pack</tt></b>- A nonzero value
+indicates that the horizontal pane should be constructed using the <tt>gtk_paned_pack</tt> 
+ functions  (default and recommended).  A zero value indicates that <tt>gtk_paned_add</tt> 
+ will be used instead.   </li>
+                         <li><b><tt>initial_window_x</tt></b>- Sets the size 
+of the initial width of the wave viewer window.  Values less than or equal 
+to zero will set the initial width equal to <tt>-1</tt> which will let GTK 
+determine the minimum size.  </li>
+                         <li><b><tt>initial_window_y</tt></b>- Sets the size 
+of the initial height of the wave viewer window.  Values less than or equal 
+to zero will set the initial width equal to <tt>-1</tt> which will let GTK 
+determine the minimum size. </li>
+                         <li><b><tt>left_justify_sigs</tt></b>- When nonzero, 
+indicates that the signal window signal name justification should default 
+to left, else the justification is to the right (default). </li>
+                         <li><b><tt>page_divisor</tt></b>- Sets the scroll 
+amount for page left and right operations.  (The buttons, not the hscrollbar.) 
+Values over 1.0 are taken as 1/x and values equal to and less than 1.0 are 
+taken literally.  (i.e., 2 gives a half-page scroll and .67 gives 2/3).  The
+default is 1.0. </li>
+                         <li><b><tt>ps_maxveclen</tt></b>- sets the maximum 
+number of characters that can be printed for a value in the signal window 
+portion of a postscript file (not including the net name itself).  Legal values
+are 4 through 66 (default). </li>
+                         <li><b><tt>show_base_symbols</tt></b>- A nonzero 
+value (default) indicates that the numeric base symbols for hexadecimal ('$'), 
+binary ('%'), and octal ('#') should be rendered.  Otherwise they will be 
+omitted. </li>
+                         <li><b><tt>show_grid</tt></b>- A nonzero value (default) 
+indicates that a grid should be drawn behind the traces. A zero indicates 
+that no grid should be drawn. </li>
+                         <li><b><tt>use_big_fonts</tt></b>- A nonzero value 
+indicates that any text rendered into the wave window will use fonts that 
+are four points larger in size than normal.  This can enhance readability. 
+ A zero value indicates that normal font sizes should be used. </li>
+                         <li><b><tt>use_full_precision</tt></b>- does not 
+round time values when the number of ticks per pixel onscreen is greater than
+10 when active.  The default is that this feature is disabled. </li>
+                         <li><b><tt>use_larger_scale</tt></b>- A nonzero
+value indicates that the hashmarks used for the timescales should be based
+around 50 pixels rather than 40/48 pixels. </li>
+                         <li><b><tt>use_maxtime_display</tt></b>- A nonzero 
+value indicates that the maximum time will be displayed in the upper right 
+corner of the screen. Otherwise, the current primary (unnamed) marker time 
+will be displayed.  This can be toggled at any time with the <b>Toggle Max-Marker</b> 
+ menu option.  </li>
+                         <li><b><tt>use_nonprop_fonts</tt></b>- Allows accelerated 
+redraws of the signalwindow that can be done because the font width is constant. 
+ Default is off. </li>
+                         <li><b><tt>use_roundcaps</tt></b>- A nonzero value 
+indicates that  vector traces should be drawn with rounded caps rather than 
+perpendicular ones.  The default for this is zero. </li>
+                         <li><b><tt>use_scrollbar_only</tt></b>- A nonzero 
+value indicates that  the page, shift, fetch, and discard buttons should not
+be drawn (i.e., time manipulations should be through the scrollbar only rather
+than front panel buttons). The default for this is zero. </li>
+                         <li><b><tt>vcd_explicit_zero_subscripts</tt></b>- 
+indicates that signal names should be stored internally as <tt>name.bitnumber</tt> 
+ when enabled.   When disabled, a more "normal" ordering of <tt>name[bitnumber]</tt> 
+ is used.  Note that when disabled, the <tt>Bundle Up</tt> and <tt>Bundle 
+Down</tt> options are disabled in the <tt>Signal Search Regexp</tt>, <tt> 
+Signal Search Hierarchy</tt>, and <tt>Signal Search Tree</tt>  options.  This
+is necessary as the internal data structures for signals are represented with
+one "less" level of hierarchy than when enabled and those functions would
+not work properly.  This should not be an issue if <tt>atomic_vectors</tt> 
+ are enabled. Default for <tt>vcd_explicit_zero_subscripts</tt> is disabled.
+                         </li>
+                         <li><b><tt>vector_padding</tt></b>- indicates the 
+number of pixels of extra whitespace that should be added to any strings for
+the purpose of calculating text in vectors.  Permissible values are 0 to
+16 with the default being 4. </li>
+                         <li><b><tt>wave_scrolling</tt></b>- a nonzero value 
+enables scrolling by dragging the marker off the left or right sides of the 
+wave window. A zero value disables it. </li>
+                         <li><b><tt>zoom_base</tt></b>- allows setting of 
+the zoom base with a value between 1.5 and 10.0.  Default is 2.0. </li>
+                         <li><b><tt>zoom_center</tt></b>- a nonzero value 
+enables center zooming, a zero value disables it. </li>
+                         <li><b><tt>zoom_pow10_snap</tt></b>- corresponds 
+to the Zoom Pow10 Snap menu option listed above.  Default for this is disabled 
+(zero). </li>
+                         </font></td>
+                       </tr>
+                     
+                    </tbody>                   
+                  </table>
+                   </td>
+                 </tr>
+               
+              </tbody>             
+            </table>
+             </center>
+             
+            <p><font face="arial" size="3" color="#000000">Even more customization 
+is planned on being added incrementally and new features will be available 
+in the future. </font></p>
+             </td>
+           </tr>
+         
+        </tbody>       
+      </table>
+       </td>
+     </tr>
+   
+  </tbody> 
+</table>
+ <br>
+ 
+<table cellpadding="4" cellspacing="0" border="0">
+   <tbody>
+     <tr>
+       <td bgcolor="#c00000"><font color="#ffffff" face="arial" size="5"><b> 
+Known Bugs</b></font>       
+      <table cellpadding="10" cellspacing="3" border="0">
+         <tbody>
+           <tr>
+             <td bgcolor="#ffa0a0">             
+            <p><font face="arial" size="3" color="#000000">AIX requires <tt> 
+-bmaxdata:0x80000000</tt> to be added to your list of compiler flags for 
+           <tt>xlc</tt>  if you want GTKWave to  be able to access more than
+256MB of virtual memory.  The value shown allows the VMM to use up to 2GB.
+ This may be necessary for very large traces. </font></p>
+             
+            <p><font face="arial" size="3" color="#000000">Shift and Page 
+operations using the wave window hscrollbar may be nonfunctional as you move 
+away from the dump start for very large traces.  I have a trace that goes 
+out to 45 billion ticks that causes problems.  This stems from using the 
+           <tt>gfloat</tt> element of the horizontal slider to encode the 
+time value for the left margin. The result is a loss of precision for very 
+large values.  Use the hotkeys or buttons at the top of the screen if this 
+is a problem.  </font></p>
+             
+            <p><font face="arial" size="3" color="#000000"><b><i>Caveat Architecture:</i></b> 
+  GTKWave works fine under the x86 version of Linux using glibc, however it
+is not guaranteed that it will work properly with all microprocessor architectures,
+ libc variants, or operating systems as it is only regularly tested on RedHat
+ Intel and AIX for the PowerPC.  Every attempt has been made to write portable
+ bug-free code, but compatibility issues occasionally manifest themselves
+on one architecture but not another due to issues such as varying machine
+word lengths, virtual memory page sizes, and memory allocation algorithms.
+ Crashes that occur on a specific operating system but not another given
+the same sequence of operations should be considered reportable bugs. </font></p>
+             </td>
+           </tr>
+         
+        </tbody>       
+      </table>
+       </td>
+     </tr>
+   
+  </tbody> 
+</table>
+ <br>
+ 
+<hr> 
+<center>31dec02 <a href="mailto:bybell@linux-workshop.com">bybell@linux-workshop.com</a></center>
+<br>
+</body>
+</html>

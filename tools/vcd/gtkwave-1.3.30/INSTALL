@@ -1,0 +1,14 @@
+1) Type ./configure
+2) make
+3) make install (as root)
+
+Make sure you copy the .gtkwaverc file to your home directory or to your
+VCD project directory.  It contains the prefs for a good configuration
+that most people find ergonomic.
+
+Note that Ver Structural Verilog Compiler AET files are no longer supported. 
+They have been superceded by LXT.  Also note that the AMULET group will be
+taking over maintenance of the viewer effective immediately.
+
+-251201ajb  bybell@linux-workshop.com
+

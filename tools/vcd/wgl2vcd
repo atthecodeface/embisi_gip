@@ -1,0 +1,312 @@
+eval '(exit $?0)' && 
+  eval 'exec perl -S $0 ${1+"$@"}' && 
+  eval 'exec perl -S $0 $argv:q'
+  if 0;
+# Copyright 1999 by John Sheahan <john@reptechnic.com.au>
+#
+#  This program is free software; you may redistribute and/or modify it under
+#  the terms of the GNU General Public License Version 2 as published by the
+#  Free Software Foundation.
+#
+#  This program is distributed in the hope that it will be useful, but
+#  WITHOUT ANY WARRANTY, without even the implied warranty of MERCHANTABILITY
+#  or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+#  for complete details.
+#
+# wgl2vcd
+# john@reptechnic.com.au  
+# this script translates wgl to base vcd
+# $Id$
+# $Log$
+# Revision 1.6  2000/11/18 09:48:23  john
+# update invoke line and license
+#
+# Revision 1.5  1999/11/22 00:48:17  john
+# ??
+#
+# Revision 1.4  1999/02/12 06:48:38  john
+# tweaked to work better with vhdl busses and also gtkwave
+#
+# Revision 1.3  1998/10/01 01:55:34  john
+# added ignore-x-on output option
+#
+# Revision 1.2  1998/09/02 09:32:34  john
+# fixed issue with verilog busses
+#
+# Revision 1.1  1998/08/19 07:11:53  john
+# Initial revision
+#
+# Revision 1.1  1998/01/23 08:32:41  john
+# Initial revision
+#
+#
+$ver=' $Id$ ';
+
+# $timescale=10;
+# $timescale_units='ps'; # HARD CODED 
+$vectortime=0;
+
+require "getopts.pl";
+&Getopts("hx");
+if (defined($opt_h)) {
+	print "wgl2vcd   translate from wgl to plain vcd\n";
+	print "          reads PARALLEL (not SCAN) WGL only\n";
+	print "          $ver \n";
+	print "   -x     on outputs IGNORE go-to-X behaviour\n";
+	print "          -h help\n";
+	die("bye $opt_h");
+    }
+
+while (<>) {
+  chop;
+  if   (/^\s*signal\b/) {
+    &read_signal;
+  }
+  elsif (/^\s*timeplate/) {
+    &read_wgl_timeplate($_);
+  }
+  elsif (/^\s*waveform\s+(\S+)/) {$waveform=$1;}
+
+  elsif (/^\s*pattern\s+\w+\s*\((.*)/) {
+    &read_wgl_header($1);
+  }
+  elsif (/^\s*vector\s*\(.*\)\s*:=\s*\[(.*)/) {
+    &read_wgl_vector($1);
+#    die"read my first vector\n" if ($vectortime > 28000);
+  }
+}
+
+
+# read the timeplate section, recording period, and event times 
+# within the cycle for all inputs
+sub read_wgl_timeplate {
+  /timeplate\s+\S+\s+\S+\s+([0-9\.]+)(\w+)/;
+  $period=$1;
+  $period_units=$2;
+#  print "\$timescale\n  $timescale$timescale_units\n\$end\n\n";
+  if (lc($period_units) eq 'ps') { $period_mul=0.1;}
+  elsif (lc($period_units) eq 'ns') { $period_mul=100;}
+  elsif (lc($period_units) eq 'us') { $period_mul=100000;}
+  elsif (lc($period_units) eq 'ms') { $period_mul=100000000;}
+  else { die "dont recognise units $period_units"}
+  $period = $period * $period_mul;
+#  print "period scale is $period_mul, scaled period is $period\n";
+  while (<>) {
+    last if /^\s*end\b/;
+    s/\"//g; # kill quotes
+    s/,/ /g; # kill 
+    s/\s+/ /g; # shrink multiple spaces,
+    if (/^([^\#]*)/) {$_=$1}; # kill comments
+    if (/(\S+)\s*:=\s*(input|output)\s*\[(.*)\]/) {
+#      print "TIMEPLATE $2 $1 timing $3\n"; 
+      $sig=$1;
+      $drn=$2;
+      unless  (defined($done{$sig})) {
+	@_=split(" ",$3);
+	while (@_) {
+	  $_=shift(@_);
+	  if (defined($opt_x)) { 
+	    # ignore output X events
+	    &record_event($drn,$sig, $_) unless (($drn eq "output") && ($_ =~ /:X/)) ;
+	  }
+	  else {
+	    # don't ignore output X events
+	    &record_event($drn,$sig, $_);
+	  }
+	}
+      }
+      $done{$sig}=0 if ($drn eq "output"); # multipl eoutput times.
+    }
+  }
+  &order_events;
+}
+
+# build an ordered list of times in cycle things happen
+# @events is a sorted list of times
+# $event{$time} is a string : event, signame, sigdrn  (repeating)
+# note that time is in timeunits
+
+sub order_events {
+  for $key (sort {$a <=> $b} keys %event) {
+    push (@events,$key);
+#    print "time  $key events $event{$key}\n\n";
+  }
+@chk=@events;
+  print STDERR "summary of timeplate section..\n";
+  while (@chk) {
+    $time=shift(@chk);
+    @_=split(" ", $event{$time});
+    $n_events=@_/2;
+    print STDERR "at time $time $n_events event(s)\n";
+  }
+}
+
+
+sub record_event {
+#  print "got event $_[2] on sig $_[1] drn $_[0]\n";
+  die " cannot separate $_[2]" unless ($_[2] =~ /(.+)$period_units:(.+)/);;
+  $time=$1;
+  $event=$2;
+  $signal=$_[1];
+  $drn=$_[0];
+  if (defined($bidi{$signal})) {
+    if ($drn =~/input/i) {
+      $signal .= ":I";
+    }
+    else {
+      $signal .= ":O";
+    }
+#    print "signal now $signal\n";
+  }
+  $time = sprintf("%d",$period_mul * $time);
+#  print "event $event at time $time sig $signal drn $drn\n";
+  print "ERROR event\n" unless (length($event)>0);
+  print "ERROR drn\n" unless (length($drn)>0);
+  print "ERROR signal\n" unless (length($signal)>0);
+  if (defined($event{$time})) {
+#    print "appended time $time event $event signal $signal\n";
+    $event{$time} .= "$event $signal ";
+  }
+  else {
+    $event{$time} = "$event $signal ";
+  }
+}
+
+sub read_signal {
+  while (<>) {
+    last if (/^\s*end\b/);
+    if (/^\s*(\S+)\s*:\s*(bidir|output|input)\s*;/) {
+      if ($2 eq "bidir") {
+	# just record bidis
+	$sig =$1;
+	$sig=~s/\"//g;
+	$bidi{$sig}=0;
+#	print "recording bidi $sig\n";
+	$bidis++;
+      }
+    }
+  }
+  print STDERR "found $bidis bidis\n";
+}
+
+
+sub read_wgl_header {
+  $col=0;
+#  $vectornum=0;
+  &add_wgl_header_terms($_[0]);
+  unless ($_[0]=~/\)\s*$/) {
+    while (<>) {
+      $line=$_;
+      &add_wgl_header_terms($_);
+      last if ($line=~/\)\s*$/);
+    }
+  }
+  print STDERR "read $col signals from wgl header\n";
+  $term=1;
+  print "\$scope module $waveform \$end\n";
+  for $key (sort keys %column) {
+    # ':' in sig name appears to confuse vcd viewer. get them from :I or :O
+    $skey=$key;
+    $ss_prefix=""; $ss_val=""; $ss_dir="";
+    if(($ss_prefix,$ss_val,$ss_dir)=($skey=~/([^\[]*)([^\:]*)(\S*)/))
+    {
+        $skey=$ss_prefix.$ss_dir.$ss_val;
+    }
+  
+    
+    $skey=~s/:/_/g;
+    printf ("\$var reg 1 <%d %20s \$end\n",$term,$skey);
+    $code{$key}="<$term";
+    $term++;
+  }
+  print "\$upscope \$end\n\n";
+  print "\$enddefinitions \$end\n\n";
+}
+    
+sub add_wgl_header_terms {
+    $_=$_[0];
+    s/,/ /g; # kill commas
+    s/\)\s*$//; # kill any trailing )
+    s/\"//g; # kill quotes
+    s/\s+/ /g;   # squeeze runs of whitespace
+#    s/\[/./g;    # leading brackets to . bus sep
+#    s/\]//g;     # kill trailing ] bus sep.
+    @_=split(" ",$_);
+    for ($i=0;$i<@_;$i++) {
+#      print "added column $_[$i] = $col\n"; 
+	$column{$_[$i]}=$col;
+	$value{$_[$i]}='x';  # initialize 
+#  column {name = position}
+	$col++;
+    }
+}
+
+
+sub read_wgl_vector {
+  $vector='';
+  &add_wgl_vector_terms($_[0]);
+  unless ($_[0]=~/\]\s*;\s*$/) {
+    while (<>) {
+      $line=$_;
+      &add_wgl_vector_terms($_);
+      last if ($line=~/\]\s*;\s*$/);
+    }
+  }
+# now I have a built input wgl vector. 
+# generate output terms in order if tif file.
+# ins and outs are a direct map.
+# bidi.    in/out  n/X => X
+#                  n/- => n
+#                  -/n => n
+#                  z/n => n
+
+ # now print whatever is needed.
+
+  @eventlist=@events;
+  while (@eventlist) {
+    $time=shift(@eventlist);
+    $attime='';
+    $list=$event{$time};
+    @_=split(" ",$list);
+    while (@_) {
+      $event=shift(@_);
+      $signal=shift(@_);
+#      $drn=shift(@_);
+      $val=&event($event,$signal);
+      # handle general mapping of wgl to vcd values here..
+      $val =~ tr/01xXjJkKzZ/01xx0011zz/;
+
+#      print "time $time event $event signal $signal val $val code $code{$signal}\n"; 
+      $attime .=  "$val$code{$signal}\n" if ($val ne $value{$signal});
+      $value{$signal}=$val;
+    }
+    if (length($attime)>0) {
+      $printtime=$time+$vectortime;
+      print "\#$printtime\n$attime";
+    }
+  }
+  $vectortime += $period;
+}
+
+sub add_wgl_vector_terms {
+    $_=$_[0];
+    s/\s*//g; # no whitespace;
+    s/\];$//; # no terminator
+    $vector.=$_;
+}
+
+sub event {
+  $ev=$_[0];
+  $sig=$_[1];
+  print "ERROR $sig no column \n" unless (defined($column{$sig})); 
+  if    ($ev eq 'D') {    $ret = '0';  }
+  elsif ($ev eq 'U') {    $ret = '1';  }
+  elsif ($ev eq 'X') {    $ret =  'x';  }
+  elsif ($ev eq 'Q') {    $ret = lc(substr($vector,$column{$sig},1));  }
+  elsif ($ev eq 'S') {    $ret = lc(substr($vector,$column{$sig},1)); }
+  elsif ($ev eq 'P') {    $ret = $value{$sig} ; }
+  else { die "what is an $ev event??"};
+  $ret=~s/\-/z/;
+#  print "mapped $ev $sig to $ret\n";
+  return $ret;
+}

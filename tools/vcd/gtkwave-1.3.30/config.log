@@ -1,0 +1,53 @@
+This file contains any messages produced by compilers while
+running configure, to aid debugging if configure makes a mistake.
+
+configure:529: checking for gcc
+configure:642: checking whether the C compiler (gcc  ) works
+configure:658: gcc -o conftest    conftest.c  1>&5
+configure:684: checking whether the C compiler (gcc  ) is a cross-compiler
+configure:689: checking whether we are using GNU C
+configure:698: gcc -E conftest.c
+configure:717: checking whether gcc accepts -g
+configure:749: checking whether make sets ${MAKE}
+configure:777: checking for main in -libs
+configure:792: gcc -o conftest -g -O2   conftest.c -libs   1>&5
+/usr/bin/ld: cannot find -libs
+collect2: ld returned 1 exit status
+configure: failed program was:
+#line 785 "configure"
+#include "confdefs.h"
+
+int main() {
+main()
+; return 0; }
+configure:821: checking how to run the C preprocessor
+configure:842: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:901: checking for ANSI C header files
+configure:914: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:981: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1008: checking for fcntl.h
+configure:1018: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1008: checking for malloc.h
+configure:1018: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1008: checking for strings.h
+configure:1018: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1008: checking for unistd.h
+configure:1018: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1046: checking for working const
+configure:1100: gcc -c -g -O2  conftest.c 1>&5
+configure:1121: checking for size_t
+configure:1154: checking whether struct tm is in sys/time.h or time.h
+configure:1167: gcc -c -g -O2  conftest.c 1>&5
+configure:1191: checking for working alloca.h
+configure:1203: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1224: checking for alloca
+configure:1257: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1423: checking for 8-bit clean memcmp
+configure:1441: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1461: checking for re_comp
+configure:1489: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1461: checking for regcomp
+configure:1489: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1461: checking for strstr
+configure:1489: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:1473: warning: conflicting types for built-in function `strstr'

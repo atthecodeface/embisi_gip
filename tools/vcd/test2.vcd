@@ -1,0 +1,41 @@
+$scope module fred $end
+
+$var wire 1 code signal $end
+$var wire 16 hex hex $end
+$var reg 1 codeb second $end
+
+$upscope $end
+
+$enddefinitions $end
+
+#1000
+1234 hex
+0code
+1codeb
+#2000
+abcd hex
+1code
+#3000
+0code
+#3100
+1code
+#3200
+0code
+#3300
+1code
+#3400
+0code
+#3500
+1code
+#3600
+0code
+#3700
+1code
+#3800
+0code
+#3900
+1code
+#4000
+0code
+#4100
+1code

@@ -7,9 +7,23 @@ c_model test_benches/io_fifos c_io_fifos inc:headers/c
 c_model test_benches/postbus c_postbus_testbench inc:headers/c inc:test_benches/ethernet
 c_model test_benches/ethernet c_mii_testbench inc:headers/c
 c_model models/memories c_memory inc:headers/c
+c_model models/memories c_rf inc:headers/c
 
 cdl test_benches/postbus postbus_test_rom_contents_0 inc:headers/cdl rmn:postbus_test_rom_contents_0=postbus_test_rom_contents
 cdl test_benches/postbus postbus_test_rom inc:headers/cdl inc:test_benches/postbus
+
+cdl units/gip         gip_alu_arith_op            inc:units/gip inc:headers/cdl
+cdl units/gip         gip_alu_logical_op          inc:units/gip inc:headers/cdl
+cdl units/gip         gip_alu_barrel_shift        inc:units/gip inc:headers/cdl
+cdl units/gip         gip_alu                     inc:units/gip inc:headers/cdl
+cdl units/gip         gip_special                 inc:units/gip inc:headers/cdl
+cdl units/gip         gip_decode_native           inc:units/gip inc:headers/cdl
+cdl units/gip         gip_decode                  inc:units/gip inc:headers/cdl
+cdl units/gip         gip_scheduler               inc:units/gip inc:headers/cdl
+cdl units/gip         gip_postbus                 inc:units/gip inc:headers/cdl
+cdl units/gip         gip_rf                      inc:units/gip inc:headers/cdl
+cdl units/gip         gip_core                    inc:units/gip inc:headers/cdl
+cdl units/gip         gip_prefetch                inc:units/gip inc:headers/cdl
 
 cdl units/postbus     postbus_led_target          inc:headers/cdl
 cdl units/postbus     postbus_uart_target         inc:headers/cdl
@@ -17,6 +31,7 @@ cdl units/postbus     postbus_simple_router       inc:headers/cdl
 cdl units/postbus     postbus_input_mux           inc:headers/cdl
 cdl units/postbus     postbus_register_demux      inc:headers/cdl
 cdl units/postbus     postbus_rom_source          inc:headers/cdl
+
 cdl units/io          io_ethernet_tx              inc:headers/cdl
 cdl units/io          io_ethernet_rx              inc:headers/cdl
 cdl units/io          io_cmd_fifo_timer           inc:headers/cdl
@@ -28,10 +43,10 @@ cdl units/io          io_egress_control_cmd_fsm   inc:headers/cdl
 cdl units/io          io_egress_control           inc:headers/cdl
 cdl units/io          io_sync_request             inc:headers/cdl
 cdl units/io          io_postbus_target           inc:headers/cdl
-cdl units/io          io_postbus_source           inc:headers/cdl
+#cdl units/io          io_postbus_source           inc:headers/cdl
 cdl units/io          io_postbus                  inc:headers/cdl
 cdl units/io          io_uart                     inc:headers/cdl
-cdl units/io          io_block  x                 inc:headers/cdl
+cdl units/io          io_block                    inc:headers/cdl
 
 #c_model src c_gip_cyc
 #c_src src c_gip_full

@@ -1,6 +1,13 @@
 /*a Copyright Gavin J Stark, 2004
  */
 
+/*a To do
+  Change status write logic to not write Tx status
+  Count tx bytes out, and count their return status, and keep a 'nf' flag
+  Also present a rx 'ne' flag
+  Add an interrupt with two enables
+ */
+
 /*a Includes
  */
 include "apb_uart_sync_fifo.h"
@@ -13,7 +20,7 @@ include "apb_uart_sync_fifo.h"
 module apb_target_uart( clock apb_clock "Internal system clock",
                          input bit int_reset "Internal reset",
 
-                         input bit[5] apb_paddr,
+                         input bit[3] apb_paddr,
                          input bit apb_penable,
                          input bit apb_pselect,
                          input bit[32] apb_pwdata,

@@ -313,8 +313,13 @@ extern module gip_rf( clock gip_clock,
 
     timing from rising clock gip_clock rfr_postbus_read, rfr_postbus_read_address;
     timing to rising clock gip_clock rfr_postbus_read_data;
+    timing comb input rfr_postbus_read_data;
     timing from rising clock gip_clock rfr_special_read, rfr_special_read_address;
     timing to rising clock gip_clock rfr_special_read_data;
+    timing comb input rfr_special_read_data;
+    timing from rising clock gip_clock rfr_periph_read, rfr_periph_read_address;
+    timing to rising clock gip_clock rfr_periph_read_data, rfr_periph_read_data_valid;
+    timing comb input rfr_periph_read_data;
 
     timing from rising clock gip_clock rfr_port_0, rfr_port_1;
 
@@ -326,6 +331,7 @@ extern module gip_rf( clock gip_clock,
     timing to rising clock gip_clock mem_1_rd, mem_2_rd, mem_read_data, mem_read_data_valid;
 
     timing comb input alu_inst_valid, alu_inst_gip_ins_rd;
+    timing comb input rfr_periph_read_data_valid;
     timing comb output rfr_accepting_dec_instruction_if_alu_does;
     timing comb output rfr_inst; // .valid depends on blocking
 

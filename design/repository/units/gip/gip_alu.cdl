@@ -158,7 +158,7 @@ module gip_alu( clock gip_clock,
                     case gip_ins_cc_ge: { condition_passed = (!flags.n && !flags.v) || (flags.n && flags.v); }
                     case gip_ins_cc_lt: { condition_passed = (!flags.n && flags.v) || (flags.n && !flags.v); }
                     case gip_ins_cc_gt: { condition_passed = ((!flags.n && !flags.v) || (flags.n && flags.v)) && !flags.z; }
-                    case gip_ins_cc_le: { condition_passed = ((!flags.n && flags.v) || (!flags.n && flags.v)) || flags.z; }
+                    case gip_ins_cc_le: { condition_passed = ((!flags.n && flags.v) || (flags.n && !flags.v)) || flags.z; }
                     case gip_ins_cc_always: { condition_passed = 1; }
                     case gip_ins_cc_cp: { condition_passed = special_cp_trail_2 ? (flags.cp && flags.old_cp) : flags.cp; }
                     }

@@ -13,6 +13,7 @@ typedef fsm
     apb_state_write_enable "APB writing, select and enable asserted";
     apb_state_read_select "APB reading, select asserted, no enable";
     apb_state_read_enable "APB reading, select and enable asserted, data should be valid (unless wait asserted)";
+    apb_state_present_data "APB done reading; data valid to GIP core (which is still presenting read)";
 } t_apb_state;
 
 /*a Module
@@ -153,9 +154,24 @@ module gip_periph_apb( clock gip_clock,
                     periph_busy = write_pending;
                     if (!apb_pwait)
                     {
-                        apb_state <= apb_state_idle;
+                        apb_state <= apb_state_present_data;
                         read_data_valid <= 1;
                         read_data <= apb_prdata;
+                    }
+                }
+                case apb_state_present_data:
+                {
+                    apb_pselect = 0;
+                    apb_penable = 0;
+                    if (write_pending)
+                    {
+                        periph_busy = 1;
+                        apb_state <= apb_state_write_select;
+                        write_pending <= 0;
+                    }
+                    else
+                    {
+                        apb_state <= apb_state_idle;
                     }
                 }
                 }

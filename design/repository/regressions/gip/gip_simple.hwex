@@ -1,0 +1,62 @@
+#a Copyright
+#  
+#  This file 'eth_0.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add GIP simple
+module gip_simple "gip_simple"
+
+#b Add UART testbench
+option_string "exec_file" env_string("uart_exec_file")
+option_int monitor_level 0
+option_int tx_baud_add 1
+option_int tx_baud_subtract 7
+option_int rx_baud_add 1
+option_int rx_baud_subtract 7
+module uart_testbench "uart_testbench"
+
+#b Add test harness
+option_string "clock" "system_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset"
+option_string "filename" "rom.th"
+module se_test_harness "th"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+clock system_clock 0 1 1
+drive th.system_clock system_clock
+drive gip_simple.int_clock system_clock
+
+#b Add wires
+wire system_reset
+wire leds[8]
+wire txd rxd switches[8]
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+
+#b Wire up GIP simple
+assign switches 3
+drive gip_simple.switches switches
+drive gip_simple.int_reset system_reset
+drive gip_simple.rxd rxd
+drive txd gip_simple.txd
+drive leds gip_simple.leds
+
+#b Wire up UART testbench
+drive uart_testbench.uart_clock system_clock
+drive uart_testbench.uart_reset system_reset
+drive uart_testbench.rxd txd
+drive rxd uart_testbench.txd
+
+#b End
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

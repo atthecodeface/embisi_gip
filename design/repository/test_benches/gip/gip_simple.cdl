@@ -146,7 +146,9 @@ extern module apb_target_uart( clock apb_clock "Internal system clock",
     timing to rising clock apb_clock int_reset;
 
     timing to rising clock apb_clock apb_pselect, apb_penable, apb_paddr, apb_pwdata, apb_prnw;
+    timing comb input apb_pselect, apb_penable, apb_paddr, apb_prnw;
     timing from rising clock apb_clock apb_prdata;
+    timing comb output apb_prdata;
 
     timing to rising clock apb_clock cmd_fifo_toggle;
     timing from rising clock apb_clock cmd_fifo_empty, cmd_fifo_data;
@@ -167,6 +169,7 @@ extern module postbus_test_rom_contents( clock int_clock, input bit int_reset, i
  */
 module gip_simple( clock int_clock,
                    input bit int_reset,
+                   input bit[8] switches,
                    output bit[8] leds,
                    output bit txd,
                    input bit rxd
@@ -175,7 +178,7 @@ module gip_simple( clock int_clock,
     default clock int_clock;
     default reset int_reset;
 
-    net bit[8] leds;
+//    comb bit[8] leds;
     net bit txd;
 
     clocked bit[24] clock_divider=0;
@@ -217,11 +220,11 @@ module gip_simple( clock int_clock,
 
     net t_postbus_type postbus_tx_type;
     net t_postbus_data postbus_tx_data;
-    net t_postbus_ack postbus_tx_ack;
+//    net t_postbus_ack postbus_tx_ack;
 
-    net t_postbus_type postbus_rx_type;
-    net t_postbus_data postbus_rx_data;
-    net t_postbus_ack postbus_rx_ack;
+//    net t_postbus_type postbus_rx_type;
+//    net t_postbus_data postbus_rx_data;
+//    net t_postbus_ack postbus_rx_ack;
 
     comb bit rom_next_access;
     clocked bit rom_current_access = 0;
@@ -258,21 +261,72 @@ module gip_simple( clock int_clock,
     net bit[32] apb_pwdata;
     net bit apb_prnw;
     net bit[32] apb_prdata;
-    net bit apb_pwait;
 
+    comb bit[2] cfg_uart_speed;
+    comb bit[16] cfg_baud_divider;
+    clocked bit[16] baud_counter=0;
+    clocked bit toggle=0;
+    clocked bit[6] baud_divider = 0;
+    clocked bit toggle_2=0;
+
+    /*b Clock divider
+     */
     divider "Clock divider for LED":
         {
+            cfg_uart_speed = switches[2;0];
             clock_divider <= clock_divider+1;
             clock_enable = 0;
-            if (clock_divider[20;0]==0)
+            if ((clock_divider[8;12]==switches) && (clock_divider[12;0]==0))
 //            if (clock_divider[10;0]==0)
             {
+                toggle <= ~toggle;
                 clock_enable = 1;
+                clock_divider <= 0;
             }
-            rx_baud_enable = 1;
-            tx_baud_enable = 1;
+            leds = clock_divider[8;11];
+            leds[0] = toggle;
+            leds[1] = toggle_2;
+            leds[2] = txd;
+            leds[3] = rxd;
+            full_switch( cfg_uart_speed )
+                {
+                case 0: // 9600 - actually 1200 for 5MHz
+                {
+                    cfg_baud_divider = 260;
+                }
+                case 1: // 19200 - actually 2400 for 5MHz
+                {
+                    cfg_baud_divider = 130;
+                }
+                case 2: // 38400 - NOW 10Hz for 5MHz
+                {
+                    cfg_baud_divider = 65;
+                    cfg_baud_divider = 16h7a21; // 31250 = 5,000,000/160
+                }
+                case 3: // none - i.e. divide by 8
+                {
+                    cfg_baud_divider = 8;
+                }
+                }
+            baud_counter <= baud_counter+1;
+            if (baud_counter+1 == cfg_baud_divider)
+            {
+                baud_counter <= 0;
+            }
+            rx_baud_enable = (baud_counter==0);
+            tx_baud_enable = rx_baud_enable;
+            if (rx_baud_enable)
+            {
+                baud_divider <= baud_divider+1;
+                if (baud_divider==0)
+                {
+                    toggle_2 <= ~toggle_2;
+                }
+            }
         }
 
+    /*b GIP instances
+     */
     instances "Instances":
         {
             gip_core gip( gip_clock <- int_clock,
@@ -350,7 +404,7 @@ module gip_simple( clock int_clock,
                                    sram_read_data <= rom_current_access ? rom_read_data : sram_read_data );
 
             gip_periph_apb gip_apb( gip_clock <- int_clock,
-                                    gip_reset <- int_reset,
+                                    gip_reset <= int_reset,
 
                                     read <= periph_read,
                                     flush <= gipc_pipeline_flush,
@@ -377,13 +431,14 @@ module gip_simple( clock int_clock,
                                           rom_address <= sram_not_in_use_by_data ? isram_read_address[11;2] : dsram_address[11;2],
                                           rom_read_data => rom_read_data );
 
-            rom_next_access = sram_not_in_use_by_data ? !isram_read_address[31] : !dsram_address[31];
+            rom_next_access = sram_not_in_use_by_data ? !isram_read_address[16] : !dsram_address[16];
             rom_current_access <= rom_next_access;
 
             memory_s_sp_2048_x_4b8 shared_sram( sram_clock <- int_clock,
                                                 sram_address <= sram_not_in_use_by_data ? isram_read_address[11;2] : dsram_address[11;2],
-                                                sram_read_not_write <= rom_next_access && (sram_not_in_use_by_data ? isram_read : dsram_read_not_write),
-                                                sram_write_enable <= sram_write_byte_enables,
+                                                sram_read <= !rom_next_access && (sram_not_in_use_by_data ? isram_read : dsram_read_not_write),
+                                                sram_write <= !rom_next_access && (sram_not_in_use_by_data ? 0 : !dsram_read_not_write),
+                                                sram_byte_enables <= sram_write_byte_enables,
                                                 sram_write_data <= sram_write_data,
                                                 sram_read_data => sram_read_data );
 
@@ -417,7 +472,7 @@ module gip_simple( clock int_clock,
                           txd => txd,
                           txd_fc <= 0,
                           rx_baud_enable <= rx_baud_enable,
-                          rxd <= rxd,
+                          rxd <= rxd | switches[2],
                           rxd_fc => rxd_fc,
 
                           cmd_fifo_empty <= cmd_fifo_empty,

@@ -87,6 +87,11 @@ module gip_decode_arm( input bit[32] opcode,
     comb bit alu_gip_pass_p;
     comb bit alu_gip_set_rd;
 
+    comb t_gip_ins_subclass ld_st_gip_ins_subclass;
+    comb t_gip_ins_subclass ld_st_gip_ins_subclass_not_pre_not_post;
+    comb t_gip_ins_subclass ld_st_gip_ins_subclass_post;
+    comb t_gip_ins_subclass ldm_stm_gip_ins_subclass;
+
     comb bit branch_link;
 
     /*b Break out instruction and map to internal instructions
@@ -584,6 +589,48 @@ module gip_decode_arm( input bit[32] opcode,
         }
 
 
+    /*b Load/store decode
+     */
+    load_store_decode "ARM Load/store decode":
+        {
+            ld_st_gip_ins_subclass_not_pre_not_post = 0;
+            if (ld_st_byte)
+            {
+                ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_byte;
+            }
+            else
+            {
+                ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_word;
+            }
+            if (ld_st_up)
+            {
+                ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_up;
+            }
+            else
+            {
+                ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_down;
+            }
+            ld_st_gip_ins_subclass_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_postindex;
+            if (ld_st_pre)
+            {
+                ld_st_gip_ins_subclass = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_preindex;
+            }
+            else
+            {
+                ld_st_gip_ins_subclass = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_postindex;
+            }
+            ldm_stm_gip_ins_subclass = gip_ins_subclass_memory_word | gip_ins_subclass_memory_up;
+            if (ld_st_pre^ld_st_up)
+            {
+                ldm_stm_gip_ins_subclass = ldm_stm_gip_ins_subclass | gip_ins_subclass_memory_postindex;
+            }
+            else
+            {
+                ldm_stm_gip_ins_subclass = ldm_stm_gip_ins_subclass | gip_ins_subclass_memory_preindex;
+            }
+                                                      
+        }
+
     /*b Decode instruction
      */
     decode_instruction "Decode instruction":
@@ -745,9 +792,7 @@ module gip_decode_arm( input bit[32] opcode,
                         if (ld_st_pre && !ld_st_wb) // preindexed immediate/reg: ILDR[CC]A[F] #0 (Rn, #+/-imm or +/-Rm) -> Rd
                         {
                             inst.gip_ins_class = gip_ins_class_load;
-                            inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) |
-                                                      (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                      (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                            inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                             inst.a = 1;
                             inst.s_or_stack = (alu_rn==13);
                             inst.p_or_offset_is_shift = 0;
@@ -804,9 +849,7 @@ module gip_decode_arm( input bit[32] opcode,
                             default:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                 inst.gip_ins_cc = gip_ins_cc_cp;
                                 inst.a = 0;
                                 inst.s_or_stack = (alu_rn==13);
@@ -832,9 +875,7 @@ module gip_decode_arm( input bit[32] opcode,
                             case 0:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                 inst.a = 1;
                                 inst.s_or_stack = (alu_rn==13);
                                 inst.p_or_offset_is_shift = 0;
@@ -912,9 +953,7 @@ module gip_decode_arm( input bit[32] opcode,
                             default:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                 inst.gip_ins_cc = gip_ins_cc_cp;
                                 inst.a = 1;
                                 inst.s_or_stack = (alu_rn==13);
@@ -978,9 +1017,7 @@ module gip_decode_arm( input bit[32] opcode,
                             default:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                 inst.gip_ins_cc = gip_ins_cc_cp;
                                 inst.a = 0;
                                 inst.s_or_stack = (alu_rn==13);
@@ -1028,9 +1065,7 @@ module gip_decode_arm( input bit[32] opcode,
                             case 1:
                             {
                                 inst.gip_ins_class = gip_ins_class_load;
-                                inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                 inst.gip_ins_cc = gip_ins_cc_cp;
                                 inst.a = 1;
                                 inst.s_or_stack = (alu_rn==13);
@@ -1076,9 +1111,7 @@ module gip_decode_arm( input bit[32] opcode,
                     if ( ld_st_imm && (ld_st_offset==0) ) // no offset (hence no writeback, none needed); ISTR[CC] #0 (Rn) <- Rd
                     {
                         inst.gip_ins_class = gip_ins_class_store;
-                        inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                  gip_ins_subclass_memory_postindex |
-                                                  (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                        inst.gip_ins_subclass = ld_st_gip_ins_subclass_post; // Guaranteed postindex, so we don't care what the offset is
                         inst.a = 0;
                         inst.s_or_stack = (alu_rn==13);
                         inst.p_or_offset_is_shift = 0; // with postindex means we don't care what we add; we don't store accumulator anyway
@@ -1127,9 +1160,7 @@ module gip_decode_arm( input bit[32] opcode,
                                     default:
                                     {
                                         inst.gip_ins_class = gip_ins_class_store;
-                                        inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                                  (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                                  (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                        inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                         inst.gip_ins_cc = gip_ins_cc_cp;
                                         inst.a = 1;
                                         inst.s_or_stack = (alu_rn==13);
@@ -1182,9 +1213,7 @@ module gip_decode_arm( input bit[32] opcode,
                                     default:
                                     {
                                         inst.gip_ins_class = gip_ins_class_store;
-                                        inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                                  (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                                  (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                        inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                         inst.gip_ins_cc = gip_ins_cc_cp;
                                         inst.a = 1;
                                         inst.s_or_stack = (alu_rn==13);
@@ -1219,8 +1248,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 case 0:
                                 {
                                     inst.gip_ins_class = gip_ins_class_store;
-                                    inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                              (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                    inst.gip_ins_subclass = ld_st_gip_ins_subclass_post; // Guaranteed postindex, so we don't care what the offset is
                                     inst.a = 0;
                                     inst.s_or_stack = (alu_rn==13);
                                     inst.p_or_offset_is_shift = 0; // with postindex means we don't care what we add; we don't store accumulator anyway
@@ -1295,9 +1323,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 default:
                                 {
                                     inst.gip_ins_class = gip_ins_class_store;
-                                    inst.gip_ins_subclass = ( (ld_st_byte ? gip_ins_subclass_memory_byte : gip_ins_subclass_memory_word ) | 
-                                                              (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
-                                                              (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                    inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                     inst.gip_ins_cc = gip_ins_cc_cp;
                                     inst.a = 1;
                                     inst.s_or_stack = (alu_rn==13);
@@ -1363,9 +1389,7 @@ module gip_decode_arm( input bit[32] opcode,
                         else
                         {
                             inst.gip_ins_class = gip_ins_class_load;
-                            inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
-                                                      ((ld_st_pre^ld_st_up) ? gip_ins_subclass_memory_postindex : gip_ins_subclass_memory_preindex ) |
-                                                      gip_ins_subclass_memory_up );
+                            inst.gip_ins_subclass = ldm_stm_gip_ins_subclass;
                             inst.a = 1;
                             inst.s_or_stack = (alu_rn==13);
                             inst.p_or_offset_is_shift = 0;
@@ -1428,9 +1452,7 @@ module gip_decode_arm( input bit[32] opcode,
                     default:
                     {
                         inst.gip_ins_class = gip_ins_class_load;
-                        inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
-                                                  ((ld_st_pre^ld_st_up) ? gip_ins_subclass_memory_postindex : gip_ins_subclass_memory_preindex ) |
-                                                  gip_ins_subclass_memory_up );
+                        inst.gip_ins_subclass = ldm_stm_gip_ins_subclass;
                         inst.gip_ins_cc = gip_ins_cc_cp;
                         inst.a = 1;
                         inst.s_or_stack = (alu_rn==13);
@@ -1524,9 +1546,7 @@ module gip_decode_arm( input bit[32] opcode,
                         else
                         {
                             inst.gip_ins_class = gip_ins_class_store;
-                            inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
-                                                      ((ld_st_pre^ld_st_up) ? gip_ins_subclass_memory_postindex : gip_ins_subclass_memory_preindex ) |
-                                                      gip_ins_subclass_memory_up );
+                            inst.gip_ins_subclass = ldm_stm_gip_ins_subclass;
                             inst.a = 1;
                             inst.s_or_stack = (alu_rn==13);
                             inst.p_or_offset_is_shift = 0;
@@ -1563,9 +1583,7 @@ module gip_decode_arm( input bit[32] opcode,
                     else
                     {
                         inst.gip_ins_class = gip_ins_class_store;
-                        inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
-                                                  ((ld_st_pre^ld_st_up) ? gip_ins_subclass_memory_postindex : gip_ins_subclass_memory_preindex ) |
-                                                  gip_ins_subclass_memory_up );
+                        inst.gip_ins_subclass = ldm_stm_gip_ins_subclass;
                         inst.gip_ins_cc = gip_ins_cc_cp;
                         inst.a = 1;
                         inst.s_or_stack = (alu_rn==13);

@@ -12,7 +12,7 @@ printf "Simple GIP prefetch test"
 #b Reset
 reset "test_reset" 1
 
-wait 1
+wait 10
 
 # Drive this/none
 drive fetch_op 0

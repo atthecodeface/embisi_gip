@@ -21,7 +21,8 @@ typedef enum [3]
     rf_src_inst_pc,
     rf_src_alu_shf_result,
     rf_src_postbus,
-    rf_src_special
+    rf_src_special,
+    rf_src_periph
 } t_rf_src;
 
 /*a Module
@@ -204,6 +205,10 @@ module gip_rf( clock gip_clock,
                     {
                         read_port_1_src = rf_src_postbus;
                     }
+                    case gip_ins_r_type_periph:
+                    {
+                        read_port_1_src = rf_src_periph;
+                    }
                     }
             }
 
@@ -228,6 +233,7 @@ module gip_rf( clock gip_clock,
             case rf_src_mem_result:     { rfr_port_1 = rfw_mem_result; }
             case rf_src_postbus:        { rfr_port_1 = rfr_postbus_read_data; }
             case rf_src_special:        { rfr_port_1 = rfr_special_read_data; }
+            case rf_src_periph:         { rfr_port_1 = rfr_periph_read_data; }
             }
         }
 
@@ -379,6 +385,12 @@ module gip_rf( clock gip_clock,
                     rfr_periph_read = 1;
                 }
                 }
+            if (!rfr_inst_in.valid)
+            {
+                rfr_postbus_read = 0;
+                rfr_special_read = 0;
+                rfr_periph_read = 0;
+            }
             rfw_postbus_write = 0;
             rfw_special_write = 0;
             rfw_periph_write = 0;

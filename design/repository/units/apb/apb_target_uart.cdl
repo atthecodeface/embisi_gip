@@ -48,7 +48,8 @@ We need cmd_fifo_data valid within a few clock ticks of toggle.
     clocked bit reading_from_cmd_fifo=0;
     clocked bit[32] cmd_fifo_data=0;
     net bit[32] cmd_fifo_read_data;
-    net bit cmd_fifo_empty;
+    clocked bit cmd_fifo_empty = 1;
+    net bit cmd_fifo_ram_empty;
     net bit cmd_fifo_full;
 
     /*b Signals for status FIFO
@@ -85,22 +86,26 @@ We need cmd_fifo_data valid within a few clock ticks of toggle.
             apb_prdata = status_fifo_read_data;
             if (apb_pselect && apb_prnw)
             {
-                if (!apb_penable) // First cycle - read RAM in next cycle
+                if (apb_paddr[0]) // FIFO
                 {
-                    if (!apb_paddr[0]) // FIFO
-                    {
-                        read_from_status_fifo = 1;
-                    }
+                    apb_prdata = 0; // Status
+                    apb_prdata[0] = status_fifo_empty;
+                    apb_prdata[1] = status_fifo_full;
+                    apb_prdata[2] = cmd_fifo_empty; // Not a useful indication
+                    apb_prdata[3] = cmd_fifo_full;
                 }
                 else
                 {
-                    if (!apb_paddr[0]) // FIFO
+                    if (!apb_penable) // First cycle - read RAM in next cycle
                     {
-                        apb_prdata = status_fifo_read_data;
+                        read_from_status_fifo = 1;
                     }
                     else
                     {
-                        apb_prdata = 0; // Status
+                        if (!apb_paddr[0]) // FIFO
+                        {
+                            apb_prdata = status_fifo_read_data;
+                        }
                     }
                 }
             }
@@ -134,18 +139,23 @@ We need cmd_fifo_data valid within a few clock ticks of toggle.
             cmd_fifo_toggle_last <= cmd_fifo_toggle;
             if (cmd_fifo_toggle != cmd_fifo_toggle_last)
             {
+                cmd_fifo_empty <= 1;
+            }
+            if (cmd_fifo_empty && !cmd_fifo_ram_empty && !reading_from_cmd_fifo)
+            {
                 read_from_cmd_fifo = 1;
             }
             reading_from_cmd_fifo <= read_from_cmd_fifo;
             if (reading_from_cmd_fifo)
             {
                 cmd_fifo_data <= cmd_fifo_read_data;
+                cmd_fifo_empty <= 0;
             }
             apb_uart_sync_fifo cmd_fifo( int_clock <- apb_clock,
                                             int_reset <= int_reset,
                                             write <= write_to_cmd_fifo,
                                             read <= read_from_cmd_fifo,
-                                            empty_flag => cmd_fifo_empty,
+                                            empty_flag => cmd_fifo_ram_empty,
                                             full_flag => cmd_fifo_full,
                                             read_data => cmd_fifo_read_data,
                                             write_data <= apb_pwdata );

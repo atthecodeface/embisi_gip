@@ -3,7 +3,7 @@
 
 /*a To do
   Add flow control, and its config
-  Add status on tx completion
+  Add framing error in stop bit logic
  */
 
 /*a Includes
@@ -111,7 +111,7 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
 
     /*b Rx data fsm state
      */
-    clocked bit[3] rxd_sync = 0 "Synchronizer for RxD input";
+    clocked bit[3] rxd_sync = -1 "Synchronizer for RxD input; reset to all ones as zero is the start bit";
     comb bit rx_data_bit;
     clocked t_rx_data_state rx_data_state = rx_data_state_idle;
     clocked bit[9] rx_sr = 0;
@@ -162,6 +162,20 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
             tx_cfg_one_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==1);
             tx_cfg_one_half_stop_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==2);
             tx_cfg_two_stop_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==3);
+
+
+            tx_cfg_one_start_bit = 1;//GJS
+            tx_cfg_two_start_bits = 0;//GJS
+            tx_cfg_five_data_bits = 0;//GJS
+            tx_cfg_six_data_bits = 0;//GJS
+            tx_cfg_seven_data_bits = 0;//GJS
+            tx_cfg_eight_data_bits = 1;//GJS
+            tx_cfg_nine_data_bits = 0;//GJS
+            tx_cfg_half_stop_bit = 0;//GJS
+            tx_cfg_one_stop_bit = 1;//GJS
+            tx_cfg_one_half_stop_bits = 0;//GJS
+            tx_cfg_two_stop_bits = 0;//GJS
+
 
             rx_cfg_one_start_bit = (cmd_fifo_data[1;io_uart_cmd_bit_rx_start_bits]==0);
             rx_cfg_two_start_bits = (cmd_fifo_data[1;io_uart_cmd_bit_rx_start_bits]==1);
@@ -254,6 +268,7 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
                     {
                         rx_bit <= 0;
                         rx_data_state <= rx_data_state_stop_bits;
+                        rx_status_pend = 1; // Write the status now - a framing error in the stop bit should show up elsewhere (or we should add some more functionality for this); this eliminates issues with pending status not written before next start bit
                     }
                     else
                     {
@@ -280,7 +295,6 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
                                  (rx_cfg_two_stop_bits      && (rx_bit==3)) )
                             {
                                 rx_data_state <= rx_data_state_done;
-                                rx_status_pend = 1;
                             }
                         }
                         if ((rx_data_bit!=1) && (rx_count==3))
@@ -317,6 +331,8 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
                     {
                         tx_data_state <= tx_data_state_start_bit;
                         tx_sr <= cmd_fifo_data[9;io_uart_cmd_bit_tx_byte_start];
+// 11:10pm Weds disabling this, then reinstating at 11:30
+// 10:30am Thurs, disabling again                        tx_sr <= 9h2a;//GJS
                         tx_count <= 0;
                         tx_bit <= 0;
                     }
@@ -362,8 +378,8 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
                                 tx_pending <= 0;
                             }
                         }
-                        txd = tx_sr[0];
                     }
+                    txd = tx_sr[0];
                 }
                 case tx_data_state_stop_bit:
                 {
@@ -398,6 +414,7 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
     cmd_state_fsm "Command handling state machine":
         {
             tx_pend_start = 0;
+// 11pm Weds disabling this            tx_pend_start = 1; //GJS
             full_switch (cmd_state)
                 {
                 case cmd_state_idle: // tx_pending must be zero for us to be here

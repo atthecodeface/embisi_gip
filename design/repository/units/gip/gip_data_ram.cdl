@@ -69,6 +69,7 @@ module gip_data_ram( clock gip_clock,
     clocked bit[32] sram_address = 0;
     clocked bit[32] sram_write_data = 0;
     clocked t_sram_data_op sram_data_op = sram_data_op_word;
+    clocked t_sram_data_op last_sram_data_op = sram_data_op_word;
 
     /*b SRAM interface code
      */
@@ -130,7 +131,7 @@ module gip_data_ram( clock gip_clock,
     gip_interface "GIP interface code":
         {
             mem_read_data = 0;
-            full_switch (sram_data_op)
+            full_switch (last_sram_data_op)
                 {
                 case sram_data_op_word:
                 {
@@ -153,6 +154,7 @@ module gip_data_ram( clock gip_clock,
                     mem_read_data[8;0] = sram_read_data[8;24];
                 }
                 }
+            last_sram_data_op <= sram_data_op;
             mem_read_data_valid <= sram_read_not_write;
         }
 }

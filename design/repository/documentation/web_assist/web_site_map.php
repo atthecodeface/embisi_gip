@@ -20,6 +20,7 @@ site_map( "arm_emulation", "arm_emulation", "ARM emulation" );
 site_push( "arm_emulation/" );
 site_map( "accumulator", "accumulator.php", "Accumulator" );
 site_map( "prefetch", "prefetch.php", "Prefetch" );
+site_map( "flushing", "flushing.php", "Pipeline flushing" );
 site_map( "branch", "branch.php", "Branch" );
 site_map( "data_processing", "data_processing.php", "Data procesing" );
 site_map( "single_data_transfer", "single_data_transfer.php", "Single data transfer" );

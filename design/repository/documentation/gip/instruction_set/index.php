@@ -502,6 +502,8 @@ Note that there are no flow control instructions; in fact, there is no specific 
 
 </table>
 
+Note that 'HS' is not used as a synonym for 'CS'; this would lead to ambiguity in some halfword load instructions! The only recognized conditions for GIP code are those given above.
+
 <?php page_section( "options", "Options" ); ?>
 
 <table>
@@ -556,6 +558,10 @@ Note that there are no flow control instructions; in fact, there is no specific 
 <th>Rd</th>
 <th>A</th>
 <th>F</th>
+</tr>
+
+<tr>
+<th colspan=8>Arithmetic</th>
 </tr>
 
 <tr>
@@ -634,6 +640,10 @@ IRSC[CC][S][A][F] Rn, Rm/Imm -> Rd
 <td>Rd</td>
 <td>A</td>
 <td>F</td>
+</tr>
+
+<tr>
+<th colspan=8>Logical</th>
 </tr>
 
 <tr>
@@ -725,6 +735,10 @@ IMVN[CC][S][P][A][F] Rm/Imm -> Rd
 <td>Rd</td>
 <td>A</td>
 <td>F</td>
+</tr>
+
+<tr>
+<th colspan=8>Immediate comparison</th>
 </tr>
 
 <tr>
@@ -832,6 +846,10 @@ IORN[CC][S][P][A][F] Rn, Rm/Imm -> {cond}
 </tr>
 
 <tr>
+<th colspan=8>Shift</th>
+</tr>
+
+<tr>
 <th align=left>
 ILSL[CC][S][F] Rn, Rm/Imm -> Rd
 </th>
@@ -897,6 +915,10 @@ IROR33[CC][S][F] Rn -> Rd
 </tr>
 
 <tr>
+<th colspan=8>Coprocessor</th>
+</tr>
+
+<tr>
 <th align=left>
 ICPRD[CC] Rm/Imm -> Rd
 </th>
@@ -936,15 +958,32 @@ ICPCMD[CC] Rm/Imm
 </tr>
 
 <tr>
+<th colspan=8>Word loads</th>
+</tr>
+
+<tr>
 <th align=left>
-ILDR[CC][A][S][F] #k (Rn) -> Rd
+ILDR[CC][S][F] #k (Rn) -> Rd
 </th>
 <td>Load</td>
 <td>Post<br>Up<br>Word</td>
 <td>0s</td>
 <td>CC</td>
 <td>Rd</td>
-<td>A</td>
+<td>0</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+ILDR[CC]A[S][F] #k (Rn), Rm/Imm -> Rd
+</th>
+<td>Load</td>
+<td>Post<br>Up<br>Word</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>1</td>
 <td>F</td>
 </tr>
 
@@ -963,6 +1002,19 @@ ILDR[CC][A][S][F] #k (Rn, Rm/Imm) -> Rd
 
 <tr>
 <th align=left>
+ILDR[CC]A[S][F] #k (Rn), -Rm/Imm -> Rd
+</th>
+<td>Load</td>
+<td>Post<br>Down<br>Word</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>1</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
 ILDR[CC][A][S][F] #k (Rn, -Rm/Imm) -> Rd
 </th>
 <td>Load</td>
@@ -974,42 +1026,34 @@ ILDR[CC][A][S][F] #k (Rn, -Rm/Imm) -> Rd
 <td>F</td>
 </tr>
 
+
 <tr>
-<th align=left>
-ILDR[CC][A][S][F] #k (Rn), Rm/Imm -> Rd
-</th>
-<td>Load</td>
-<td>Pre<br>Up<br>Word</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
+<th colspan=8>Byte loads</th>
 </tr>
 
 <tr>
 <th align=left>
-ILDR[CC][A][S][F] #k (Rn), -Rm/Imm -> Rd
-</th>
-<td>Load</td>
-<td>Pre<br>Down<br>Word</td>
-<td>1s</td>
-<td>CC</td>
-<td>Rd</td>
-<td>A</td>
-<td>F</td>
-</tr>
-
-<tr>
-<th align=left>
-ILDR[CC]B[A][S][F] #k (Rn) -> Rd
+ILDR[CC]B[S][F] #k (Rn) -> Rd
 </th>
 <td>Load</td>
 <td>Post<br>Up<br>Byte</td>
 <td>0s</td>
 <td>CC</td>
 <td>Rd</td>
-<td>A</td>
+<td>0</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+ILDR[CC]BA[S][F] #k (Rn), Rm/Imm -> Rd
+</th>
+<td>Load</td>
+<td>Post<br>Up<br>Byte</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>1</td>
 <td>F</td>
 </tr>
 
@@ -1028,6 +1072,19 @@ ILDR[CC]B[A][S][F] #k (Rn, Rm/Imm) -> Rd
 
 <tr>
 <th align=left>
+ILDR[CC]BA[S][F] #k (Rn), -Rm/Imm -> Rd
+</th>
+<td>Load</td>
+<td>Post<br>Down<br>Byte</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>1</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
 ILDR[CC]B[A][S][F] #k (Rn, -Rm/Imm) -> Rd
 </th>
 <td>Load</td>
@@ -1039,16 +1096,34 @@ ILDR[CC]B[A][S][F] #k (Rn, -Rm/Imm) -> Rd
 <td>F</td>
 </tr>
 
+
+<tr>
+<th colspan=8>Halfword loads</th>
+</tr>
+
 <tr>
 <th align=left>
-ILDR[CC]H[A][S][F] #k (Rn) -> Rd
+ILDR[CC]H[S][F] #k (Rn) -> Rd
 </th>
 <td>Load</td>
 <td>Post<br>Up<br>Half</td>
 <td>0s</td>
 <td>CC</td>
 <td>Rd</td>
-<td>A</td>
+<td>0</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
+ILDR[CC]HA[S][F] #k (Rn), Rm/Imm -> Rd
+</th>
+<td>Load</td>
+<td>Post<br>Up<br>Half</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>1</td>
 <td>F</td>
 </tr>
 
@@ -1067,6 +1142,19 @@ ILDR[CC]H[A][S][F] #k (Rn, Rm/Imm) -> Rd
 
 <tr>
 <th align=left>
+ILDR[CC]HA[S][F] #k (Rn), -Rm/Imm -> Rd
+</th>
+<td>Load</td>
+<td>Post<br>Down<br>Half</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>1</td>
+<td>F</td>
+</tr>
+
+<tr>
+<th align=left>
 ILDR[CC]H[A][S][F] #k (Rn, -Rm/Imm) -> Rd
 </th>
 <td>Load</td>
@@ -1078,9 +1166,27 @@ ILDR[CC]H[A][S][F] #k (Rn, -Rm/Imm) -> Rd
 <td>F</td>
 </tr>
 
+
+<tr>
+<th colspan=8>Word stores</th>
+</tr>
+
 <tr>
 <th align=left>
-ISTR[CC][A][S] #k (Rn) <- Rm/Imm [-> Rd]
+ISTR[CC][S] #k (Rn) <- Rm/Imm
+</th>
+<td>Store</td>
+<td>Post<br>Up<br>Word</td>
+<td>0s</td>
+<td>CC</td>
+<td>000000</td>
+<td>0</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC][A][S] #k (Rn), #+4 <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Post<br>Up<br>Word</td>
@@ -1093,7 +1199,7 @@ ISTR[CC][A][S] #k (Rn) <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC][A][S] #k (Rn), #+4 <- Rm/Imm [-> Rd]
+ISTR[CC][A][S] #k (Rn, #+4) <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Pre<br>Up<br>Word</td>
@@ -1106,7 +1212,20 @@ ISTR[CC][A][S] #k (Rn), #+4 <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC][A][S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
+ISTR[CC]A[S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
+<td>Post<br>Up<br>Word</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC][A][S] #k (Rn, #+SHF) <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Pre<br>Up<br>Word</td>
@@ -1122,6 +1241,19 @@ ISTR[CC][A][S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
 ISTR[CC][A][S] #k (Rn), #-4 <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
+<td>Post<br>Down<br>Word</td>
+<td>0s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC][A][S] #k (Rn, #-4) <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
 <td>Pre<br>Down<br>Word</td>
 <td>0s</td>
 <td>CC</td>
@@ -1135,6 +1267,19 @@ ISTR[CC][A][S] #k (Rn), #-4 <- Rm/Imm [-> Rd]
 ISTR[CC][A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
+<td>Post<br>Down<br>Word</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC][A][S] #k (Rn, #-SHF) <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
 <td>Pre<br>Down<br>Word</td>
 <td>1s</td>
 <td>CC</td>
@@ -1145,8 +1290,25 @@ ISTR[CC][A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
 
 
 <tr>
+<th colspan=8>Byte stores</th>
+</tr>
+
+<tr>
 <th align=left>
-ISTR[CC]B[A][S] #k (Rn) <- Rm/Imm [-> Rd]
+ISTR[CC]B[S] #k (Rn) <- Rm/Imm
+</th>
+<td>Store</td>
+<td>Post<br>Up<br>Byte</td>
+<td>0s</td>
+<td>CC</td>
+<td>000000</td>
+<td>0</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC]B[A][S] #k (Rn), #+1 <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Post<br>Up<br>Byte</td>
@@ -1159,7 +1321,7 @@ ISTR[CC]B[A][S] #k (Rn) <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC]B[A][S] #k (Rn), #+4 <- Rm/Imm [-> Rd]
+ISTR[CC]B[A][S] #k (Rn, #+1) <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Pre<br>Up<br>Byte</td>
@@ -1172,7 +1334,20 @@ ISTR[CC]B[A][S] #k (Rn), #+4 <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC]B[A][S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
+ISTR[CC]BA[S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
+<td>Post<br>Up<br>Byte</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC]B[A][S] #k (Rn, #+SHF) <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Pre<br>Up<br>Byte</td>
@@ -1185,7 +1360,20 @@ ISTR[CC]B[A][S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC]B[A][S] #k (Rn), #-4 <- Rm/Imm [-> Rd]
+ISTR[CC]B[A][S] #k (Rn), #-1 <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
+<td>Post<br>Down<br>Byte</td>
+<td>0s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC]B[A][S] #k (Rn, #-1) <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Pre<br>Down<br>Byte</td>
@@ -1201,7 +1389,7 @@ ISTR[CC]B[A][S] #k (Rn), #-4 <- Rm/Imm [-> Rd]
 ISTR[CC]B[A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
-<td>Pre<br>Down<br>Byte</td>
+<td>Post<br>Down<br>Byte</td>
 <td>1s</td>
 <td>CC</td>
 <td>Rd</td>
@@ -1211,7 +1399,38 @@ ISTR[CC]B[A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC]H[A][S] #k (Rn) <- Rm/Imm [-> Rd]
+ISTR[CC]B[A][S] #k (Rn, #-SHF) <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
+<td>Pre<br>Down<br>Byte</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+
+<tr>
+<th colspan=8>Halfword stores</th>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC]H[S] #k (Rn) <- Rm/Imm
+</th>
+<td>Store</td>
+<td>Post<br>Up<br>Half</td>
+<td>0s</td>
+<td>CC</td>
+<td>000000</td>
+<td>0</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC]H[A][S] #k (Rn), #+2 <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Post<br>Up<br>Half</td>
@@ -1224,7 +1443,7 @@ ISTR[CC]H[A][S] #k (Rn) <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC]H[A][S] #k (Rn), #+4 <- Rm/Imm [-> Rd]
+ISTR[CC]H[A][S] #k (Rn, #+2) <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Pre<br>Up<br>Half</td>
@@ -1237,7 +1456,20 @@ ISTR[CC]H[A][S] #k (Rn), #+4 <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC]H[A][S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
+ISTR[CC]HA[S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
+<td>Post<br>Up<br>Half</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC]H[A][S] #k (Rn, #+SHF) <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Pre<br>Up<br>Half</td>
@@ -1250,7 +1482,20 @@ ISTR[CC]H[A][S] #k (Rn), #+SHF <- Rm/Imm [-> Rd]
 
 <tr>
 <th align=left>
-ISTR[CC]H[A][S] #k (Rn), #-4 <- Rm/Imm [-> Rd]
+ISTR[CC]H[A][S] #k (Rn), #-2 <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
+<td>Post<br>Down<br>Half</td>
+<td>0s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC]H[A][S] #k (Rn, #-2) <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
 <td>Pre<br>Down<br>Half</td>
@@ -1266,6 +1511,19 @@ ISTR[CC]H[A][S] #k (Rn), #-4 <- Rm/Imm [-> Rd]
 ISTR[CC]H[A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
 </th>
 <td>Store</td>
+<td>Post<br>Down<br>Half</td>
+<td>1s</td>
+<td>CC</td>
+<td>Rd</td>
+<td>A</td>
+<td>0</td>
+</tr>
+
+<tr>
+<th align=left>
+ISTR[CC]H[A][S] #k (Rn, #-SHF) <- Rm/Imm [-> Rd]
+</th>
+<td>Store</td>
 <td>Pre<br>Down<br>Half</td>
 <td>1s</td>
 <td>CC</td>
@@ -1273,6 +1531,7 @@ ISTR[CC]H[A][S] #k (Rn), #-SHF <- Rm/Imm [-> Rd]
 <td>A</td>
 <td>0</td>
 </tr>
+
 
 </table>
 

@@ -1,99 +1,79 @@
-/*a Memory stage methods
+/*a Includes
  */
-/*f c_gip_full::mem_comb
+include "gip.h"
+include "gip_internal.h"
+
+/*a Types
  */
-void c_gip_full::mem_comb( t_gip_pipeline_results *results )
+
+/*a Module
+ */
+module gip_memory( clock gip_clock,
+                   input bit gip_reset,
+
+                   input t_gip_ins_r alu_mem_rd,
+                   input bit mem_alu_busy,
+
+                   output t_gip_ins_r mem_1_rd,
+                   output t_gip_ins_r mem_2_rd,
+                   input bit mem_read_data_valid
+    )
+"
+    The GIP core memory stage is basically a simple pipeline; it is not responsible for delivering data, just tracking the external memory interface
+
+    Basically it takes memory operation, and pushes them in to its pipe.
+
+    It moves items down the pipeline, flowing them out when the external memory stage indicates the data is ready.
+"
+
 {
-    /*b No need to do anything here as the actual combinatorials derive from the previous clock edge - see the clock funcion for that operation
+
+    /*b Clock and reset
      */
-}
+    default clock gip_clock;
+    default reset gip_reset;
 
-/*f c_gip_full::mem_preclock
- */
-void c_gip_full::mem_preclock( void )
-{
-
-    /*b Copy current to next
+    /*b Pipeline
      */
-    memcpy( &pd->mem.next_state, &pd->mem.state, sizeof(pd->mem.state) );
+    clocked t_gip_ins_r mem_1_rd = {type=gip_ins_r_type_none, r=0};
+    clocked t_gip_ins_r mem_2_rd = {type=gip_ins_r_type_none, r=0};
 
-    /*b Record input state
+    /*b Combinatorials
      */
-    pd->mem.next_state.mem_rd = pd->alu.mem_rd;
-    pd->mem.next_state.gip_mem_op = pd->alu.gip_mem_op;
-    pd->mem.next_state.mem_data_in = pd->alu.mem_data_in;
-    pd->mem.next_state.mem_address = pd->alu.mem_address;
+    comb bit new_mem_rd_for_pipeline;
+    comb bit mem2_will_take_mem1 "This is asserted if mem2 is none, or if mem2 mem_read_data_valid is asserted";
 
-}
-
-/*f c_gip_full::mem_clock
- */
-void c_gip_full::mem_clock( void )
-{
-    int offset_in_word;
-    unsigned int data;
-    unsigned int address;
-
-    /*b Debug
+    /*b Pipeline logic
      */
-    if (pd->verbose)
-    {
-        printf( "\t**:MEM OP %d at %08x with %08x Rd %d/%02x\n",
-                pd->mem.state.gip_mem_op,
-                pd->mem.state.mem_address,
-                pd->mem.state.mem_data_in,
-                pd->mem.state.mem_rd.type,
-                pd->mem.state.mem_rd.data.r );
-    }
+    pipeline "Pipeline the memory RDs":
+        {
+            mem2_will_take_mem1 = 0;
+            if (mem_2_rd.type == gip_ins_r_type_none) // If the slot is empty, we will move up mem1
+            {
+                mem2_will_take_mem1 = 1;
+            }
+            if (mem_read_data_valid) // In this case we are returning data for the mem2 register
+            {
+                mem2_will_take_mem1 = 1;
+            }
+            
+            if ( (alu_mem_rd.type != gip_ins_r_type_none) &&
+                 !mem_alu_busy ) // If a read transaction is being taken by the memory then its register must be recorded
+            {
+                mem_1_rd <= alu_mem_rd;
+            }
+            else
+            {
+                if (mem2_will_take_mem1)
+                {
+                    mem_1_rd.type <= gip_ins_r_type_none;
+                }
+            }
 
-    /*b Perform a memory write if required
-     */
-    address = pd->mem.state.mem_address;
-    switch (pd->mem.state.gip_mem_op)
-    {
-    case gip_mem_op_store_word:
-        pd->memory->write_memory( address, pd->mem.state.mem_data_in, 0xf );
-        break;
-    case gip_mem_op_store_half:
-        offset_in_word = address&0x2;
-        address &= ~2;
-        pd->memory->write_memory( address, pd->mem.state.mem_data_in<<(8*offset_in_word), 3<<offset_in_word );
-        break;
-    case gip_mem_op_store_byte:
-        offset_in_word = address&0x3;
-        address &= ~3;
-        pd->memory->write_memory( address, pd->mem.state.mem_data_in<<(8*offset_in_word), 1<<offset_in_word );
-        break;
-    default:
-        break;
-    }
-
-    /*b Copy next to current
-     */
-    memcpy( &pd->mem.state, &pd->mem.next_state, sizeof(pd->mem.state) );
-
-    /*b Perform a memory read if required
-     */
-    address = pd->mem.state.mem_address;
-    switch (pd->mem.state.gip_mem_op)
-    {
-    case gip_mem_op_load_word:
-        pd->mem.mem_result = pd->memory->read_memory( address );
-        break;
-    case gip_mem_op_load_half:
-        data = pd->memory->read_memory( address );
-        offset_in_word = address&0x2;
-        data >>= 8*offset_in_word;
-        pd->mem.mem_result = data;
-        break;
-    case gip_mem_op_load_byte:
-        data = pd->memory->read_memory( address );
-        offset_in_word = address&0x3;
-        data >>= 8*offset_in_word;
-        pd->mem.mem_result = data;
-        break;
-    default:
-        break;
-    }
+            if (mem2_will_take_mem1)
+            {
+                mem_2_rd <= mem_1_rd;
+            }
+        }
 }
 

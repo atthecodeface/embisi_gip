@@ -77,8 +77,8 @@ module gip_decode_native( input bit[16] opcode,
             ins_subclass = opcode[4;8]; // instruction subclass for ALU, cond instructions
             ins_subclass_shift = opcode[2;10]; // instruction subclass for shift instructions
             full_rd = opcode[8;4]; // full extension of rd for ext instructions
-            rm = opcode[4;0]; // rm for nonextended instructions (ALU, cond) and extrnm, extrdrm
-            rd = opcode[4;4]; // rd for nonextended instructions (ALU, cond)
+            rm = opcode[4;0]; // rm for nonextended instructions (ALU, cond) and extrnm, extrdrm; data register for loads and stores
+            rd = opcode[4;4]; // rd for nonextended instructions (ALU, cond); address for loads and stores
             rn = opcode[4;8]; // rn for extrnm (nonextended instructions are 2-register)
             imm = opcode[4;0];// 4 bit immediate for not extimm instructions (ALU, cond)
             cond = opcode[4;8]; // 4 bit cond for extcmd
@@ -122,8 +122,8 @@ module gip_decode_native( input bit[16] opcode,
             native_mapped_rn.type = gip_ins_r_type_register;
             native_mapped_rn.r[4] = 0;
             native_mapped_rn.r[4;0] = rd;
-            if (rd==15) { native_mapped_rd = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
-            if (extended_rn.type!=gip_ins_r_type_no_override) { native_mapped_rd = extended_rn; }
+            if (rd==15) { native_mapped_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
+            if (extended_rn.type!=gip_ins_r_type_no_override) { native_mapped_rn = extended_rn; }
 
             /*b Map rm to instruction rm; pc if that is 15; but if extended, to full given extension
              */
@@ -180,7 +180,7 @@ module gip_decode_native( input bit[16] opcode,
             inst.f = 0;
             inst.d = 0;
             inst.gip_ins_rm = native_mapped_rm;
-            inst.gip_ins_rn = native_mapped_rd;
+            inst.gip_ins_rn = native_mapped_rn;
             inst.rm_is_imm = 0;
             inst.immediate = native_mapped_immediate;
             inst.gip_ins_rd = native_mapped_rd;
@@ -750,14 +750,28 @@ module gip_decode_native( input bit[16] opcode,
                     {
                         /*b Decode basic defaults for a load - ldr rd, address_mode(rn)
                          */
+                        inst.rm_is_imm = 0;
+                        // rm (offset to address to store) defaults to native_mapped_rm; we need the fully extended version if it is used as the instruction supplies no rm bits
+                        // rn (address to store) defaults to native_mapped_rn
+                        // rd (data to store) defaults to native_mapped_rd; this is only correct if native_mapped_rd picks up the (normally) 'rm' bits of the instruction opcode
+                        // We actually have a choice here
+                        //  data to read into could be native_mapped_rm
+                        //       and offset could be extended rd
+                        // or
+                        //  data to read into could be native_mapped_rd, but change the source of rd bit in the instruction from 4;4 to 4;0
+                        //       and offset could be native_mapped_rm_full_extend
+                        // we actually use the former
+                        // SO
+                        //  gip_ins_rd = native_mapped_rm
+                        //  gip_ins_rm = native_mapped_rd IF extended and if an index is required
                         if (!extended_cmd.extended)
                         {
                             inst.a = 1;
                             inst.s_or_stack = 0;
                         }
                         inst.k = 0;
-                        inst.gip_ins_rm = native_mapped_rm_full_extend; // full_extend, as the instruction does not give any bits of rm
-                        inst.immediate = native_mapped_immediate;
+                        inst.gip_ins_rd = native_mapped_rm; 
+                        inst.gip_ins_rm = native_mapped_rd;
                         inst.gip_ins_class = gip_ins_class_load;
                         /*b Determine subclass for a load, and immediate value
                          */
@@ -820,34 +834,53 @@ module gip_decode_native( input bit[16] opcode,
                             inst.gip_ins_rm.type = gip_ins_r_type_none;
                         }
                         }
+                        if (extended_immediate!=0)
+                        {
+                            inst.immediate[28;0] = extended_immediate;
+                            inst.immediate[31] = extended_immediate[27];
+                            inst.immediate[30] = extended_immediate[27];
+                            inst.immediate[29] = extended_immediate[27];
+                            inst.immediate[28] = extended_immediate[27];
+                        }
+                        if (extended_rd.type!=gip_ins_r_type_no_override)
+                        {
+                            inst.rm_is_imm = 0;
+                        }
                     }
-                    else // Store - code is STR rd, address_mode(rn)
+                    else // Store - code is STR rm, address_mode(rd)
                     {
-                        /*b Decode mode and operation, rd
+                        /*b Decode mode and operation, rm
                          */
+                        inst.rm_is_imm = 0;
+                        // rm (data to store) defaults to native_mapped_rm
+                        // rn (address to store) defaults to native_mapped_rn
                         if (!extended_cmd.extended)
                         {
                             inst.a = 1;
                             inst.s_or_stack = 0;
                             inst.k = 0;
                         }
+                        inst.gip_ins_class = gip_ins_class_store;
 
-                        full_switch (ins_subclass)
+                        full_switch (ins_subclass_ldst)
                         {
                         case gip_native_ins_subclass_memory_word_noindex: // Postindex Up Word, no setting accumulator ; should not extend with rd set to something!
                         {
                             inst.a = 0;
                             inst.gip_ins_subclass = gip_ins_subclass_memory_word | gip_ins_subclass_memory_up | gip_ins_subclass_memory_postindex;
+                            inst.gip_ins_rd.type = gip_ins_r_type_none; // No writeback
                         }
                         case gip_native_ins_subclass_memory_half_noindex: // Postindex Up Half, no setting accumulator ; should not extend with rd set to something!
                         {
                             inst.a = 0;
                             inst.gip_ins_subclass = gip_ins_subclass_memory_half | gip_ins_subclass_memory_up | gip_ins_subclass_memory_postindex;
+                            inst.gip_ins_rd.type = gip_ins_r_type_none; // No writeback
                         }
                         case gip_native_ins_subclass_memory_byte_noindex: // Postindex Up Byte, no setting accumulator ; should not extend with rd set to something!
                         {
                             inst.a = 0;
                             inst.gip_ins_subclass = gip_ins_subclass_memory_byte | gip_ins_subclass_memory_up | gip_ins_subclass_memory_postindex;
+                            inst.gip_ins_rd.type = gip_ins_r_type_none; // No writeback
                         }
                         case gip_native_ins_subclass_memory_word_preindex_up: // Preindex Up Word with writeback
                         {
@@ -861,11 +894,13 @@ module gip_decode_native( input bit[16] opcode,
                         {
                             inst.gip_ins_subclass = gip_ins_subclass_memory_word | gip_ins_subclass_memory_up | gip_ins_subclass_memory_preindex;
                             inst.p_or_offset_is_shift = 1;
+                            inst.gip_ins_rd.type = gip_ins_r_type_none; // No writeback
                         }
                         case gip_native_ins_subclass_memory_word_preindex_down_shf: // Preindex Down Word by SHF
                         {
                             inst.gip_ins_subclass = gip_ins_subclass_memory_word | gip_ins_subclass_memory_down | gip_ins_subclass_memory_preindex;
                             inst.p_or_offset_is_shift = 1;
+                            inst.gip_ins_rd.type = gip_ins_r_type_none; // No writeback
                         }
                         case gip_native_ins_subclass_memory_word_postindex_up: // Postindex Up Word
                         {
@@ -884,7 +919,6 @@ module gip_decode_native( input bit[16] opcode,
                             }
                         }
                         }
-                        inst.rm_is_imm = 0;
                     }
                     /*b Tidy up - common stuff for ldr and str
                      */

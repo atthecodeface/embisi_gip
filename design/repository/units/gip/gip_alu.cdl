@@ -1,3 +1,8 @@
+/*a To do
+  Block on memory busy, memory transaction in progress
+  Block on rfw busy, rfw required
+ */
+
 /*a Includes
  */
 include "gip.h"
@@ -31,6 +36,7 @@ module gip_alu( clock gip_clock,
                 output t_gip_instruction_rf alu_inst,
 
                 input bit rfw_accepting_alu_rd,
+                input bit mem_alu_busy,
                 input bit alu_accepting_rfr_instruction,
                 output bit alu_accepting_rfr_instruction_always,
                 output bit alu_accepting_rfr_instruction_if_mem_does,
@@ -45,6 +51,7 @@ module gip_alu( clock gip_clock,
                 output t_gip_ins_r alu_mem_rd,
                 output t_gip_word alu_mem_address,
                 output t_gip_word alu_mem_write_data,
+                output bit[4] alu_mem_burst,
 
                 input bit special_cp_trail_2,
 

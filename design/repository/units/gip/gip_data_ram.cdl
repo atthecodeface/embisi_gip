@@ -1,0 +1,120 @@
+/*a Includes
+ */
+include "gip.h"
+
+/*a Types
+ */
+/*t t_prefetch_requested
+ */
+typedef enum [2]
+{
+    prefetch_request_none,
+    prefetch_request_new,
+    prefetch_request_last_new,
+    prefetch_request_sequential,
+} t_prefetch_requested;
+
+/*t t_sram_fetch
+ */
+typedef enum [3]
+{
+    sram_fetch_none,
+    sram_fetch_new,
+    sram_fetch_last_new,
+    sram_fetch_sequential,
+    sram_fetch_current,
+} t_sram_fetch;
+
+/*a Module
+ */
+module gip_data_ram( clock gip_clock,
+                     input bit gip_reset,
+
+                        input t_gip_mem_op alu_mem_op,
+                        input t_gip_word alu_mem_address,
+                        input t_gip_word alu_mem_write_data,
+                        input bit[4] alu_mem_burst,
+
+                        output bit mem_alu_busy,
+                        output bit mem_read_data_valid,
+                     output bit[32] mem_read_data,
+
+                     output bit sram_not_in_use,
+                     output bit sram_read_not_write,
+                     output bit[4] sram_write_byte_enables,
+                     output bit[32] sram_address,
+                     output bit[32] sram_write_data,
+                     input bit[32] sram_read_data
+
+    )
+"
+    This data_ram model supports a simple model for the data memory for the GIP
+
+    It can be shared with the instruction memory using the 'sram_not_in_use' output
+
+    Basically operations are given to the data memory, which always takes them.
+    The next cycle is the address cycle for the memory.
+    The final cycle is the data cycle for the memory.
+
+    This module is responsible for byte laning. It should have knowledge of accesses that are unaligned, also; but these are not supported here.
+"
+
+{
+
+    /*b Clock and reset
+     */
+    default clock gip_clock;
+    default reset gip_reset;
+
+    /*b Outputs to the GIP core
+     */
+    clocked bit mem_alu_busy = 0;
+    clocked bit mem_read_data_valid = 0;
+    
+    /*b SRAM interface
+     */
+    clocked bit sram_not_in_use = 0;
+    clocked bit sram_read_not_write = 0;
+    clocked bit[4] sram_write_byte_enables = 0;
+    clocked bit[32] sram_address = 0;
+    clocked bit[32] sram_write_data = 0;
+
+    /*b SRAM interface code
+     */
+    sram_interface "SRAM interface":
+        {
+            sram_not_in_use <= 1;
+            full_switch (alu_mem_op)
+                {
+                case gip_mem_op_none:
+                {
+                    sram_not_in_use <= 1;
+                    sram_read_not_write <= 0;
+                    sram_write_byte_enables <= 0;
+                }
+                case gip_mem_op_store_word:
+                {
+                    sram_not_in_use <= 0;
+                    sram_read_not_write <= 0;
+                    sram_write_byte_enables <= 15;
+                    sram_write_data <= alu_mem_write_data;
+                    sram_address <= alu_mem_address;
+                }
+                case gip_mem_op_load_word:
+                {
+                    sram_not_in_use <= 0;
+                    sram_read_not_write <= 1;
+                    sram_write_byte_enables <= 0;
+                    sram_address <= alu_mem_address;
+                }
+                }
+        }
+
+    /*b GIP interface
+     */
+    gip_interface "GIP interface code":
+        {
+            mem_read_data = sram_read_data;
+            mem_read_data_valid <= sram_read_not_write;
+        }
+}

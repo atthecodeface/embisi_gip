@@ -6,12 +6,13 @@ include "gip.h"
  */
 /*t t_prefetch_requested
  */
-typedef enum [2]
+typedef enum [3]
 {
     prefetch_request_none,
     prefetch_request_new,
     prefetch_request_last_new,
     prefetch_request_sequential,
+    prefetch_request_current,
 } t_prefetch_requested;
 
 /*t t_sram_fetch
@@ -39,6 +40,7 @@ module gip_prefetch( clock gip_clock,
                      input t_gip_prefetch_op prefetch_op,
                      input bit[32] prefetch_address,
 
+                     input bit sram_granted,
                      output bit sram_read,
                      output bit[32] sram_read_address,
                      input bit[32] sram_read_data
@@ -121,7 +123,7 @@ module gip_prefetch( clock gip_clock,
     comb bit fetch_required;
     comb t_prefetch_requested prefetch_requested;
     comb t_sram_fetch sram_fetch;
-    
+
     /*b Fetch data logic - fetch_data_valid, fetch_data, hold_data_valid, hold_data, data_from_sram, data_from_buffer
      */
     fetch_data "Return the correct data for the current fetch":
@@ -181,7 +183,7 @@ module gip_prefetch( clock gip_clock,
             assert( ((data_from_buffer&data_from_sram)==0), "Incorrectly returning data from SRAM read bus and buffer; only one should contain data at any one time" );
         }
 
-    /*b SRAM read determination
+    /*b SRAM read request determination
      */
     state_machine "" :
         {
@@ -219,7 +221,7 @@ module gip_prefetch( clock gip_clock,
             {
                 if ((sram_bus_instructions | buffer_instructions)==0)
                 {
-                    prefetch_requested = prefetch_request_sequential;
+                    prefetch_requested = prefetch_request_current;
                 }
                 if ( ((sram_bus_instructions | buffer_instructions)==1) &&
                      (data_from_sram | data_from_buffer) )
@@ -234,6 +236,10 @@ module gip_prefetch( clock gip_clock,
             if (fetch_required)
             {
                 sram_fetch = sram_fetch_current;
+                if (fetch_op==gip_fetch_op_last_prefetch)
+                {
+                    sram_fetch = sram_fetch_last_new;
+                }
             }
             else
             {
@@ -254,6 +260,10 @@ module gip_prefetch( clock gip_clock,
                     case prefetch_request_sequential:
                     {
                         sram_fetch = sram_fetch_sequential;
+                    }
+                    case prefetch_request_current:
+                    {
+                        sram_fetch = sram_fetch_current;
                     }
                     }
             }
@@ -296,18 +306,23 @@ module gip_prefetch( clock gip_clock,
                     sram_read_instructions = 2;
                 }
             }
+            if (!sram_granted)
+            {
+                sram_read_instructions = 0;
+            }
 
             /*b last_new_address, new_address_pending, new_address_will_be_pending
              */
             new_address_will_be_pending = new_address_pending;
-            if ((prefetch_op == gip_prefetch_op_new_address) && (fetch_required))
+            if ( (prefetch_op == gip_prefetch_op_new_address) &&
+                 (fetch_required || !sram_granted ) ) // The new address will not have been fetched if we are fetching something else, or if we are not granted our fetch anyway
             {
                 new_address_will_be_pending = 1;
             }
             else
             {
-                if ((sram_fetch==sram_fetch_last_new) ||
-                    (sram_fetch==sram_fetch_new))
+                if ( sram_granted &&
+                     ( (sram_fetch==sram_fetch_last_new) || (sram_fetch==sram_fetch_new) ) )
                 {
                     new_address_will_be_pending = 0;
                 }
@@ -351,8 +366,8 @@ module gip_prefetch( clock gip_clock,
                     sram_bus_instructions <= 1;
                 }
             }
-            if ( (sram_fetch == sram_fetch_new) ||
-                 (sram_fetch == sram_fetch_last_new) )
+            if ( sram_granted &&
+                 ( (sram_fetch == sram_fetch_new) || (sram_fetch == sram_fetch_last_new) ) )
             {
                 sram_bus_has_new <= 1;
             }
@@ -360,7 +375,7 @@ module gip_prefetch( clock gip_clock,
             /*b buffer, buffer_instructions, buffer_has_new
              */
             if ( (sram_fetch == sram_fetch_new) ||
-                 (sram_fetch == sram_fetch_last_new) )
+                 (sram_fetch == sram_fetch_last_new) ) // Note; this does not depend on sram_granted! The buffer will contain no valid instructions if we even want to fetch a new address
             {
                 buffer_instructions <= 0;
             }

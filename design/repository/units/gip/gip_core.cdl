@@ -1,3 +1,12 @@
+/*a To do
+  If the ALU block don't issue multiple memory operations, nor multiple flushes etc
+  Remove 'rd' registers further down the pipe if a new operation is executed in ALU stage which updates that 'rd'; only if the 'rd' is an internal register
+  Add descheduling
+  Add ARM decode
+  Add unaligned access support
+  Add stack access hint
+ */
+
 /*a Includes
  */
 include "gip.h"
@@ -19,6 +28,15 @@ module gip_core( clock gip_clock,
                  output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
                  output bit[32] prefetch_address,
 
+                 output t_gip_mem_op alu_mem_op,
+                 output t_gip_word alu_mem_address,
+                 output t_gip_word alu_mem_write_data,
+                 output bit[4] alu_mem_burst,
+
+                 input bit mem_alu_busy,
+                 input bit mem_read_data_valid,
+                 input bit[32] mem_read_data,
+
                  output t_postbus_type postbus_tx_type,
                  output t_postbus_data postbus_tx_data,
                  input t_postbus_ack postbus_tx_ack,
@@ -26,8 +44,6 @@ module gip_core( clock gip_clock,
                  input t_postbus_type postbus_rx_type,
                  input t_postbus_data postbus_rx_data,
                  output t_postbus_ack postbus_rx_ack
-
-
 
                  )
 {
@@ -93,6 +109,7 @@ module gip_core( clock gip_clock,
     net t_gip_ins_r alu_mem_rd;
     net t_gip_word alu_mem_address;
     net t_gip_word alu_mem_write_data;
+    net bit[4] alu_mem_burst;
 
     net t_gip_ins_r alu_rfw_rd;
     net bit alu_rfw_use_shifter;
@@ -101,9 +118,8 @@ module gip_core( clock gip_clock,
 
     /*b Nets from memory stage
      */
-    clocked t_gip_ins_r mem_rfw_rd = {type=gip_ins_r_type_none, r=0};
-    clocked bit[32] mem_rfw_result = 0;
-    clocked t_gip_instruction_rf mem_inst = {valid=0};
+    net t_gip_ins_r mem_1_rd;
+    net t_gip_ins_r mem_2_rd;
 
     /*b Nets from scheduler
      */
@@ -144,8 +160,23 @@ module gip_core( clock gip_clock,
      */
     pipeline_instances "Pipeline instances":
         {
-            alu_accepting_rfr_instruction = ( alu_accepting_rfr_instruction_always ||
-                                              (alu_accepting_rfr_instruction_if_rfw_does && rfw_accepting_alu_rd) ); //alu_accepting_rfr_instruction_if_mem_does => alu_accepting_rfr_instruction_if_mem_does,
+            alu_accepting_rfr_instruction = alu_accepting_rfr_instruction_always;
+            if (alu_accepting_rfr_instruction_if_rfw_does && alu_accepting_rfr_instruction_if_mem_does) // If we need both, then require both
+            {
+                alu_accepting_rfr_instruction = ( alu_accepting_rfr_instruction_always ||
+                                                  (rfw_accepting_alu_rd && !mem_alu_busy) );
+            }
+            else
+            {
+                if (alu_accepting_rfr_instruction_if_mem_does)
+                {
+                    alu_accepting_rfr_instruction = ( alu_accepting_rfr_instruction_always || !mem_alu_busy );
+                }
+                if (alu_accepting_rfr_instruction_if_rfw_does)
+                {
+                    alu_accepting_rfr_instruction = ( alu_accepting_rfr_instruction_always || rfw_accepting_alu_rd );
+                }
+            }
             rfr_accepting_dec_instruction = ( rfr_accepting_dec_instruction_always ||
                                               (rfr_accepting_dec_instruction_if_alu_does && alu_accepting_rfr_instruction) );
 
@@ -178,11 +209,10 @@ module gip_core( clock gip_clock,
                        alu_arith_logic_result <= alu_rfw_arith_logic_result,
                        alu_shifter_result <= alu_rfw_shifter_result,
 
-                       mem_rd <= mem_rfw_rd,
-                       mem_result <= mem_rfw_result,
-
-                       mem_inst_valid <= mem_inst.valid,
-                       mem_inst_gip_ins_rd <= mem_inst.gip_ins_rd,
+                       mem_1_rd <= mem_1_rd,
+                       mem_2_rd <= mem_2_rd,
+                       mem_read_data_valid <= mem_read_data_valid,
+                       mem_read_data <= mem_read_data,
 
                        gip_pipeline_flush <= gip_pipeline_flush,
 
@@ -205,6 +235,7 @@ module gip_core( clock gip_clock,
                          alu_inst => alu_inst,
 
                          rfw_accepting_alu_rd <= rfw_accepting_alu_rd,
+                         mem_alu_busy <= mem_alu_busy,
                          alu_accepting_rfr_instruction <= alu_accepting_rfr_instruction,
 
                          alu_accepting_rfr_instruction_always => alu_accepting_rfr_instruction_always,
@@ -220,6 +251,7 @@ module gip_core( clock gip_clock,
                          alu_mem_rd => alu_mem_rd,
                          alu_mem_address => alu_mem_address,
                          alu_mem_write_data => alu_mem_write_data,
+                         alu_mem_burst => alu_mem_burst,
 
                          special_cp_trail_2 <= special_cp_trail_2,
 
@@ -227,6 +259,15 @@ module gip_core( clock gip_clock,
                          gip_pipeline_tag => gip_pipeline_tag,
                          gip_pipeline_executing => gip_pipeline_executing );
 
+            gip_memory memory( gip_clock <- gip_clock,
+                               gip_reset <= gip_reset,
+
+                               alu_mem_rd <= alu_mem_rd,
+                               mem_alu_busy <= mem_alu_busy, // Used if alu_mem_rd is not 'none'; alu_mem_rd is ignored if this is busy
+
+                               mem_1_rd => mem_1_rd, // copy of alu_mem_rd, if that was not-none and mem_alu_busy was deasserted
+                               mem_2_rd => mem_2_rd, // mem_1_rd, pipeline stage; this is the register that is being written to (by a 'load') if mem_read_data_valid is asserted
+                               mem_read_data_valid <= mem_read_data_valid );
 
         }
 

@@ -55,11 +55,10 @@ module gip_rf( clock gip_clock,
                       input t_gip_word alu_arith_logic_result,
                       input t_gip_word alu_shifter_result,
 
-                      input t_gip_ins_r mem_rd,
-                      input t_gip_word mem_result,
-
-                      input bit mem_inst_valid, // ALU state
-                      input t_gip_ins_r mem_inst_gip_ins_rd,
+                      input t_gip_ins_r mem_1_rd,
+                      input t_gip_ins_r mem_2_rd,
+                      input bit mem_read_data_valid,
+                      input t_gip_word mem_read_data,
 
                       output bit rfw_postbus_write,
                       output bit[5] rfw_postbus_write_address,
@@ -243,7 +242,11 @@ module gip_rf( clock gip_clock,
                 if ( (rfr_inst_in.gip_ins_rn.type==gip_ins_r_type_internal) && 
                      (rfr_inst_in.gip_ins_rn.r==gip_ins_rnm_int_block_all) ) // Blocked if anything has a write pending
                 {
-                    if (mem_rd.type!=gip_ins_r_type_none)
+                    if (mem_1_rd.type!=gip_ins_r_type_none)
+                    {
+                        rfr_blocked = 1;
+                    }
+                    if (mem_2_rd.type!=gip_ins_r_type_none)
                     {
                         rfr_blocked = 1;
                     }
@@ -265,9 +268,13 @@ module gip_rf( clock gip_clock,
                     {
                         rfr_blocked = 1;
                     }
-                    if ( (mem_inst_valid) &&
-                         (mem_inst_gip_ins_rd.type==gip_ins_r_type_register) &&
-                         (rfr_inst_in.gip_ins_rn.r==mem_inst_gip_ins_rd.r) )
+                    if ( (mem_1_rd.type==gip_ins_r_type_register) &&
+                         (rfr_inst_in.gip_ins_rn.r==mem_1_rd.r) )
+                    {
+                        rfr_blocked = 1;
+                    }
+                    if ( (mem_2_rd.type==gip_ins_r_type_register) &&
+                         (rfr_inst_in.gip_ins_rn.r==mem_2_rd.r) )
                     {
                         rfr_blocked = 1;
                     }
@@ -286,9 +293,13 @@ module gip_rf( clock gip_clock,
                     {
                         rfr_blocked = 1;
                     }
-                    if ( (mem_inst_valid) &&
-                         (mem_inst_gip_ins_rd.type==gip_ins_r_type_register) &&
-                         (rfr_inst_in.gip_ins_rm.r==mem_inst_gip_ins_rd.r) )
+                    if ( (mem_1_rd.type==gip_ins_r_type_register) &&
+                         (rfr_inst_in.gip_ins_rm.r==mem_1_rd.r) )
+                    {
+                        rfr_blocked = 1;
+                    }
+                    if ( (mem_2_rd.type==gip_ins_r_type_register) &&
+                         (rfr_inst_in.gip_ins_rm.r==mem_2_rd.r) )
                     {
                         rfr_blocked = 1;
                     }
@@ -421,8 +432,15 @@ module gip_rf( clock gip_clock,
                 rfw_use_shifter <= alu_use_shifter;
                 rfw_shf_result <= alu_shifter_result;
             }
-            rfw_mem_rd <= mem_rd;
-            rfw_mem_result <= mem_result;
+            if (mem_read_data_valid)
+            {
+                rfw_mem_rd <= mem_2_rd;
+                rfw_mem_result <= mem_read_data;
+            }
+            else
+            {
+                rfw_mem_rd.type <= gip_ins_r_type_none;
+            }
             rfw_accepting_alu_rd <= 1;
             if ( (rfw_alu_rd.type!=gip_ins_r_type_none) ) // If we have a write to do
             {

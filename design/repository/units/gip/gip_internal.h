@@ -234,19 +234,6 @@ typedef enum [2]
     gip_alu_op2_src_constant
 } t_gip_alu_op2_src;
 
-/*t t_gip_mem_op
- */
-typedef enum [3]
-{
-    gip_mem_op_none,
-    gip_mem_op_store_word,
-    gip_mem_op_store_half,
-    gip_mem_op_store_byte,
-    gip_mem_op_load_word,
-    gip_mem_op_load_half,
-    gip_mem_op_load_byte
-} t_gip_mem_op;
-
 /*t t_gip_pc_op
  */
 typedef enum [2]
@@ -290,11 +277,10 @@ extern module gip_rf( clock gip_clock,
                       input t_gip_word alu_arith_logic_result,
                       input t_gip_word alu_shifter_result,
 
-                      input t_gip_ins_r mem_rd,
-                      input t_gip_word mem_result,
-
-                      input bit mem_inst_valid, // ALU state
-                      input t_gip_ins_r mem_inst_gip_ins_rd,
+                      input t_gip_ins_r mem_1_rd,
+                      input t_gip_ins_r mem_2_rd,
+                      input bit mem_read_data_valid,
+                      input t_gip_word mem_read_data,
 
                       output bit rfw_postbus_write,
                       output bit[5] rfw_postbus_write_address,
@@ -327,11 +313,9 @@ extern module gip_rf( clock gip_clock,
     timing to rising clock gip_clock rfr_accepting_dec_instruction;
     timing to rising clock gip_clock alu_rd, alu_use_shifter, alu_arith_logic_result, alu_shifter_result;
 
-    timing to rising clock gip_clock mem_rd, mem_result;
-    timing to rising clock gip_clock mem_inst_valid, mem_inst_gip_ins_rd;
+    timing to rising clock gip_clock mem_1_rd, mem_2_rd, mem_read_data, mem_read_data_valid;
 
     timing comb input alu_inst_valid, alu_inst_gip_ins_rd;
-    timing comb input mem_inst_valid, mem_inst_gip_ins_rd;
     timing comb output rfr_accepting_dec_instruction_if_alu_does;
     timing comb output rfr_inst; // .valid depends on blocking
 
@@ -357,6 +341,7 @@ extern module gip_alu( clock gip_clock,
                        output t_gip_instruction_rf alu_inst,
 
                        input bit rfw_accepting_alu_rd,
+                       input bit mem_alu_busy,
                        input bit alu_accepting_rfr_instruction,
                        output bit alu_accepting_rfr_instruction_always,
                        output bit alu_accepting_rfr_instruction_if_mem_does,
@@ -371,6 +356,7 @@ extern module gip_alu( clock gip_clock,
                        output t_gip_ins_r alu_mem_rd,
                        output t_gip_word alu_mem_address,
                        output t_gip_word alu_mem_write_data,
+                       output bit[4] alu_mem_burst,
 
                        input bit special_cp_trail_2,
 
@@ -384,18 +370,38 @@ extern module gip_alu( clock gip_clock,
     timing to rising clock gip_clock rfr_inst, rf_read_port_0, rf_read_port_1;
     timing from rising clock gip_clock alu_inst;
 
-    timing to rising clock gip_clock rfw_accepting_alu_rd;
+    timing to rising clock gip_clock rfw_accepting_alu_rd, mem_alu_busy;
     timing to rising clock gip_clock alu_accepting_rfr_instruction;
     timing from rising clock gip_clock alu_accepting_rfr_instruction_always, alu_accepting_rfr_instruction_if_mem_does, alu_accepting_rfr_instruction_if_rfw_does;
 
     timing from rising clock gip_clock alu_rd, alu_use_shifter, alu_arith_logic_result, alu_shifter_result;
 
-    timing from rising clock gip_clock alu_mem_op, alu_mem_rd, alu_mem_address, alu_mem_write_data;
+    timing from rising clock gip_clock alu_mem_op, alu_mem_rd, alu_mem_address, alu_mem_write_data, alu_mem_burst;
 
     timing to rising clock gip_clock special_cp_trail_2;
 
     timing from rising clock gip_clock gip_pipeline_flush, gip_pipeline_tag, gip_pipeline_executing;
     
+}
+
+/*m gip_memory
+ */
+extern module gip_memory( clock gip_clock,
+                   input bit gip_reset,
+
+                   input t_gip_ins_r alu_mem_rd,
+                   input bit mem_alu_busy,
+
+                   output t_gip_ins_r mem_1_rd,
+                   output t_gip_ins_r mem_2_rd,
+                   input bit mem_read_data_valid
+    )
+{
+    timing to rising clock gip_clock gip_reset;
+
+    timing to rising clock gip_clock alu_mem_rd, mem_alu_busy;
+    timing from rising clock gip_clock mem_1_rd, mem_2_rd;
+    timing to rising clock gip_clock mem_read_data_valid;
 }
 
 /*m gip_decode
@@ -432,6 +438,7 @@ extern module gip_decode( clock gip_clock,
     )
 {
     timing to rising clock gip_clock gip_reset;
+    timing comb input gip_reset; // Use to take out prefetch_op
 
     timing from rising clock gip_clock fetch_op;
     timing to rising clock gip_clock fetch_data, fetch_data_valid;

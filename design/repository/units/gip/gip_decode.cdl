@@ -80,6 +80,7 @@ module gip_decode( clock gip_clock,
     clocked bit fetched_opcode_valid = 0;
 
     clocked bit valid_prefetch_issued = 0;
+    clocked bit valid_prefetch_returned = 0;
     clocked bit pc_valid = 0;
     clocked bit[32] pc = 0;
 
@@ -90,12 +91,7 @@ module gip_decode( clock gip_clock,
 
     /*b Instruction
      */
-    clocked t_gip_instruction_rf dec_inst = { valid=0,
-                                              gip_ins_rn = {type=gip_ins_r_type_none, r=0},
-                                              gip_ins_rd = {type=gip_ins_r_type_none, r=0},
-                                              gip_ins_rm = {type=gip_ins_r_type_none, r=0},
-                                              rm_is_imm = 0,
-                                              k=0, a=0, f=0, d=0, pc=0, tag=0 } "Instruction in the RF read stage";
+//    comb t_gip_instruction_rf dec_inst;
     clocked bit[5] cycle_of_opcode=0;
 
     /*b Accumulator tracking
@@ -154,11 +150,6 @@ module gip_decode( clock gip_clock,
      */
     nyi "" :
         {
-            instruction_blocked = 0;
-            if (dec_inst.valid && !rfr_accepting_dec_instruction)
-            {
-                instruction_blocked = 1;
-            }
             branch = 0;
             if (native_dec_pc_op==gip_pc_op_branch)
             {
@@ -185,6 +176,7 @@ module gip_decode( clock gip_clock,
                         prefetch_op = gip_prefetch_op_new_address;
                         prefetch_address = next_pc;
                         valid_prefetch_issued <= 1;
+                        valid_prefetch_returned <= 0;
                     }
                     else
                     {
@@ -193,12 +185,20 @@ module gip_decode( clock gip_clock,
                 }
                 else
                 {
-                    fetch_op = gip_fetch_op_last_prefetch;
+                    if (valid_prefetch_returned)
+                    {
+                        fetch_op = gip_fetch_op_sequential;
+                    }
+                    else
+                    {
+                        fetch_op = gip_fetch_op_last_prefetch;
+                    }
                     prefetch_op = gip_prefetch_op_sequential;
                 }
             }
             else
             {
+                valid_prefetch_returned <= 1;
                 prefetch_address = branch_pc;
                 if (instruction_blocked)
                 {
@@ -224,6 +224,10 @@ module gip_decode( clock gip_clock,
             if (gip_pipeline_flush)
             {
                 valid_prefetch_issued <= 0;
+                prefetch_op = gip_prefetch_op_none;
+            }
+            if (gip_reset)
+            {
                 prefetch_op = gip_prefetch_op_none;
             }
 
@@ -287,11 +291,11 @@ module gip_decode( clock gip_clock,
      */
     decode_state_machine "Handle according to operating state":
         {
-            dec_inst <= dec_inst;
             request_fetch = 0;
             next_pc_valid = 0;
             next_pc = 0;
             acknowledge_scheduler <= 0;
+            instruction_blocked = 0;
             full_switch (op_state)
             {
                 /*b Idle - wait for schedule request
@@ -315,89 +319,81 @@ module gip_decode( clock gip_clock,
                 extended_rd.type <= gip_ins_r_type_no_override;
                 extended_rn.type <= gip_ins_r_type_no_override;
                 extended_rm.type <= gip_ins_r_type_no_override;
-                dec_inst.valid <= 0;
+                dec_inst.valid = 0;
             }
             /*b Native - decode top or bottom half of instruction (pc bit 1 is set AND native AND valid)
              */
             case gip_decode_state_native:
             {
+                dec_inst = native_dec_inst;
+                dec_inst.pc = pc;
                 /*b Select native instruction as our decode
                  */
-                if (rfr_accepting_dec_instruction)
+                if (!fetched_opcode_valid)
                 {
-                    dec_inst <= native_dec_inst;
-                    dec_inst.pc <= pc;
-                    if (!fetched_opcode_valid)
+                    dec_inst.valid = 0;
+                }
+                else
+                {
+                    if (native_dec_extending)
                     {
-                        dec_inst.valid <= 0;
-                    }
-                    else
-                    {
-                        next_pc_op = native_dec_pc_op;
-                        cycle_of_opcode <= 0;
-
-//                    acc_valid <= next_acc_valid;
-//                    reg_in_acc <= next_reg_in_acc;
-
+                        dec_inst.valid = 0;
                         extended_immediate <= native_dec_next_extended_immediate;
                         extended_cmd <= native_dec_next_extended_cmd;
                         extended_rd <= native_dec_next_extended_rd;
                         extended_rn <= native_dec_next_extended_rn;
                         extended_rm <= native_dec_next_extended_rm;
-
-                        in_conditional_shadow <= 0;
-                        in_immediate_conditional_shadow <= 0;
-                        if (native_dec_next_in_immediate_conditional_shadow)
-                        {
-                            in_conditional_shadow <= 1;
-                            in_immediate_conditional_shadow <= 1;
-                        }
-                        if ( (in_immediate_conditional_shadow) && (special_cp_trail_2) )
-                        {
-                            in_conditional_shadow <= 1;
-                        }
-
-//                        if (follow_delay_pc)
-//                        {
-//                            next_pc = delay_pc;
-//                        }
-                        if (!native_dec_extending)
-                        {
-                            extended_immediate <= 0;
-                            extended_cmd.extended <= 0;
-                            extended_rd.type <= gip_ins_r_type_no_override;
-                            extended_rn.type <= gip_ins_r_type_no_override;
-                            extended_rm.type <= gip_ins_r_type_no_override;
-                        }
-
-                        if (gip_pipeline_rfw_write_pc)
-                        {
-                            next_pc = gip_pipeline_rfw_data;
-                            next_pc_valid = 1;
-                        }
-                        if (gip_pipeline_flush)
-                        {
-                            pc_valid <= 0;
-                            acc_valid <= 0;
-
-                            extended_immediate <= 0;
-                            extended_cmd.extended <= 0;
-                            extended_rd.type <= gip_ins_r_type_no_override;
-                            extended_rn.type <= gip_ins_r_type_no_override;
-                            extended_rm.type <= gip_ins_r_type_no_override;
-
-                            dec_inst.valid <= 0;
-//                            in_delay_slot <= 0;
-//                            follow_delay_pc <= 0;
-                            in_immediate_conditional_shadow <= 0;
-                            in_conditional_shadow <= 0;
-                        }
-                        if (gip_pipeline_tag && gip_pipeline_executing)
-                        {
-                            op_state <= gip_decode_state_idle;
-                        }
+                        next_pc_op = native_dec_pc_op;
                     }
+                    elsif (rfr_accepting_dec_instruction)
+                        {
+                            next_pc_op = native_dec_pc_op;
+                            cycle_of_opcode <= 0;
+
+                            in_conditional_shadow <= 0;
+                            in_immediate_conditional_shadow <= 0;
+                            if (native_dec_next_in_immediate_conditional_shadow)
+                            {
+                                in_conditional_shadow <= 1;
+                                in_immediate_conditional_shadow <= 1;
+                            }
+                            if ( (in_immediate_conditional_shadow) && (special_cp_trail_2) )
+                            {
+                                in_conditional_shadow <= 1;
+                            }
+
+                            extended_immediate <= 0;
+                            extended_cmd.extended <= 0;
+                            extended_rd.type <= gip_ins_r_type_no_override;
+                            extended_rn.type <= gip_ins_r_type_no_override;
+                            extended_rm.type <= gip_ins_r_type_no_override;
+                        }
                 }
+                if (gip_pipeline_rfw_write_pc)
+                {
+                    next_pc = gip_pipeline_rfw_data;
+                    next_pc_valid = 1;
+                }
+                if (gip_pipeline_flush)
+                {
+                    pc_valid <= 0;
+                    acc_valid <= 0;
+
+                    extended_immediate <= 0;
+                    extended_cmd.extended <= 0;
+                    extended_rd.type <= gip_ins_r_type_no_override;
+                    extended_rn.type <= gip_ins_r_type_no_override;
+                    extended_rm.type <= gip_ins_r_type_no_override;
+
+                    dec_inst.valid = 0;
+                    in_immediate_conditional_shadow <= 0;
+                    in_conditional_shadow <= 0;
+                }
+                if (gip_pipeline_tag && gip_pipeline_executing)
+                {
+                    op_state <= gip_decode_state_idle;
+                }
+                instruction_blocked = dec_inst.valid && !rfr_accepting_dec_instruction;
             /*b All done
              */
             }

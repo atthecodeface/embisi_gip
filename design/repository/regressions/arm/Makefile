@@ -9,7 +9,8 @@ ARM_CC := ${ARM_PREFIX}gcc
 ARM_LD := ${ARM_PREFIX}ld
 ARM_STRIP := ${ARM_PREFIX}strip
 ARM_CC_FLAGS := -fomit-frame-pointer -O3
-#ARM_CC_FLAGS := 
+BIN_TO_MIF := ${TNBT_CVS_ROOT}/common/bin/bin_to_mif
+# ARM_CC_FLAGS := 
 
 TEST_LIST := src/test_list
 CREATE_MAKE := scripts/create_make

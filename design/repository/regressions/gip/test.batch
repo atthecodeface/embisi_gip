@@ -54,7 +54,8 @@ return
 #f gip_tests
 gip_tests:
 #gosub gip_0
-gosub gip_1
+#gosub gip_1
+gosub gip_2
 return
 
 #b gip_0
@@ -78,6 +79,19 @@ setenv "post_rom_mif" "data/none.mif"
 gosub gip_test
 return
 
+#b gip_2
+gip_2:
+#set run_length 40000000
+set run_length 400
+set_string vcd_filename "gip_2"
+#setenv "gip_iram_mif" "bin/pass.mif"
+#setenv "gip_iram_mif" "../arm/bin/pass.mif"
+setenv "gip_iram_mif" "../arm/bin/alu.mif"
+setenv "gip_dram_mif" "data/none.mif"
+setenv "post_rom_mif" "data/none.mif"
+gosub gip_test
+return
+
 #a Gip subroutines
 #f gip_test
 gip_test:
@@ -89,7 +103,7 @@ sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
 vcd_file_open "allsignals" vcd_full_filename
 vcd_file_add "allsignals" "gipc"
 vcd_file_add "allsignals" "gip_prefetch" "gip_data_ram" "shared_sram"
-vcd_file_add "allsignals" "gipc.decode" "gipc.rf" "gipc.alu"
+vcd_file_add "allsignals" "gipc.decode" "gipc.decode.native" "gipc.decode.arm" "gipc.rf" "gipc.alu"
 vcd_file_enable "allsignals"
 reset
 step run_length

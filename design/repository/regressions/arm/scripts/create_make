@@ -69,7 +69,7 @@ open( make, ">$makefile" );
 print make  "TEST_BINARIES := \\\n";
 foreach $i (@tests) {
     ($test, $objs, $asms, $ccs) = split(/ /,$i);
-    print make  "    bin/$test.bin \\\n";
+    print make  "    bin/$test.mif \\\n";
 }
 print make  " \n";
 
@@ -121,6 +121,9 @@ foreach $i (@tests) {
     print make "\n";
     print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.bin obj/tmp.elf";
     print make "\n";
+    print make "\n";
+    print make "bin/$test.mif: bin/$test.bin\n";
+    print make "\t\${BIN_TO_MIF} bin/$test.bin bin/$test.mif\n";
     print make "\n";
 }
 print make " \n";

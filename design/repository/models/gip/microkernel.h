@@ -11,7 +11,7 @@
 class microkernel
 {
  public:
-	microkernel::microkernel(class c_gip_pipeline_single * arm);
+	microkernel::microkernel(class c_execution_model_class * arm);
 	void microkernel::handle_swi (int n);
 	struct microkernel_data * private_data;
 	void microkernel::handle_support (void);

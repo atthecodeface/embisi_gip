@@ -124,13 +124,6 @@ carry flag
 </tr>
 
 <tr>
-<th>XORL</th>
-<th>XOR and count zeros from right</th>
-<td>TZC(Op1 ^ Op2)</td>
-<td>Exclusive-or Op1 and Op2<br>&nbsp;and count number of trailing zeros in result (0 to 32)</td>
-</tr>
-
-<tr>
 <th>LSL</th>
 <th>Logical shift left</th>
 <td>Op2 LSL Op1</td>

@@ -18,7 +18,6 @@ typedef enum
     gip_ins_class_arith = 0,
     gip_ins_class_logic = 1,
     gip_ins_class_shift = 2,
-    gip_ins_class_coproc = 3,
     gip_ins_class_load = 4,
     gip_ins_class_store = 5,
 } t_gip_ins_class;
@@ -50,8 +49,8 @@ typedef enum
     gip_ins_subclass_logic_andxor=8,
     gip_ins_subclass_logic_xorfirst=9,
     gip_ins_subclass_logic_xorlast=10,
-    gip_ins_subclass_logic_bit_reverse=11,
-    gip_ins_subclass_logic_byte_reverse=12,
+    gip_ins_subclass_logic_bitreverse=11,
+    gip_ins_subclass_logic_bytereverse=12,
 
     gip_ins_subclass_shift_lsl=0,
     gip_ins_subclass_shift_lsr=1,
@@ -117,81 +116,55 @@ typedef enum
  */
 typedef enum
 {
-    gip_ins_rd_int_none = 0,
-    gip_ins_rd_int_pc = 0x1,
-    gip_ins_rd_int_eq = 0x10,
-    gip_ins_rd_int_ne = 0x11,
-    gip_ins_rd_int_cs = 0x12,
-    gip_ins_rd_int_cc = 0x13,
-    gip_ins_rd_int_mi = 0x14,
-    gip_ins_rd_int_pl = 0x15,
-    gip_ins_rd_int_vs = 0x16,
-    gip_ins_rd_int_vc = 0x17,
-    gip_ins_rd_int_hi = 0x18,
-    gip_ins_rd_int_ls = 0x19,
-    gip_ins_rd_int_ge = 0x1a,
-    gip_ins_rd_int_lt = 0x1b,
-    gip_ins_rd_int_gt = 0x1c,
-    gip_ins_rd_int_le = 0x1d,
+    gip_ins_rd_int_eq = 0x00,
+    gip_ins_rd_int_ne = 0x01,
+    gip_ins_rd_int_cs = 0x02,
+    gip_ins_rd_int_cc = 0x03,
+    gip_ins_rd_int_hi = 0x04,
+    gip_ins_rd_int_ls = 0x05,
+    gip_ins_rd_int_ge = 0x06,
+    gip_ins_rd_int_lt = 0x07,
+    gip_ins_rd_int_gt = 0x08,
+    gip_ins_rd_int_le = 0x09,
+    gip_ins_rd_int_pc = 0x10,
 } t_gip_ins_rd_int;
-
-/*t t_gip_ins_rd_type
- */
-typedef enum
-{
-    gip_ins_rd_type_internal,
-    gip_ins_rd_type_register,
-    gip_ins_rd_type_coproc,
-    gip_ins_rd_type_periph
-} t_gip_ins_rd_type;
-
-/*t t_gip_ins_rd
- */
-typedef struct
-{
-    t_gip_ins_rd_type type;
-    union
-    {
-        int r;
-        t_gip_ins_rd_int internal;
-        int coproc;
-        int periph;
-    } data;
-} t_gip_ins_rd;
 
 /*t t_gip_ins_rnm_int
  */
 typedef enum
 {
-    gip_ins_rnm_int_none = 0,
-    gip_ins_rnm_int_shf = 0x10,
-    gip_ins_rnm_int_acc = 0x11,
-    gip_ins_rnm_int_pc = 0x1f,
+    gip_ins_rnm_int_shf = 0x18,
+    gip_ins_rnm_int_acc = 0x19,
+    gip_ins_rnm_int_pc = 0x10,
 } t_gip_ins_rnm_int;
 
-/*t t_gip_ins_rnm_type
+/*t t_gip_ins_r_type - 3 bit field, 5 bits of sub-field defined below
  */
 typedef enum
 {
-    gip_ins_rnm_type_internal,
-    gip_ins_rnm_type_register,
-    gip_ins_rnm_type_coproc,
-    gip_ins_rnm_type_periph
-} t_gip_ins_rnm_type;
+    gip_ins_r_type_register = 0,
+    gip_ins_r_type_register_indirect = 1,
+    gip_ins_r_type_periph = 2, // access to 2-cycle peripheral space (timer, ?uart?)
+    gip_ins_r_type_coproc = 3, // direct addressing of coprocessor register file
+    gip_ins_r_type_special = 4, // access to coprocessor FIFO pointers, coprocessor as FIFO, coprocessor cmd, DAGs, scheduler semaphores
+    gip_ins_r_type_internal = 5, // conditions, accumulator, shifter result, pc
+    gip_ins_r_type_none = 6,
+    gip_ins_r_type_none_b = 7,
+    gip_ins_r_type_no_override = 7, // only used by native decode
+} t_gip_ins_r_type;
 
-/*t t_gip_ins_rnm
+/*t t_gip_ins_r
  */
-typedef struct
+typedef struct t_gip_ins_r
 {
-    t_gip_ins_rnm_type type;
+    t_gip_ins_r_type type;
     union
     {
         int r;
-        t_gip_ins_rnm_int internal;
-        int coproc;
-        int periph;
+        t_gip_ins_rd_int rd_internal;
+        t_gip_ins_rnm_int rnm_internal;
     } data;
-} t_gip_ins_rnm;
+} t_gip_ins_r;
 
 /*t t_gip_instruction
  */
@@ -201,16 +174,17 @@ typedef struct t_gip_instruction
     t_gip_ins_subclass gip_ins_subclass;
     t_gip_ins_opts gip_ins_opts;
     t_gip_ins_cc gip_ins_cc;
-    t_gip_ins_rnm gip_ins_rn;
+    t_gip_ins_r gip_ins_rn;
     int rm_is_imm;
     union {
-        t_gip_ins_rnm gip_ins_rm;
+        t_gip_ins_r gip_ins_rm;
         unsigned int immediate;
     } rm_data;
-    t_gip_ins_rd gip_ins_rd;
+    t_gip_ins_r gip_ins_rd;
     int k; // Burst size remaining for load/store burst
     int a; // set accumulator with ALU result
     int f; // flush rest of pipeline if the condition succeeds
+    int d; // delay slot instruction - do not flush even if a flush is indicated
     unsigned int pc; // PC value for the instruction - for ARM emulation, PC+8 generally
 } t_gip_instruction;
 

@@ -14,7 +14,6 @@
 #include "arm_dis.h"
 #include "gdb_stub.h"
 #include "symbols.h"
-#include "c_gip_pipeline_single.h"
 #include "c_gip_full.h"
 #include "c_memory_model.h"
 #include "c_ram_model.h"
@@ -79,7 +78,7 @@ static void usage( void )
     printf("\t-m: launch minicom\n");
     printf("\t-r<n> <hex>: set register n (decimal) to the hex value given at initialization\n");
     printf("\t-s <symbol.map>: set the filename of the symbol file - usually 'System.map' if run from the linux directory\n");
-    printf("\t-S: use the single cycle GIP internal model - this runs faster, but less accurately than the default full pipeline model\n");
+    printf("\t-S: NO LONGER WORKS - use the single cycle GIP internal model - this runs faster, but less accurately than the default full pipeline model\n");
     printf("\t-t <cycles>: if not running under gdb, run for this maximum number of cycles then exit\n");
     printf("\t-M <start> <end> <level>: turn on memory tracing for a region of memory at this level (1-3, 3 gives everything, 1 just errors); output is appended to file memory_model.log\n");
     printf("\t-T <region> <start> <end>: turn on execution tracing within a numbered region (0 to 7); output is appended to file gip_exec_trace.log\n");
@@ -409,11 +408,11 @@ extern int main( int argc, char **argv )
    	ram = new c_ram_model( 1<<24 ); // Create RAM of size 1<<24 = 16MB
    	memory = new c_memory_model();
 
-    if (use_single_pipeline)
+    if (0 && use_single_pipeline)
     {
-        c_gip_pipeline_single *gip_single;
-        gip_single = new c_gip_pipeline_single( memory );
-        gip = (c_execution_model_class *)gip_single;
+//        c_gip_pipeline_single *gip_single;
+//        gip_single = new c_gip_pipeline_single( memory );
+//        gip = (c_execution_model_class *)gip_single;
     }
     else
     {

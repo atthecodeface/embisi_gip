@@ -696,7 +696,6 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
         pd->logic_result = pd->alu_op1 |~ pd->alu_op2;
         break;
     case gip_alu_op_init:
-    case gip_alu_op_xorcnt:
     case gip_alu_op_mla:
     case gip_alu_op_mlb:
     case gip_alu_op_divst:
@@ -726,8 +725,6 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
         break;
     case gip_alu_op_rsbc:
         pd->arith_result = add_op( ~pd->alu_op1, pd->alu_op2, pd->c, &pd->alu_c, &pd->alu_v );
-        break;
-    case gip_alu_op_xorcnt:
         break;
     case gip_alu_op_init:
         pd->arith_result = add_op( 0&pd->alu_op1, pd->alu_op2, 0, &pd->alu_c, &pd->alu_v );
@@ -844,8 +841,7 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
         break;
     case gip_alu_op_divst:
         break;
-    case gip_alu_op_xorcnt:
-        break;
+
     }
 
     /*b Done
@@ -1353,9 +1349,6 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
         pd->alu_b_in = read_int_register( inst, inst->rm_data.gip_ins_rm ); // Else read register/special
     }
 
-    /*b Read the coprocessor read file - supposed to be simultaneous with register file read
-     */
-
     /*b Evaluate condition associated with the instruction - simultaneous with ALU stage, blocks all results from instruction if it fails
      */
     pd->condition_passed = is_condition_met( inst->gip_ins_cc, pd );
@@ -1487,10 +1480,6 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
             break;
         }
         break;
-    case gip_ins_class_coproc:
-        pd->alu_rd = gip_ins_rd_none;
-        gip_alu_op = gip_alu_op_mov;
-        break;
     case gip_ins_class_load:
         pd->alu_rd = gip_ins_rd_none;
         if ((inst->gip_ins_subclass & gip_ins_subclass_memory_dirn)==gip_ins_subclass_memory_up)
@@ -1560,8 +1549,6 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
     case gip_ins_class_logic:
     case gip_ins_class_shift:
         break;
-    case gip_ins_class_coproc:
-        break;
     case gip_ins_class_load:
         pd->mem_rd = inst->gip_ins_rd;
         switch (inst->gip_ins_subclass & gip_ins_subclass_memory_size)
@@ -1607,9 +1594,6 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
     execute_int_memory_instruction( gip_mem_op,
                                     ((inst->gip_ins_subclass & gip_ins_subclass_memory_index)==gip_ins_subclass_memory_preindex)?pd->alu_result:pd->alu_op1,
                                     pd->alu_b_in );
-
-    /*b Execute coprocessor write - occurs after memory read/write
-     */
 
     /*b Register file writeback
      */

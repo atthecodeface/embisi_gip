@@ -3,7 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "microkernel.h"
-#include "c_gip_pipeline_single.h"
+#include "c_execution_model_class.h"
 
 //#include "../../os/linux/include/asm/ukernel.h"
 #include "syscalls.h"
@@ -13,7 +13,7 @@
 
 struct microkernel_data
 {
-	c_gip_pipeline_single * gip;
+	c_execution_model_class * gip;
 	int swi_handler;
 	int super;
 	unsigned long saved_svc_sp;
@@ -25,7 +25,7 @@ struct microkernel_data
 	int irq_wrapper;
 };
 
-microkernel::microkernel (c_gip_pipeline_single * gip)
+microkernel::microkernel (c_execution_model_class * gip)
 {
 	private_data = (microkernel_data *) memset (malloc (sizeof(microkernel_data)), 0, sizeof(microkernel_data));
 	private_data->gip = gip;
@@ -37,7 +37,7 @@ void tty_out (char c);
 
 void microkernel::handle_support (void)
 {
-	c_gip_pipeline_single * gip = private_data->gip;
+	c_execution_model_class * gip = private_data->gip;
 	int r0 = gip->get_register (0);
 //	printf ("Support call %d\n", r0);
 	switch (r0)
@@ -121,7 +121,7 @@ void microkernel::handle_support (void)
 
 void microkernel::push (int n)
 {
-	c_gip_pipeline_single * gip = private_data->gip;
+	c_execution_model_class * gip = private_data->gip;
 	gip->set_register (13, gip->get_register(13)-4);
 /*	gip->write_memory (gip->get_register(13), n, 0xf);*/
 }
@@ -160,7 +160,6 @@ static int get_pending_irq (int pending_irqs)
 
 int microkernel::do_interrupt (void)
 {
-	c_gip_pipeline_single * gip = private_data->gip;
 /*
 	int vector = get_pending_irq (private_data->irq_pending);
 	if (vector == -1) return 0;
@@ -202,7 +201,7 @@ void microkernel::handle_interrupt (int vector)
 
 void microkernel::return_from_interrupt (void)
 {
-	c_gip_pipeline_single * gip = private_data->gip;
+	c_execution_model_class * gip = private_data->gip;
 //	printf ("ISR(pc=%x)}", gip->read_memory (gip->get_register(13)+SYSCALL_FRAME_R15));
 	if (private_data->irq_pending)
 	{
@@ -252,7 +251,7 @@ void microkernel::return_from_interrupt (void)
 
 void microkernel::handle_syscall (int n)
 {
-	c_gip_pipeline_single * gip = private_data->gip;
+	c_execution_model_class * gip = private_data->gip;
 	unsigned int flags = gip->get_flags();
 	int i;
 /*	if (n < noof_call_names)
@@ -277,7 +276,7 @@ void microkernel::handle_syscall (int n)
 
 void microkernel::handle_syscall_ret (void)
 {
-	c_gip_pipeline_single * gip = private_data->gip;
+	c_execution_model_class * gip = private_data->gip;
 	unsigned sp = gip->get_register (13);
 	int i;
 /*
@@ -316,7 +315,7 @@ void microkernel::handle_syscall_ret (void)
 
 void microkernel::handle_swi (int n)
 {
-	c_gip_pipeline_single * gip = private_data->gip;
+	c_execution_model_class * gip = private_data->gip;
 //	printf ("%c", (gip->get_flags() & am_flag_super) ? '#' : '$');
 	switch (n)
 	{

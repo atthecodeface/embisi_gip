@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include "c_mmio_model.h"
 #include "c_memory_model.h"
-#include "c_gip_pipeline_single.h"
+#include "c_execution_model_class.h"
 #include "gdb_stub.h"
 #include "ether.h"
 

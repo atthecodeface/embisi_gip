@@ -55,9 +55,11 @@ typedef enum
     gip_native_ins_subclass_alu_rsc=15,
     gip_native_ins_subclass_alu_dva=16, // here on down not possible without extension
     gip_native_ins_subclass_alu_dvb=17,
-    gip_native_ins_subclass_alu_xorcnt=18,
+    gip_native_ins_subclass_alu_andcnt=18,
     gip_native_ins_subclass_alu_xorfirst=19,
     gip_native_ins_subclass_alu_xorlast=20,
+    gip_native_ins_subclass_alu_bitreverse=21,
+    gip_native_ins_subclass_alu_bytereverse=22,
 
     gip_native_ins_subclass_cond_eq=0, // bits 8-11 of 0-11, maps to ALU op sub, cond eq/z set
     gip_native_ins_subclass_cond_ne=1, // bits 8-11 of 0-11, maps to ALU op sub, cond ne/z clr
@@ -107,8 +109,8 @@ typedef enum
     gip_native_ins_subclass_memory_word_postindex_up = 6, // store only writebacks rn as rd by default; ldr uses extreg rm to use preindex by rm, or extimm for full imm
     gip_native_ins_subclass_memory_word_postindex_down = 7, // store only writebacks rn as rd by default; ldr uses extreg rm to use preindex by rm, or extimm for full imm
 
-    gip_native_ins_subclass_branch_nolink = 0, // bit 11 of 0-11
-    gip_native_ins_subclass_branch_link = 1,
+    gip_native_ins_subclass_branch_no_delay = 0, // bit 11 of 0-11
+    gip_native_ins_subclass_branch_delay = 1,
 
 } t_gip_native_ins_subclass;
 

@@ -62,21 +62,21 @@ private:
     void c_gip_full::build_gip_instruction_load( t_gip_instruction *gip_instr, t_gip_ins_subclass gip_ins_subclass, int preindex, int up, int stack, int burst_left, int a, int f );
     void c_gip_full::build_gip_instruction_store( t_gip_instruction *gip_instr, t_gip_ins_subclass gip_ins_subclass, int preindex, int up, int use_shift, int stack, int burst_left, int a, int f );
     void c_gip_full::build_gip_instruction_cc( t_gip_instruction *gip_instr, t_gip_ins_cc gip_ins_cc);
-    void c_gip_full::build_gip_instruction_rn( t_gip_instruction *gip_instr, t_gip_ins_rnm gip_ins_rn );
+    void c_gip_full::build_gip_instruction_rn( t_gip_instruction *gip_instr, t_gip_ins_r gip_ins_rn );
     void c_gip_full::build_gip_instruction_rn_int( t_gip_instruction *gip_instr, t_gip_ins_rnm_int gip_ins_rn_int );
-    void c_gip_full::build_gip_instruction_rm( t_gip_instruction *gip_instr, t_gip_ins_rnm gip_ins_rm );
+    void c_gip_full::build_gip_instruction_rm( t_gip_instruction *gip_instr, t_gip_ins_r gip_ins_rm );
     void c_gip_full::build_gip_instruction_rm_int( t_gip_instruction *gip_instr, t_gip_ins_rnm_int gip_ins_rm_int );
-    void c_gip_full::build_gip_instruction_rd( t_gip_instruction *gip_instr, t_gip_ins_rd gip_ins_rd );
+    void c_gip_full::build_gip_instruction_rd( t_gip_instruction *gip_instr, t_gip_ins_r gip_ins_rd );
     void c_gip_full::build_gip_instruction_rd_int( t_gip_instruction *gip_instr, t_gip_ins_rd_int gip_ins_rd_int );
     void c_gip_full::build_gip_instruction_rd_reg( t_gip_instruction *gip_instr, int gip_ins_rd_r );
     void c_gip_full::build_gip_instruction_immediate( t_gip_instruction *gip_instr, unsigned int imm_val );
     t_gip_ins_cc c_gip_full::map_condition_code( int arm_cc );
-    t_gip_ins_rnm c_gip_full::map_source_register( int arm_r );
-    t_gip_ins_rd c_gip_full::map_destination_register( int arm_rd );
+    t_gip_ins_r c_gip_full::map_source_register( int arm_r );
+    t_gip_ins_r c_gip_full::map_destination_register( int arm_rd );
     t_gip_ins_subclass c_gip_full::map_shift( int shf_how, int imm, int amount );
-    t_gip_ins_rnm c_gip_full::map_native_rm( int rm );
-    t_gip_ins_rnm c_gip_full::map_native_rn( int rn );
-    t_gip_ins_rd c_gip_full::map_native_rd( int rd );
+    t_gip_ins_r c_gip_full::map_native_rm( int rm );
+    t_gip_ins_r c_gip_full::map_native_rn( int rn );
+    t_gip_ins_r c_gip_full::map_native_rd( int rd );
     unsigned int c_gip_full::map_native_immediate( int imm );
 
     /*b Native Decode methods

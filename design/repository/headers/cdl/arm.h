@@ -15,7 +15,7 @@ typedef enum [2]
 
 /*t t_arm_ins_class
  */
-typedef enum [3]
+typedef enum [4]
 {
     arm_ins_class_none,
     arm_ins_class_alu,
@@ -25,5 +25,6 @@ typedef enum [3]
     arm_ins_class_ldm,
     arm_ins_class_stm,
     arm_ins_class_mul,
+    arm_ins_class_native,
 } t_arm_ins_class;
 

@@ -1,0 +1,166 @@
+/*a Includes
+ */
+include "gip.h"
+
+/*a Types
+ */
+/*t t_apb_state
+ */
+typedef fsm
+{
+    apb_state_idle "APB idle";
+    apb_state_write_select "APB writing, select asserted, no enable";
+    apb_state_write_enable "APB writing, select and enable asserted";
+    apb_state_read_select "APB reading, select asserted, no enable";
+    apb_state_read_enable "APB reading, select and enable asserted, data should be valid (unless wait asserted)";
+} t_apb_state;
+
+/*a Module
+ */
+module gip_periph_apb( clock gip_clock,
+                       input bit gip_reset,
+
+                       input bit read,
+                       input bit flush,
+                       input bit[5] read_address,
+                       output bit read_data_valid,
+                       output bit[32] read_data,
+
+                       input bit write,
+                       input bit[5] write_address,
+                       input bit[32] write_data,
+
+                       output bit periph_busy, // So that blocking can occur on a 'block all' instruction, until APB is done - only effected by writes (i.e. post-RF read stuff)
+
+                       output bit[5] apb_paddr,
+                       output bit apb_penable,
+                       output bit apb_pselect,
+                       output bit[32] apb_pwdata,
+                       output bit apb_prnw,
+                       input bit[32] apb_prdata,
+                       input bit apb_pwait
+    )
+"
+    This APB bus interface ties directly to the register file of the GIP core
+
+    The interface to the GIP core RF requires that if a write is presented by the GIP core then it is taken immediately.
+    This requires a 32-bit data buffer and 5-bit address buffer.
+    If a read is in progress then the write is posted until after the read completes.
+
+    If a read request comes in then it shall be held until read_data_valid is asserted; the only exception being if 'flush' is asserted during the first cycle of the read being presented, in which case this does not count as a read request.
+
+    If a read request comes in while the APB is completing a write operation, the read operation will start once the write completes.
+
+    A second write should NEVER be presented until all previous writes have completed.
+
+    We support a synchronous wait signal on the APB. It forces no state transitions on the APB, if it is asserted.
+"
+
+{
+
+    /*b Clock and reset
+     */
+    default clock gip_clock;
+    default reset gip_reset;
+
+    /*b APB interface state
+     */
+    clocked t_apb_state apb_state = apb_state_idle;
+
+    /*b Holding buffer for writes
+     */
+    clocked bit write_pending=0;
+    clocked bit[32] write_buffer_data=0;
+    clocked bit[5] write_buffer_address=0;
+
+    /*b Address and data buffers for reads
+     */
+    clocked bit[32] read_data=0;
+    clocked bit read_data_valid=0;
+
+    /*b APB interface
+     */
+    apb_interface "APB interface state machine and decode":
+        {
+            apb_pselect = 0;
+            apb_penable = 0;
+            apb_paddr = write_buffer_address;
+            apb_pwdata = write_buffer_data;
+            apb_prnw = 0;
+            periph_busy = 0;
+            read_data_valid <= 0;
+
+            if (write)
+            {
+                write_pending <= 1;
+                write_buffer_address <= write_address;
+                write_buffer_data <= write_data;
+            }
+
+            full_switch (apb_state)
+                {
+                case apb_state_idle:
+                {
+                    if (write_pending)
+                    {
+                        periph_busy = 1;
+                        apb_state <= apb_state_write_select;
+                        write_pending <= 0;
+                    }
+                    elsif (read && !flush)
+                        {
+                            apb_state <= apb_state_read_select;
+                        }
+                }
+                case apb_state_write_select:
+                {
+                    apb_pselect = 1;
+                    apb_penable = 0;
+                    periph_busy = 1;
+                    if (!apb_pwait)
+                    {
+                        apb_state <= apb_state_write_enable;
+                    }
+                }
+                case apb_state_write_enable:
+                {
+                    apb_pselect = 1;
+                    apb_penable = 1;
+                    periph_busy = 1;
+                    if (!apb_pwait)
+                    {
+                        apb_state <= apb_state_idle;
+                    }
+                }
+                case apb_state_read_select:
+                {
+                    apb_pselect = 1;
+                    apb_penable = 0;
+                    apb_prnw = 1;
+                    apb_paddr = read_address;
+                    periph_busy = write_pending;
+                    if (!apb_pwait)
+                    {
+                        apb_state <= apb_state_read_enable;
+                    }
+                }
+                case apb_state_read_enable:
+                {
+                    apb_pselect = 1;
+                    apb_penable = 1;
+                    apb_prnw = 1;
+                    apb_paddr = read_address;
+                    periph_busy = write_pending;
+                    if (!apb_pwait)
+                    {
+                        apb_state <= apb_state_idle;
+                        read_data_valid <= 1;
+                        read_data <= apb_prdata;
+                    }
+                }
+                }
+        }
+
+    /*b Done
+     */
+}

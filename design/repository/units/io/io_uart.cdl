@@ -105,7 +105,7 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
     clocked t_tx_data_state tx_data_state = tx_data_state_idle;
     clocked bit[9] tx_sr = 0;
     clocked bit[4] tx_count = 0;
-    clocked bit[3] tx_bit = 0;
+    clocked bit[4] tx_bit = 0;
     comb bit tx_pend_start "Asserted if the tx bit machine should start a pending bit";
     clocked bit tx_pending=0 "Asserted if a tx data byte is pending in the shift register";
 
@@ -116,7 +116,7 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
     clocked t_rx_data_state rx_data_state = rx_data_state_idle;
     clocked bit[9] rx_sr = 0;
     clocked bit[4] rx_count = 0;
-    clocked bit[3] rx_bit = 0;
+    clocked bit[4] rx_bit = 0;
     clocked bit rx_framing_error = 0 "Asserted during receive if the framing of the rx is bad";
 
     /*b Combinatorials for signal breakout
@@ -152,11 +152,11 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
             tx_cfg_one_start_bit = (cmd_fifo_data[1;io_uart_cmd_bit_tx_start_bits]==0);
             tx_cfg_two_start_bits = (cmd_fifo_data[1;io_uart_cmd_bit_tx_start_bits]==1);
 
-            tx_cfg_five_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==0);
-            tx_cfg_six_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==1);
-            tx_cfg_seven_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==2);
-            tx_cfg_eight_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==3);
-            tx_cfg_nine_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_tx_data_bits]==4);
+            tx_cfg_five_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_tx_data_bits]==0);
+            tx_cfg_six_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_tx_data_bits]==1);
+            tx_cfg_seven_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_tx_data_bits]==2);
+            tx_cfg_eight_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_tx_data_bits]==3);
+            tx_cfg_nine_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_tx_data_bits]==4);
 
             tx_cfg_half_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==0);
             tx_cfg_one_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_tx_stop_bits]==1);
@@ -166,11 +166,11 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
             rx_cfg_one_start_bit = (cmd_fifo_data[1;io_uart_cmd_bit_rx_start_bits]==0);
             rx_cfg_two_start_bits = (cmd_fifo_data[1;io_uart_cmd_bit_rx_start_bits]==1);
 
-            rx_cfg_five_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==0);
-            rx_cfg_six_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==1);
-            rx_cfg_seven_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==2);
-            rx_cfg_eight_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==3);
-            rx_cfg_nine_data_bits = (cmd_fifo_data[2;io_uart_cmd_bit_rx_data_bits]==4);
+            rx_cfg_five_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_rx_data_bits]==0);
+            rx_cfg_six_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_rx_data_bits]==1);
+            rx_cfg_seven_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_rx_data_bits]==2);
+            rx_cfg_eight_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_rx_data_bits]==3);
+            rx_cfg_nine_data_bits = (cmd_fifo_data[3;io_uart_cmd_bit_rx_data_bits]==4);
 
             rx_cfg_half_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_rx_stop_bits]==0);
             rx_cfg_one_stop_bit = (cmd_fifo_data[2;io_uart_cmd_bit_rx_stop_bits]==1);
@@ -304,6 +304,7 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
     tx_state_fsm "Transmit state machine":
         {
             tx_status_pend = 0;
+            txd = 1;
             full_switch (tx_data_state)
                 {
                 case tx_data_state_idle:

@@ -235,28 +235,6 @@ typedef enum [3]
     gip_mem_op_load_byte
 } t_gip_mem_op;
 
-/*a External modules
- */
-/*m gip_prefetch
- */
-extern module gip_prefetch( clock gip_clock,
-                     input bit gip_reset,
-
-                     input t_gip_fetch_op fetch_op,
-                     output bit fetch_data_valid,
-                     output t_gip_word fetch_data,
-                     input t_gip_prefetch_op prefetch_op,
-                     input bit[32] prefetch_address
-    )
-{
-    timing comb input fetch_op;
-    timing comb output fetch_data_valid, fetch_data;
-    timing to rising clock gip_clock fetch_op;
-    timing from rising clock gip_clock fetch_data, fetch_data_valid;
-    timing to rising clock gip_clock prefetch_op, prefetch_address;
-
-}
-
 /*a Core module
  */
 /*m Module
@@ -271,6 +249,16 @@ extern module gip_core( clock gip_clock,
                         input bit[32] fetch_pc,
                         output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
                         output bit[32] prefetch_address,
+
+                        output bit rfr_periph_read,
+                        output bit[5] rfr_periph_read_address,
+                        input bit rfr_periph_read_data_valid,
+                        input bit[32] rfr_periph_read_data,
+                        input bit rfr_periph_busy,
+                        output bit rfw_periph_write,
+                        output bit[5] rfw_periph_write_address,
+                        output bit[32] rfw_periph_write_data,
+                        output bit gip_pipeline_flush,
 
                         output t_gip_mem_op alu_mem_op,
                         output t_gip_word alu_mem_address,

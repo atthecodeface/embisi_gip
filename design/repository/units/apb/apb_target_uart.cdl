@@ -1,0 +1,153 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "apb_uart_sync_fifo.h"
+
+/*a Constants
+ */
+
+/*a Module
+ */
+module apb_target_uart( clock apb_clock "Internal system clock",
+                         input bit int_reset "Internal reset",
+
+                         input bit[5] apb_paddr,
+                         input bit apb_penable,
+                         input bit apb_pselect,
+                         input bit[32] apb_pwdata,
+                         input bit apb_prnw,
+                        output bit[32] apb_prdata,
+
+                         output bit cmd_fifo_empty,
+                         output bit[32] cmd_fifo_data,
+                         input bit cmd_fifo_toggle,
+
+                         output bit status_fifo_full,
+                         input bit status_fifo_toggle,
+                         input bit[32] status_fifo_data )
+"
+Simple APB interface (with 4 words of FIFO in each direction) to the IO UART
+
+It will get something working.
+
+We need cmd_fifo_data valid within a few clock ticks of toggle.
+"
+{
+    /*b Clock and reset
+     */
+    default clock apb_clock;
+    default reset int_reset;
+
+    /*b Signals for command FIFO
+     */
+    comb bit write_to_cmd_fifo;
+    comb bit read_from_cmd_fifo;
+    clocked bit cmd_fifo_toggle_last=0;
+    clocked bit reading_from_cmd_fifo=0;
+    clocked bit[32] cmd_fifo_data=0;
+    net bit[32] cmd_fifo_read_data;
+    net bit cmd_fifo_empty;
+    net bit cmd_fifo_full;
+
+    /*b Signals for status FIFO
+     */
+    comb bit write_to_status_fifo;
+    comb bit read_from_status_fifo;
+    clocked bit status_fifo_toggle_last=0;
+    net bit[32] status_fifo_read_data;
+    net bit status_fifo_empty;
+    net bit status_fifo_full;
+
+    /*b APB write interface
+     */
+    apb_write "APB write interface":
+        {
+            write_to_cmd_fifo = 0;
+            if (apb_penable && apb_pselect && !apb_prnw)
+            {
+                if (!apb_paddr[0]) // FIFO
+                {
+                    write_to_cmd_fifo = 1;
+                }
+                else // command - clear fifo?
+                {
+                }
+            }
+        }
+
+    /*b APB read interface
+     */
+    apb_read "APB read interface":
+        {
+            read_from_status_fifo = 0;
+            apb_prdata = status_fifo_read_data;
+            if (apb_pselect && apb_prnw)
+            {
+                if (!apb_penable) // First cycle - read RAM in next cycle
+                {
+                    if (!apb_paddr[0]) // FIFO
+                    {
+                        read_from_status_fifo = 1;
+                    }
+                }
+                else
+                {
+                    if (!apb_paddr[0]) // FIFO
+                    {
+                        apb_prdata = status_fifo_read_data;
+                    }
+                    else
+                    {
+                        apb_prdata = 0; // Status
+                    }
+                }
+            }
+        }
+
+    /*b Status FIFO and controls
+     */
+    status_fifo "Status FIFO and controls":
+        {
+            write_to_status_fifo = 0;
+            status_fifo_toggle_last <= status_fifo_toggle;
+            if (status_fifo_toggle != status_fifo_toggle_last)
+            {
+                write_to_status_fifo = 1;
+            }
+            apb_uart_sync_fifo status_fifo( int_clock <- apb_clock,
+                                            int_reset <= int_reset,
+                                            write <= write_to_status_fifo,
+                                            read <= read_from_status_fifo,
+                                            empty_flag => status_fifo_empty,
+                                            full_flag => status_fifo_full,
+                                            read_data => status_fifo_read_data,
+                                            write_data <= status_fifo_data );
+        }
+
+    /*b Command FIFO
+     */
+    command_fifo "Command FIFO and controls":
+        {
+            read_from_cmd_fifo = 0;
+            cmd_fifo_toggle_last <= cmd_fifo_toggle;
+            if (cmd_fifo_toggle != cmd_fifo_toggle_last)
+            {
+                read_from_cmd_fifo = 1;
+            }
+            reading_from_cmd_fifo <= read_from_cmd_fifo;
+            if (reading_from_cmd_fifo)
+            {
+                cmd_fifo_data <= cmd_fifo_read_data;
+            }
+            apb_uart_sync_fifo cmd_fifo( int_clock <- apb_clock,
+                                            int_reset <= int_reset,
+                                            write <= write_to_cmd_fifo,
+                                            read <= read_from_cmd_fifo,
+                                            empty_flag => cmd_fifo_empty,
+                                            full_flag => cmd_fifo_full,
+                                            read_data => cmd_fifo_read_data,
+                                            write_data <= apb_pwdata );
+        }
+}

@@ -140,6 +140,7 @@ module gip_decode( clock gip_clock,
     /*b ARM instruction decoding
      */
     net t_gip_instruction_rf arm_dec_inst;
+    net bit arm_use_native_decode;
     net bit[5] arm_dec_next_cycle_of_opcode;
     net t_gip_pc_op arm_dec_pc_op;
     net bit[32] arm_dec_branch_offset;
@@ -264,13 +265,14 @@ module gip_decode( clock gip_clock,
 
     /*b ARM decode - use full instruction
      */
-    arm_decode "":
+    arm_decode "Decode ARM instruction":
         {
 
             gip_decode_arm arm( opcode <= fetched_opcode,
                                 cycle_of_opcode <= cycle_of_opcode,
 
                                 inst => arm_dec_inst,
+                                arm_use_native_decode => arm_use_native_decode,
 
                                 next_cycle_of_opcode => arm_dec_next_cycle_of_opcode,
                                 pc_op => arm_dec_pc_op,
@@ -455,6 +457,11 @@ module gip_decode( clock gip_clock,
                 /*b Select native instruction as our decode if opcode is correct, else ARM decode
                  */
                 dec_inst = arm_dec_inst;
+                if (arm_use_native_decode)
+                {
+                    dec_inst = native_dec_inst;
+                    dec_inst.gip_ins_cc = arm_dec_inst.gip_ins_cc;
+                }
                 dec_inst.pc = pc+8;
                 if (!fetched_opcode_valid)
                 {
@@ -462,7 +469,17 @@ module gip_decode( clock gip_clock,
                 }
                 else
                 {
-                    if (rfr_accepting_dec_instruction)
+                    if (arm_use_native_decode && native_dec_extending)
+                    {
+                        dec_inst.valid = 0;
+                        extended_immediate <= native_dec_next_extended_immediate;
+                        extended_cmd <= native_dec_next_extended_cmd;
+                        extended_rd <= native_dec_next_extended_rd;
+                        extended_rn <= native_dec_next_extended_rn;
+                        extended_rm <= native_dec_next_extended_rm;
+                        next_pc_op = arm_dec_pc_op;
+                    }
+                    elsif (rfr_accepting_dec_instruction)
                     {
                         next_pc_op = arm_dec_pc_op;
                         cycle_of_opcode <= arm_dec_next_cycle_of_opcode;

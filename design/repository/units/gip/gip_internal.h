@@ -266,6 +266,13 @@ extern module gip_rf( clock gip_clock,
                       output bit[5] rfr_special_read_address,
                       input t_gip_word rfr_special_read_data,
 
+                      output bit rfr_periph_read,
+                      output bit[5] rfr_periph_read_address,
+                      input bit rfr_periph_read_data_valid,
+                      input bit[32] rfr_periph_read_data,
+
+                      input bit rfr_periph_busy,
+
                       output t_gip_word rfr_port_0,
                       output t_gip_word rfr_port_1,
 
@@ -286,6 +293,9 @@ extern module gip_rf( clock gip_clock,
                       output bit[5] rfw_postbus_write_address,
                       output bit rfw_special_write,
                       output bit[5] rfw_special_write_address,
+
+                      output bit rfw_periph_write,
+                      output bit[5] rfw_periph_write_address,
 
                       input bit gip_pipeline_flush,
 

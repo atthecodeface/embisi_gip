@@ -42,6 +42,7 @@ extern module gip_decode_arm( input bit[32] opcode,
                        input bit[5] cycle_of_opcode,
 
                        output t_gip_instruction_rf inst,
+                       output bit arm_use_native_decode,
 
                        output bit[5] next_cycle_of_opcode,
                        output t_gip_pc_op pc_op,

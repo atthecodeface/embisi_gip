@@ -18,6 +18,7 @@ module gip_decode_arm( input bit[32] opcode,
                        input bit[5] cycle_of_opcode,
 
                        output t_gip_instruction_rf inst,
+                       output bit arm_use_native_decode,
 
                        output bit[5] next_cycle_of_opcode,
                        output t_gip_pc_op pc_op,
@@ -398,6 +399,10 @@ module gip_decode_arm( input bit[32] opcode,
                 {
                     ins_class = arm_ins_class_branch;
                 }
+                case 6:
+                {
+                    ins_class = arm_ins_class_native;
+                }
                 default:
                 {
                     ins_class = arm_ins_class_none;
@@ -604,6 +609,7 @@ module gip_decode_arm( input bit[32] opcode,
             inst.immediate = alu_immediate;
             inst.valid = 0;
             next_stored_reg_set = sel_reg_set;
+            arm_use_native_decode = 0;
 
             /*b Decode instruction according to class
              */
@@ -1833,9 +1839,28 @@ module gip_decode_arm( input bit[32] opcode,
                     }
 
                 }
+                /*b Native
+                 */
+                case arm_ins_class_native:
+                {
+                    inst.gip_ins_cc = ins_cc;
+                    next_cycle_of_opcode = 0;
+                    pc_op = gip_pc_op_sequential;
+                    arm_use_native_decode = 1;
+                }
                 /*b Done all instructions
                  */
                 }
+
+            /*b If condition is 'never' then just invalidate and ask for sequential!
+             */
+            if (cc==4hf)
+            {
+                inst.valid = 0;
+                next_cycle_of_opcode = 0;
+                pc_op = gip_pc_op_sequential;
+            }
+
         }
 
     /*b Done

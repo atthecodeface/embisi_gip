@@ -44,6 +44,13 @@ module gip_rf( clock gip_clock,
                       output bit[5] rfr_special_read_address,
                       input t_gip_word rfr_special_read_data,
 
+               output bit rfr_periph_read,
+               output bit[5] rfr_periph_read_address,
+               input bit rfr_periph_read_data_valid,
+               input bit[32] rfr_periph_read_data,
+
+               input bit rfr_periph_busy,
+
                       output t_gip_word rfr_port_0,
                       output t_gip_word rfr_port_1,
 
@@ -64,6 +71,8 @@ module gip_rf( clock gip_clock,
                       output bit[5] rfw_postbus_write_address,
                       output bit rfw_special_write,
                       output bit[5] rfw_special_write_address,
+               output bit rfw_periph_write,
+               output bit[5] rfw_periph_write_address,
 
                       input bit gip_pipeline_flush,
 
@@ -259,6 +268,10 @@ module gip_rf( clock gip_clock,
                     {
                         rfr_blocked = 1;
                     }
+                    if (rfr_periph_busy)
+                    {
+                        rfr_blocked = 1;
+                    }
                 }
                 if (rfr_inst_in.gip_ins_rn.type==gip_ins_r_type_register) // Blocked if ALU stage will write to Rn, or memory stage will write to Rn, or our ALU holding register is for Rn
                 {
@@ -310,6 +323,10 @@ module gip_rf( clock gip_clock,
                         rfr_blocked = 1;
                     }
                 }
+                if (rfr_inst_in.gip_ins_rm.type==gip_ins_r_type_periph) // Blocked if RF read of periph and data is not ready yet
+                {
+                    rfr_blocked = !rfr_periph_read_data_valid;
+                }
             }
             rfr_accepting_dec_instruction_if_alu_does = !rfr_blocked;
         }
@@ -330,6 +347,8 @@ module gip_rf( clock gip_clock,
             rfr_postbus_read_address = 0;
             rfr_special_read = 0;
             rfr_special_read_address = 0;
+            rfr_periph_read = 0;
+            rfr_periph_read_address = rfr_inst_in.gip_ins_rm.r;
             part_switch (rfr_inst_in.gip_ins_rn.type)
                 {
                 case gip_ins_r_type_postbus:
@@ -355,11 +374,17 @@ module gip_rf( clock gip_clock,
                     rfr_special_read = 1;
                     rfr_special_read_address = rfr_special_read_address | rfr_inst_in.gip_ins_rm.r;
                 }
+                case gip_ins_r_type_periph:
+                {
+                    rfr_periph_read = 1;
+                }
                 }
             rfw_postbus_write = 0;
             rfw_special_write = 0;
+            rfw_periph_write = 0;
             rfw_postbus_write_address = rfw_rd.r;
             rfw_special_write_address = rfw_rd.r;
+            rfw_periph_write_address = rfw_rd.r;
             part_switch (rfw_rd.type)
                 {
                 case gip_ins_r_type_special:
@@ -369,6 +394,10 @@ module gip_rf( clock gip_clock,
                 case gip_ins_r_type_postbus:
                 {
                     rfw_postbus_write = 1;
+                }
+                case gip_ins_r_type_periph:
+                {
+                    rfw_periph_write = 1;
                 }
                 }
         }

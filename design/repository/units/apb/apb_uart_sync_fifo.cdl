@@ -1,0 +1,102 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "memories.h"
+
+/*a Constants
+ */
+constant integer size=2048;
+constant integer log_size=11;
+
+/*a Module
+ */
+module apb_uart_sync_fifo( clock int_clock "Internal system clock",
+                           input bit int_reset "Internal reset",
+
+                           input bit write,
+                           input bit read,
+                           output bit empty_flag,
+                           output bit full_flag,
+                           output bit[32] read_data,
+                           input bit[32] write_data )
+"
+Simple synchronous FIFO
+"
+{
+    /*b Clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Nets for the SRAM
+     */
+    comb bit read_sram;
+    comb bit write_sram;
+    clocked bit[log_size] write_ptr=0;
+    clocked bit[log_size] read_ptr=0;
+    clocked bit[log_size] num_entries=0;
+    clocked bit empty_flag=1;
+    comb bit inc_num_entries;
+    comb bit dec_num_entries;
+    net bit[32] read_data;
+
+    /*b FIFO pointer handling
+     */
+    fifo_ptr_handling "FIFO pointer handling":
+        {
+            inc_num_entries = 0;
+            dec_num_entries = 0;
+            write_sram = 0;
+            read_sram = 0;
+
+            if (write) {
+                inc_num_entries = 1;
+                write_ptr <= write_ptr+1;
+                write_sram = 1;
+            }
+            if (read) {
+                dec_num_entries = 1;
+                read_ptr <= read_ptr+1;
+                read_sram = 1;
+            }
+
+            if (inc_num_entries && dec_num_entries)
+            {
+                num_entries <= num_entries;
+                empty_flag <= 0;
+            }
+            else
+            {
+                if (inc_num_entries)
+                {
+                    num_entries <= num_entries+1;
+                    empty_flag <= 0;
+                }
+                if (dec_num_entries)
+                {
+                    num_entries <= num_entries-1;
+                    empty_flag <= (num_entries==1);
+                }
+            }
+
+            full_flag = (num_entries==0) && (!empty_flag);
+        }
+
+    /*b SRAM instance
+     */
+    sram_instance "SRAM instance":
+        {
+            memory_s_dp_2048_x_32 fifo_sram( sram_clock <- int_clock,
+                                             sram_read <= read_sram,
+                                             sram_read_address <= read_ptr,
+                                             sram_write <= write_sram,
+                                             sram_write_address <= write_ptr,
+                                             sram_write_data <= write_data,
+                                             sram_read_data => read_data );
+        }
+
+    /*b All done
+     */
+}

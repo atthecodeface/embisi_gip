@@ -28,6 +28,16 @@ module gip_core( clock gip_clock,
                  output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
                  output bit[32] prefetch_address,
 
+                 output bit rfr_periph_read,
+                 output bit[5] rfr_periph_read_address,
+                 input bit rfr_periph_read_data_valid,
+                 input bit[32] rfr_periph_read_data,
+                 input bit rfr_periph_busy,
+                 output bit rfw_periph_write,
+                 output bit[5] rfw_periph_write_address,
+                 output bit[32] rfw_periph_write_data,
+                 output bit gip_pipeline_flush,
+
                  output t_gip_mem_op alu_mem_op,
                  output t_gip_word alu_mem_address,
                  output t_gip_word alu_mem_write_data,
@@ -89,6 +99,8 @@ module gip_core( clock gip_clock,
     net bit rfr_special_read;
     net bit[5] rfr_special_read_address;
     net bit[32] rfr_special_read_data;
+    net bit rfr_periph_read;
+    net bit[5] rfr_periph_read_address;
 
     /*b Nets from RF write
      */
@@ -96,6 +108,8 @@ module gip_core( clock gip_clock,
     net bit[5] rfw_postbus_write_address;
     net bit rfw_special_write;
     net bit[5] rfw_special_write_address;
+    net bit rfw_periph_write;
+    net bit[5] rfw_periph_write_address;
     net bit rfw_accepting_alu_rd;
 
     /*b Nets from ALU
@@ -201,6 +215,13 @@ module gip_core( clock gip_clock,
                        rfr_special_read_address => rfr_special_read_address,
                        rfr_special_read_data <= rfr_special_read_data,
 
+                       rfr_periph_read => rfr_periph_read,
+                       rfr_periph_read_address => rfr_periph_read_address,
+                       rfr_periph_read_data_valid <= rfr_periph_read_data_valid,
+                       rfr_periph_read_data <= rfr_periph_read_data,
+
+                       rfr_periph_busy <= rfr_periph_busy,
+
                        alu_inst_valid <= alu_inst.valid,
                        alu_inst_gip_ins_rd <= alu_inst.gip_ins_rd,
 
@@ -221,9 +242,12 @@ module gip_core( clock gip_clock,
                        rfw_postbus_write_address => rfw_postbus_write_address,
                        rfw_special_write => rfw_special_write,
                        rfw_special_write_address => rfw_special_write_address,
+                       rfw_periph_write => rfw_periph_write,
+                       rfw_periph_write_address => rfw_periph_write_address,
 
                        gip_pipeline_rfw_write_pc => gip_pipeline_rfw_write_pc,
                        gip_pipeline_rfw_data => gip_pipeline_rfw_data );
+            rfw_periph_write_data = gip_pipeline_rfw_data;
 
             gip_alu alu( gip_clock <- gip_clock,
                          gip_reset <= gip_reset,

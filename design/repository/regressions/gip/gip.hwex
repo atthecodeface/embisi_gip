@@ -20,6 +20,15 @@ module gipc_prefetch_if_comp "gipc_prefetch_if_comp"
 #b Add GIP prefetch
 module gip_prefetch "gip_prefetch"
 
+#b Add GIP peripheral APB interface
+module gip_periph_apb "gip_periph_apb"
+
+#b Add GIP peripheral APB target UART interface
+module apb_target_uart "apb_target_uart"
+
+#b Add IO UART for APB  target UART interface
+module io_uart "io_uart"
+
 #b Add GIP data interface
 module gip_data_ram "gip_data_ram"
 
@@ -67,6 +76,10 @@ drive pst_rom_srm.sram_clock system_clock
 drive gipc_pipeline_trace.int_clock system_clock
 drive gipc_prefetch_if_comp.int_clock system_clock
 drive gip_prefetch.gip_clock system_clock
+drive gip_periph_apb.gip_clock system_clock
+drive apb_target_uart.apb_clock system_clock
+drive io_uart.int_clock system_clock
+
 drive gip_data_ram.gip_clock system_clock
 drive shared_sram.sram_clock system_clock
 
@@ -76,6 +89,15 @@ wire fetch_data_valid fetch_data[32] fetch_pc[32]
 wire fetch_op[2] fetch_16
 
 wire prefetch_op[2] prefetch_address[32]
+
+wire gipc_pipeline_flush
+
+wire periph_read periph_write periph_read_address[5] periph_write_address[5] periph_write_data[32] periph_read_data_valid periph_read_data[32] periph_busy
+
+wire apb_pselect apb_penable apb_prnw apb_paddr[5] apb_pwdata[32] apb_prdata[32] apb_pwait
+
+wire cmd_fifo_empty cmd_fifo_data[32] cmd_fifo_toggle
+wire status_fifo_full status_fifo_data[32] status_fifo_toggle
 
 wire mem_alu_busy mem_read_data_valid mem_read_data[32]
 wire alu_mem_op[3] alu_mem_address[32] alu_mem_write_data[32] alu_mem_burst[4]
@@ -104,6 +126,16 @@ drive gipc.fetch_data fetch_data
 drive gipc.fetch_data_valid fetch_data_valid
 drive prefetch_op gipc.prefetch_op
 drive prefetch_address gipc.prefetch_address
+
+drive periph_read gipc.rfr_periph_read
+drive periph_read_address gipc.rfr_periph_read_address
+drive gipc.rfr_periph_read_data periph_read_data
+drive gipc.rfr_periph_read_data_valid periph_read_data_valid
+drive gipc.rfr_periph_busy periph_busy
+drive periph_write gipc.rfw_periph_write
+drive periph_write_address gipc.rfw_periph_write_address
+drive periph_write_data gipc.rfw_periph_write_data
+drive gipc_pipeline_flush gipc.gip_pipeline_flush
 
 drive alu_mem_op gipc.alu_mem_op
 drive alu_mem_address gipc.alu_mem_address
@@ -147,6 +179,65 @@ drive gip_prefetch.sram_granted sram_not_in_use_by_data
 drive isram_read gip_prefetch.sram_read
 drive isram_read_address gip_prefetch.sram_read_address
 drive gip_prefetch.sram_read_data sram_read_data
+
+#b Wire up GIP peripheral APB master
+drive gip_periph_apb.gip_reset system_reset
+drive gip_periph_apb.read periph_read
+drive gip_periph_apb.flush gipc_pipeline_flush
+drive gip_periph_apb.read_address periph_read_address
+drive periph_read_data gip_periph_apb.read_data
+drive periph_read_data_valid gip_periph_apb.read_data_valid
+drive gip_periph_apb.write periph_write
+drive gip_periph_apb.write_address periph_write_address
+drive gip_periph_apb.write_data periph_write_data
+drive periph_busy gip_periph_apb.periph_busy
+
+drive apb_paddr gip_periph_apb.apb_paddr
+drive apb_penable gip_periph_apb.apb_penable
+drive apb_pselect gip_periph_apb.apb_pselect
+drive apb_pwdata gip_periph_apb.apb_pwdata
+drive apb_prnw gip_periph_apb.apb_prnw
+drive gip_periph_apb.apb_prdata apb_prdata
+drive gip_periph_apb.apb_pwait apb_pwait
+
+#b Wire up APB target UART
+drive apb_target_uart.int_reset system_reset
+drive apb_target_uart.apb_paddr apb_paddr
+drive apb_target_uart.apb_penable apb_penable
+drive apb_target_uart.apb_pselect apb_pselect
+drive apb_target_uart.apb_pwdata apb_pwdata
+drive apb_target_uart.apb_prnw apb_prnw
+drive apb_prdata apb_target_uart.apb_prdata
+
+drive cmd_fifo_empty apb_target_uart.cmd_fifo_empty
+drive cmd_fifo_data apb_target_uart.cmd_fifo_data
+drive apb_target_uart.cmd_fifo_toggle cmd_fifo_toggle
+
+drive status_fifo_full apb_target_uart.status_fifo_full
+drive apb_target_uart.status_fifo_toggle status_fifo_toggle
+drive apb_target_uart.status_fifo_data status_fifo_data
+
+assign apb_pwait 0
+
+#b Wire up IO UART
+wire rxd txd txd_fc rxd_fc rx_baud_enable tx_baud_enable
+assign rxd 1
+assign tx_baud_enable 1
+assign rx_baud_enable 1
+assign txd_fc 0
+drive io_uart.int_reset system_reset
+drive io_uart.tx_baud_enable tx_baud_enable
+drive txd io_uart.txd
+drive io_uart.txd_fc txd_fc
+drive io_uart.rx_baud_enable rx_baud_enable
+drive io_uart.rxd rxd
+drive rxd_fc io_uart.rxd_fc
+drive io_uart.cmd_fifo_empty cmd_fifo_empty
+drive io_uart.cmd_fifo_data cmd_fifo_data
+drive cmd_fifo_toggle io_uart.cmd_fifo_toggle
+drive io_uart.status_fifo_full status_fifo_full
+drive status_fifo_toggle io_uart.status_fifo_toggle
+drive status_fifo_data io_uart.status_fifo_data
 
 #b Wire up shared SRAM
 mux sram_address          sram_not_in_use_by_data dsram_address        isram_read_address 

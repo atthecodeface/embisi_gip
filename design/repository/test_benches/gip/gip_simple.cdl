@@ -1,0 +1,458 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "gip.h"
+include "io_uart.h"
+include "postbus_rom_source.h"
+include "memories.h"
+
+/*a Types
+ */
+
+/*a External modules required
+ */
+/*m gip_simple_boot_rom
+ */
+extern module gip_simple_boot_rom( clock rom_clock,
+                                   input bit rom_reset,
+                                   input bit rom_read,
+                                   input bit[11] rom_address,
+                                   output bit[32] rom_read_data )
+{
+    timing to rising clock rom_clock rom_reset, rom_read, rom_address;
+    timing from rising clock rom_clock rom_read_data;
+}
+
+/*m gip_prefetch
+ */
+extern module gip_prefetch( clock gip_clock,
+                     input bit gip_reset,
+
+                     input bit fetch_16,
+
+                     input t_gip_fetch_op fetch_op,
+                     output bit fetch_data_valid,
+                     output t_gip_word fetch_data,
+                     output bit[32]fetch_pc,
+                     input t_gip_prefetch_op prefetch_op,
+                     input bit[32] prefetch_address,
+
+                     input bit sram_granted,
+                     output bit sram_read,
+                     output bit[32] sram_read_address,
+                     input bit[32] sram_read_data
+    )
+{
+    timing comb input fetch_op, fetch_16, sram_read_data;
+    timing comb output fetch_data_valid, fetch_data, fetch_pc;
+    timing to rising clock gip_clock fetch_op;
+    timing from rising clock gip_clock fetch_data, fetch_data_valid;
+    timing to rising clock gip_clock prefetch_op, prefetch_address;
+
+    timing to rising clock gip_clock sram_granted, sram_read_data;
+    timing from rising clock gip_clock sram_read, sram_read_address;
+
+}
+
+/*m gip_data_ram
+ */
+extern module gip_data_ram( clock gip_clock,
+                     input bit gip_reset,
+
+                     input t_gip_mem_op alu_mem_op,
+                     input t_gip_word alu_mem_address,
+                     input t_gip_word alu_mem_write_data,
+                     input bit[4] alu_mem_burst,
+
+                     output bit mem_alu_busy,
+                     output bit mem_read_data_valid,
+                     output bit[32] mem_read_data,
+
+                     output bit sram_not_in_use,
+                     output bit sram_read_not_write,
+                     output bit[4] sram_write_byte_enables,
+                     output bit[32] sram_address,
+                     output bit[32] sram_write_data,
+                     input bit[32] sram_read_data )
+{
+    timing to rising clock gip_clock gip_reset, alu_mem_op, alu_mem_address, alu_mem_write_data, alu_mem_burst;
+    timing comb input sram_read_data;
+    timing from rising clock gip_clock mem_alu_busy, mem_read_data_valid, mem_read_data;
+    timing from rising clock gip_clock sram_not_in_use, sram_read_not_write, sram_write_byte_enables, sram_write_data, sram_address;
+    timing comb output mem_read_data;
+}
+
+/*m gip_periph_apb
+ */
+extern module gip_periph_apb( clock gip_clock,
+                              input bit gip_reset,
+
+                              input bit read,
+                              input bit flush,
+                              input bit[5] read_address,
+                              output bit read_data_valid,
+                              output bit[32] read_data,
+
+                              input bit write,
+                              input bit[5] write_address,
+                              input bit[32] write_data,
+
+                              output bit periph_busy, // So that blocking can occur on a 'block all' instruction, until APB is done - only effected by writes (i.e. post-RF read stuff)
+
+                              output bit[5] apb_paddr,
+                              output bit apb_penable,
+                              output bit apb_pselect,
+                              output bit[32] apb_pwdata,
+                              output bit apb_prnw,
+                              input bit[32] apb_prdata,
+                              input bit apb_pwait
+    )
+{
+    timing to rising clock gip_clock gip_reset;
+    timing to rising clock gip_clock flush, read, read_address;
+    timing from rising clock gip_clock read_data, read_data_valid;
+
+    timing to rising clock gip_clock write, write_address, write_data;
+
+    timing from rising clock gip_clock periph_busy;
+
+    timing from rising clock gip_clock apb_pselect, apb_penable, apb_paddr, apb_pwdata, apb_prnw;
+    timing to rising clock gip_clock apb_pwait, apb_prdata;
+}
+
+/*m apb_target_uart
+ */
+extern module apb_target_uart( clock apb_clock "Internal system clock",
+                         input bit int_reset "Internal reset",
+
+                         input bit[5] apb_paddr,
+                         input bit apb_penable,
+                         input bit apb_pselect,
+                         input bit[32] apb_pwdata,
+                         input bit apb_prnw,
+                        output bit[32] apb_prdata,
+
+                         output bit cmd_fifo_empty,
+                         output bit[32] cmd_fifo_data,
+                         input bit cmd_fifo_toggle,
+
+                         output bit status_fifo_full,
+                         input bit status_fifo_toggle,
+                         input bit[32] status_fifo_data )
+{
+    timing to rising clock apb_clock int_reset;
+
+    timing to rising clock apb_clock apb_pselect, apb_penable, apb_paddr, apb_pwdata, apb_prnw;
+    timing from rising clock apb_clock apb_prdata;
+
+    timing to rising clock apb_clock cmd_fifo_toggle;
+    timing from rising clock apb_clock cmd_fifo_empty, cmd_fifo_data;
+    timing to rising clock apb_clock status_fifo_toggle, status_fifo_data;
+    timing from rising clock apb_clock status_fifo_full;
+}
+
+/*m postbus_test_rom_contents
+ */
+extern module postbus_test_rom_contents( clock int_clock, input bit int_reset, input bit read, input bit[8] address, output bit[32] data )
+{
+    timing to rising clock int_clock int_reset, read, address;
+    timing from rising clock int_clock data;
+    timing comb input int_reset;
+}
+
+/*a Modules
+ */
+module gip_simple( clock int_clock,
+                   input bit int_reset,
+                   output bit[8] leds,
+                   output bit txd,
+                   input bit rxd
+    )
+{
+    default clock int_clock;
+    default reset int_reset;
+
+    net bit[8] leds;
+    net bit txd;
+
+    clocked bit[24] clock_divider=0;
+    comb bit clock_enable;
+
+    net bit rom_read;
+    net bit[8] rom_address;
+    net bit[32] rom_data;
+    net t_postbus_type postbus_type;
+    net t_postbus_data postbus_data;
+    net t_postbus_ack postbus_ack;
+
+    net bit fetch_16;
+    net t_gip_fetch_op fetch_op;
+    net t_gip_word fetch_data;
+    net bit fetch_data_valid;
+    net bit[32] fetch_pc;
+    net t_gip_prefetch_op prefetch_op;
+    net bit[32] prefetch_address;
+
+    net bit periph_read;
+    net bit[5] periph_read_address;
+    net bit periph_read_data_valid;
+    net bit[32] periph_read_data;
+    net bit periph_busy;
+    net bit periph_write;
+    net bit[5] periph_write_address;
+    net bit[32] periph_write_data;
+    net bit gipc_pipeline_flush;
+
+    net t_gip_mem_op alu_mem_op;
+    net t_gip_word alu_mem_address;
+    net t_gip_word alu_mem_write_data;
+    net bit[4] alu_mem_burst;
+
+    net bit mem_alu_busy;
+    net bit mem_read_data_valid;
+    net bit[32] mem_read_data;
+
+    net t_postbus_type postbus_tx_type;
+    net t_postbus_data postbus_tx_data;
+    net t_postbus_ack postbus_tx_ack;
+
+    net t_postbus_type postbus_rx_type;
+    net t_postbus_data postbus_rx_data;
+    net t_postbus_ack postbus_rx_ack;
+
+    comb bit rom_next_access;
+    clocked bit rom_current_access = 0;
+    net bit[32] rom_read_data;
+
+    net bit sram_not_in_use_by_data;
+    net bit isram_read;
+    net bit[32] isram_read_address;
+    net bit[32] sram_read_data;
+    net bit dsram_read_not_write;
+    net bit[4] sram_write_byte_enables;
+    net bit[32] dsram_address;
+    net bit[32] sram_write_data;
+
+    comb bit tx_baud_enable "Baud enable for transmit, 16 x bit time";
+//    net bit txd "Transmit data out";
+//    net bit txd_fc "Transmit flow control; assert to pause transmit";
+
+    comb bit rx_baud_enable "Baud enable for receive, 16 x bit time";
+//    net bit rxd "Receive data in";
+    net bit rxd_fc "Receive flow control; asserted to pause transmit";
+
+    net bit cmd_fifo_empty;
+    net bit[32] cmd_fifo_data;
+    net bit cmd_fifo_toggle;
+
+    net bit status_fifo_full;
+    net bit status_fifo_toggle;
+    net bit[32] status_fifo_data;
+
+    net bit[5] apb_paddr;
+    net bit apb_penable;
+    net bit apb_pselect;
+    net bit[32] apb_pwdata;
+    net bit apb_prnw;
+    net bit[32] apb_prdata;
+    net bit apb_pwait;
+
+    divider "Clock divider for LED":
+        {
+            clock_divider <= clock_divider+1;
+            clock_enable = 0;
+            if (clock_divider[20;0]==0)
+//            if (clock_divider[10;0]==0)
+            {
+                clock_enable = 1;
+            }
+            rx_baud_enable = 1;
+            tx_baud_enable = 1;
+        }
+
+    instances "Instances":
+        {
+            gip_core gip( gip_clock <- int_clock,
+                          gip_reset <= int_reset,
+
+                          fetch_op => fetch_op,
+                          fetch_16 => fetch_16,
+                          fetch_pc <= fetch_pc,
+                          fetch_data <= fetch_data,
+                          fetch_data_valid <= fetch_data_valid,
+                          prefetch_op => prefetch_op,
+                          prefetch_address => prefetch_address,
+
+                          rfr_periph_read => periph_read,
+                          rfr_periph_read_address => periph_read_address,
+                          rfr_periph_read_data <= periph_read_data,
+                          rfr_periph_read_data_valid <= periph_read_data_valid,
+                          rfr_periph_busy <= periph_busy,
+
+                          rfw_periph_write => periph_write,
+                          rfw_periph_write_address => periph_write_address,
+                          rfw_periph_write_data => periph_write_data,
+
+                          alu_mem_op => alu_mem_op,
+                          alu_mem_address => alu_mem_address,
+                          alu_mem_write_data => alu_mem_write_data,
+                          alu_mem_burst => alu_mem_burst,
+                          mem_alu_busy <= mem_alu_busy,
+                          mem_read_data <= mem_read_data,
+                          mem_read_data_valid <= mem_read_data_valid,
+
+                          postbus_rx_type <= postbus_type,
+                          postbus_rx_data <= postbus_data,
+                          postbus_rx_ack => postbus_ack,
+
+                          postbus_tx_type => postbus_tx_type,
+                          postbus_tx_data => postbus_tx_data,
+                          postbus_tx_ack <= 0,
+                        
+                          gip_pipeline_flush => gipc_pipeline_flush
+                );
+
+            gip_prefetch prefetch( gip_clock <- int_clock,
+                                   gip_reset <= int_reset,
+
+                                   fetch_16 <= fetch_16,
+                                   fetch_op <= fetch_op,
+                                   fetch_pc => fetch_pc,
+                                   fetch_data => fetch_data,
+                                   fetch_data_valid => fetch_data_valid,
+                                   prefetch_op <= prefetch_op,
+                                   prefetch_address <= prefetch_address,
+
+                                   sram_granted <= sram_not_in_use_by_data,
+                                   sram_read => isram_read,
+                                   sram_read_address => isram_read_address,
+                                   sram_read_data <= rom_current_access ? rom_read_data : sram_read_data );
+
+            gip_data_ram data_ram( gip_clock <- int_clock,
+                                   gip_reset <= int_reset, 
+
+                                   alu_mem_op <= alu_mem_op,
+                                   alu_mem_address <= alu_mem_address,
+                                   alu_mem_write_data <= alu_mem_write_data,
+                                   alu_mem_burst <= alu_mem_burst,
+                                   mem_alu_busy => mem_alu_busy,
+                                   mem_read_data => mem_read_data,
+                                   mem_read_data_valid => mem_read_data_valid,
+
+                                   sram_not_in_use => sram_not_in_use_by_data,
+                                   sram_read_not_write => dsram_read_not_write,
+                                   sram_write_byte_enables => sram_write_byte_enables,
+                                   sram_address => dsram_address,
+                                   sram_write_data => sram_write_data,
+                                   sram_read_data <= rom_current_access ? rom_read_data : sram_read_data );
+
+            gip_periph_apb gip_apb( gip_clock <- int_clock,
+                                    gip_reset <- int_reset,
+
+                                    read <= periph_read,
+                                    flush <= gipc_pipeline_flush,
+                                    read_address <= periph_read_address,
+                                    read_data => periph_read_data,
+                                    read_data_valid => periph_read_data_valid,
+
+                                    write <= periph_write,
+                                    write_address <= periph_write_address,
+                                    write_data <= periph_write_data,
+                                    periph_busy => periph_busy,
+
+                                    apb_pselect => apb_pselect,
+                                    apb_penable => apb_penable,
+                                    apb_paddr => apb_paddr,
+                                    apb_prnw => apb_prnw,
+                                    apb_pwdata => apb_pwdata,
+                                    apb_prdata <= apb_prdata,
+                                    apb_pwait <= 0 );
+
+            gip_simple_boot_rom boot_rom( rom_clock <- int_clock,
+                                          rom_reset <= int_reset,
+                                          rom_read <= rom_next_access && (sram_not_in_use_by_data ? isram_read : dsram_read_not_write),
+                                          rom_address <= sram_not_in_use_by_data ? isram_read_address[11;2] : dsram_address[11;2],
+                                          rom_read_data => rom_read_data );
+
+            rom_next_access = sram_not_in_use_by_data ? !isram_read_address[31] : !dsram_address[31];
+            rom_current_access <= rom_next_access;
+
+            memory_s_sp_2048_x_4b8 shared_sram( sram_clock <- int_clock,
+                                                sram_address <= sram_not_in_use_by_data ? isram_read_address[11;2] : dsram_address[11;2],
+                                                sram_read_not_write <= rom_next_access && (sram_not_in_use_by_data ? isram_read : dsram_read_not_write),
+                                                sram_write_enable <= sram_write_byte_enables,
+                                                sram_write_data <= sram_write_data,
+                                                sram_read_data => sram_read_data );
+
+        }
+
+    /*b APB instances
+     */
+    apb_instances "APB Instances":
+        {
+            apb_target_uart uart_apb( apb_clock <- int_clock,
+                                      int_reset <= int_reset,
+
+                                      apb_pselect <= apb_pselect,
+                                      apb_penable <= apb_penable,
+                                      apb_paddr <= apb_paddr,
+                                      apb_prnw <= apb_prnw,
+                                      apb_pwdata <= apb_pwdata,
+                                      apb_prdata => apb_prdata,
+                                      
+                                      cmd_fifo_empty => cmd_fifo_empty,
+                                      cmd_fifo_data => cmd_fifo_data,
+                                      cmd_fifo_toggle <= cmd_fifo_toggle,
+
+                                      status_fifo_full => status_fifo_full,
+                                      status_fifo_data <= status_fifo_data,
+                                      status_fifo_toggle <= status_fifo_toggle );
+
+            io_uart uart_io( int_clock <- int_clock,
+                          int_reset <= int_reset,
+                          tx_baud_enable <= tx_baud_enable,
+                          txd => txd,
+                          txd_fc <= 0,
+                          rx_baud_enable <= rx_baud_enable,
+                          rxd <= rxd,
+                          rxd_fc => rxd_fc,
+
+                          cmd_fifo_empty <= cmd_fifo_empty,
+                          cmd_fifo_data <= cmd_fifo_data,
+                          cmd_fifo_toggle => cmd_fifo_toggle,
+
+                          status_fifo_full <= status_fifo_full,
+                          status_fifo_data => status_fifo_data,
+                          status_fifo_toggle => status_fifo_toggle );
+        }
+
+    /*b Postbus instances
+     */
+    postbus_instances "Postbus instances":
+        {
+
+            postbus_rom_source prs( int_clock <- int_clock,
+                                    int_reset <= int_reset,
+
+                                    rom_read => rom_read,
+                                    rom_address => rom_address,
+                                    rom_data <= rom_data,
+
+                                    postbus_type => postbus_type,
+                                    postbus_data => postbus_data,
+                                    postbus_ack <= postbus_ack );
+
+            postbus_test_rom_contents rom( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           read <= rom_read,
+                                           address <= rom_address,
+                                           data => rom_data );
+
+
+
+        }
+}
+

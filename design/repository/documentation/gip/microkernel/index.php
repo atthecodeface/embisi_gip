@@ -26,6 +26,8 @@ This documentation contains a number of pages:
 
 <li>The basic requirements of the microkernel are derived from the way the <a href="linux.php">ARM port of Linux uses processor modes</a> 
 
+<li>The operation of the microkernel is <a href="outline_operation.php">described in outline</a>
+
 <li>The operation of the microkernel is <a href="detailed_operation.php">described in detail</a>
 
 <li>The <a href="communication.php">communication primitives</a> required of the microkernel supply the mechanisms for interaction between ARM code and the microkernel.

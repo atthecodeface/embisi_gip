@@ -8,4 +8,11 @@
     ;; Are SWIs reentrant? Not here
     ;; Can an interrupt call a SWI - that would require reentrancy
 despatch:
-    
+    ;; atomically read the sources and clear the highest priority (SWI first, then interrupt)
+
+    ;; if a source was a SWI, go there
+    tst source_is_swi
+    b #1, handle_swi
+
+    ;; else it is a hardware interrupt
+    b #0, handle_irq          ;  Note that this instruction is in the shadow of the conditional branch, but as it is a branch it will not be executed if the condition is true

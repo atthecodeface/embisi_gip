@@ -5,6 +5,10 @@
 #a Targets
 all:
 
+doc: documentation
+
+.PHONY: documentation
+
 documentation:
 	rm -rf documentation
 	$(TNBT_CVS_ROOT)/common/bin/make_web ../repository/documentation documentation index.php

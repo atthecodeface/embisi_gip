@@ -89,7 +89,7 @@ The ARM instruction classes in general are as follows:
 <tr>
 <th>Software interrupt</th>
 <td>&nbsp;</td>
-<td><i>Traps</i></td>
+<td><i>Traps - all set r16 to the instruction, some set r15 to be pc+8, some do not effect pc; all deschedule the ARM and set a bit which may be used to schedule the microkernel; which bit is set in the scheduler is configurable (one of 4 settings - 0, 8, 16, 24?)</i></td>
 </tr>
 
 </table>

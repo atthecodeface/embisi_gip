@@ -9,7 +9,7 @@ $page_title = "GIP Documentation";
 
 include "${toplevel}web_assist/web_header.php";
 
-page_header( "GIP Instruction Set" );
+page_header( "GIP Internal Instruction Set" );
 
 page_sp();
 ?>

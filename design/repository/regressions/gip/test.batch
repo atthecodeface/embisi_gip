@@ -200,6 +200,8 @@ return
 #b gip_simple_0
 gip_simple_0:
 set run_length 500000
+set run_length 5000
+set run_length 250000
 setenv "uart_exec_file" "src/gip_simple_uart_0.ef"
 set_string vcd_filename "gip_simple_0"
 gosub gip_simple_test
@@ -214,11 +216,13 @@ read_hw_file gip_simple.hwex
 beq vcd_create 0 gip_simple_test_no_vcd
 sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
 vcd_file_open "allsignals" vcd_full_filename
-#vcd_file_add "allsignals" "gip_simple"
+vcd_file_add "allsignals" "gip_simple"
 #vcd_file_add "allsignals" "gip_simple.gip"
 #vcd_file_add "allsignals" "gip_simple.prefetch" "gip_simple.data_ram" "gip_simple.boot_rom" "gip_simple.shared_sram"
 #vcd_file_add "allsignals" "gip_simple.gip.decode" "gip_simple.gip.decode.native" "gip_simple.gip.decode.arm" "gip_simple.gip.rf" "gip_simple.gip.alu" "gip_simple.gip.alu.shift_op"
-#vcd_file_add "allsignals" "gip_simple.gip_apb" "gip_simple.uart_apb" "gip_simple.uart_apb.status_fifo"  "gip_simple.uart_apb.cmd_fifo" "gip_simple.uart_io"
+#vcd_file_add "allsignals" "gip_simple.gip_apb"
+#vcd_file_add "allsignals" "gip_simple.uart_apb" "gip_simple.uart_apb.status_fifo"  "gip_simple.uart_apb.cmd_fifo" "gip_simple.uart_io"
+vcd_file_add "allsignals" "gip_simple.ext_bus_apb"
 vcd_file_add "allsignals" "rxd" "txd"
 vcd_file_enable "allsignals"
 reset

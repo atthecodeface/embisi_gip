@@ -73,7 +73,12 @@ wire system_reset_out;
 
 
 //b Instantiate pads
-assign sys_drm_clock_fb_out = int_output_drm_clock_buffered;
+wire int_double_drm_clock_buffered;
+wire int_output_drm_clock_phase;
+reg sys_drm_clock_fb_out_r;
+always @(posedge int_double_drm_clock_buffered) begin sys_drm_clock_fb_out_r <= !int_output_drm_clock_phase; end
+// synthesis attribute equivalent_register_removal of sys_drm_clock_fb_out_r is "no" ;
+assign sys_drm_clock_fb_out = sys_drm_clock_fb_out_r;
 
 //b Make dividers for LEDs
 assign system_reset_in = switches[7];
@@ -129,10 +134,12 @@ assign leds[5] = info[switches[1:0]];
 //b Instantiate clock generator
 assign feedback_ddr_clock = sys_drm_clock_fb;
 //for test only assign feedback_ddr_clock = int_output_drm_clock_buffered;
-    clock_generator ckgen( .sys_drm_clock_in(sys_drm_clock_in),
+clock_generator ckgen( .sys_drm_clock_in(sys_drm_clock_in),
                            .system_reset_in(system_reset_in),
                            .system_reset_out(system_reset_out),
                            .info(info),
+                           .int_double_drm_clock_buffered(int_double_drm_clock_buffered),
+                           .int_output_drm_clock_phase(int_output_drm_clock_phase),
                            .int_output_drm_clock_buffered(int_output_drm_clock_buffered),
                            .feedback_ddr_clock(feedback_ddr_clock),
                            .int_input_drm_clock_90_buffered(int_input_drm_clock_90_buffered),

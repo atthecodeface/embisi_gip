@@ -1,1033 +1,1009 @@
-/*a ARM Decode functions
+/*a Includes
  */
-/*f c_gip_full::decode_arm_debug
+include "gip.h"
+include "gip_internal.h"
+include "arm.h"
+
+/*a Types
  */
-int c_gip_full::decode_arm_debug( void )
+
+/*a Module
+ */
+module gip_decode_arm( input bit[32] opcode,
+                       input bit[5] cycle_of_opcode,
+
+                       output t_gip_instruction_rf inst,
+
+                       output bit[5] next_cycle_of_opcode,
+                       output t_gip_pc_op pc_op,
+                       output bit[32] arm_branch_offset,
+
+                       input bit extended,
+                       input bit[28] extended_immediate,
+                       input t_gip_ins_r extended_rd,
+                       input t_gip_ins_r extended_rn,
+                       input t_gip_ins_r extended_rm,
+                       input t_gip_ext_cmd extended_cmd
+
+                       )
 {
-    /*b Check if instruction is 0xf00000..
+    comb bit sign;
+    comb bit[4] cc;
+    comb bit conditional;
+    comb bit[4] alu_op;
+    comb bit alu_sign;
+    comb bit alu_imm;
+
+    comb bit rd_is_pc;
+
+    comb bit[4] alu_imm_rotate;
+    comb bit[8] alu_imm_val;
+    comb bit[32] alu_immediate;
+    comb bit[4] alu_rd;
+    comb bit[4] alu_rn;
+    comb bit[4] alu_rm;
+    comb bit[4] alu_rs;
+
+    comb bit[5] alu_shf_imm_amt;
+    comb bit[2] alu_shf_how;
+    comb bit alu_shf_by_reg;
+    comb bit alu_lsl_by_imm_0;
+
+    comb bit ld_st_imm;
+    comb bit ld_st_pre;
+    comb bit ld_st_up;
+    comb bit ld_st_byte;
+    comb bit ld_st_wb;
+    comb bit[12] ld_st_offset;
+
+    comb t_gip_ins_cc ins_cc;
+    comb t_gip_ins_cc inv_cc;
+
+    comb t_gip_ins_r arm_mapped_rn;
+    comb t_gip_ins_r arm_mapped_rd;
+    comb t_gip_ins_r arm_mapped_rm;
+    comb t_gip_ins_r arm_mapped_rs;
+
+    comb t_arm_ins_class ins_class;
+
+    comb t_gip_ins_class alu_gip_ins_class;
+    comb t_gip_ins_subclass alu_gip_ins_subclass;
+    comb t_gip_ins_subclass alu_gip_shf;
+    comb bit alu_gip_set_acc;
+    comb bit alu_gip_set_flags;
+    comb bit alu_gip_pass_p;
+    comb bit alu_gip_set_rd;
+
+    comb bit branch_link;
+
+    /*b Break out instruction and map to internal instructions
      */
-    if ((pd->dec.state.opcode&0xffffff00)==0xf0000000)
-    {
-        pd->dec.arm.next_cycle_of_opcode = 0;
-        pd->dec.arm.next_pc = pd->dec.state.pc+4;
-        return 1;
-    }
-    return 0;
-}
-
-/*f c_gip_full::decode_arm_alu
-  ALU instructions map to one or more internal instructions
-    Those that do not set the PC and are immediate or have a shift of LSL #0 map to one internal ALU instruction
-    Those that do not set the PC and have a shift other than LSL #0 map to one internal SHIFT instruction and one internal ALU instruction
-    Those that set the PC and have a shift of LSL #0 map to one internal ALU instruction with 'flush' set
-    Those that set the PC and have a shift other than LSL #0 map to one internal SHIFT instruction and one internal ALU instruction with 'flush' set
- */
-int c_gip_full::decode_arm_alu( void )
-{
-    int cc, zeros, imm, alu_op, sign, rn, rd, op2;
-    int imm_val, imm_rotate;
-    int shf_rs, shf_reg_zero, shf_imm_amt, shf_how, shf_by_reg, shf_rm;
-    int conditional;
-    t_gip_ins_class gip_ins_class;
-    t_gip_ins_subclass gip_ins_subclass;
-    t_gip_ins_cc gip_ins_cc;
-    t_gip_ins_r gip_ins_rn;
-    t_gip_ins_r gip_ins_rm;
-    t_gip_ins_r gip_ins_rs;
-    t_gip_ins_r gip_ins_rd;
-    int gip_set_flags, gip_set_acc, gip_pass_p;
-
-    /*b Decode ARM instruction
-     */
-    cc      = (pd->dec.state.opcode>>28) & 0x0f;
-    zeros   = (pd->dec.state.opcode>>26) & 0x03;
-    imm     = (pd->dec.state.opcode>>25) & 0x01;
-    alu_op  = (pd->dec.state.opcode>>21) & 0x0f;
-    sign    = (pd->dec.state.opcode>>20) & 0x01;
-    rn      = (pd->dec.state.opcode>>16) & 0x0f;
-    rd      = (pd->dec.state.opcode>>12) & 0x0f;
-    op2     = (pd->dec.state.opcode>> 0) & 0xfff;
-
-    /*b If not an ALU instruction, then exit
-     */
-    if (zeros)
-    {
-        return 0;
-    }
-
-    /*b Determine the shift
-     */
-    imm_rotate = (op2>>8) & 0x0f; // RRRRiiiiiiii
-    imm_val    = (op2>>0) & 0xff;
-
-    shf_rs       = (op2>> 8) & 0x0f; // ssss0tt1mmmm
-    shf_reg_zero = (op2>> 7) & 0x01;
-    shf_imm_amt  = (op2>> 7) & 0x1f; // iiiiitt0mmmm
-    shf_how      = (op2>> 5) & 0x03;
-    shf_by_reg   = (op2>> 4) & 0x01;
-    shf_rm       = (op2>> 0) & 0x0f;
-
-    if (!imm && shf_by_reg && shf_reg_zero)
-    {
-        fprintf( stderr, "Slow:ALU:Abort - imm zero, shf by reg 1, shf_reg_zero not zero\n");
-        return 0;
-    }
-
-    /*b Map condition code
-     */
-    conditional = (cc!=14);
-    gip_ins_cc = map_condition_code( cc );
-
-    /*b Map operation and setting flags
-     */
-    gip_ins_class = gip_ins_class_arith;
-    gip_ins_subclass = gip_ins_subclass_arith_add;
-    gip_set_acc = 0;
-    gip_set_flags = 0;
-    gip_pass_p = 0;
-    gip_ins_rn = map_source_register( rn );
-    gip_ins_rm = map_source_register( shf_rm );
-    gip_ins_rs = map_source_register( shf_rs );
-    gip_ins_rd = map_destination_register( rd );
-    switch (alu_op)
-    {
-    case  0: // and
-        gip_ins_class = gip_ins_class_logic;
-        gip_ins_subclass = gip_ins_subclass_logic_and;
-        gip_set_flags = sign;
-        gip_pass_p = sign;
-        gip_set_acc = !conditional;
-        break;
-    case  1: // eor
-        gip_ins_class = gip_ins_class_logic;
-        gip_ins_subclass = gip_ins_subclass_logic_xor;
-        gip_set_flags = sign;
-        gip_pass_p = sign;
-        gip_set_acc = !conditional;
-        break;
-    case  2: // sub
-        gip_ins_class = gip_ins_class_arith;
-        gip_ins_subclass = gip_ins_subclass_arith_sub;
-        gip_set_flags = sign;
-        gip_set_acc = !conditional;
-        break;
-    case  3: // rsb
-        gip_ins_class = gip_ins_class_arith;
-        gip_ins_subclass = gip_ins_subclass_arith_rsb;
-        gip_set_flags = sign;
-        gip_set_acc = !conditional;
-        break;
-    case  4: // add
-        gip_ins_class = gip_ins_class_arith;
-        gip_ins_subclass = gip_ins_subclass_arith_add;
-        gip_set_flags = sign;
-        gip_set_acc = !conditional;
-        break;
-    case  5: // adc
-        gip_ins_class = gip_ins_class_arith;
-        gip_ins_subclass = gip_ins_subclass_arith_adc;
-        gip_set_flags = sign;
-        gip_set_acc = !conditional;
-        break;
-    case  6: // sbc
-        gip_ins_class = gip_ins_class_arith;
-        gip_ins_subclass = gip_ins_subclass_arith_sbc;
-        gip_set_flags = sign;
-        gip_set_acc = !conditional;
-        break;
-    case  7: // rsc
-        gip_ins_class = gip_ins_class_arith;
-        gip_ins_subclass = gip_ins_subclass_arith_rsc;
-        gip_set_flags = sign;
-        gip_set_acc = !conditional;
-        break;
-    case  8: // tst
-        gip_ins_class = gip_ins_class_logic;
-        gip_ins_subclass = gip_ins_subclass_logic_and;
-        gip_set_flags = 1;
-        gip_pass_p = sign;
-        gip_set_acc = 0;
-        gip_ins_rd.type = gip_ins_r_type_none;
-        break;
-    case  9: // teq
-        gip_ins_class = gip_ins_class_logic;
-        gip_ins_subclass = gip_ins_subclass_logic_xor;
-        gip_set_flags = 1;
-        gip_pass_p = sign;
-        gip_set_acc = 0;
-        gip_ins_rd.type = gip_ins_r_type_none;
-        break;
-    case 10: // cmp
-        gip_ins_class = gip_ins_class_arith;
-        gip_ins_subclass = gip_ins_subclass_arith_sub;
-        gip_set_flags = 1;
-        gip_set_acc = 0;
-        gip_ins_rd.type = gip_ins_r_type_none;
-        break;
-    case 11: // cmn
-        gip_ins_class = gip_ins_class_arith;
-        gip_ins_subclass = gip_ins_subclass_arith_add;
-        gip_set_flags = 1;
-        gip_set_acc = 0;
-        gip_ins_rd.type = gip_ins_r_type_none;
-        break;
-    case 12: // orr
-        gip_ins_class = gip_ins_class_logic;
-        gip_ins_subclass = gip_ins_subclass_logic_or;
-        gip_set_flags = sign;
-        gip_pass_p = sign;
-        gip_set_acc = !conditional;
-        break;
-    case 13: // mov
-        gip_ins_class = gip_ins_class_logic;
-        gip_ins_subclass = gip_ins_subclass_logic_mov;
-        gip_set_flags = sign;
-        gip_pass_p = sign;
-        gip_set_acc = !conditional;
-        break;
-    case 14: // bic
-        gip_ins_class = gip_ins_class_logic;
-        gip_ins_subclass = gip_ins_subclass_logic_bic;
-        gip_set_flags = sign;
-        gip_pass_p = sign;
-        gip_set_acc = !conditional;
-        break;
-    case 15: // mvn
-        gip_ins_class = gip_ins_class_logic;
-        gip_ins_subclass = gip_ins_subclass_logic_mvn;
-        gip_set_flags = sign;
-        gip_pass_p = sign;
-        gip_set_acc = !conditional;
-        break;
-    default:
-        break;
-    }
-    pd->dec.arm.next_acc_valid = pd->dec.state.acc_valid;
-    pd->dec.arm.next_reg_in_acc = pd->dec.state.reg_in_acc;
-    if (gip_set_acc)
-    {
-        if (gip_ins_rd.type==gip_ins_r_type_register) 
+    breakout_instruction "Breakout instruction":
         {
-            pd->dec.arm.next_acc_valid = !conditional;
-            pd->dec.arm.next_reg_in_acc = gip_ins_rd.data.r;
-        }
-        else
-        {
-            pd->dec.arm.next_acc_valid = 0;
-        }
-    }
-    else if ((gip_ins_rd.type==gip_ins_r_type_register)  && (gip_ins_rd.data.r==pd->dec.state.reg_in_acc))
-    {
-        pd->dec.arm.next_acc_valid = 0;
-    }
-
-    /*b Test for shift of 'LSL #0' or plain immediate
-     */
-    if (imm)
-    {
-        gip_pass_p = 0;
-        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
-        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc );
-        build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rn );
-        build_gip_instruction_immediate( &pd->dec.arm.inst, rotate_right(imm_val,imm_rotate*2) );
-        build_gip_instruction_rd( &pd->dec.arm.inst, gip_ins_rd );
-        pd->dec.arm.next_cycle_of_opcode = 0;
-        pd->dec.arm.next_pc = pd->dec.state.pc+4;
-    }
-    else if ( (((t_shf_type)shf_how)==shf_type_lsl) &&
-              (!shf_by_reg) &&
-              (shf_imm_amt==0) )
-    {
-        gip_pass_p = 0;
-        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
-        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc );
-        build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rn );
-        build_gip_instruction_rm( &pd->dec.arm.inst, gip_ins_rm );
-        build_gip_instruction_rd( &pd->dec.arm.inst, gip_ins_rd );
-        pd->dec.arm.next_cycle_of_opcode = 0;
-        pd->dec.arm.next_pc = pd->dec.state.pc+4;
-    }
-    else if (!shf_by_reg) // Immediate shift, non-zero or non-LSL: ISHF Rm, #imm; IALU{CC}(SP|)[A][F] Rn, SHF -> Rd
-    {
-        switch (pd->dec.state.cycle_of_opcode)
-        {
-        case 0:
-            build_gip_instruction_shift( &pd->dec.arm.inst, map_shift( shf_how, 1, shf_imm_amt), 0, 0 );
-            build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rm );
-            build_gip_instruction_immediate( &pd->dec.arm.inst, (shf_imm_amt==0)?32:shf_imm_amt );
-            pd->dec.arm.next_acc_valid = pd->dec.state.acc_valid; // First internal does not set acc
-            pd->dec.arm.next_reg_in_acc = pd->dec.state.reg_in_acc;
-            break;
-        default:
-            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
-            build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc );
-            build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rn );
-            build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
-            build_gip_instruction_rd( &pd->dec.arm.inst, gip_ins_rd );
-            pd->dec.arm.next_cycle_of_opcode = 0;
-            pd->dec.arm.next_pc = pd->dec.state.pc+4;
-            break;
-        }
-    }
-    else // if (shf_by_reg) - must be! ISHF Rm, Rs; IALU{CC}(SP|)[A][F] Rn, SHF -> Rd
-    {
-        switch (pd->dec.state.cycle_of_opcode)
-        {
-        case 0:
-            build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 0, 0 ), 0, 0 );
-            build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rm );
-            build_gip_instruction_rm( &pd->dec.arm.inst, gip_ins_rs );
-            pd->dec.arm.next_acc_valid = pd->dec.state.acc_valid; // First internal does not set acc
-            pd->dec.arm.next_reg_in_acc = pd->dec.state.reg_in_acc;
-            break;
-        default:
-            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class, gip_ins_subclass, gip_set_acc, gip_set_flags, gip_pass_p, (rd==15) );
-            build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc );
-            build_gip_instruction_rn( &pd->dec.arm.inst, gip_ins_rn );
-            build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
-            build_gip_instruction_rd( &pd->dec.arm.inst, gip_ins_rd );
-            pd->dec.arm.next_cycle_of_opcode = 0;
-            pd->dec.arm.next_pc = pd->dec.state.pc+4;
-            break;
-        }
-    }
-
-    return 1;
-}
-
-/*f c_gip_full::decode_arm_branch
- */
-int c_gip_full::decode_arm_branch( void )
-{
-    int cc, five, link, offset;
-
-    /*b Decode ARM instruction
-     */
-    cc      = (pd->dec.state.opcode>>28) & 0x0f;
-    five    = (pd->dec.state.opcode>>25) & 0x07;
-    link    = (pd->dec.state.opcode>>24) & 0x01;
-    offset  = (pd->dec.state.opcode>> 0) & 0x00ffffff;
-
-    /*b Return if not a branch
-     */
-    if (five != 5)
-        return 0;
-
-    /*b Handle 5 cases; conditional or not, link or not; split conditional branches to predicted or not, also
-     */
-    if (!link)
-    {
-        if (cc==14) // guaranteed branch
-        {
-            pd->dec.arm.next_pc = pd->dec.state.pc+8+((offset<<8)>>6);
-            pd->dec.arm.next_cycle_of_opcode = 0;
-        }
-        else
-        {
-            if (offset&0x800000) // backward conditional branch; sub(!cc)f pc, #4 -> pc
-            {
-                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 1 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc^0x1 ) ); // !cc is CC with bottom bit inverted, in ARM
-                build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_pc );
-                build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
-                build_gip_instruction_rd_int( &pd->dec.arm.inst, gip_ins_rd_int_pc );
-                pd->dec.arm.next_pc = pd->dec.state.pc+8+((offset<<8)>>6);
-                pd->dec.arm.next_cycle_of_opcode = 0;
-            }
-            else // forward conditional branch; mov[cc]f #target -> pc
-            {
-                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, 1 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-                build_gip_instruction_immediate( &pd->dec.arm.inst, pd->dec.state.pc+8+((offset<<8)>>6) );
-                build_gip_instruction_rd_int( &pd->dec.arm.inst, gip_ins_rd_int_pc );
-                pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                pd->dec.arm.next_cycle_of_opcode = 0;
-            }
-        }
-    }
-    else
-    {
-        if (cc==14) // guaranteed branch with link; sub pc, #4 -> r14
-        {
-            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 0 );
-            build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_always );
-            build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_pc );
-            build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
-            build_gip_instruction_rd_reg( &pd->dec.arm.inst, 14 );
-            pd->dec.arm.next_pc = pd->dec.state.pc+8+((offset<<8)>>6);
-            pd->dec.arm.next_cycle_of_opcode = 0;
-        }
-        else // conditional branch with link; sub{!cc}f pc, #4 -> pc; sub pc, #4 -> r14
-        {
-            switch (pd->dec.state.cycle_of_opcode)
-            {
-            case 0:
-                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 1 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc^0x1 ) ); // !cc is CC with bottom bit inverted, in ARM
-                build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_pc );
-                build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
-                build_gip_instruction_rd_int( &pd->dec.arm.inst, gip_ins_rd_int_pc );
-                break;
-            default:
-                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 0, 0, 0, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_always );
-                build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_pc );
-                build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
-                build_gip_instruction_rd_reg( &pd->dec.arm.inst, 14 );
-                pd->dec.arm.next_pc = pd->dec.state.pc+8+((offset<<8)>>6);
-                pd->dec.arm.next_cycle_of_opcode = 0;
-            }
-        }
-    }
-    return 1;
-}
-
-/*f c_gip_full::decode_arm_ld_st
- */
-int c_gip_full::decode_arm_ld_st( void )
-{
-    int cc, one, not_imm, pre, up, byte, wb, load, rn, rd, offset;
-    int imm_val;
-    int shf_imm_amt, shf_how, shf_zero, shf_rm;
-
-    /*b Decode ARM instruction
-     */
-    cc      = (pd->dec.state.opcode>>28) & 0x0f;
-    one     = (pd->dec.state.opcode>>26) & 0x03;
-    not_imm = (pd->dec.state.opcode>>25) & 0x01;
-    pre     = (pd->dec.state.opcode>>24) & 0x01;
-    up      = (pd->dec.state.opcode>>23) & 0x01;
-    byte    = (pd->dec.state.opcode>>22) & 0x01;
-    wb      = (pd->dec.state.opcode>>21) & 0x01;
-    load    = (pd->dec.state.opcode>>20) & 0x01;
-    rn      = (pd->dec.state.opcode>>16) & 0x0f;
-    rd      = (pd->dec.state.opcode>>12) & 0x0f;
-    offset  = (pd->dec.state.opcode>> 0) & 0xfff;
-
-    /*b Validate this is a load/store
-     */
-    if (one != 1)
-        return 0;
-
-    /*b Break out offset
-     */
-    imm_val    = (offset>>0) & 0xfff;
-
-    shf_imm_amt  = (offset>> 7) & 0x1f;
-    shf_how      = (offset>> 5) & 0x03;
-    shf_zero     = (offset>> 4) & 0x01;
-    shf_rm       = (offset>> 0) & 0x0f;
-
-    /*b Validate this is a load/store again
-     */
-    if (not_imm && shf_zero)
-        return 0;
-
-    /*b Handle loads - preindexed immediate/reg, preindexed reg with shift, preindexed immediate/reg with wb, preindexed reg with shift with wb, postindexed immediate/reg, postindexed reg with shift
-     */
-    if (load)
-    {
-        /*b Handle immediate or reg without shift
-         */
-        if (!not_imm ||
-            (((t_shf_type)(shf_how)==shf_type_lsl) && (shf_imm_amt==0)) ) // immediate or reg without shift
-        {
-            /*b Preindexed, no writeback
+            /*b Break out the opcode
              */
-            if (pre && !wb) // preindexed immediate/reg: ILDR[CC]A[F] #0 (Rn, #+/-imm or +/-Rm) -> Rd
+            cc = opcode[4;28];
+            conditional = (cc!=14);
+
+            /*b  Break out bits for a branch
+             */
+            branch_link = opcode[24];
+            arm_branch_offset = 0;
+            arm_branch_offset[24;2] = opcode[24;0];
+            if (opcode[23])
             {
-                build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 1, up, (rn==13), 0, 1, (rd==15) );
-                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                if (not_imm)
+                arm_branch_offset[6;26] = -1;
+            }
+
+            /*b  Break out bits for an ALU operation branch
+             */
+            alu_imm = opcode[25];
+            alu_op = opcode[4;21];
+            alu_sign = opcode[20];
+            alu_imm_rotate = opcode[4;8];
+            alu_imm_val = opcode[8;0];
+            alu_immediate = 0;
+            full_switch (alu_imm_rotate)
                 {
-                    build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                case 0:  { alu_immediate[8;0] = alu_imm_val; }
+                case 1:  { alu_immediate[2;30] = alu_imm_val[2;0]; alu_immediate[6;0] = alu_imm_val[6;2]; }
+                case 2:  { alu_immediate[4;28] = alu_imm_val[4;0]; alu_immediate[4;0] = alu_imm_val[4;4]; }
+                case 3:  { alu_immediate[6;26] = alu_imm_val[6;0]; alu_immediate[2;0] = alu_imm_val[2;6]; }
+                case 4:  { alu_immediate[8;24] = alu_imm_val; }
+                case 5:  { alu_immediate[8;22] = alu_imm_val; }
+                case 6:  { alu_immediate[8;20] = alu_imm_val; }
+                case 7:  { alu_immediate[8;18] = alu_imm_val; }
+                case 8:  { alu_immediate[8;16] = alu_imm_val; }
+                case 9:  { alu_immediate[8;14] = alu_imm_val; }
+                case 10: { alu_immediate[8;12] = alu_imm_val; }
+                case 11: { alu_immediate[8;10] = alu_imm_val; }
+                case 12: { alu_immediate[8;8] = alu_imm_val; }
+                case 13: { alu_immediate[8;6] = alu_imm_val; }
+                case 14: { alu_immediate[8;4] = alu_imm_val; }
+                case 15: { alu_immediate[8;2] = alu_imm_val; }
+                }
+
+            /*b Registers
+             */
+            alu_rn = opcode[4;16]; // and loads/stores
+            alu_rd = opcode[4;12]; // and loads/stores
+            alu_rs = opcode[4;8];
+            alu_rm = opcode[4;0];
+
+            /*b Shift operation
+             */
+            alu_shf_imm_amt = opcode[5;7];
+            alu_shf_how = opcode[2;5];
+            alu_shf_by_reg = opcode[4];
+            alu_lsl_by_imm_0 = 0;
+            if ((alu_shf_how == arm_shf_lsl) &&
+                (!alu_shf_by_reg) &&
+                (alu_shf_imm_amt==0) )
+            {
+                alu_lsl_by_imm_0 = 1;
+            }
+
+            /*b Load/store data
+             */
+            ld_st_imm = !opcode[25];
+            ld_st_pre = opcode[24];
+            ld_st_up = opcode[23];
+            ld_st_byte = opcode[22];
+            ld_st_wb = opcode[21];
+            ld_st_offset = opcode[12;0];
+        }
+
+    /*b Map registers and immediate
+     */
+    map_registers "Map registers and immediate value using the extended amounts in the current registers (from previous instruction decodes)":
+        {
+            /*b Map condition code
+             */
+            full_switch( cc )
+                {
+                case 0: { ins_cc = gip_ins_cc_eq; inv_cc = gip_ins_cc_ne; }
+                case 1: { ins_cc = gip_ins_cc_ne; inv_cc = gip_ins_cc_eq; }
+                case 2: { ins_cc = gip_ins_cc_cs; inv_cc = gip_ins_cc_cc; }
+                case 3: { ins_cc = gip_ins_cc_cc; inv_cc = gip_ins_cc_cs; }
+                case 4: { ins_cc = gip_ins_cc_mi; inv_cc = gip_ins_cc_pl; }
+                case 5: { ins_cc = gip_ins_cc_pl; inv_cc = gip_ins_cc_mi; }
+                case 6: { ins_cc = gip_ins_cc_vs; inv_cc = gip_ins_cc_vc; }
+                case 7: { ins_cc = gip_ins_cc_vc; inv_cc = gip_ins_cc_vs; }
+                case 8: { ins_cc = gip_ins_cc_hi; inv_cc = gip_ins_cc_ls; }
+                case 9: { ins_cc = gip_ins_cc_ls; inv_cc = gip_ins_cc_hi; }
+                case 10: { ins_cc = gip_ins_cc_ge; inv_cc = gip_ins_cc_lt; }
+                case 11: { ins_cc = gip_ins_cc_lt; inv_cc = gip_ins_cc_ge; }
+                case 12: { ins_cc = gip_ins_cc_gt; inv_cc = gip_ins_cc_le; }
+                case 13: { ins_cc = gip_ins_cc_le; inv_cc = gip_ins_cc_gt; }
+                case 14: { ins_cc = gip_ins_cc_always; inv_cc = gip_ins_cc_always; }
+                case 15: { ins_cc = gip_ins_cc_always; inv_cc = gip_ins_cc_always; }
+                }
+
+            /*b Map operation and setting flags
+             */
+//            arm_mapped_rn = map_source_register( rn );
+//            arm_mapped_rm = map_source_register( shf_rm );
+//            arm_mapped_rs = map_source_register( shf_rs );
+//            arm_mapped_rd = map_destination_register( rd );
+
+            /*b Map rd to instruction rd; pc if that is 15; but if extended, to full given extension
+             */
+            rd_is_pc = 0;
+            arm_mapped_rd.type = gip_ins_r_type_register;
+            arm_mapped_rd.r[4] = 0;
+            arm_mapped_rd.r[4;0] = alu_rd;
+            if (alu_rd==15) { arm_mapped_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; rd_is_pc = 1;}
+            if (extended_rd.type!=gip_ins_r_type_no_override) { arm_mapped_rd = extended_rd; }
+
+            /*b Map rn to instruction rn; acc if that is 15; but if extended, to full given extension
+             */
+            arm_mapped_rn.type = gip_ins_r_type_register;
+            arm_mapped_rn.r[4] = 0;
+            arm_mapped_rn.r[4;0] = alu_rn;
+            if (alu_rn==15) { arm_mapped_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
+            if (extended_rn.type!=gip_ins_r_type_no_override) { arm_mapped_rn = extended_rn; }
+
+            /*b Map rm to instruction rm; pc if that is 15; but if extended, to full given extension
+             */
+            arm_mapped_rm.type = gip_ins_r_type_register;
+            arm_mapped_rm.r[4] = 0;
+            arm_mapped_rm.r[4;0] = alu_rm;
+            if (alu_rm==15) { arm_mapped_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
+            if (extended_rm.type!=gip_ins_r_type_no_override)
+            {
+                arm_mapped_rm.type = extended_rm.type;
+                arm_mapped_rm.r[4]=extended_rm.r[4];
+                arm_mapped_rm.r[4;0]=alu_rm;
+            }
+
+            /*b Map rs to instruction rs; always the specified register (no extensions, PC not allowed)
+             */
+            arm_mapped_rs.type = gip_ins_r_type_register;
+            arm_mapped_rs.r[4] = 0;
+            arm_mapped_rs.r[4;0] = alu_rs;
+        }
+
+    /*b Decode instruction class
+     */
+    decode_instruction_class "Decode instruction class":
+        {
+            ins_class = arm_ins_class_none;
+            if (opcode[2;26]==0)
+            {
+                ins_class = arm_ins_class_alu;
+            }
+            if (opcode[3;25]==5)
+            {
+                ins_class = arm_ins_class_branch;
+            }
+            if (opcode[2;26]==1)
+            {
+                if (opcode[20])
+                {
+                    ins_class = arm_ins_class_load; // note also that [25] must not be 1 at the same time as a [4] being one - this is a shift by register, which is not permitted, and may be decoded as something else?
                 }
                 else
                 {
-                    build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
+                    ins_class = arm_ins_class_store;
                 }
-                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
-                pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                pd->dec.arm.next_cycle_of_opcode = 0;
-                return 1;
             }
-            /*b Preindexed, writeback
+        }
+
+    /*b ARM ALU decode
+     */
+    arm_alu_decode "ALU instructions map to one or more internal instructions
+                    Those that do not set the PC and are immediate or have a shift of LSL #0 map to one internal ALU instruction
+                    Those that do not set the PC and have a shift other than LSL #0 map to one internal SHIFT instruction and one internal ALU instruction
+                    Those that set the PC and have a shift of LSL #0 map to one internal ALU instruction with 'flush' set
+                    Those that set the PC and have a shift other than LSL #0 map to one internal SHIFT instruction and one internal ALU instruction with 'flush' set" :
+        {
+            /*b Map shift type
              */
-            else if (pre) // preindexed immediate/reg with writeback: IADD[CC]A/ISUB[CC]A Rn, #imm/Rm -> Rn; ILDRCP[F] #0, (Acc) -> Rd
-            {
-                switch (pd->dec.state.cycle_of_opcode)
+            alu_gip_shf = gip_ins_subclass_shift_lsl;
+            full_switch (alu_shf_how)
                 {
-                case 0:
-                    build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                    if (not_imm)
+                case arm_shf_lsl:
+                {
+                    alu_gip_shf = gip_ins_subclass_shift_lsl;
+                }
+                case arm_shf_lsr:
+                {
+                    alu_gip_shf = gip_ins_subclass_shift_lsr;
+                }
+                case arm_shf_asr:
+                {
+                    alu_gip_shf = gip_ins_subclass_shift_asr;
+                }
+                case arm_shf_ror:
+                {
+                    alu_gip_shf = gip_ins_subclass_shift_ror;
+                    if (!alu_shf_by_reg && (alu_shf_imm_amt==0))
                     {
-                        build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                        alu_gip_shf = gip_ins_subclass_shift_ror33;
+                    }
+                }
+                }
+
+            /*b Map to internal GIP ALU instruction type
+             */
+            alu_gip_ins_class = gip_ins_class_arith;
+            alu_gip_ins_subclass = gip_ins_subclass_arith_add;
+            alu_gip_set_acc = 0;
+            alu_gip_set_flags = 0;
+            alu_gip_pass_p = 0;
+            alu_gip_set_rd = 1;
+
+            full_switch (alu_op)
+                {
+                case  0: // and
+                {
+                    alu_gip_ins_class = gip_ins_class_logic;
+                    alu_gip_ins_subclass = gip_ins_subclass_logic_and;
+                    alu_gip_set_flags = sign;
+                    alu_gip_pass_p = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case  1: // eor
+                {
+                    alu_gip_ins_class = gip_ins_class_logic;
+                    alu_gip_ins_subclass = gip_ins_subclass_logic_xor;
+                    alu_gip_set_flags = sign;
+                    alu_gip_pass_p = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case  2: // sub
+                {
+                    alu_gip_ins_class = gip_ins_class_arith;
+                    alu_gip_ins_subclass = gip_ins_subclass_arith_sub;
+                    alu_gip_set_flags = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case  3: // rsb
+                {
+                    alu_gip_ins_class = gip_ins_class_arith;
+                    alu_gip_ins_subclass = gip_ins_subclass_arith_rsb;
+                    alu_gip_set_flags = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case  4: // add
+                {
+                    alu_gip_ins_class = gip_ins_class_arith;
+                    alu_gip_ins_subclass = gip_ins_subclass_arith_add;
+                    alu_gip_set_flags = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case  5: // adc
+                {
+                    alu_gip_ins_class = gip_ins_class_arith;
+                    alu_gip_ins_subclass = gip_ins_subclass_arith_adc;
+                    alu_gip_set_flags = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case  6: // sbc
+                {
+                    alu_gip_ins_class = gip_ins_class_arith;
+                    alu_gip_ins_subclass = gip_ins_subclass_arith_sbc;
+                    alu_gip_set_flags = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case  7: // rsc
+                {
+                    alu_gip_ins_class = gip_ins_class_arith;
+                    alu_gip_ins_subclass = gip_ins_subclass_arith_rsc;
+                    alu_gip_set_flags = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case  8: // tst
+                {
+                    alu_gip_ins_class = gip_ins_class_logic;
+                    alu_gip_ins_subclass = gip_ins_subclass_logic_and;
+                    alu_gip_set_flags = 1;
+                    alu_gip_pass_p = sign;
+                    alu_gip_set_acc = 0;
+                    alu_gip_set_rd = 0;
+                }
+                case  9: // teq
+                {
+                    alu_gip_ins_class = gip_ins_class_logic;
+                    alu_gip_ins_subclass = gip_ins_subclass_logic_xor;
+                    alu_gip_set_flags = 1;
+                    alu_gip_pass_p = sign;
+                    alu_gip_set_acc = 0;
+                    alu_gip_set_rd = 0;
+                }
+                case 10: // cmp
+                {
+                    alu_gip_ins_class = gip_ins_class_arith;
+                    alu_gip_ins_subclass = gip_ins_subclass_arith_sub;
+                    alu_gip_set_flags = 1;
+                    alu_gip_set_acc = 0;
+                    alu_gip_set_rd = 0;
+                }
+                case 11: // cmn
+                {
+                    alu_gip_ins_class = gip_ins_class_arith;
+                    alu_gip_ins_subclass = gip_ins_subclass_arith_add;
+                    alu_gip_set_flags = 1;
+                    alu_gip_set_acc = 0;
+                    alu_gip_set_rd = 0;
+                }
+                case 12: // orr
+                {
+                    alu_gip_ins_class = gip_ins_class_logic;
+                    alu_gip_ins_subclass = gip_ins_subclass_logic_or;
+                    alu_gip_set_flags = sign;
+                    alu_gip_pass_p = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case 13: // mov
+                {
+                    alu_gip_ins_class = gip_ins_class_logic;
+                    alu_gip_ins_subclass = gip_ins_subclass_logic_mov;
+                    alu_gip_set_flags = sign;
+                    alu_gip_pass_p = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case 14: // bic
+                {
+                    alu_gip_ins_class = gip_ins_class_logic;
+                    alu_gip_ins_subclass = gip_ins_subclass_logic_bic;
+                    alu_gip_set_flags = sign;
+                    alu_gip_pass_p = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                case 15: // mvn
+                {
+                    alu_gip_ins_class = gip_ins_class_logic;
+                    alu_gip_ins_subclass = gip_ins_subclass_logic_mvn;
+                    alu_gip_set_flags = sign;
+                    alu_gip_pass_p = sign;
+                    alu_gip_set_acc = !conditional;
+                }
+                }
+        }
+
+
+    /*b Decode instruction
+     */
+    decode_instruction "Decode instruction":
+        {
+            /*b Define outputs as a NOP
+             */
+            next_cycle_of_opcode = 0;
+            pc_op = gip_pc_op_sequential;
+
+            inst.gip_ins_class = gip_ins_class_logic;
+            inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+            inst.gip_ins_cc = ins_cc;
+            inst.a = 0;
+            inst.s_or_stack = 0;
+            inst.p_or_offset_is_shift = 0;
+            inst.k = 0;
+            inst.f = 0;
+            inst.d = 0;
+            inst.gip_ins_rm = arm_mapped_rm;
+            inst.gip_ins_rn = arm_mapped_rn;
+            inst.gip_ins_rd = {type=gip_ins_r_type_none, r=arm_mapped_rd.r};
+            inst.rm_is_imm = 0;
+            inst.immediate = alu_immediate;
+            inst.valid = 0;
+
+            /*b Decode instruction according to class
+             */
+            full_switch (ins_class)
+                {
+                /*b None
+                 */
+                case arm_ins_class_none:
+                {
+                    inst.valid = 0;
+                }
+                /*b ALU
+                 */
+                case arm_ins_class_alu:
+                {
+                    /*b Test for shift of 'LSL #0' or plain immediate
+                     */
+                    if (alu_imm)
+                    {
+                        inst.gip_ins_class =  alu_gip_ins_class;
+                        inst.gip_ins_subclass =  alu_gip_ins_subclass;
+                        inst.a = alu_gip_set_acc;
+                        inst.s_or_stack = alu_gip_set_flags;
+                        inst.p_or_offset_is_shift = 0;
+                        inst.gip_ins_rm = arm_mapped_rm;
+                        inst.gip_ins_rn = arm_mapped_rn;
+                        inst.gip_ins_rd = arm_mapped_rd;
+                        if (!alu_gip_set_rd)
+                        {
+                            inst.gip_ins_rd.type = gip_ins_r_type_none;
+                        }
+                        inst.rm_is_imm = 1;
+                        inst.immediate = alu_immediate;
+                        inst.valid = 1;
+                        next_cycle_of_opcode = 0;
+                        pc_op = gip_pc_op_sequential;
+                    }
+                    elsif ( alu_lsl_by_imm_0 )
+                    {
+                        inst.gip_ins_class =  alu_gip_ins_class;
+                        inst.gip_ins_subclass =  alu_gip_ins_subclass;
+                        inst.a = alu_gip_set_acc;
+                        inst.s_or_stack = alu_gip_set_flags;
+                        inst.p_or_offset_is_shift = 0;
+                        inst.gip_ins_rm = arm_mapped_rm;
+                        inst.gip_ins_rn = arm_mapped_rn;
+                        inst.gip_ins_rd = arm_mapped_rd;
+                        if (!alu_gip_set_rd)
+                        {
+                            inst.gip_ins_rd.type = gip_ins_r_type_none;
+                        }
+                        inst.rm_is_imm = 0;
+                        inst.immediate = alu_immediate;
+                        inst.valid = 1;
+                        next_cycle_of_opcode = 0;
+                        pc_op = gip_pc_op_sequential;
                     }
                     else
                     {
-                        build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
+                        full_switch (cycle_of_opcode)
+                        {
+                        case 0:
+                        {
+                            inst.gip_ins_class = gip_ins_class_shift;
+                            inst.gip_ins_subclass = alu_gip_shf;
+                            // First one could be done always, or conditional - it does not effect flags; we do conditional
+                            inst.a = 0;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+                            inst.gip_ins_rn = arm_mapped_rm; // Yes, rm
+                            inst.gip_ins_rd.type = gip_ins_r_type_none;
+                            inst.valid = 1;
+                            if (!alu_shf_by_reg) // Immediate shift, non-zero or non-LSL: ISHF{CC} Rm, #imm; IALU{CC}(SP|)[A][F] Rn, SHF -> Rd
+                            {
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 0;
+                                inst.immediate[5;0] = alu_shf_imm_amt;
+                                if (alu_shf_imm_amt==0)
+                                {
+                                    inst.immediate[5] = 1;
+                                }
+                            }
+                            else // if (shf_by_reg) - must be! ISHF{CC} Rm, Rs; IALU{CC}(SP|)[A][F] Rn, SHF -> Rd
+                            {
+                                inst.rm_is_imm = 0;
+                                inst.gip_ins_rm = arm_mapped_rs;
+                            }
+
+                            next_cycle_of_opcode = 1;
+                            pc_op = gip_pc_op_hold;
+                        }
+                        default:
+                        {
+                            inst.gip_ins_class =  alu_gip_ins_class;
+                            inst.gip_ins_subclass =  alu_gip_ins_subclass;
+                            inst.a = alu_gip_set_acc;
+                            inst.s_or_stack = alu_gip_set_flags;
+                            inst.p_or_offset_is_shift = alu_gip_pass_p;
+                            inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_shf };
+                            inst.gip_ins_rn = arm_mapped_rn;
+                            inst.gip_ins_rd = arm_mapped_rd;
+                            if (!alu_gip_set_rd)
+                            {
+                                inst.gip_ins_rd.type = gip_ins_r_type_none;
+                            }
+
+                            next_cycle_of_opcode = 0;
+                            pc_op = gip_pc_op_sequential;
+                        }
+                        }
                     }
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                    break;
-                default:
-                    build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 0, 0 );
-                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register( rd ) );
-                    pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                    pd->dec.arm.next_cycle_of_opcode = 0;
-                    break;
-                }
-                return 1;
-            }
-            /*b Postindexed
-             */
-            else // postindexed immediate/reg: ILDR[CC]A #0, (Rn), +/-Rm/Imm -> Rd; MOVCP[F] Acc -> Rn
-            {
-                switch (pd->dec.state.cycle_of_opcode)
-                {
-                case 0:
-                    build_gip_instruction_load( &pd->dec.arm.inst,gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 1, 0 );
-                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                    if (not_imm)
+                    inst.f = 0; // Now sort out the flush - always flush if writing to the PC, never otherwise
+                    if ( (inst.gip_ins_rd.type==gip_ins_r_type_internal) &&
+                         (inst.gip_ins_rd.r==gip_ins_r_int_pc) )
                     {
-                        build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                        inst.f = 1;
+                    }
+                }
+                /*b Load
+                 */
+                case arm_ins_class_load:
+                {
+                    /*b Handle immediate or reg without shift - 3 cases: preindexed without writeback (maps to ILDR), preindex with writeback (maps to IADD/SUB and ILDR), or postindexed (maps to ILDR, MOV)
+                     */
+                    if (ld_st_imm || alu_lsl_by_imm_0) // offset with immediate or unshifted register
+                    {
+                        /*b Preindexed, no writeback
+                         */
+                        if (ld_st_pre && !ld_st_wb) // preindexed immediate/reg: ILDR[CC]A[F] #0 (Rn, #+/-imm or +/-Rm) -> Rd
+                        {
+                            inst.gip_ins_class = gip_ins_class_load;
+                            inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                      (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                      (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                            inst.a = 1;
+                            inst.s_or_stack = (alu_rn==13);
+                            inst.p_or_offset_is_shift = 0;
+
+                            inst.gip_ins_rm = arm_mapped_rm;
+                            inst.gip_ins_rd = arm_mapped_rd;
+                            inst.gip_ins_rn = arm_mapped_rn;
+                            if (ld_st_imm)
+                            {
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 0;
+                                inst.immediate[12;0] = ld_st_offset;
+                            }
+                            else
+                            {
+                                inst.rm_is_imm = 0;
+                            }
+
+                            inst.f = rd_is_pc;
+
+                            next_cycle_of_opcode = 0;
+                            pc_op = gip_pc_op_sequential;
+                        }
+                        /*b Preindexed, writeback
+                         */
+                        elsif (ld_st_pre) // preindexed immediate/reg with writeback: IADD[CC]A/ISUB[CC]A Rn, #imm/Rm -> Rn; ILDRCP[F] #0, (Acc) -> Rd
+                        {
+                            full_switch (cycle_of_opcode)
+                            {
+                            case 0:
+                            {
+                                inst.gip_ins_class = gip_ins_class_arith;
+                                inst.gip_ins_subclass = ld_st_up ? gip_ins_subclass_arith_add : gip_ins_subclass_arith_sub;
+                                inst.a = 1;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.gip_ins_rd = arm_mapped_rn; // writeback address register
+                                inst.gip_ins_rn = arm_mapped_rn;
+                                if (ld_st_imm)
+                                {
+                                    inst.rm_is_imm = 1;
+                                    inst.immediate = 0;
+                                    inst.immediate[12;0] = ld_st_offset;
+                                }
+                                else
+                                {
+                                    inst.rm_is_imm = 0;
+                                }
+                                next_cycle_of_opcode = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+                            default:
+                            {
+                                inst.gip_ins_class = gip_ins_class_load;
+                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_cc = gip_ins_cc_cp;
+                                inst.a = 0;
+                                inst.s_or_stack = (alu_rn==13);
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+                                inst.gip_ins_rd = arm_mapped_rd;
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 0;
+
+                                inst.f = rd_is_pc;
+
+                                next_cycle_of_opcode = 0;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                            }
+                        }
+                        /*b Postindexed
+                         */
+                        else // postindexed immediate/reg: ILDR[CC]A #0, (Rn), +/-Rm/Imm -> Rd; MOVCP[F] Acc -> Rn
+                        {
+                            full_switch (cycle_of_opcode)
+                            {
+                            case 0:
+                            {
+                                inst.gip_ins_class = gip_ins_class_load;
+                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.a = 1;
+                                inst.s_or_stack = (alu_rn==13);
+                                inst.p_or_offset_is_shift = 0;
+
+                                inst.gip_ins_rm = arm_mapped_rm;
+                                inst.gip_ins_rd = arm_mapped_rd;
+                                inst.gip_ins_rn = arm_mapped_rn;
+                                if (ld_st_imm)
+                                {
+                                    inst.rm_is_imm = 1;
+                                    inst.immediate = 0;
+                                    inst.immediate[12;0] = ld_st_offset;
+                                }
+                                else
+                                {
+                                    inst.rm_is_imm = 0;
+                                }
+                                next_cycle_of_opcode = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+                            default:
+                            {
+                                inst.gip_ins_class = gip_ins_class_logic;
+                                inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                                inst.gip_ins_cc = gip_ins_cc_cp;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.gip_ins_rd = arm_mapped_rn; // writeback address register
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+
+                                inst.f = rd_is_pc;
+
+                                next_cycle_of_opcode = 0;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                            }
+                        }
+                    }
+                    /*b Register with shift
+                     */
+                    else // reg with shift
+                    {
+                        /*b Preindexed without writeback
+                         */
+                        if (ld_st_pre && !ld_st_wb) // preindexed reg with shift: ISHF[CC] Rm, #imm; ILDRCPA[F] (Rn, +/-SHF) -> Rd
+                        {
+                            full_switch (cycle_of_opcode)
+                            {
+                            case 0:
+                            {
+                                inst.gip_ins_class = gip_ins_class_shift;
+                                inst.gip_ins_subclass = alu_gip_shf;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.gip_ins_rn = arm_mapped_rm; // Yes, rm
+                                inst.gip_ins_rd.type = gip_ins_r_type_none;
+                                inst.valid = 1;
+
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 0;
+                                inst.immediate[5;0] = alu_shf_imm_amt;
+                                if (alu_shf_imm_amt==0)
+                                {
+                                    inst.immediate[5] = 1;
+                                }
+                                next_cycle_of_opcode = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+                            default:
+                            {
+                                inst.gip_ins_class = gip_ins_class_load;
+                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_cc = gip_ins_cc_cp;
+                                inst.a = 1;
+                                inst.s_or_stack = (alu_rn==13);
+                                inst.gip_ins_rn = arm_mapped_rn;
+                                inst.gip_ins_rd = arm_mapped_rd;
+                                inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_shf};
+                                inst.rm_is_imm = 0;
+
+                                inst.f = rd_is_pc;
+
+                                next_cycle_of_opcode = 0;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                            }
+                        }
+                        /*b Preindexed with writeback
+                         */
+                        elsif (ld_st_pre) // preindexed reg with shift with writeback: ISHF[CC] Rm, #imm; IADDCPA/ISUBCPA Rn, SHF -> Rn; ILDRCP[F] #0 (Acc) -> Rd
+                        {
+                            full_switch (cycle_of_opcode)
+                            {
+                            case 0:
+                            {
+                                inst.gip_ins_class = gip_ins_class_shift;
+                                inst.gip_ins_subclass = alu_gip_shf;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.gip_ins_rn = arm_mapped_rm; // Yes, rm
+                                inst.gip_ins_rd.type = gip_ins_r_type_none;
+                                inst.valid = 1;
+
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 0;
+                                inst.immediate[5;0] = alu_shf_imm_amt;
+                                if (alu_shf_imm_amt==0)
+                                {
+                                    inst.immediate[5] = 1;
+                                }
+                                next_cycle_of_opcode = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+                            case 1:
+                            {
+                                inst.gip_ins_class = gip_ins_class_arith;
+                                inst.gip_ins_subclass = ld_st_up ? gip_ins_subclass_arith_add : gip_ins_subclass_arith_sub;
+                                inst.gip_ins_cc = gip_ins_cc_cp;
+                                inst.a = 1;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.gip_ins_rd = arm_mapped_rn; // writeback address register
+                                inst.gip_ins_rn = arm_mapped_rn;
+                                inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_shf};
+                                inst.rm_is_imm = 0;
+                                next_cycle_of_opcode = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+                            default:
+                            {
+                                inst.gip_ins_class = gip_ins_class_load;
+                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_cc = gip_ins_cc_cp;
+                                inst.a = 0;
+                                inst.s_or_stack = (alu_rn==13);
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+                                inst.gip_ins_rd = arm_mapped_rd;
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 0;
+
+                                inst.f = rd_is_pc;
+
+                                next_cycle_of_opcode = 0;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                            }
+                        }
+                        /*b Postindexed
+                         */
+                        else // postindexed reg with shift with writeback: ISHF[CC] Rm, #imm; ILDRCPA #0 (Rn), +/-SHF -> Rd; MOVCP[F] Acc -> Rn
+                        {
+                            full_switch (cycle_of_opcode)
+                            {
+                            case 0:
+                            {
+                                inst.gip_ins_class = gip_ins_class_shift;
+                                inst.gip_ins_subclass = alu_gip_shf;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.gip_ins_rn = arm_mapped_rm; // Yes, rm
+                                inst.gip_ins_rd.type = gip_ins_r_type_none;
+                                inst.valid = 1;
+
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 0;
+                                inst.immediate[5;0] = alu_shf_imm_amt;
+                                if (alu_shf_imm_amt==0)
+                                {
+                                    inst.immediate[5] = 1;
+                                }
+                                next_cycle_of_opcode = 1;
+                                pc_op = gip_pc_op_hold;
+                            }
+                            case 1:
+                            {
+                                inst.gip_ins_cc = gip_ins_cc_cp;
+                                inst.gip_ins_class = gip_ins_class_load;
+                                inst.gip_ins_subclass = ( gip_ins_subclass_memory_word |
+                                                          (ld_st_pre ? gip_ins_subclass_memory_preindex : gip_ins_subclass_memory_postindex ) |
+                                                          (ld_st_up ? gip_ins_subclass_memory_up : gip_ins_subclass_memory_down ) );
+                                inst.gip_ins_cc = gip_ins_cc_cp;
+                                inst.a = 1;
+                                inst.s_or_stack = (alu_rn==13);
+                                inst.gip_ins_rn = arm_mapped_rn;
+                                inst.gip_ins_rd = arm_mapped_rd;
+                                inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_shf};
+                                inst.rm_is_imm = 0;
+
+                                next_cycle_of_opcode = 2;
+                                pc_op = gip_pc_op_hold;
+
+                            }
+                            default:
+                            {
+                                inst.gip_ins_class = gip_ins_class_logic;
+                                inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                                inst.gip_ins_cc = gip_ins_cc_cp;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.gip_ins_rd = arm_mapped_rn; // writeback address register
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
+
+                                inst.f = rd_is_pc;
+
+                                next_cycle_of_opcode = 0;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                            }
+                        }
+                    }
+
+                }
+                /*b Branch
+                 */
+                case arm_ins_class_branch:
+                {
+                    /*b Handle 5 cases; conditional or not, link or not; split conditional branches to predicted or not, also
+                     */
+                    if (!branch_link)
+                    {
+                        if (!conditional) // guaranteed branch
+                        {
+                            pc_op = gip_pc_op_branch;
+                            next_cycle_of_opcode = 0;
+                        }
+                        else
+                        {
+                            if (opcode[23]) // backward conditional branch; sub(!cc)f pc, #4 -> pc
+                            {
+                                inst.gip_ins_class = gip_ins_class_arith;
+                                inst.gip_ins_subclass = gip_ins_subclass_arith_sub;
+                                inst.gip_ins_cc = inv_cc;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.f = 1;
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                                inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 4;
+                                inst.valid = 1;
+
+                                pc_op = gip_pc_op_branch;
+                                next_cycle_of_opcode = 0;
+                            }
+                            else // forward conditional branch; add[cc]f pc, #target -> pc
+                            {
+                                inst.gip_ins_class = gip_ins_class_logic;
+                                inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.f = 1;
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                                inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                                inst.rm_is_imm = 1;
+                                inst.immediate = arm_branch_offset;
+                                inst.valid = 1;
+
+                                pc_op = gip_pc_op_sequential;
+                                next_cycle_of_opcode = 0;
+                            }
+                        }
                     }
                     else
                     {
-                        build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
+                        if (!conditional) // guaranteed branch with link; sub pc, #4 -> r14
+                        {
+                            inst.gip_ins_class = gip_ins_class_arith;
+                            inst.gip_ins_subclass = gip_ins_subclass_arith_sub;
+                            inst.a = 0;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+                            inst.f = 0;
+                            inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                            inst.gip_ins_rd = {type=gip_ins_r_type_register, r=14}; // Should map this
+                            inst.rm_is_imm = 1;
+                            inst.immediate = 4;
+                            inst.valid = 1;
+                            pc_op = gip_pc_op_branch;
+                            next_cycle_of_opcode = 0;
+                        }
+                        else // conditional branch with link; sub{!cc}f pc, #4 -> pc; sub pc, #4 -> r14
+                        {
+                            full_switch (cycle_of_opcode)
+                            {
+                            case 0:
+                            {
+                                inst.gip_ins_class = gip_ins_class_arith;
+                                inst.gip_ins_subclass = gip_ins_subclass_arith_sub;
+                                inst.gip_ins_cc = inv_cc;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.f = 1;
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                                inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 4;
+                                inst.valid = 1;
+
+                                pc_op = gip_pc_op_hold;
+                                next_cycle_of_opcode = 1;
+                            }
+                            default:
+                            {
+                                inst.gip_ins_class = gip_ins_class_arith;
+                                inst.gip_ins_subclass = gip_ins_subclass_arith_sub;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.f = 0;
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                                inst.gip_ins_rd = {type=gip_ins_r_type_register, r=14}; // Should map this
+                                inst.rm_is_imm = 1;
+                                inst.immediate = 4;
+                                inst.valid = 1;
+                                pc_op = gip_pc_op_branch;
+                                next_cycle_of_opcode = 0;
+                            }
+                            }
+                        }
                     }
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
-                    break;
-                default:
-                    build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
-                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                    pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                    pd->dec.arm.next_cycle_of_opcode = 0;
-                    break;
-                }
-                return 1;
-            }
-        }
-        /*b Register with shift
-         */
-        else // reg with shift
-        {
-            /*b Preindexed without writeback
-             */
-            if (pre && !wb) // preindexed reg with shift: ISHF Rm, #imm; ILDR[CC]A[F] (Rn, +/-SHF) -> Rd
-            {
-                switch (pd->dec.state.cycle_of_opcode)
-                {
-                case 0:
-                    build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
-                    build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
-                    break;
-                default:
-                    build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 1, up, (rn==13), 0, 1, (rd==15) );
-                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
-                    pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                    pd->dec.arm.next_cycle_of_opcode = 0;
-                    break;
-                }
-                return 1;
-            }
-            /*b Preindexed with writeback
-             */
-            else if (pre) // preindexed reg with shift with writeback: ILSL Rm, #imm; IADD[CC]A/ISUB[CC]A Rn, SHF -> Rn; ILDRCP[F] #0 (Acc) -> Rd
-            {
-                switch (pd->dec.state.cycle_of_opcode)
-                {
-                case 0:
-                    build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
-                    build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
-                    break;
-                case 1:
-                    build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                    break;
-                default:
-                    build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, 1, (rn==13), 0, 0, (rd==15) );
-                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
-                    pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                    pd->dec.arm.next_cycle_of_opcode = 0;
-                    break;
-                }
-                return 1;
-            }
-            /*b Postindexed
-             */
-            else // postindexed reg with shift with writeback: ILSL Rm, #imm; ILDR[CC]A #0 (Rn), +/-SHF -> Rd; MOVCP[F] Acc -> Rn
-            {
-                switch (pd->dec.state.cycle_of_opcode)
-                {
-                case 0:
-                    build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
-                    build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
-                    break;
-                case 1:
-                    build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, up, (rn==13), 0, 1, 0 );
-                    build_gip_instruction_cc( &pd->dec.arm.inst,map_condition_code(cc) );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_shf );
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
-                    break;
-                default:
-                    build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
-                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                    pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                    pd->dec.arm.next_cycle_of_opcode = 0;
-                    break;
-                }
-                return 1;
-            }
-        }
-        return 0;
-    }
 
-    /*b Handle stores - no offset, preindexed immediate, preindexed reg, preindexed reg with shift, postindexed immediate, postindexed reg, postindexed reg with shift
-     */
-    /*b Immediate offset of zero
-     */
-    if ( !not_imm && (imm_val==0) ) // no offset (hence no writeback, none needed); ISTR[CC] #0 (Rn) <- Rd
-    {
-        build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, 1, 0, (rn==13), 0, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-        build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-        build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
-        pd->dec.arm.next_pc = pd->dec.state.pc+4;
-        pd->dec.arm.next_cycle_of_opcode = 0;
-        return 1;
-    }
-    /*b Preindexed store
-     */
-    else if (pre)
-    {
-        /*b preindexed immediate or rm no shift: IADD[CC]AC/ISUB[CC]AC Rn, #imm/Rm; ISTRCPA[S] #0, (ACC, +/-SHF) <- Rd [-> Rn]
-         */
-        if ( !not_imm ||
-             (((t_shf_type)(shf_how)==shf_type_lsl) && (shf_imm_amt==0)) )
-        {
-            switch (pd->dec.state.cycle_of_opcode)
-            {
-            case 0:
-                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
-                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                if (!not_imm)
-                {
-                    build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
                 }
-                else
-                {
-                    build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
+                /*b Done all instructions
+                 */
                 }
-                break;
-            default:
-                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 1, up, 1, (rn==13), 0, 1, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
-                if (wb)
-                {
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                }
-                pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                pd->dec.arm.next_cycle_of_opcode = 0;
-            }
-            return 1;
         }
-        /*b Preindexed Rm with shift: ISHF[CC] Rm, #imm; ISTRCPA[S] #0, (Rn, +/-SHF) <- Rd [-> Rn]
-         */
-        else
-        {
-            switch (pd->dec.state.cycle_of_opcode)
-            {
-            case 0:
-                build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
-                build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
-                break;
-            default:
-                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 1, up, 1, (rn==13), 0, 1, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
-                if (wb)
-                {
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                }
-                pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                pd->dec.arm.next_cycle_of_opcode = 0;
-                break;
-            }
-            return 1;
-        }
-    }
-    /*b Postindexed
-     */
-    else // if (!pre) - must be postindexed:
-    {
-        /*b Postindexed immediate or reg without shift;  ISTR[CC][S] #0 (Rn) <-Rd; IADDCPA/ISUBCPA Rn, #Imm/Rm -> Rn
-         */
-        if ( !not_imm ||
-             (((t_shf_type)(shf_how)==shf_type_lsl) && (shf_imm_amt==0)) )
-        {
-            switch (pd->dec.state.cycle_of_opcode)
-            {
-            case 0:
-                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, 0, 0, (rn==13), 0, 0, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
-                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
-                break;
-            default:
-                build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                if (!not_imm)
-                {
-                    build_gip_instruction_immediate( &pd->dec.arm.inst, imm_val );
-                }
-                else
-                {
-                    build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(shf_rm) );
-                }
-                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                pd->dec.arm.next_cycle_of_opcode = 0;
-                break;
-            }
-            return 1;
-        }
-        /*b Postindexed reg with shift
-         */
-        else //  ISHF[CC] Rm, #imm; ISTRCPA[S] #0 (Rn), +/-SHF) <-Rd -> Rn
-        {
-            switch (pd->dec.state.cycle_of_opcode)
-            {
-            case 0:
-                build_gip_instruction_shift( &pd->dec.arm.inst, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code( cc ) );
-                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(shf_rm) );
-                build_gip_instruction_immediate( &pd->dec.arm.inst, shf_imm_amt );
-                break;
-            default:
-                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, 0, up, 1, (rn==13), 0, 1, 0 );
-                build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rd) );
-                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                pd->dec.arm.next_cycle_of_opcode = 0;
-                break;
-            }
-            return 1;
-        }
-    }
 
     /*b Done
      */
-    return 0;
 }
-
-/*f c_gip_full::decode_arm_ldm_stm
- */
-int c_gip_full::decode_arm_ldm_stm( void )
-{
-    int cc, four, pre, up, psr, wb, load, rn, regs;
-    int i, j, num_regs;
-
-    /*b Decode ARM instruction
-     */
-    cc      = (pd->dec.state.opcode>>28) & 0x0f;
-    four    = (pd->dec.state.opcode>>25) & 0x07;
-    pre     = (pd->dec.state.opcode>>24) & 0x01;
-    up      = (pd->dec.state.opcode>>23) & 0x01;
-    psr     = (pd->dec.state.opcode>>22) & 0x01;
-    wb      = (pd->dec.state.opcode>>21) & 0x01;
-    load    = (pd->dec.state.opcode>>20) & 0x01;
-    rn      = (pd->dec.state.opcode>>16) & 0x0f;
-    regs    = (pd->dec.state.opcode>> 0) & 0xffff;
-
-    /*b If not an LDM/STM, then return
-     */
-    if (four != 4)
-        return 0;
-
-    /*b Calculate memory address and writeback value
-     */
-    for (i=regs, num_regs=0; i; i>>=1)
-    {
-         if (i&1)
-         {
-              num_regs++;
-         }
-    }
-
-    /*b Handle load
-     */
-    if (load)
-    {
-        /*b If DB/DA, do first instruction to generate base address: ISUB[CC]A Rn, #num_regs*4 [-> Rn]
-         */
-        if ((!up) && (pd->dec.state.cycle_of_opcode==0))
-        {
-            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-            build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
-            build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-            build_gip_instruction_immediate( &pd->dec.arm.inst, num_regs*4 );
-            if (wb)
-            {
-                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-            }
-            else
-            {
-            }
-            return 1;
-        }
-
-        /*b Generate num_regs 'ILDR[CC|CP]A[S][F] #i (Rn|Acc), #+4 or preindexed version
-         */
-        for (i=0; i<num_regs; i++)
-        {
-            for (j=0; (j<16) && ((regs&(1<<j))==0); j++);
-            regs &= ~(1<<j);
-            if ( (!up && (i==pd->dec.state.cycle_of_opcode+1)) ||
-                 (up && (i==pd->dec.state.cycle_of_opcode)) )
-            {
-                build_gip_instruction_load( &pd->dec.arm.inst, gip_ins_subclass_memory_word, pre^!up, 1, (rn==13), (num_regs-1-i), 1, (j==15)&&!(up&&wb) );
-                if (pd->dec.state.cycle_of_opcode==0)
-                {
-                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                }
-                else
-                {
-                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-                }
-                build_gip_instruction_immediate( &pd->dec.arm.inst, 4 );
-                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(j) );
-            }
-            if ( (!up && (pd->dec.state.cycle_of_opcode==num_regs)) ||
-                 ((up&&!wb) && (pd->dec.state.cycle_of_opcode==num_regs-1)) )
-            {
-                pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                pd->dec.arm.next_cycle_of_opcode = 0;
-            }
-        }
-
-        /*b If IB/IA with writeback then do final MOVCP[F] Acc -> Rn; F if PC was read in the list
-         */
-        if ((up&&wb) && (pd->dec.state.cycle_of_opcode==num_regs))
-        {
-            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, ((pd->dec.state.opcode&0x8000)!=0) );
-            build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-            build_gip_instruction_rm_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-            build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-            pd->dec.arm.next_pc = pd->dec.state.pc+4;
-            pd->dec.arm.next_cycle_of_opcode = 0;
-        }
-        return 1;
-    }
-
-    /*b Handle store
-     */
-    if (!load)
-    {
-        /*b If DB/DA, do first instruction to generate base address: ISUB[CC]A Rn, #num_regs*4 [-> Rn]
-         */
-        if ((!up) && (pd->dec.state.cycle_of_opcode==0))
-        {
-            build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-            build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
-            build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-            build_gip_instruction_immediate( &pd->dec.arm.inst, num_regs*4 );
-            if (wb)
-            {
-                build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-            }
-            else
-            {
-            }
-            return 1;
-        }
-
-        /*b Generate num_regs 'ISTR[CC|CP]A[S][F] #i (Rn|Acc), #+4 [->Rn] or preindexed version
-         */
-        for (i=0; i<num_regs; i++)
-        {
-            for (j=0; (j<16) && ((regs&(1<<j))==0); j++);
-            regs &= ~(1<<j);
-            if ( (!up && (pd->dec.state.cycle_of_opcode==(i+1))) ||
-                 (up && (pd->dec.state.cycle_of_opcode==i)) )
-            {
-                build_gip_instruction_store( &pd->dec.arm.inst, gip_ins_subclass_memory_word, pre^!up, 1, 0, (rn==13), (num_regs-1-i), 1, 0 );
-                if (pd->dec.state.cycle_of_opcode==0)
-                {
-                    build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
-                    build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rn) );
-                }
-                else
-                {
-                    build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-                    build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-                }
-                build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(j) );
-                if ((pd->dec.state.cycle_of_opcode==num_regs-1) && (up) && (wb))
-                {
-                    build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rn) );
-                }
-                else
-                {
-                }
-                if ( (!up && (pd->dec.state.cycle_of_opcode==num_regs)) ||
-                     (up && (pd->dec.state.cycle_of_opcode==num_regs-1)) )
-                {
-                    pd->dec.arm.next_pc = pd->dec.state.pc+4;
-                    pd->dec.arm.next_cycle_of_opcode = 0;
-                }
-            }
-        }
-
-        return 1;
-    }
-
-    /*b Done
-     */
-    return 0; 
-}
-
-/*f c_gip_full::decode_arm_mul
- */
-int c_gip_full::decode_arm_mul( void )
-{
-    int cc, zero, nine, accum, sign, rd, rn, rs, rm;
-
-    /*b Decode ARM instruction
-     */
-    cc      = (pd->dec.state.opcode>>28) & 0x0f;
-    zero    = (pd->dec.state.opcode>>22) & 0x3f;
-    accum   = (pd->dec.state.opcode>>21) & 0x01;
-    sign    = (pd->dec.state.opcode>>20) & 0x01;
-    rd      = (pd->dec.state.opcode>>16) & 0x0f;
-    rn      = (pd->dec.state.opcode>>12) & 0x0f;
-    rs      = (pd->dec.state.opcode>>8) & 0x0f;
-    nine    = (pd->dec.state.opcode>>4) & 0x0f;
-    rm      = (pd->dec.state.opcode>>0) & 0x0f;
-
-    /*b Validate MUL/MLA instruction
-     */
-    if ((zero!=0) || (nine!=9) || (cc==15))
-        return 0;
-
-    /*b Decode according to stage
-     */
-    switch (pd->dec.state.cycle_of_opcode)
-    {
-    case 0:
-        /*b First the INIT instruction
-         */
-        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_init, 1, 0, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.arm.inst, map_condition_code(cc) );
-        build_gip_instruction_rn( &pd->dec.arm.inst, map_source_register(rm) ); // Note these are
-        if (accum)
-        {
-            build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rn) ); //  correctly reversed
-        }
-        else
-        {
-            build_gip_instruction_immediate( &pd->dec.arm.inst, 0 );
-        }
-        break;
-    case 1:
-        /*b Then the MLA instruction to get the ALU inputs ready, and do the first step
-         */
-        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_mla, 1, 0, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-        build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-        build_gip_instruction_rm( &pd->dec.arm.inst, map_source_register(rs) );
-        break;
-    case 2:
-    case 3:
-    case 4:
-    case 5:
-    case 6:
-    case 7:
-    case 8:
-    case 9:
-    case 10:
-    case 11:
-    case 12:
-    case 13:
-    case 14:
-    case 15:
-        /*b Then 14 MLB instructions to churn
-         */
-        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_mlb, 1, 0, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-        build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-        build_gip_instruction_immediate( &pd->dec.arm.inst, 0 ); // Not used
-        break;
-    default:
-        /*b Then the last MLB instructions to produce the final results
-         */
-        build_gip_instruction_alu( &pd->dec.arm.inst, gip_ins_class_arith, gip_ins_subclass_arith_mlb, 1, sign, 0, 0 );
-        build_gip_instruction_cc( &pd->dec.arm.inst, gip_ins_cc_cp );
-        build_gip_instruction_rn_int( &pd->dec.arm.inst, gip_ins_rnm_int_acc );
-        build_gip_instruction_immediate( &pd->dec.arm.inst, 0 ); // Not used
-        build_gip_instruction_rd( &pd->dec.arm.inst, map_destination_register(rd) );
-        pd->dec.arm.next_pc = pd->dec.state.pc+4;
-        pd->dec.arm.next_cycle_of_opcode = 0;
-        break;
-    }
-
-    /*b Done
-     */
-    return 1; 
-}
-
-/*f c_gip_full::decode_arm_trace
-  Steal top half of SWI space
-*/
-int c_gip_full::decode_arm_trace( void )
-{
-    int cc, fifteen, code;
-
-    /*b Decode ARM instruction
-     */
-    cc      = (pd->dec.state.opcode>>28) & 0xf;
-    fifteen = (pd->dec.state.opcode>>24) & 0xf;
-    code    = (pd->dec.state.opcode>> 0) & 0xffffff;
-
-    if (fifteen!=15)
-        return 0;
-
-    if (1 || (code & 0x800000))
-    {
-        return 0;
-    }
-    return 0;
-}
-

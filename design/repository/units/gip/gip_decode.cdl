@@ -132,6 +132,13 @@ module gip_decode( clock gip_clock,
 
     net bit native_dec_next_in_immediate_conditional_shadow;
 
+    /*b ARM instruction decoding
+     */
+    net t_gip_instruction_rf arm_dec_inst;
+    net bit[5] arm_dec_next_cycle_of_opcode;
+    net t_gip_pc_op arm_dec_pc_op;
+    net bit[32] arm_dec_branch_offset;
+
     /*b Selected decode results
      */
     comb t_gip_ins_cc dec_cc;
@@ -140,29 +147,25 @@ module gip_decode( clock gip_clock,
     comb bit[32] next_pc;
     comb t_gip_pc_op next_pc_op;
 
-    /*b Not implemented yet
+    /*b Instruction blocking and branching
      */
     comb bit instruction_blocked;
-    comb bit branch;
     comb bit[32] branch_pc;
-
-    /*b Not implemented
-     */
-    nyi "" :
-        {
-            branch = 0;
-            if (native_dec_pc_op==gip_pc_op_branch)
-            {
-                branch = 1;
-            }
-            branch_pc = pc + 8 + native_dec_branch_offset;
-        }
 
     /*b Register prefetched instruction
      */
     prefetched "":
         {
-            fetch_16 = 1;
+            if (op_state==gip_decode_state_native)
+            {
+                branch_pc = pc + 8 + native_dec_branch_offset;
+            }
+            else
+            {
+                branch_pc = pc + 8 + arm_dec_branch_offset;
+            }
+
+            fetch_16 = (op_state==gip_decode_state_native);
             fetch_op = gip_fetch_op_this_prefetch;
 
             prefetch_address = next_pc;
@@ -207,24 +210,35 @@ module gip_decode( clock gip_clock,
                 }
                 else
                 {
-                    fetch_op = gip_fetch_op_sequential; // We have an instruction decoded okay, so this is what we want; but what if the last instruction was a branch, giving new PC? We have not fetched that. Hm.
-                    if (branch)
-                    {
-                        fetch_op = gip_fetch_op_this_prefetch; // Not if delay slot. Hmm. This is probably the issue described in the other two lines
-                        prefetch_op = gip_prefetch_op_new_address;
-                        valid_prefetch_issued <= 1; // So what happens in the next cycle? Instruction may not be blocked - should the fetch be 'last prefetch'?
-                    }
-                    else
-                    {
-                        prefetch_op = gip_prefetch_op_sequential;
-                    }
+                    full_switch (next_pc_op)
+                        {
+                        case gip_pc_op_hold:
+                        {
+                            fetch_op = gip_fetch_op_hold;
+                            prefetch_op = gip_prefetch_op_sequential;
+                        }
+                        case gip_pc_op_sequential:
+                        {
+                            fetch_op = gip_fetch_op_sequential; // We have an instruction decoded okay, so this is what we want; but what if the last instruction was a branch, giving new PC? We have not fetched that. Hm.
+                            prefetch_op = gip_prefetch_op_sequential;
+                        }
+                        case gip_pc_op_delayed_branch:
+                        case gip_pc_op_branch:
+                        {
+                            fetch_op = gip_fetch_op_this_prefetch; // Not if delay slot. Hmm. This is probably the issue described in the other two lines
+                            prefetch_op = gip_prefetch_op_new_address;
+                            valid_prefetch_issued <= 1; // So what happens in the next cycle? Instruction may not be blocked - should the fetch be 'last prefetch'?
+                        }
+                        }
                 }
             }
             // If the prefetch_op is sequential then we can speculate a fetch also
             if (gip_pipeline_flush)
             {
                 valid_prefetch_issued <= 0;
+                valid_prefetch_returned <= 0;
                 prefetch_op = gip_prefetch_op_none;
+                fetch_op = gip_fetch_op_this_prefetch;
             }
             if (gip_reset)
             {
@@ -239,15 +253,34 @@ module gip_decode( clock gip_clock,
             }
         }
 
+    /*b ARM decode - use full instruction
+     */
+    arm_decode "":
+        {
+
+            gip_decode_arm arm( opcode <= fetched_opcode,
+                                cycle_of_opcode <= cycle_of_opcode,
+
+                                inst => arm_dec_inst,
+
+                                next_cycle_of_opcode => arm_dec_next_cycle_of_opcode,
+                                pc_op => arm_dec_pc_op,
+                                arm_branch_offset => arm_dec_branch_offset,
+
+                                extended <= extended,
+                                extended_immediate <= extended_immediate,
+                                extended_rd <= extended_rd,
+                                extended_rn <= extended_rn,
+                                extended_rm <= extended_rm,
+                                extended_cmd <= extended_cmd
+
+                                );
+        }
+
     /*b Native decode - use top or bottom half of instruction (pc bit 1 is set AND native AND valid)
      */
-    native_decode "":
+    native_decode "Native instruction decoding":
         {
-            dec_cc = gip_ins_cc_always;
-            if (in_conditional_shadow)
-            {
-                dec_cc = gip_ins_cc_cp;
-            }
             native_opcode = fetched_opcode[16;0];
             if ( (op_state!=gip_decode_state_native) || (!pc[1]) )
             {
@@ -258,8 +291,6 @@ module gip_decode( clock gip_clock,
                 native_opcode = fetched_opcode[16;16];
             }
             gip_decode_native native( opcode <= native_opcode,
-
-                                      dec_cc <= gip_ins_cc_always, // If in ARM mode should use its condition
 
                                       special_repeat_count <= special_repeat_count,
                                       special_alu_mode <= special_alu_mode,
@@ -294,8 +325,13 @@ module gip_decode( clock gip_clock,
             request_fetch = 0;
             next_pc_valid = 0;
             next_pc = 0;
+            next_pc_op = gip_pc_op_hold;
             acknowledge_scheduler <= 0;
             instruction_blocked = 0;
+
+            dec_inst = native_dec_inst;
+            dec_inst.pc = pc+8;
+
             full_switch (op_state)
             {
                 /*b Idle - wait for schedule request
@@ -305,6 +341,7 @@ module gip_decode( clock gip_clock,
                 if (sched_thread_to_start_valid)
                 {
                     op_state <= gip_decode_state_native;
+                    op_state <= gip_decode_state_emulate;
                     acknowledge_scheduler <= 1;
                     thread <= sched_thread_to_start;
                     next_pc = sched_thread_to_start_pc;
@@ -325,8 +362,11 @@ module gip_decode( clock gip_clock,
              */
             case gip_decode_state_native:
             {
-                dec_inst = native_dec_inst;
-                dec_inst.pc = pc;
+                if (in_conditional_shadow)
+                {
+                    dec_inst.gip_ins_cc = gip_ins_cc_cp;
+                }
+
                 /*b Select native instruction as our decode
                  */
                 if (!fetched_opcode_valid)
@@ -348,7 +388,6 @@ module gip_decode( clock gip_clock,
                     elsif (rfr_accepting_dec_instruction)
                         {
                             next_pc_op = native_dec_pc_op;
-                            cycle_of_opcode <= 0;
 
                             in_conditional_shadow <= 0;
                             in_immediate_conditional_shadow <= 0;
@@ -394,8 +433,63 @@ module gip_decode( clock gip_clock,
                     op_state <= gip_decode_state_idle;
                 }
                 instruction_blocked = dec_inst.valid && !rfr_accepting_dec_instruction;
-            /*b All done
+                /*b All done
+                 */
+            }
+            /*b ARM - decode full instruction
              */
+            case gip_decode_state_emulate:
+            {
+                /*b Select native instruction as our decode if opcode is correct, else ARM decode
+                 */
+                dec_inst = arm_dec_inst;
+                dec_inst.pc = pc+8;
+                if (!fetched_opcode_valid)
+                {
+                    dec_inst.valid = 0;
+                }
+                else
+                {
+                    if (rfr_accepting_dec_instruction)
+                    {
+                        next_pc_op = arm_dec_pc_op;
+                        cycle_of_opcode <= arm_dec_next_cycle_of_opcode;
+
+                        extended_immediate <= 0;
+                        extended_cmd.extended <= 0;
+                        extended_rd.type <= gip_ins_r_type_no_override;
+                        extended_rn.type <= gip_ins_r_type_no_override;
+                        extended_rm.type <= gip_ins_r_type_no_override;
+                    }
+                }
+                if (gip_pipeline_rfw_write_pc)
+                {
+                    next_pc = gip_pipeline_rfw_data;
+                    next_pc_valid = 1;
+                }
+                if (gip_pipeline_flush)
+                {
+                    pc_valid <= 0;
+                    acc_valid <= 0;
+                    cycle_of_opcode <= 0;
+
+                    extended_immediate <= 0;
+                    extended_cmd.extended <= 0;
+                    extended_rd.type <= gip_ins_r_type_no_override;
+                    extended_rn.type <= gip_ins_r_type_no_override;
+                    extended_rm.type <= gip_ins_r_type_no_override;
+
+                    dec_inst.valid = 0;
+                    in_immediate_conditional_shadow <= 0;
+                    in_conditional_shadow <= 0;
+                }
+                if (gip_pipeline_tag && gip_pipeline_executing)
+                {
+                    op_state <= gip_decode_state_idle;
+                }
+                instruction_blocked = dec_inst.valid && !rfr_accepting_dec_instruction;
+                /*b All done
+                 */
             }
         }
     }

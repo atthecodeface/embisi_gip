@@ -10,8 +10,6 @@ include "gip_internal.h"
  */
 module gip_decode_native( input bit[16] opcode,
 
-                          input t_gip_ins_cc dec_cc,
-
                           input bit[8] special_repeat_count,
                           input bit[2] special_alu_mode,
 
@@ -172,7 +170,7 @@ module gip_decode_native( input bit[16] opcode,
 
             inst.gip_ins_class = gip_ins_class_logic;
             inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
-            inst.gip_ins_cc = dec_cc; // From the decode; if we are in ARM mode, this comes from the top 4-bits; if native it should be 'always'
+            inst.gip_ins_cc = gip_ins_cc_always;
             inst.a = 0;
             inst.s_or_stack = 0;
             inst.p_or_offset_is_shift = 0;

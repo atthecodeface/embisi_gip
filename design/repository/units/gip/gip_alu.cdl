@@ -663,11 +663,11 @@ module gip_alu( clock gip_clock,
                 gip_pipeline_flush = 0;
                 gip_pipeline_executing = 0;
             }
-            if (alu_accepting_rfr_instruction) // Also kill flush if we are blocked for actually completing the instruction
-            {
-                gip_pipeline_flush = 0;
-                gip_pipeline_executing = 0;
-            }
+//            if (alu_accepting_rfr_instruction) // Also kill flush if we are blocked for actually completing the instruction - this is clearly wrong. The flush actually needs to occur as early as possible anyway.
+//            {
+//                gip_pipeline_flush = 0;
+//                gip_pipeline_executing = 0;
+//            }
         }
 
     /*b Copy the instruction across - alu_inst

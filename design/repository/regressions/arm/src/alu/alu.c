@@ -200,7 +200,7 @@ static unsigned int shift( unsigned int a, unsigned int b )
  */
 /*v test_vectors - set of tests to perform
  */
-static t_test_vector test_vectors[] = 
+static const t_test_vector test_vectors[] = 
 {
 
     //Z  N  C  V            A           B  fn       Z  N  C  V      Result  Message with A, B, Result as arguments

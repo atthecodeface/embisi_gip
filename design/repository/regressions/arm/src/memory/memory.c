@@ -49,7 +49,7 @@ static void move_bytes_32( char *src, char *dest )
  */
 /*v test_data_0 - 256 bytes of incrementing data
  */
-static char test_data_0[256] = 
+static const char test_data_0[256] = 
 {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
@@ -71,12 +71,12 @@ static char test_data_0[256] =
 
 /*v test_data_1 - A 256-byte text string (including nul)
  */
-static char test_data_1[256] = 
+static const char test_data_1[256] = 
 "Once upon a time there was a bunny rabbit who ate a million carrots. He got very full, and was not hungry again for four days. Once he was hungy again, though, he decide to try to eat two million carrots. Nobody has ever seen the bunny rabbit again since.";
 
 /*v test_vectors - set of tests to perform
  */
-static t_test_vector test_vectors[] = 
+static const t_test_vector test_vectors[] = 
 {
     //Origin data, size, byte offset a, byte offset b, operation (a to b), compare result (b) to, compare size, text
     {  test_data_0, 32, 0, 0, move_bytes_32, test_data_0, 1, "Move 32 bytes byte-wise from word offset 0 to word offset 0, compare 1" },

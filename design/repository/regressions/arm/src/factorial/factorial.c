@@ -45,7 +45,7 @@ static int factorial_mult( int a )
  */
 /*v test_vectors - set of tests to perform
  */
-static t_test_vector test_vectors[] = 
+static const t_test_vector test_vectors[] = 
 {
     //Val  fn  result
     {  0, factorial_add,    0 },

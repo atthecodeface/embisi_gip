@@ -310,6 +310,7 @@ The accumulator should have the numerator value (x), and SHF should be zeroed.
 
 <p>
 The ARM instruction classes in general are as follows:
+</p>
 
 <table border=1>
 <tr>
@@ -321,13 +322,13 @@ The ARM instruction classes in general are as follows:
 <tr>
 <th>Data processing</th>
 <td>ALU, Shift, and combined instructions</td>
-<td>Varied emulation issues; see below</th>
+<td>Varied emulation issues; see below</td>
 </tr>
 
 <tr>
 <th>Multiply</th>
 <td>Multiply and multiply accumulate</td>
-<td>Utilizes INIT an MULST</th>
+<td>Utilizes INIT an MULST</td>
 </tr>
 
 <tr>
@@ -339,7 +340,7 @@ The ARM instruction classes in general are as follows:
 <tr>
 <th>Single Data Transfer</th>
 <td>Load or store from register plus offset, possibly shifted</td>
-<td>Access and/or writeback address calculation</th>
+<td>Access and/or writeback address calculation</td>
 </tr>
 
 <tr>
@@ -385,7 +386,6 @@ The ARM instruction classes in general are as follows:
 </tr>
 
 </table>
-</p>
 
 <p>
 
@@ -517,7 +517,7 @@ condition passes then execution
 flow will change to the result of the ALU path; if it fails then the next
 instruction is performed. A speculative fetch will be performed of the address
 in Rm when it is read from the
-register file. The 'S' field is always ignored.</dd>
+register file. The 'S' field is always ignored.
 </dd>
 
 <dt>ADD/ADC/SUB/SBC/RSB/RSC{cond}[S] PC, Rn, Rm</dt>
@@ -790,6 +790,15 @@ LDR|STR Rd, [Rn], +/-Rm, SHF #S cycle 1
 <td>MUL cycle 1</td>
 </tr>
 
+<tr>
+<td>A</td>
+<td>A</td>
+<td>MUL|MLA cycles 2 and beyond
+<br>
+(Also divide)
+</td>
+</tr>
+
 </table>
 
 <p>Where A or ACC is specified the ARM emulator will indicate which, using its register scoreboarding techniques.
@@ -894,6 +903,15 @@ LDM|STM cycle 2
 <td>B</td>
 <td>
 LDM|STMDA cycle 1
+</td>
+</tr>
+
+<tr>
+<td>ACC</td>
+<td>ACC</td>
+<td>MUL|MLA cycles 2 and beyond
+<br>
+(Also divide)
 </td>
 </tr>
 
@@ -1147,6 +1165,19 @@ Binary OR of Op1 and binary not of Op2
 </tr>
 
 <tr>
+<th>IANDXOR</th>
+<td>(Op1 & Op2) ^ Op1</td>
+<td>
+Binary XOR of Op1 and (Op2 binary AND Op1)
+<br>
+Use for testing that all bits of Op1 are set in Op2
+</td>
+<td>
+&nbsp;
+</td>
+</tr>
+
+<tr>
 <th>IXORCNT</th>
 <td>ZC(Op1 ^ Op2)</td>
 <td>
@@ -1158,11 +1189,304 @@ This is a result from zero to 32; it is useful for divide, networking, floating 
 &nbsp;
 </td>
 </tr>
+
+<tr>
+<th>IINIT</th>
+<td>Op1</td>
+<td>
+Pass Op1 to ACC
+</td>
+<td>
+MUL, MLA
+<br>
+Also divide
+</td>
+</tr>
+
 </table>
 
 <p>
 The logical unit does not produce a carry or overflow; it produces a zero flag indicating its result is zero, and a negative flag indicating the top bit of its result is set.
 </p>
+
+<h2>Arithmetic operation and result</h2>
+
+<table border=1>
+<tr>
+<th>Internal instruction</th>
+<th>Operation</th>
+<th>Details</th>
+<th>Relevant ARM instructions</th>
+</tr>
+
+<tr>
+<th>IADD</th>
+<td>Op1 + Op2</td>
+<td>
+Op1 + Op2
+</td>
+<td>
+ADD
+<br>
+CMN
+</td>
+</tr>
+
+<tr>
+<th>IADC</th>
+<td>Op1 + Op2 + C</td>
+<td>
+Op1 + Op2 + C
+</td>
+<td>
+ADC
+</td>
+</tr>
+
+<tr>
+<th>ISUB</th>
+<td>Op1 - Op2</td>
+<td>
+Op1 + ~Op2 + 1
+</td>
+<td>
+SUB
+<br>
+CMP
+</td>
+</tr>
+
+<tr>
+<th>ISUBC</th>
+<td>Op1 - Op2 plus carry</td>
+<td>
+Op1 + ~Op2 + C
+</td>
+<td>
+SBC
+</td>
+</tr>
+
+<tr>
+<th>IRSUB</th>
+<td>-Op1 + Op2</td>
+<td>
+~Op1 + Op2 + 1
+</td>
+<td>
+RSB
+</td>
+</tr>
+
+<tr>
+<th>IRSUBC</th>
+<td>-Op1 + Op2 plus carry</td>
+<td>
+~Op1 + Op2 + C
+</td>
+<td>
+RSC
+</td>
+</tr>
+
+<tr>
+<th>IMUL</th>
+<td>(~)Op1(*2) + Op2 (+1)</td>
+<td>
+Determine SHF[2;0]+shifter carry.
+<ul>
+<li>If 0 or 4 return Op2</li>
+<li>If 1, return Op1 + Op2 + 0</li>
+<li>If 2, return (Op1*2) + Op2 + 0</li>
+<li>If 3, return ~Op1 + Op2 + 1</li>
+</ul>
+</td>
+<td>
+MUL, MLA
+</td>
+</tr>
+
+<tr>
+<th>IDIV</th>
+<td>-Op1 + Op2, or Op2</td>
+<td>
+~Op1 + Op2 + 1, generating carry;
+If carry is one then return that as result, else return Op2
+</td>
+<td>
+&nbsp;
+</td>
+</tr>
+
+</table>
+
+<p>
+The arithmetic unit produces a carry (carry out of the adder),
+overflow (from the adder), a zero flag indicating its result is zero, and a negative flag indicating the top bit of its result is set.
+</p>
+
+<h2>Result values</h2>
+
+<p>
+Conditional execution may block execution; no effects will occur if a conditional operation is performed and its condition is not met.
+<br>
+With that in mind:
+<ol>
+<li>
+The ALU result is the result of the logical or arithmetic operation performed: if a logical operation was performed then
+the result comes from the logic unit (as do the N and Z flags; V is unchanged; C may come from the shifters last carry out);
+if an arithmetic operation was performed then the result comes from the arithmetic unit (as do N, Z, V, C). Note that for shifter result
+to be seen it must be moved through the logical or arithmetic path in a second instruction, as it is not muxed through to the output.
+</li>
+<li>
+The shifter result is always written to the SHF register on execution
+</li>
+<li>
+The accumulator may be written with the ALU result if the instruction indicates
+</li>
+<li>
+The ALU 'A' register is clocked in from the previous pipeline stage on execution, <i>except</i> when an IMUL or IDIV instruction is executed. In these cases
+the value of the A register is logically shifted left by 2 (for a multiply) or right by 1 (for a divide).
+</li>
+<li>
+The ALU 'B' register is clocked in from the previous pipeline stage on execution, <i>except</i> when an IDIV instruction is executed. In this case
+the value of the B register is logically shifted right by 1 (for a divide).
+</li>
+</ol>
+</p>
+
+
+<h1>Implementation details</h1>
+
+<h2>Module definition</h2>
+
+<p>
+The ALU stage, then, requires the following controls and input data, which can be described as 'ports' to the ALU stage
+</p>
+
+<table border=1>
+<tr>
+<th>Port</th>
+<th>Type</th>
+<th>Details</th>
+</tr>
+
+<tr>
+<td>alu_a_in</td>
+<td>t_word</td>
+<td>
+ALU A data input (32-bit word)
+</td>
+</tr>
+
+<tr>
+<td>alu_b_in</td>
+<td>t_word</td>
+<td>
+ALU B data input (32-bit word)
+</td>
+</tr>
+
+<tr>
+<td>alu_op</td>
+<td>t_alu_op</td>
+<td>
+Operation for the logical or arithmetic unit to perform. One of: mov, not, and, or, xor, bic, orn, xorcnt, init, add, adc, sub, sbc, rsb, rsc, mul, div.
+</td>
+</tr>
+
+<tr>
+<td>shift_op</td>
+<td>t_shift_op</td>
+<td>
+Operation for the shifter to perform. One of: lsl, lsr, asr, ror, rrx, init, mul, div.
+</td>
+</tr>
+
+<tr>
+<td>condition</td>
+<td>t_alu_condition</td>
+<td>
+Condition to be checked. One of: CS, CC, EQ, NE, VC, VS, GT, GE, LT, LE, LS, HI, MI, PL, AL, NV
+</td>
+</tr>
+
+<tr>
+<td>op1_source</td>
+<td>t_alu_op1_source</td>
+<td>
+Source for op1. One of A or ACC.
+</td>
+</tr>
+
+<tr>
+<td>op2_source</td>
+<td>t_alu_op2_source</td>
+<td>
+Source for op2. One of B, ACC or SHF
+</td>
+</tr>
+
+<tr>
+<td>alu_op_conditional</td>
+<td>bit</td>
+<td>
+Asserted if the ALU operation is conditional.
+If conditional, then stored flags are used to indicate for testing the condition to be checked.
+If not conditional, then the combinatorial flags are used for testing the condition to be checked.
+</td>
+</tr>
+
+<tr>
+<td>alu_write_accumulator</td>
+<td>bit</td>
+<td>
+Assert if the accumulator should be written if the instruction is not conditional (<i>alu_op_conditional</i> is clear) or if the condition is met.
+</td>
+</tr>
+
+<tr>
+<td>alu_write_flags</td>
+<td>bit</td>
+<td>
+Assert if the flags should be written if the instruction is not conditional (<i>alu_op_conditional</i> is clear) or if the condition is met.
+</td>
+</tr>
+
+     int *alu_shift_flags_in__carry;
+     int *alu_shift_flags_in__zero;
+     int *alu_shift_flags_in__overflow;
+     int *alu_shift_flags_in__negative;
+     int *alu_shift_select_alu;
+     int *alu_shift_store_accumulator;
+     int *shift_immediate_in;
+     
+     int *alu_stall;
+
+</table>
+
+<p>
+The ALU stage will also generate outputs: again, 'ports' from the ALU stage
+</p>
+
+<table border=1>
+<tr>
+<th>Port</th>
+<th>Type</th>
+<th>Details</th>
+</tr>
+
+<tr>
+<td>alu_condition_met</td>
+<td>bit</td>
+<td>
+Asserted if the condition requested (indicated by the <i>condition</i> input and the <i>alu_op_conditional</i> input)
+is met.
+</td>
+</tr>
+
+</table>
+
 
 </body>
 </html>

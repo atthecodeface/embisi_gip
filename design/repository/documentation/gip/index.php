@@ -1,18 +1,24 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN">
-<html>
-<head>
-  <title>GIP documentation</title>
-  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
-  <meta name="GENERATOR" content="Quanta Plus">
-</head>
-<body>
-<h1>GIP Documentation</h1>
+<?php
 
-The GIP documentation currently consists of OpenOffice documents and HTML documents.
+include "web_locals.php";
+include "${toplevel}web_assist/web_globals.php";
+
+site_set_location("gip");
+
+$page_title = "GIP Documentation";
+
+include "${toplevel}web_assist/web_header.php";
+
+page_header( "Overview" );
+
+page_sp();
+?>
+
+The GIP documentation currently consists of OpenOffice documents and HTML/PHP documents.
 
 <p>
 
-HTML documentation is written in Quanta or any text editor, and it contains the next level of design after the lab book details.
+PHP/HTML documentation is written in Quanta or any text editor, and it contains the next level of design after the lab book details.
 
 <p>
 
@@ -20,10 +26,9 @@ OpenOffice documentation covers the actual final design and functional details. 
 
 <p>
 
-
 The instruction set is documented in OpenOffice
 
-<h1>HTML documentation</h1>
+<?php page_section( "php", "PHP/HTML documentation" );?>
 
 <table border=1>
 <tr>
@@ -48,5 +53,8 @@ The instruction set is documented in OpenOffice
 
 </table>
 
-</body>
-</html>
+<?php
+page_ep();
+
+include "${toplevel}web_assist/web_footer.php"; ?>
+

@@ -1,9 +1,7 @@
 /*a To do
-  Setting of condition passed correctly in -> cond instructions
   Reading of peripherals et al in RFR stage
   Writing of peripherals et al in RFW stage
   Checking instruction flow is okay and flush never occurs after write of PC
-  Conditional native instructions
   Zero overhead loops
   Scheduler registers accessed by RF internal; particularly set of semaphores, clear of semaphores
   Indirect register accesses (read register to get register number to access)
@@ -13,22 +11,16 @@
   Thunking library call instruction
   SWIs
   Native instruction access in ARM mode - with conditional access (break out that coproc space?)
-  Conditional instruction shadow for native mode
-  Clearing extended immediate etc
-  Implement andcnt, xorfirst, xorlast
   Add in saturated N/P and saturate instructions - how to clear them? No need for sticky V or N I think
  */
 
 /*a Notes
   Add the configuration register for the pipeline as an internal register
   Add two internal registers that set and clear the scheduling semaphore bits
-  Decode the bottom half of the fetched instruction if in arm mode or if invalid but in GIP mode do the half given by PC[1]
-  Generate a combinatorial that can be used to clear extended instruction, guaranteed to also clear next_cycle_of_opcode
   For repeats have a special internal register with the repeat count
   For ZOLs use the repeat count above, and also have internal registers for the start and lengths
   Add an extension to loads and stores to specify a compile-time burst size. We also need run-time burst sizes - add another option for using the repeat count for this
   Extend also with a bit indicating the destination (i.e. data) register should be incremented or not (cf xfrcm and ldm/stm)
-
  */
 
 /*a Includes
@@ -87,8 +79,8 @@ typedef enum t_gip_dec_op_state
 typedef struct t_gip_dec_extcmd
 {
     int extended; // zero if rest of fields are not valid (no extcmd instruction)
-    int cond; // 4 bits of condition
-    int sign; // 1 bit, set sign
+    int cc; // 4 bits of condition
+    int sign_or_stack; // 1 bit, set sign or 'is stack' for loads
     int acc; // 1 bit, set accumulator
     int op; // 2 bits of operation extension
     int burst; // 4 bits of burst size
@@ -170,6 +162,13 @@ typedef struct t_gip_dec_native_data
     t_gip_dec_extcmd next_extended_cmd; // 6-bit field of extension bits for a command - needs to cover burst size (k), and whether to increment register
 
     int extending; // 1 if the current native decode is an extension command; if this is not set and an instruction is being decoded then the next extension values should be cleared
+
+    int next_in_delay_slot; // 1 if in will be in a delay slot; ignore if flushed
+    int next_follow_delay_pc; // 1 if the next instruction will be the delay slot for a known taken branch
+    unsigned int next_delay_pc; // if it will be in a delay slot next as part of a know taken branch, then this is the PC that should be fetched for after that delay slot; otherwise, ignore
+
+    int next_in_immediate_shadow;
+
 } t_gip_dec_native_data;
 
 /*t t_gip_dec_arm_data
@@ -195,18 +194,22 @@ typedef struct t_gip_dec_state
     t_gip_dec_op_state op_state;
     unsigned int opcode;
     unsigned int pc;
+    int in_delay_slot; // 1 if in a delay slot
+    int follow_delay_pc; // 1 if delay_pc should be taken rather than what the instruction decodes to
+    unsigned int delay_pc; // If in decoding a branch delay slot, then this is the next pc after the slot independent of what that instruction says
     int pc_valid;
     int acknowledge_scheduler;
     int cycle_of_opcode;
     int acc_valid; // 1 if the register in the accumulator is valid, 0 if the accumulator should not be used
     int reg_in_acc; // register number (0 through 14) that is in the accumulator; 15 means none.
     int fetch_requested; // 1 if at end of previous cycle a new instruction was stored in the opcode - basically comb cycle_of_opcode==0
-    int instruction_extended; // 1 if the instruction being decoded has been extended; if 0, then current register values should be ignored (zeroed)
     unsigned int extended_immediate; // 28-bit extended immediate value for native instructions (ORred in with ARM decode immediate also); if zero, no extension yet
     t_gip_ins_r extended_rd; // if extended instruction this specifies rd; if none, then do not extend rd
-    t_gip_ins_r extended_rm; // if extended instruction this specifies rm; if none, then do not extend rm
+    t_gip_ins_r extended_rm; // if extended instruction this specifies rm; if none, then do not extend rm - note for loads this is the whole rm if extended, for others just top half of rm
     t_gip_ins_r extended_rn; // if extended instruction this specifies rn; if none, then do not extend rn
-    int extended_cmd; // 6-bit field of extension bits for a command - needs to cover burst size (k), and whether to increment register
+    t_gip_dec_extcmd extended_cmd; // Command extension
+    int in_conditional_shadow; // 1 if in immediate shadow or (if shadow length of 2) if last accepted instruction was in immediate shadow
+    int in_immediate_shadow;
 } t_gip_dec_state;
 
 /*t t_gip_dec_data
@@ -224,6 +227,7 @@ typedef struct t_gip_dec_data
     t_gip_instruction inst; // Instruction to be executed by the RF stage
     t_gip_dec_op_state next_op_state;
     int next_acknowledge_scheduler; // 1 to acknowledge scheduler on next cycle
+    t_gip_ins_cc gip_ins_cc;
 
     /*b Subelement
      */
@@ -316,8 +320,8 @@ typedef struct t_gip_full_alu_data
     t_gip_alu_op gip_alu_op; // Actual ALU operation to perform
     unsigned int alu_op1; // Operand 1 to the ALU logic itself
     unsigned int alu_op2; // Operand 2 to the ALU logic itself
-    int alu_c;
-    int alu_v;
+    int alu_z, alu_n, alu_c, alu_v;
+    int logic_z, logic_n;
     unsigned int shf_result; // Result of the shifter
     int shf_carry; // Carry out of the shifter
     unsigned int arith_result; // Result of the arithmetic operation
@@ -332,6 +336,8 @@ typedef struct t_gip_full_alu_data
     int next_n;
     int next_p;
     unsigned int next_shf;
+    int next_cp; // equal to condition_passed unless destination is a condition, in which case use old value (if not condition_passed) or result of condition evaluation (if condition_passed)
+    int next_old_cp; // equal to current cp state, unless destination is a condtion, in which case this is 1
 
     t_gip_ins_r alu_rd;   // Type of register file write requested for the result of ALU operation
     t_gip_ins_r mem_rd;   // Type of register file write requested for the result of ALU operation
@@ -385,6 +391,7 @@ typedef struct t_private_data
     int sticky_n;
     int cp_trail_2; // Assert to have a 'condition passed' trail of 2, else it is one.
     int arm_trap_semaphore; // Number of semaphore to assert when an undefined instruction or SWI is hit
+    int alu_mode; // 2-bit mode; 01 => math mode; 10 => bit mode; 11 => general purpose; 00=>bit mode (for now)
 // these instructions force a deschedule, mov pc to r15 (optional), mov instruction to r?, set semaphore bit (in some order)
 
     /*b State and combinatorials in the GIP internal pipeline stages
@@ -420,58 +427,46 @@ typedef struct t_private_data
  */
 /*f is_condition_met
  */
-static int is_condition_met( t_gip_full_alu_data *alu, t_gip_ins_cc gip_ins_cc )
+static int is_condition_met( t_private_data *pd, t_gip_full_alu_data *alu, t_gip_ins_cc gip_ins_cc )
 {
     switch (gip_ins_cc)
     {
     case gip_ins_cc_eq:
         return alu->state.z;
-        break;
     case gip_ins_cc_ne:
         return !alu->state.z;
-        break;
     case gip_ins_cc_cs:
         return alu->state.c;
-        break;
     case gip_ins_cc_cc:
         return !alu->state.c;
-        break;
     case gip_ins_cc_mi:
         return alu->state.n;
-        break;
     case gip_ins_cc_pl:
         return !alu->state.n;
-        break;
     case gip_ins_cc_vs:
         return alu->state.v;
-        break;
     case gip_ins_cc_vc:
         return !alu->state.v;
-        break;
     case gip_ins_cc_hi:
         return alu->state.c && !alu->state.z;
-        break;
     case gip_ins_cc_ls:
         return !alu->state.c || alu->state.z;
-        break;
     case gip_ins_cc_ge:
         return (!alu->state.n && !alu->state.v) || (alu->state.n && alu->state.v);
-        break;
     case gip_ins_cc_lt:
         return (!alu->state.n && alu->state.v) || (alu->state.n && !alu->state.v);
-        break;
     case gip_ins_cc_gt:
         return ((!alu->state.n && !alu->state.v) || (alu->state.n && alu->state.v)) && !alu->state.z;
-        break;
     case gip_ins_cc_le:
         return (!alu->state.n && alu->state.v) || (alu->state.n && !alu->state.v) || alu->state.z;
-        break;
     case gip_ins_cc_always:
         return 1;
-        break;
     case gip_ins_cc_cp:
-        return alu->state.cp; // Or in old_cp if the shadow is 'long'
-        break;
+        if (pd->cp_trail_2)
+        {
+            return alu->state.cp && alu->state.old_cp;
+        }
+        return alu->state.cp;
     }
     return 0;
 }
@@ -702,11 +697,11 @@ void c_gip_full::disassemble_native_instruction( int opcode, char *buffer, int l
         case gip_native_ins_subclass_alu_xor:
             op = "XOR";
             break;
-        case gip_native_ins_subclass_alu_orn:
-            op = "ORN";
+        case gip_native_ins_subclass_alu_dis_orn_mla:
+            op = "ORN|MLA";
             break;
-        case gip_native_ins_subclass_alu_bic:
-            op = "BIC";
+        case gip_native_ins_subclass_alu_dis_bic_init:
+            op = "BIC|INIT";
             break;
         case gip_native_ins_subclass_alu_mov:
             op = "MOV";
@@ -723,38 +718,26 @@ void c_gip_full::disassemble_native_instruction( int opcode, char *buffer, int l
         case gip_native_ins_subclass_alu_rsb:
             op = "RSB";
             break;
-        case gip_native_ins_subclass_alu_init:
-            op = "INIT";
-            break;
-        case gip_native_ins_subclass_alu_mla:
-            op = "MLA";
-            break;
-        case gip_native_ins_subclass_alu_mlb:
-            op = "MLB";
+        case gip_native_ins_subclass_alu_dis_andcnt_mlb:
+            op = "ANDC|MLB";
             break;
         case gip_native_ins_subclass_alu_adc:
             op = "ADC";
             break;
-        case gip_native_ins_subclass_alu_sbc:
-            op = "SBC";
+        case gip_native_ins_subclass_alu_dis_xorlast_sbc:
+            op = "XORL|SBC";
             break;
         case gip_native_ins_subclass_alu_rsc:
             op = "RSC";
             break;
-        case gip_native_ins_subclass_alu_dva:
-            op = "DVA";
+        case gip_native_ins_subclass_alu_dis_bitreverse_dva:
+            op = "BITR|DVA";
             break;
-        case gip_native_ins_subclass_alu_dvb:
-            op = "DVB";
-            break;
-        case gip_native_ins_subclass_alu_andcnt:
-            op = "ANDCNT";
+        case gip_native_ins_subclass_alu_dis_bytereverse_dvb:
+            op = "BYTRE|DVB";
             break;
         case gip_native_ins_subclass_alu_xorfirst:
-            op = "XORFST";
-            break;
-        case gip_native_ins_subclass_alu_xorlast:
-            op = "XORLST";
+            op = "XORF";
             break;
         default:
             op = "<UNEXPECTED>";
@@ -820,7 +803,7 @@ void c_gip_full::disassemble_native_instruction( int opcode, char *buffer, int l
 
 /*f c_gip_full::disassemble_int_instruction
  */
-void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buffer, int length )
+void c_gip_full::disassemble_int_instruction( int valid, t_gip_instruction *inst, char *buffer, int length )
 {
     char *op;
     char *cc;
@@ -829,6 +812,11 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buf
     char rn_buffer[8], rm_buffer[16], rd_buffer[8];
     int no_rn;
     char text[128];
+    char *tptr;
+
+    text[0] = valid?'V':'I';
+    text[1] = ':';
+    tptr = text+2;
 
     /*b Get text of CC
      */
@@ -1122,7 +1110,7 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buf
         default:
             break;
         }
-        sprintf( text, "%s%s%s%s%s%s %s%s%s %s",
+        sprintf( tptr, "%s%s%s%s%s%s %s%s%s %s",
                  op,
                  cc,
                  inst->gip_ins_opts.alu.s?"S":"",
@@ -1167,7 +1155,7 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buf
         default:
             break;
         }
-        sprintf( text, "%s%s%s%s%s %s, %s %s",
+        sprintf( tptr, "%s%s%s%s%s %s, %s %s",
                  op,
                  cc,
                  inst->gip_ins_opts.alu.s?"S":"",
@@ -1198,7 +1186,7 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buf
         default:
             break;
         }
-        sprintf( text, "%s%s%s%s %s, %s %s",
+        sprintf( tptr, "%s%s%s%s %s, %s %s",
                  op,
                  cc,
                  inst->gip_ins_opts.alu.s?"S":"",
@@ -1222,7 +1210,7 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buf
         case gip_ins_subclass_memory_up: offset="+"; break;
         default:  offset="-"; break;
         }
-        sprintf( text, "ILDR%s%s%s%s%s #%d (%s%s, %s%s%s %s",
+        sprintf( tptr, "ILDR%s%s%s%s%s #%d (%s%s, %s%s%s %s",
                  cc,
                  op,
                  inst->a?"A":"",
@@ -1274,7 +1262,7 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buf
                 break;
             }
         }
-        sprintf( text, "ISTR%s%s%s%s #%d (%s%s%s%s <- %s %s",
+        sprintf( tptr, "ISTR%s%s%s%s #%d (%s%s%s%s <- %s %s",
                  cc,
                  op,
                  inst->a?"A":"",
@@ -1288,7 +1276,7 @@ void c_gip_full::disassemble_int_instruction( t_gip_instruction *inst, char *buf
                  rd );
         break;
     default:
-        sprintf( text, "NO DISASSEMBLY YET %d/%d", inst->gip_ins_class, inst->gip_ins_subclass );
+        sprintf( tptr, "NO DISASSEMBLY YET %d/%d", inst->gip_ins_class, inst->gip_ins_subclass );
         break;
     }
 
@@ -1340,14 +1328,18 @@ c_gip_full::c_gip_full( c_memory_model *memory ) : c_execution_model_class( memo
     pd->dec.state.acknowledge_scheduler = 0;
     pd->dec.state.cycle_of_opcode = 0;
     pd->dec.state.fetch_requested = 0;
-    pd->dec.state.instruction_extended = 0;
     pd->dec.state.extended_immediate = 0;
     pd->dec.state.extended_rd.type= gip_ins_r_type_none;
     pd->dec.state.extended_rm.type = gip_ins_r_type_none;
     pd->dec.state.extended_rn.type = gip_ins_r_type_none;
-    pd->dec.state.extended_cmd = 0;
+    pd->dec.state.extended_cmd.extended = 0;
     pd->dec.state.reg_in_acc = 0;
     pd->dec.state.acc_valid = 0;
+    pd->dec.state.in_delay_slot = 0;
+    pd->dec.state.follow_delay_pc = 0;
+    pd->dec.state.delay_pc = 0;
+    pd->dec.state.in_conditional_shadow = 0;
+    pd->dec.state.in_immediate_shadow = 0;
 
     /*b Initialize the register file
      */
@@ -1469,7 +1461,7 @@ void c_gip_full::debug( int mask )
     }
     if (mask&4)
     {
-        printf( "\t  acc:%08x shf:%08x c:%d  n:%d  z:%d  v:%d p:%d cp:%d\n",
+        printf( "\t  acc:%08x shf:%08x c:%d  n:%d  z:%d  v:%d p:%d cp:%d ocp:%d\n",
                 pd->alu.state.acc,
                 pd->alu.state.shf,
                 pd->alu.state.c,
@@ -1477,7 +1469,8 @@ void c_gip_full::debug( int mask )
                 pd->alu.state.z,
                 pd->alu.state.v,
                 pd->alu.state.p,
-                pd->alu.state.cp );
+                pd->alu.state.cp,
+                pd->alu.state.old_cp );
         printf( "\t  alu a:%08x alu b:%08x\n",
                 pd->alu.state.alu_a_in,
                 pd->alu.state.alu_b_in );
@@ -1767,6 +1760,11 @@ void c_gip_full::dec_comb( void )
     /*b Native decode - use top or bottom half of instruction (pc bit 1 is set AND native AND valid)
      */
     build_gip_instruction_nop( &pd->dec.native.inst );
+    pd->dec.gip_ins_cc = gip_ins_cc_always;
+    if (pd->dec.state.in_conditional_shadow)
+    {
+        pd->dec.gip_ins_cc = gip_ins_cc_cp;
+    }
     pd->dec.native.inst_valid = 0;
     native_opcode = pd->dec.state.opcode;
     if ( (!pd->dec.state.pc_valid) ||
@@ -1781,15 +1779,33 @@ void c_gip_full::dec_comb( void )
     }
     pd->dec.native.next_pc = pd->dec.state.pc;
     pd->dec.native.next_cycle_of_opcode = 0;
+    pd->dec.native.next_in_delay_slot = 0;
+    pd->dec.native.next_follow_delay_pc = 0;
+    pd->dec.native.next_in_immediate_shadow = 0;
+    pd->dec.native.next_extended_immediate = pd->dec.state.extended_immediate;
+    pd->dec.native.extending = 0;
     if ( decode_native_debug( native_opcode ) ||
          decode_native_extend( native_opcode ) ||
          decode_native_alu( native_opcode ) ||
          decode_native_cond( native_opcode ) ||
-         decode_native_ld_st( native_opcode ) ||
+         decode_native_ldr( native_opcode ) ||
+         decode_native_str( native_opcode ) ||
          decode_native_branch( native_opcode ) ||
          0 )
     {
         pd->dec.native.inst_valid = 1;
+    }
+    if (pd->dec.state.follow_delay_pc)
+    {
+        pd->dec.native.next_pc = pd->dec.state.delay_pc;
+    }
+    if (!pd->dec.native.extending)
+    {
+        pd->dec.native.next_extended_immediate = 0;
+        pd->dec.native.next_extended_cmd.extended = 0;
+        pd->dec.native.next_extended_rd.type = gip_ins_r_type_no_override;
+        pd->dec.native.next_extended_rn.type = gip_ins_r_type_no_override;
+        pd->dec.native.next_extended_rm.type = gip_ins_r_type_no_override;
     }
     if (!pd->dec.state.pc_valid)
     {
@@ -1804,6 +1820,9 @@ void c_gip_full::dec_comb( void )
     if (pd->gip_pipeline_results.flush)
     {
         pd->dec.native.inst_valid = 0;
+        pd->dec.native.next_in_delay_slot = 0;
+        pd->dec.native.next_follow_delay_pc = 0;
+        pd->dec.native.next_in_immediate_shadow = 0;
     }
 
     /*b ARM decode - attempt to decode opcode, trying each instruction coding one at a time till we succeed
@@ -1945,6 +1964,13 @@ void c_gip_full::dec_preclock( void )
         pd->dec.next_state.acc_valid = pd->dec.arm.next_acc_valid;
         pd->dec.next_state.op_state = pd->dec.next_op_state;
         pd->dec.next_state.acknowledge_scheduler = pd->dec.next_acknowledge_scheduler;
+        pd->dec.next_state.in_conditional_shadow = 0;
+        pd->dec.next_state.in_immediate_shadow = 0;
+            pd->dec.next_state.extended_immediate = 0;
+            pd->dec.next_state.extended_cmd.extended = 0;
+            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
         printf("Idle %d %d %d\n", pd->dec.next_op_state, pd->dec.next_acknowledge_scheduler, pd->sched.state.thread_to_start_valid );
         break;
     case gip_dec_op_state_emulate:
@@ -1969,8 +1995,18 @@ void c_gip_full::dec_preclock( void )
             pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
             pd->dec.next_state.acc_valid = 0;
         }
+        pd->dec.next_state.in_delay_slot = 0;
+        pd->dec.next_state.follow_delay_pc = 0;
+        pd->dec.next_state.delay_pc = 0;
+        pd->dec.next_state.in_conditional_shadow = 0;
+        pd->dec.next_state.in_immediate_shadow = 0;
+            pd->dec.next_state.extended_immediate = 0;
+            pd->dec.next_state.extended_cmd.extended = 0;
+            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
         break;
-        /*b Native - NOT WRITTEN YET
+        /*b Native
          */
     case gip_dec_op_state_native:
         if ( (pd->rf.accepting_dec_instruction) ||
@@ -1980,6 +2016,25 @@ void c_gip_full::dec_preclock( void )
             pd->dec.next_state.cycle_of_opcode = pd->dec.native.next_cycle_of_opcode;
             pd->dec.next_state.acc_valid = pd->dec.arm.next_acc_valid;
             pd->dec.next_state.reg_in_acc = pd->dec.arm.next_reg_in_acc;
+            pd->dec.next_state.in_delay_slot = pd->dec.native.next_in_delay_slot;
+            pd->dec.next_state.follow_delay_pc = pd->dec.native.next_follow_delay_pc;
+            pd->dec.next_state.delay_pc = pd->dec.native.next_delay_pc;
+            pd->dec.next_state.extended_immediate = pd->dec.native.next_extended_immediate;
+            pd->dec.next_state.extended_cmd.extended = pd->dec.native.next_extended_cmd.extended;
+            pd->dec.next_state.extended_rd = pd->dec.native.next_extended_rd;
+            pd->dec.next_state.extended_rn = pd->dec.native.next_extended_rn;
+            pd->dec.next_state.extended_rm = pd->dec.native.next_extended_rm;
+            pd->dec.next_state.in_conditional_shadow = 0;
+            pd->dec.next_state.in_immediate_shadow = 0;
+            if (pd->dec.native.next_in_immediate_shadow)
+            {
+                pd->dec.next_state.in_conditional_shadow = 1;
+                pd->dec.next_state.in_immediate_shadow = 1;
+            }
+            if ( (pd->dec.state.in_immediate_shadow) && (pd->cp_trail_2) )
+            {
+                pd->dec.next_state.in_conditional_shadow = 1;
+            }
         }
         if (pd->gip_pipeline_results.write_pc)
         {
@@ -1991,6 +2046,12 @@ void c_gip_full::dec_preclock( void )
             pd->dec.next_state.cycle_of_opcode=0;
             pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
             pd->dec.next_state.acc_valid = 0;
+            pd->dec.next_state.in_conditional_shadow = 0;
+            pd->dec.next_state.extended_immediate = 0;
+            pd->dec.next_state.extended_cmd.extended = 0;
+            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
+            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
         }
         break;
         /*b Preempt - NOT WRITTEN YET
@@ -2016,7 +2077,7 @@ void c_gip_full::dec_clock( void )
     if (pd->verbose)
     {
         char buffer[256];
-        disassemble_int_instruction( &pd->dec.inst, buffer, sizeof(buffer) );
+        disassemble_int_instruction( pd->dec.inst_valid, &pd->dec.inst, buffer, sizeof(buffer) );
         printf( "\t**:DEC %08x(%d)/%08x (ARM c %d ACC %d/%02d)\t:\t... %s\n",
                 pd->dec.state.pc,
                 pd->dec.state.pc_valid,
@@ -2168,7 +2229,7 @@ void c_gip_full::rf_clock( void )
     if (pd->verbose)
     {
         char buffer[256];
-        disassemble_int_instruction( &pd->rf.state.inst, buffer, sizeof(buffer) );
+        disassemble_int_instruction( pd->rf.state.inst_valid, &pd->rf.state.inst, buffer, sizeof(buffer) );
         printf( "\t**:RFR IV %d P0 (%d/%02x) %08x P1 (%d/%02x) %08x Rd %d/%02x\t:\t...%s\n",
                 pd->rf.state.inst_valid,
                 pd->rf.state.inst.gip_ins_rn.type,
@@ -2297,12 +2358,15 @@ void c_gip_full::rf_comb( t_gip_pipeline_results *results )
  */
 void c_gip_full::alu_comb( t_gip_pipeline_results *results )
 {
+    int writes_conditional;
+    int conditional_result;
+
     /*b Evaluate condition associated with the instruction - simultaneous with ALU stage, blocks all results from instruction if it fails
      */
     pd->alu.condition_passed = 0;
     if (pd->alu.state.inst_valid)
     {
-        pd->alu.condition_passed = is_condition_met( &pd->alu, pd->alu.state.inst.gip_ins_cc );
+        pd->alu.condition_passed = is_condition_met( pd, &pd->alu, pd->alu.state.inst.gip_ins_cc );
     }
 
     /*b Get values for ALU operands
@@ -2622,6 +2686,8 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
     default:
         break;
     }
+    pd->alu.logic_z = (pd->alu.logic_result==0);
+    pd->alu.logic_n = ((pd->alu.logic_result&0x80000000)!=0);
 
     /*b Perform arithmetic operation - operates on C, ALU op 1 and ALU op 2
      */
@@ -2679,8 +2745,10 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
     default:
         break;
     }
+    pd->alu.alu_z = (pd->alu.arith_result==0);
+    pd->alu.alu_n = ((pd->alu.arith_result&0x80000000)!=0);
 
-    /*b Update ALU result, accumulator, shifter and flags
+    /*b Determine ALU result, next accumulator, next shifter and next flags
      */
     pd->alu.next_acc = pd->alu.state.acc;
     pd->alu.next_c = pd->alu.state.c;
@@ -2711,8 +2779,8 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
         }
         if (pd->alu.set_zcvn)
         {
-            pd->alu.next_z = (pd->alu.logic_result==0);
-            pd->alu.next_n = ((pd->alu.logic_result&0x80000000)!=0);
+            pd->alu.next_z = pd->alu.logic_z;
+            pd->alu.next_n = pd->alu.logic_n;
         }
         if (pd->alu.set_acc)
         {
@@ -2728,8 +2796,8 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
         pd->alu.alu_result = pd->alu.arith_result;
         if (pd->alu.set_zcvn)
         {
-            pd->alu.next_z = (pd->alu.arith_result==0);
-            pd->alu.next_n = ((pd->alu.arith_result&0x80000000)!=0);
+            pd->alu.next_z = pd->alu.alu_z;
+            pd->alu.next_n = pd->alu.alu_n;
             pd->alu.next_c = pd->alu.alu_c;
             pd->alu.next_v = pd->alu.alu_v;
         }
@@ -2773,6 +2841,76 @@ void c_gip_full::alu_comb( t_gip_pipeline_results *results )
         break;
     case gip_alu_op_divst:
         break;
+    }
+
+    /*b Determine 'cp' and 'old_cp' state
+     */
+    writes_conditional = 0;
+    if (pd->alu.state.inst.gip_ins_rd.type == gip_ins_r_type_internal) 
+    {
+        switch (pd->alu.state.inst.gip_ins_rd.data.rd_internal)
+        {
+        case gip_ins_rd_int_eq:
+            conditional_result = pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_ne:
+            conditional_result = !pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_cs:
+            conditional_result = pd->alu.alu_c;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_cc:
+            conditional_result = !pd->alu.alu_c;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_hi:
+            conditional_result = pd->alu.alu_c && !pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_ls:
+            conditional_result = !pd->alu.alu_c || pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_ge:
+            conditional_result = (!pd->alu.alu_n && !pd->alu.alu_v) || (pd->alu.alu_n && pd->alu.alu_v);
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_lt:
+            conditional_result = (!pd->alu.alu_n && pd->alu.alu_v) || (pd->alu.alu_n && !pd->alu.alu_v);
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_gt:
+            conditional_result = ((!pd->alu.alu_n && !pd->alu.alu_v) || (pd->alu.alu_n && pd->alu.alu_v)) && !pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        case gip_ins_rd_int_le:
+            conditional_result = (!pd->alu.alu_n && pd->alu.alu_v) || (pd->alu.alu_n && !pd->alu.alu_v) || pd->alu.alu_z;
+            writes_conditional = 1;
+            break;
+        default:
+            break;
+        }
+    }
+    if (writes_conditional)
+    {
+        if (pd->alu.condition_passed) // could be first of a sequence, or later on; if first of a sequence, we must set it to our result; if later then condition should be CP for ANDing condition passed
+            // if ANDing (CP is therefore set) and our result is 1, then the next result is 1; if our result is 0, then the next result is zero; so this is the same as the first condition
+        {
+            pd->alu.next_cp = conditional_result;
+        }
+        else // must be later in a sequence; condition ought to have been 'CP', so this means 'state.cp' should be zero already. No reason to make it one.
+        {
+            pd->alu.next_cp = 0;
+        }
+        pd->alu.next_old_cp = 1;
+    }
+    else
+    {
+        pd->alu.next_cp = pd->alu.condition_passed;
+        pd->alu.next_old_cp = pd->alu.state.cp;
     }
 
     /*b Get inputs to memory stage
@@ -2922,8 +3060,8 @@ void c_gip_full::alu_preclock( void )
     if ( (pd->alu.accepting_rf_instruction) &&
          (pd->alu.state.inst_valid) )
     {
-        pd->alu.next_state.old_cp = pd->alu.state.cp;
-        pd->alu.next_state.cp = pd->alu.condition_passed;
+        pd->alu.next_state.old_cp = pd->alu.next_old_cp;
+        pd->alu.next_state.cp = pd->alu.next_cp;
     }
 
 }
@@ -2937,7 +3075,7 @@ void c_gip_full::alu_clock( void )
     if (pd->verbose)
     {
         char buffer[256];
-        disassemble_int_instruction( &pd->alu.state.inst, buffer, sizeof(buffer) );
+        disassemble_int_instruction( pd->alu.state.inst_valid, &pd->alu.state.inst, buffer, sizeof(buffer) );
         printf( "\t**:ALU OP %d Op1 %08x Op2 %08x CP %d A %08x B %08x R %08x ACC %08x ARd %d/%02x MRd %d/%02x\t:\t...%s\n",
                 pd->alu.gip_alu_op,
                 pd->alu.alu_op1,
@@ -3402,14 +3540,20 @@ t_gip_ins_subclass c_gip_full::map_shift( int shf_how, int imm, int amount )
 
 /*f c_gip_full::map_native_rm
  */
-t_gip_ins_r c_gip_full::map_native_rm( int rm )
+t_gip_ins_r c_gip_full::map_native_rm( int rm, int use_full_ext_rm )
 {
     t_gip_ins_r result;
-    if ( (pd->dec.state.instruction_extended) &&
-         (pd->dec.state.extended_rm.type!=gip_ins_r_type_no_override) )
+    if ( pd->dec.state.extended_rm.type!=gip_ins_r_type_no_override )
     {
         result.type = pd->dec.state.extended_rm.type;
-        result.data.r = (pd->dec.state.extended_rm.data.r&0x30) | (rm&0xf);
+        if (use_full_ext_rm)
+        {
+            result.data.r = (pd->dec.state.extended_rm.data.r&0x3f);
+        }
+        else
+        {
+            result.data.r = (pd->dec.state.extended_rm.data.r&0x30) | (rm&0xf);
+        }
     }
     else
     {
@@ -3429,8 +3573,7 @@ t_gip_ins_r c_gip_full::map_native_rm( int rm )
 t_gip_ins_r c_gip_full::map_native_rn( int rn )
 {
     t_gip_ins_r result;
-    if ( (pd->dec.state.instruction_extended) &&
-         (pd->dec.state.extended_rn.type!=gip_ins_r_type_no_override) )
+    if ( pd->dec.state.extended_rn.type!=gip_ins_r_type_no_override )
     {
         result.type = pd->dec.state.extended_rn.type;
         result.data.r = pd->dec.state.extended_rn.data.r;
@@ -3453,8 +3596,7 @@ t_gip_ins_r c_gip_full::map_native_rn( int rn )
 t_gip_ins_r c_gip_full::map_native_rd( int rd )
 {
     t_gip_ins_r result;
-    if ( (pd->dec.state.instruction_extended) &&
-         (pd->dec.state.extended_rd.type!=gip_ins_r_type_no_override) )
+    if ( pd->dec.state.extended_rd.type!=gip_ins_r_type_no_override )
     {
         result.type = pd->dec.state.extended_rd.type;
         result.data.r = pd->dec.state.extended_rd.data.r;
@@ -3477,10 +3619,9 @@ t_gip_ins_r c_gip_full::map_native_rd( int rd )
 unsigned int c_gip_full::map_native_immediate( int imm )
 {
     unsigned int result;
-    imm &= 0xf;
-    if ( pd->dec.state.instruction_extended )
+    if ( pd->dec.state.extended_immediate )
     {
-        result = imm | (pd->dec.state.extended_immediate<<4);
+        result = (imm&0xf) | (pd->dec.state.extended_immediate<<4);
     }
     else
     {
@@ -3535,45 +3676,39 @@ int c_gip_full::decode_native_extend( unsigned int opcode )
             pd->dec.native.next_extended_immediate = (pd->dec.state.extended_immediate<<18) | imm;
         }
         pd->dec.native.extending = 1;
-        break;
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        return 1;
     case gip_native_ins_class_extrdrm:
         pd->dec.native.next_extended_rd.type = (t_gip_ins_r_type) ((rd>>5)&7);
         pd->dec.native.next_extended_rd.data.r = (rd&0x1f);
         pd->dec.native.next_extended_rm.type = (t_gip_ins_r_type) ((rm>>1)&7);
         pd->dec.native.next_extended_rm.data.r = (rm&1)<<4;
         pd->dec.native.extending = 1;
-        break;
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        return 1;
     case gip_native_ins_class_extrnrm:
         pd->dec.native.next_extended_rn.type = (t_gip_ins_r_type) ((rn>>1)&7);
         pd->dec.native.next_extended_rn.data.r = (rn&1)<<4;
         pd->dec.native.next_extended_rm.type = (t_gip_ins_r_type) ((rm>>1)&7);
         pd->dec.native.next_extended_rm.data.r = (rm&1)<<4;
         pd->dec.native.extending = 1;
-        break;
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        return 1;
     case gip_native_ins_class_extcmd:
         printf("EXTCMD not done yet\n");
-        break;
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        return 1;
     default:
         break;
-    }
-    pd->dec.native.next_extended_immediate = pd->dec.state.extended_immediate;
-    if (!pd->dec.native.extending)
-    {
-        pd->dec.native.next_extended_immediate = 0;
-        pd->dec.native.next_extended_cmd.extended = 0;
-        pd->dec.native.next_extended_rd.type = gip_ins_r_type_no_override;
-        pd->dec.native.next_extended_rn.type = gip_ins_r_type_no_override;
-        pd->dec.native.next_extended_rm.type = gip_ins_r_type_no_override;
     }
     return 0;
 }
 
 /*f c_gip_full::decode_native_alu
-  Every ALU instruction effects the accumulator (unless configured/extended not to?)
-  No ALU instruction effects the flags (unless configured/extended not to?)
-  R15 source = acc (unless extended)
-  R15 destination = pc (unless extended)
-  SHF, PC source access through extended (?shf?)
  */
 int c_gip_full::decode_native_alu( unsigned int opcode )
 {
@@ -3582,6 +3717,9 @@ int c_gip_full::decode_native_alu( unsigned int opcode )
     int rd;
     int rm;
     int imm;
+    int mode;
+    int gip_ins_a, gip_ins_s;
+    t_gip_ins_cc gip_ins_cc;
     t_gip_ins_class gip_ins_class;
     t_gip_ins_subclass gip_ins_subclass;
     t_gip_ins_r gip_ins_rd;
@@ -3598,113 +3736,195 @@ int c_gip_full::decode_native_alu( unsigned int opcode )
     if ( (ins_class==gip_native_ins_class_alu_reg) ||
          (ins_class==gip_native_ins_class_alu_imm) )
     {
-        printf("HERE ********************************************************************************\n");
-        switch (ins_subclass)
+        /*b Decode mode and ALU operations
+         */
+        mode = pd->alu_mode;
+        gip_ins_a = 1;
+        gip_ins_s = 1;
+        gip_ins_cc = pd->dec.gip_ins_cc;
+        if (pd->dec.state.extended_cmd.extended)
         {
-        case gip_native_ins_subclass_alu_and:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_and;
-            break;
-        case gip_native_ins_subclass_alu_or:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_or;
-            break;
-        case gip_native_ins_subclass_alu_xor:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_xor;
-            break;
-        case gip_native_ins_subclass_alu_orn:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_orn;
-            break;
-        case gip_native_ins_subclass_alu_bic:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_bic;
-            break;
-        case gip_native_ins_subclass_alu_mov:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_mov;
-            break;
-        case gip_native_ins_subclass_alu_mvn:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_mvn;
-            break;
-        case gip_native_ins_subclass_alu_add:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_add;
-            break;
-        case gip_native_ins_subclass_alu_sub:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_sub;
-            break;
-        case gip_native_ins_subclass_alu_rsb:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_rsb;
-            break;
-        case gip_native_ins_subclass_alu_init:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_init;
-            break;
-        case gip_native_ins_subclass_alu_mla:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_mla;
-            break;
-        case gip_native_ins_subclass_alu_mlb:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_mlb;
-            break;
-        case gip_native_ins_subclass_alu_adc:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_adc;
-            break;
-        case gip_native_ins_subclass_alu_sbc:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_sbc;
-            break;
-        case gip_native_ins_subclass_alu_rsc:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_rsc;
-            break;
-        case gip_native_ins_subclass_alu_dva:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_dva;
-            break;
-        case gip_native_ins_subclass_alu_dvb:
-            gip_ins_class = gip_ins_class_arith;
-            gip_ins_subclass = gip_ins_subclass_arith_dvb;
-            break;
-        case gip_native_ins_subclass_alu_andcnt:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_andcnt;
-            break;
-        case gip_native_ins_subclass_alu_xorfirst:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_xorfirst;
-            break;
-        case gip_native_ins_subclass_alu_xorlast:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_xorlast;
-            break;
-        case gip_native_ins_subclass_alu_bitreverse:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_bitreverse;
-            break;
-        case gip_native_ins_subclass_alu_bytereverse:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_bytereverse;
-            break;
-        default:
-            gip_ins_class = gip_ins_class_logic;
-            gip_ins_subclass = gip_ins_subclass_logic_and;
-            break;
+            if (pd->dec.state.extended_cmd.op!=0) mode = pd->dec.state.extended_cmd.op;
+            gip_ins_a = pd->dec.state.extended_cmd.acc;
+            gip_ins_s = pd->dec.state.extended_cmd.sign_or_stack;
+            if (pd->dec.state.extended_cmd.cc!=14) gip_ins_cc = (t_gip_ins_cc) pd->dec.state.extended_cmd.cc;
+        }
+        if (((int)ins_subclass)<8) // basic instructions
+        {
+            /*b Basic instructions
+             */
+            switch (ins_subclass)
+            {
+            case gip_native_ins_subclass_alu_and:
+                gip_ins_class = gip_ins_class_logic;
+                gip_ins_subclass = gip_ins_subclass_logic_and;
+                break;
+            case gip_native_ins_subclass_alu_or:
+                gip_ins_class = gip_ins_class_logic;
+                gip_ins_subclass = gip_ins_subclass_logic_or;
+                break;
+            case gip_native_ins_subclass_alu_xor:
+                gip_ins_class = gip_ins_class_logic;
+                gip_ins_subclass = gip_ins_subclass_logic_xor;
+                break;
+            case gip_native_ins_subclass_alu_mov:
+                gip_ins_class = gip_ins_class_logic;
+                gip_ins_subclass = gip_ins_subclass_logic_mov;
+                break;
+            case gip_native_ins_subclass_alu_mvn:
+                gip_ins_class = gip_ins_class_logic;
+                gip_ins_subclass = gip_ins_subclass_logic_mvn;
+                break;
+            case gip_native_ins_subclass_alu_add:
+                gip_ins_class = gip_ins_class_arith;
+                gip_ins_subclass = gip_ins_subclass_arith_add;
+                break;
+            case gip_native_ins_subclass_alu_sub:
+                gip_ins_class = gip_ins_class_arith;
+                gip_ins_subclass = gip_ins_subclass_arith_sub;
+                break;
+            case gip_native_ins_subclass_alu_adc:
+                gip_ins_class = gip_ins_class_arith;
+                gip_ins_subclass = gip_ins_subclass_arith_adc;
+                break;
+            default:
+                gip_ins_class = gip_ins_class_logic;
+                gip_ins_subclass = gip_ins_subclass_logic_and;
+                break;
+            }
+        }
+        else
+        {
+            /*b Modal instructions
+             */
+            switch (mode)
+            {
+                /*b Bit mode
+                 */
+            case gip_native_mode_bit:
+                switch (ins_subclass)
+                {
+                case gip_native_ins_subclass_alu_xorfirst:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_xorfirst;
+                    break;
+                case gip_native_ins_subclass_alu_rsb:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_rsb;
+                    break;
+                case gip_native_ins_subclass_alu_bic:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_bic;
+                    break;
+                case gip_native_ins_subclass_alu_orn:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_orn;
+                    break;
+                case gip_native_ins_subclass_alu_andcnt:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_andcnt;
+                    break;
+                case gip_native_ins_subclass_alu_xorlast:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_xorlast;
+                    break;
+                case gip_native_ins_subclass_alu_bitreverse:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_bitreverse;
+                    break;
+                case gip_native_ins_subclass_alu_bytereverse:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_bytereverse;
+                    break;
+                default:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_and;
+                    break;
+                }
+                break;
+                /*b Math mode
+                 */
+            case gip_native_mode_math:
+                switch (ins_subclass)
+                {
+                case gip_native_ins_subclass_alu_xorfirst:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_xorfirst;
+                    break;
+                case gip_native_ins_subclass_alu_rsb:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_rsb;
+                    break;
+                case gip_native_ins_subclass_alu_init:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_init;
+                    break;
+                case gip_native_ins_subclass_alu_mla:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_mla;
+                    break;
+                case gip_native_ins_subclass_alu_mlb:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_mlb;
+                    break;
+                case gip_native_ins_subclass_alu_sbc:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_sbc;
+                    break;
+                case gip_native_ins_subclass_alu_dva:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_dva;
+                    break;
+                case gip_native_ins_subclass_alu_dvb:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_dvb;
+                    break;
+                default:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_and;
+                    break;
+                }
+                break;
+                /*b GP mode
+                 */
+            case gip_native_mode_gp:
+                switch (ins_subclass)
+                {
+                case gip_native_ins_subclass_alu_xorfirst:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_xorfirst;
+                    break;
+                case gip_native_ins_subclass_alu_rsb:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_rsb;
+                    break;
+                case gip_native_ins_subclass_alu_bic:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_bic;
+                    break;
+                case gip_native_ins_subclass_alu_andxor:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_logic_andxor;
+                    break;
+                case gip_native_ins_subclass_alu_rsc:
+                    gip_ins_class = gip_ins_class_arith;
+                    gip_ins_subclass = gip_ins_subclass_arith_rsc;
+                    break;
+                default:
+                    gip_ins_class = gip_ins_class_logic;
+                    gip_ins_subclass = gip_ins_subclass_logic_and;
+                    break;
+                }
+                break;
+            }
         }
         gip_ins_rd = map_native_rd( rd );
-        gip_ins_rm = map_native_rm( rm );
+        gip_ins_rm = map_native_rm( rm, 0);
         gip_ins_rn = map_native_rn( rd );
         imm_val = map_native_immediate( imm );
 
-        build_gip_instruction_alu( &pd->dec.native.inst, gip_ins_class, gip_ins_subclass, 1, 0, 0, (gip_ins_rd.type==gip_ins_r_type_internal)&&(gip_ins_rd.data.rd_internal==gip_ins_rd_int_pc) ); // a s p f
-        build_gip_instruction_cc( &pd->dec.native.inst, gip_ins_cc_always ); // use cp if in immediate shadow of conditional
+        build_gip_instruction_alu( &pd->dec.native.inst, gip_ins_class, gip_ins_subclass, gip_ins_a, gip_ins_s, 0, (gip_ins_rd.type==gip_ins_r_type_internal)&&(gip_ins_rd.data.rd_internal==gip_ins_rd_int_pc) ); // a s p f
+        build_gip_instruction_cc( &pd->dec.native.inst, gip_ins_cc );
         build_gip_instruction_rn( &pd->dec.native.inst, gip_ins_rn );
         build_gip_instruction_rd( &pd->dec.native.inst, gip_ins_rd );
         if (ins_class==gip_native_ins_class_alu_imm)
@@ -3726,13 +3946,486 @@ int c_gip_full::decode_native_alu( unsigned int opcode )
  */
 int c_gip_full::decode_native_cond( unsigned int opcode )
 {
+    t_gip_native_ins_class ins_class;
+    t_gip_native_ins_subclass ins_subclass;
+    int rd;
+    int rm;
+    int imm;
+    int gip_ins_a, gip_ins_s, gip_ins_p;
+    t_gip_ins_cc gip_ins_cc;
+    t_gip_ins_class gip_ins_class;
+    t_gip_ins_subclass gip_ins_subclass;
+    t_gip_ins_r gip_ins_rd;
+    t_gip_ins_r gip_ins_rn;
+    t_gip_ins_r gip_ins_rm;
+    unsigned int imm_val;
+
+    ins_class = (t_gip_native_ins_class) ((opcode>>12)&0xf);
+    ins_subclass = (t_gip_native_ins_subclass) ((opcode>>8)&0xf);
+    rd = (opcode>>4)&0xf;
+    rm = (opcode>>0)&0xf;
+    imm = (opcode>>0)&0xf;
+
+    if ( (ins_class==gip_native_ins_class_cond_reg) ||
+         (ins_class==gip_native_ins_class_cond_imm) )
+    {
+        /*b Decode mode and operation, rd
+         */
+        gip_ins_a = 1;
+        gip_ins_s = 0;
+        gip_ins_p = 0;
+        gip_ins_cc = gip_ins_cc_always; // Unless in AND mode and in direct shadow of a conditional, when it should be CP
+        if (pd->dec.state.in_immediate_shadow)
+        {
+            gip_ins_cc = gip_ins_cc_cp;
+            printf("c_gip_full:decode_native_cond:Hope we are in AND mode\n");
+        }
+        if (pd->dec.state.extended_cmd.extended)
+        {
+            gip_ins_a = pd->dec.state.extended_cmd.acc;
+            gip_ins_s = pd->dec.state.extended_cmd.sign_or_stack;
+            if (pd->dec.state.extended_cmd.cc!=14) gip_ins_cc = (t_gip_ins_cc) pd->dec.state.extended_cmd.cc;
+            ins_subclass = (t_gip_native_ins_subclass) ( ((int)(ins_subclass)) | ((pd->dec.state.extended_cmd.op&1)<<4) ); // use op bit 0 as top bit of conditional
+        }
+        /*b Get arithmetic operation
+         */
+        gip_ins_rd.type = gip_ins_r_type_internal;
+        switch (ins_subclass)
+        {
+        case gip_native_ins_subclass_cond_eq:
+        case gip_native_ins_subclass_cond_ne:
+        case gip_native_ins_subclass_cond_gt:
+        case gip_native_ins_subclass_cond_ge:
+        case gip_native_ins_subclass_cond_lt:
+        case gip_native_ins_subclass_cond_le:
+        case gip_native_ins_subclass_cond_hi:
+        case gip_native_ins_subclass_cond_hs:
+        case gip_native_ins_subclass_cond_lo:
+        case gip_native_ins_subclass_cond_ls:
+        case gip_native_ins_subclass_cond_seq:
+        case gip_native_ins_subclass_cond_sne:
+        case gip_native_ins_subclass_cond_sgt:
+        case gip_native_ins_subclass_cond_sge:
+        case gip_native_ins_subclass_cond_slt:
+        case gip_native_ins_subclass_cond_sle:
+        case gip_native_ins_subclass_cond_shi:
+        case gip_native_ins_subclass_cond_shs:
+        case gip_native_ins_subclass_cond_slo:
+        case gip_native_ins_subclass_cond_sls:
+        case gip_native_ins_subclass_cond_smi:
+        case gip_native_ins_subclass_cond_spl:
+        case gip_native_ins_subclass_cond_svs:
+        case gip_native_ins_subclass_cond_svc:
+            gip_ins_class = gip_ins_class_arith;
+            gip_ins_subclass = gip_ins_subclass_arith_sub;
+            break;
+        case gip_native_ins_subclass_cond_sps:
+        case gip_native_ins_subclass_cond_spc:
+            printf("Will not work in GIP pipeline without using logic Z for eq\n");
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_mov;
+            gip_ins_p = 1;
+            break;
+        case gip_native_ins_subclass_cond_allset:
+        case gip_native_ins_subclass_cond_anyclr:
+            printf("Will not work in GIP pipeline without using logic Z for eq\n");
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_andxor;
+            break;
+        case gip_native_ins_subclass_cond_allclr:
+        case gip_native_ins_subclass_cond_anyset:
+            printf("Will not work in GIP pipeline without using logic Z for eq\n");
+            gip_ins_class = gip_ins_class_logic;
+            gip_ins_subclass = gip_ins_subclass_logic_and;
+            break;
+        }
+        /*b Get target condition
+         */
+        gip_ins_rd.type = gip_ins_r_type_internal;
+        switch (ins_subclass)
+        {
+        case gip_native_ins_subclass_cond_eq:
+        case gip_native_ins_subclass_cond_allset:
+        case gip_native_ins_subclass_cond_allclr:
+        case gip_native_ins_subclass_cond_seq:
+        case gip_native_ins_subclass_cond_sne:
+        case gip_native_ins_subclass_cond_sgt:
+        case gip_native_ins_subclass_cond_sge:
+        case gip_native_ins_subclass_cond_slt:
+        case gip_native_ins_subclass_cond_sle:
+        case gip_native_ins_subclass_cond_shi:
+        case gip_native_ins_subclass_cond_shs:
+        case gip_native_ins_subclass_cond_slo:
+        case gip_native_ins_subclass_cond_sls:
+        case gip_native_ins_subclass_cond_smi:
+        case gip_native_ins_subclass_cond_spl:
+        case gip_native_ins_subclass_cond_svs:
+        case gip_native_ins_subclass_cond_svc:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_eq;
+            break;
+        case gip_native_ins_subclass_cond_anyclr:
+        case gip_native_ins_subclass_cond_anyset:
+        case gip_native_ins_subclass_cond_ne:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_ne;
+            break;
+        case gip_native_ins_subclass_cond_gt:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_gt;
+            break;
+        case gip_native_ins_subclass_cond_ge:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_ge;
+            break;
+        case gip_native_ins_subclass_cond_lt:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_lt;
+            break;
+        case gip_native_ins_subclass_cond_le:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_le;
+            break;
+        case gip_native_ins_subclass_cond_hi:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_hi;
+            break;
+        case gip_native_ins_subclass_cond_hs:
+        case gip_native_ins_subclass_cond_sps:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_cs;
+            break;
+        case gip_native_ins_subclass_cond_spc:
+        case gip_native_ins_subclass_cond_lo:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_cc;
+            break;
+        case gip_native_ins_subclass_cond_ls:
+            gip_ins_rd.data.rd_internal = gip_ins_rd_int_ls;
+            break;
+        }
+        /*b Get conditional if override required
+         */
+        gip_ins_rd.type = gip_ins_r_type_internal;
+        switch (ins_subclass)
+        {
+        case gip_native_ins_subclass_cond_eq:
+        case gip_native_ins_subclass_cond_ne:
+        case gip_native_ins_subclass_cond_gt:
+        case gip_native_ins_subclass_cond_ge:
+        case gip_native_ins_subclass_cond_lt:
+        case gip_native_ins_subclass_cond_le:
+        case gip_native_ins_subclass_cond_hi:
+        case gip_native_ins_subclass_cond_hs:
+        case gip_native_ins_subclass_cond_sps:
+        case gip_native_ins_subclass_cond_spc:
+        case gip_native_ins_subclass_cond_lo:
+        case gip_native_ins_subclass_cond_ls:
+        case gip_native_ins_subclass_cond_anyclr:
+        case gip_native_ins_subclass_cond_anyset:
+        case gip_native_ins_subclass_cond_allset:
+        case gip_native_ins_subclass_cond_allclr:
+            break;
+        case gip_native_ins_subclass_cond_seq:
+            gip_ins_cc = gip_ins_cc_eq;
+            break;
+        case gip_native_ins_subclass_cond_sne:
+            gip_ins_cc = gip_ins_cc_ne;
+            break;
+        case gip_native_ins_subclass_cond_sgt:
+            gip_ins_cc = gip_ins_cc_gt;
+            break;
+        case gip_native_ins_subclass_cond_sge:
+            gip_ins_cc = gip_ins_cc_ge;
+            break;
+        case gip_native_ins_subclass_cond_slt:
+            gip_ins_cc = gip_ins_cc_lt;
+            break;
+        case gip_native_ins_subclass_cond_sle:
+            gip_ins_cc = gip_ins_cc_le;
+            break;
+        case gip_native_ins_subclass_cond_shi:
+            gip_ins_cc = gip_ins_cc_hi;
+            break;
+        case gip_native_ins_subclass_cond_shs:
+            gip_ins_cc = gip_ins_cc_cs;
+            break;
+        case gip_native_ins_subclass_cond_slo:
+            gip_ins_cc = gip_ins_cc_cc;
+            break;
+        case gip_native_ins_subclass_cond_sls:
+            gip_ins_cc = gip_ins_cc_ls;
+            break;
+        case gip_native_ins_subclass_cond_smi:
+            gip_ins_cc = gip_ins_cc_mi;
+            break;
+        case gip_native_ins_subclass_cond_spl:
+            gip_ins_cc = gip_ins_cc_pl;
+            break;
+        case gip_native_ins_subclass_cond_svs:
+            gip_ins_cc = gip_ins_cc_vs;
+            break;
+        case gip_native_ins_subclass_cond_svc:
+            gip_ins_cc = gip_ins_cc_vc;
+            break;
+        }
+        gip_ins_rm = map_native_rm( rm, 0 );
+        gip_ins_rn = map_native_rn( rd );
+        imm_val = map_native_immediate( imm );
+
+        build_gip_instruction_alu( &pd->dec.native.inst, gip_ins_class, gip_ins_subclass, gip_ins_a, gip_ins_s, gip_ins_p, 0 ); // a s p f
+        build_gip_instruction_cc( &pd->dec.native.inst, gip_ins_cc );
+        build_gip_instruction_rn( &pd->dec.native.inst, gip_ins_rn );
+        build_gip_instruction_rd( &pd->dec.native.inst, gip_ins_rd );
+        if (ins_class==gip_native_ins_class_cond_imm)
+        {
+            build_gip_instruction_immediate( &pd->dec.native.inst, imm_val );
+        }
+        else
+        {
+            build_gip_instruction_rm( &pd->dec.native.inst, gip_ins_rm );
+        }
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        pd->dec.native.next_in_immediate_shadow = 1;
+        return 1;
+    }
     return 0;
 }
 
-/*f c_gip_full::decode_native_ld_st
+/*f c_gip_full::decode_native_ldr
  */
-int c_gip_full::decode_native_ld_st( unsigned int opcode )
+int c_gip_full::decode_native_ldr( unsigned int opcode )
 {
+    t_gip_native_ins_class ins_class;
+    int store_not_load;
+    t_gip_native_ins_subclass ins_subclass;
+    int rd, rn;
+    int imm;
+    int gip_ins_a, gip_ins_s;
+    t_gip_ins_cc gip_ins_cc;
+    t_gip_ins_subclass gip_ins_subclass;
+    t_gip_ins_r gip_ins_rd;
+    t_gip_ins_r gip_ins_rn;
+    t_gip_ins_r gip_ins_rm;
+    int gip_ins_burst;
+    int gip_ins_up;
+    int gip_ins_preindex;
+    int use_imm;
+    unsigned int imm_val;
+
+    ins_class = (t_gip_native_ins_class) ((opcode>>12)&0xf);
+    store_not_load = ((opcode>>8)&1);
+    ins_subclass = (t_gip_native_ins_subclass) ((opcode>>9)&0x7);
+    rn = (opcode>>4)&0xf;
+    rd = (opcode>>0)&0xf;
+
+    if ( (ins_class==gip_native_ins_class_memory) && (!store_not_load) )
+    {
+        /*b Decode mode and operation, rd
+         */
+        gip_ins_a = 1;
+        gip_ins_s = 0;
+        gip_ins_burst = 0;
+        gip_ins_cc = pd->dec.gip_ins_cc;
+        gip_ins_rm = map_native_rm( rd, 1 ); // first argument is irrelevant
+        use_imm = (pd->dec.state.extended_rm.type==gip_ins_r_type_no_override);
+        switch (ins_subclass)
+        {
+        case gip_native_ins_subclass_memory_word_noindex: // Preindex Up Word, immediate of zero (unless extended - then preindex up by immediate value)
+            gip_ins_preindex = 1;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            imm = 0;
+            break;
+        case gip_native_ins_subclass_memory_half_noindex: // Preindex Up Half, immediate of zero (unless extended - then preindex up by immediate value)
+            gip_ins_preindex = 1;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_half;
+            imm = 0;
+            break;
+        case gip_native_ins_subclass_memory_byte_noindex: // Preindex Up Byte, immediate of zero (unless extended - then preindex up by immediate value)
+            gip_ins_preindex = 1;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_byte;
+            imm = 0;
+            break;
+        case gip_native_ins_subclass_memory_word_preindex_up: // Preindex Up Word, immediate of four (unless extended - then preindex up by immediate value)
+            gip_ins_preindex = 1;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            imm = 4;
+            use_imm = 1;
+            break;
+        case gip_native_ins_subclass_memory_word_preindex_up_shf: // Preindex Up Word by SHF
+            gip_ins_preindex = 1;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            gip_ins_rm.type = gip_ins_r_type_internal;
+            gip_ins_rm.data.rnm_internal = gip_ins_rnm_int_shf;
+            break;
+        case gip_native_ins_subclass_memory_word_preindex_down_shf: // Preindex Up Word by SHF
+            gip_ins_preindex = 1;
+            gip_ins_up = 0;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            gip_ins_rm.type = gip_ins_r_type_internal;
+            gip_ins_rm.data.rnm_internal = gip_ins_rnm_int_shf;
+            break;
+        case gip_native_ins_subclass_memory_word_postindex_up: // Postindex Up Word, immediate of four (unless extended - then preindex up by immediate value)
+            gip_ins_preindex = 0;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            imm = 4;
+            use_imm = 1;
+            break;
+        case gip_native_ins_subclass_memory_word_postindex_down: // Postindex down Word, immediate of four (unless extended - then preindex up by immediate value)
+            gip_ins_preindex = 0;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            imm = 4;
+            use_imm = 1;
+            break;
+        default:
+            break;
+        }
+        if (pd->dec.state.extended_cmd.extended)
+        {
+            gip_ins_a = pd->dec.state.extended_cmd.acc;
+            gip_ins_s = pd->dec.state.extended_cmd.sign_or_stack;
+            if (pd->dec.state.extended_cmd.cc!=14) gip_ins_cc = (t_gip_ins_cc) pd->dec.state.extended_cmd.cc;
+            gip_ins_burst = pd->dec.state.extended_cmd.burst;
+            gip_ins_preindex = !pd->dec.state.extended_cmd.op&1;
+        }
+        gip_ins_rd = map_native_rd( rd );
+        gip_ins_rn = map_native_rn( rn );
+        imm_val = map_native_immediate( imm );
+
+        build_gip_instruction_load( &pd->dec.native.inst, gip_ins_subclass, gip_ins_preindex, gip_ins_up, gip_ins_s, gip_ins_burst, gip_ins_a, (gip_ins_rd.type==gip_ins_r_type_internal)&&(gip_ins_rd.data.rd_internal==gip_ins_rd_int_pc) ); // preindex up stack burst_left a f
+        build_gip_instruction_cc( &pd->dec.native.inst, gip_ins_cc );
+        build_gip_instruction_rn( &pd->dec.native.inst, gip_ins_rn );
+        build_gip_instruction_rd( &pd->dec.native.inst, gip_ins_rd );
+        if (use_imm)
+        {
+            build_gip_instruction_immediate( &pd->dec.native.inst, imm_val );
+        }
+        else
+        {
+            build_gip_instruction_rm( &pd->dec.native.inst, gip_ins_rm );
+        }
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        return 1;
+    }
+    return 0;
+}
+
+/*f c_gip_full::decode_native_str
+ */
+int c_gip_full::decode_native_str( unsigned int opcode )
+{
+    t_gip_native_ins_class ins_class;
+    int store_not_load;
+    t_gip_native_ins_subclass ins_subclass;
+    int rm, rn;
+    int gip_ins_a, gip_ins_s;
+    t_gip_ins_cc gip_ins_cc;
+    t_gip_ins_subclass gip_ins_subclass;
+    t_gip_ins_r gip_ins_rd;
+    t_gip_ins_r gip_ins_rn;
+    t_gip_ins_r gip_ins_rm;
+    int gip_ins_burst;
+    int gip_ins_up;
+    int gip_ins_preindex;
+    int gip_ins_use_shift;
+
+    ins_class = (t_gip_native_ins_class) ((opcode>>12)&0xf);
+    store_not_load = ((opcode>>8)&1);
+    ins_subclass = (t_gip_native_ins_subclass) ((opcode>>9)&0x7);
+    rn = (opcode>>4)&0xf;
+    rm = (opcode>>0)&0xf;
+
+    if ( (ins_class==gip_native_ins_class_memory) && (store_not_load) )
+    {
+        /*b Decode mode and operation, rd
+         */
+        gip_ins_a = 1;
+        gip_ins_s = 0;
+        gip_ins_burst = 0;
+        gip_ins_cc = pd->dec.gip_ins_cc;
+        gip_ins_rm = map_native_rm( rm, 0 );
+        gip_ins_rd = map_native_rd( rn );
+        gip_ins_rn = map_native_rn( rn );
+        gip_ins_use_shift = 0;
+        switch (ins_subclass)
+        {
+        case gip_native_ins_subclass_memory_word_noindex: // Postindex Up Word, no setting accumulator ; should not extend with rd set to something!
+            gip_ins_a = 0;
+            gip_ins_preindex = 0;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            break;
+        case gip_native_ins_subclass_memory_half_noindex: // Postindex Up Half, no setting accumulator ; should not extend with rd set to something!
+            gip_ins_a = 0;
+            gip_ins_preindex = 0;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_half;
+            break;
+        case gip_native_ins_subclass_memory_byte_noindex: // Postindex Up Byte, no setting accumulator ; should not extend with rd set to something!
+            gip_ins_a = 0;
+            gip_ins_preindex = 0;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_byte;
+            break;
+        case gip_native_ins_subclass_memory_word_preindex_up: // Preindex Up Word with writeback
+            gip_ins_preindex = 1;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            if (pd->dec.state.extended_rd.type==gip_ins_r_type_no_override)
+            {
+                gip_ins_rd = gip_ins_rn;
+            }
+            break;
+        case gip_native_ins_subclass_memory_word_preindex_up_shf: // Preindex Up Word by SHF
+            gip_ins_preindex = 1;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            gip_ins_use_shift = 1;
+            break;
+        case gip_native_ins_subclass_memory_word_preindex_down_shf: // Preindex Up Word by SHF
+            gip_ins_preindex = 1;
+            gip_ins_up = 0;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            gip_ins_use_shift = 1;
+            break;
+        case gip_native_ins_subclass_memory_word_postindex_up: // Postindex Up Word
+            gip_ins_preindex = 0;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            if (pd->dec.state.extended_rd.type==gip_ins_r_type_no_override)
+            {
+                gip_ins_rd = gip_ins_rn;
+            }
+            break;
+        case gip_native_ins_subclass_memory_word_postindex_down: // Postindex down Word
+            gip_ins_preindex = 0;
+            gip_ins_up = 1;
+            gip_ins_subclass = gip_ins_subclass_memory_word;
+            if (pd->dec.state.extended_rd.type==gip_ins_r_type_no_override)
+            {
+                gip_ins_rd = gip_ins_rn;
+            }
+            break;
+        default:
+            break;
+        }
+        if (pd->dec.state.extended_cmd.extended)
+        {
+            gip_ins_a = pd->dec.state.extended_cmd.acc;
+            gip_ins_s = pd->dec.state.extended_cmd.sign_or_stack;
+            if (pd->dec.state.extended_cmd.cc!=14) gip_ins_cc = (t_gip_ins_cc) pd->dec.state.extended_cmd.cc;
+            gip_ins_burst = pd->dec.state.extended_cmd.burst;
+            gip_ins_preindex = !pd->dec.state.extended_cmd.op&1;
+        }
+        build_gip_instruction_store( &pd->dec.native.inst, gip_ins_subclass, gip_ins_preindex, gip_ins_up, gip_ins_use_shift, gip_ins_s, gip_ins_burst, gip_ins_a, (gip_ins_rd.type==gip_ins_r_type_internal)&&(gip_ins_rd.data.rd_internal==gip_ins_rd_int_pc) ); // preindex up stack burst_left a f
+        build_gip_instruction_cc( &pd->dec.native.inst, gip_ins_cc );
+        build_gip_instruction_rn( &pd->dec.native.inst, gip_ins_rn );
+        build_gip_instruction_rd( &pd->dec.native.inst, gip_ins_rd );
+        build_gip_instruction_rm( &pd->dec.native.inst, gip_ins_rm );
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        return 1;
+    }
     return 0;
 }
 
@@ -3740,6 +4433,53 @@ int c_gip_full::decode_native_ld_st( unsigned int opcode )
  */
 int c_gip_full::decode_native_branch( unsigned int opcode )
 {
+    t_gip_native_ins_class ins_class;
+    int delay_slot;
+    int offset;
+    t_gip_ins_cc gip_ins_cc;
+
+    ins_class = (t_gip_native_ins_class) ((opcode>>12)&0xf);
+    delay_slot = ((opcode>>0)&1);
+    offset = (opcode>>0)&0xffe;
+    offset = (offset<<20)>>20;
+    if (ins_class==gip_native_ins_class_branch)
+    {
+        if (!pd->dec.state.in_conditional_shadow)
+        {
+            printf("********************************************************************************\nShould insert instruction to reset CPs to true - taken branch resets these!\n");
+            offset = map_native_immediate( offset );
+            if (delay_slot)
+            {
+                pd->dec.native.next_delay_pc = pd->dec.state.pc+8+offset;
+                pd->dec.native.next_follow_delay_pc = 1;
+                pd->dec.native.next_in_delay_slot = 1;
+                pd->dec.native.next_pc = pd->dec.state.pc+2;
+                pd->dec.native.next_cycle_of_opcode = 0;
+            }
+            else
+            {
+                pd->dec.native.next_pc = pd->dec.state.pc+8+offset;
+                pd->dec.native.next_cycle_of_opcode = 0;
+            }
+            return 1;
+        }
+        /*b Build a conditional flushing instruction (ADD<cc>F pc, #offset), mark next instruction as delayed if required
+         */
+        gip_ins_cc = pd->dec.gip_ins_cc;
+        if (pd->dec.state.extended_cmd.extended)
+        {
+            if (pd->dec.state.extended_cmd.cc!=14) gip_ins_cc = (t_gip_ins_cc) pd->dec.state.extended_cmd.cc;
+        }
+        build_gip_instruction_alu( &pd->dec.native.inst, gip_ins_class_arith, gip_ins_subclass_arith_add, 0, 0, 0, 1 ); // a s p f
+        build_gip_instruction_cc( &pd->dec.native.inst,  gip_ins_cc ); // !cc is CC with bottom bit inverted, in ARM
+        build_gip_instruction_rn_int( &pd->dec.native.inst, gip_ins_rnm_int_pc );
+        build_gip_instruction_immediate( &pd->dec.native.inst, offset );
+        build_gip_instruction_rd_int( &pd->dec.native.inst, gip_ins_rd_int_pc );
+        pd->dec.native.next_in_delay_slot = 1;
+        pd->dec.native.next_pc = pd->dec.state.pc+2;
+        pd->dec.native.next_cycle_of_opcode = 0;
+        return 1;
+    }
     return 0;
 }
 

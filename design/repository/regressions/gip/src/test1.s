@@ -1,15 +1,20 @@
     ;; First comment
     ;; Second comment
     extimm #6553600             ; Comment this line
-loop:   
+    mov r0, #0
+    
     mov r1, #3
-    add r1, #3
-    bic r1, #3
-    lsl r1, #3
-    lsr r1, r2
-    cmpeq r2, r2
+    mov r2, #5
+loop:   
+    add r1, #1
+    cmpne r1, r2
     b loop
+
+    mov r0, r0
+    mov r0, r0
+    mov r0, r0
 fred:
+    b fred
     
 next_loop:  
         

@@ -626,11 +626,11 @@ If the instruction is extended with an 'extcmd' and the specified condition in t
 
 <br>
 
-IORNSA Rn, Rm -> Rn
+IORNEQSA Rn, Rm -> Rn
 
 <br>
 
-The mapping of the ALU code is done with the 'op' field. If the top bit is clear, then no mapping of the ALU code is done. If it is set, then the bottom bit is used as the top bit of a five bit operation, the bottom 4 coming from the ALU instruction encoding; this five bit field is prefixed by two zeros to get the internal instruction class of the internal instruction.
+The mapping of the ALU code is done with the 'op' field. It basically overrides the current mode of operation, if it is non-zero.
 
 <br>
 
@@ -715,8 +715,8 @@ mapping( "cmphi", "ISUBccsa Rn, Rm -> HI" );
 mapping( "cmphs", "ISUBccsa Rn, Rm -> CS" );
 mapping( "cmplo", "ISUBccsa Rn, Rm -> CC" );
 mapping( "cmpls", "ISUBccsa Rn, Rm -> LS" );
-mapping( "tstsps", "IMOVccSa Rn, Rm -> CS" );
-mapping( "tstspc", "IMOVccSa Rn, Rm -> CC" );
+mapping( "tstsps", "IMOVccPsa Rn, Rm -> CS" );
+mapping( "tstspc", "IMOVccPsa Rn, Rm -> CC" );
 mapping( "tstallset", "IANDXORccsa Rn, Rm -> EQ" );
 mapping( "tstallclr", "IANDccSa Rn, Rm -> EQ" );
 mapping( "tstanyset", "IANDccsa Rn, Rm -> NE" );

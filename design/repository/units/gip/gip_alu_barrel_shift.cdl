@@ -1,0 +1,147 @@
+/*a Includes
+ */
+include "gip.h"
+include "gip_internal.h"
+
+/*a Types
+ */
+
+/*a Module
+ */
+module gip_alu_barrel_shift( input bit carry_in,
+                             input t_gip_shift_op gip_shift_op,
+                             input t_gip_word value,
+                             input bit[8] amount,
+                             output t_gip_word result,
+                             output bit carry_out )
+    "
+This module implements a 5-operation barrel shifter.
+
+It takes a 32-bit data input with carry, performs a shift or rotate,
+and produces a 32-bit result with carry out.
+
+The amount of the shift is a value from 0 to 255; a shift of 0 is deemed
+to be no shift at all, and the carry out is the same as the carry in.
+"
+{
+    comb t_gip_word top_bit_rotate_down;
+    comb t_gip_word value_rotate_down;
+    comb t_gip_word value_rotate_up;
+
+    carry_out "Carry out determination":
+        {
+            carry_out = carry_in;
+            if (amount==0)
+            {
+                carry_out = carry_in;
+            }
+            elsif (amount==32)
+                {
+                    full_switch (gip_shift_op)
+                        {
+                        case gip_shift_op_lsl: {carry_out = value[0];}
+                        case gip_shift_op_lsr: {carry_out = value[31];}
+                        case gip_shift_op_asr: {carry_out = value[31];}
+                        case gip_shift_op_ror: {carry_out = value[amount[5;0]-1];}
+                        case gip_shift_op_rrx: {carry_out = value[0];}
+                        }
+                }
+            elsif (amount[3;5]!=0)
+                {
+                    full_switch (gip_shift_op)
+                        {
+                        case gip_shift_op_lsl: {carry_out = 0;}
+                        case gip_shift_op_lsr: {carry_out = 0;}
+                        case gip_shift_op_asr: {carry_out = value[31];}
+                        case gip_shift_op_ror: {carry_out = value[amount[5;0]-1];}
+                        case gip_shift_op_rrx: {carry_out = value[0];}
+                        }
+                }
+            else
+            {
+                full_switch (gip_shift_op)
+                    {
+                    case gip_shift_op_lsl: {carry_out = value[~amount[5;0]+1];}
+                    case gip_shift_op_lsr: {carry_out = value[amount[5;0]-1];}
+                    case gip_shift_op_asr: {carry_out = value[amount[5;0]-1];}
+                    case gip_shift_op_ror: {carry_out = value[amount[5;0]-1];}
+                    case gip_shift_op_rrx: {carry_out = value[0];}
+                    }
+            }
+        }
+
+    shifters "Partial shifters":
+        {
+            top_bit_rotate_down = 0;
+            for (i; 32)
+            {
+                if (amount[5;0]>i)
+                {
+                    top_bit_rotate_down[31;0] = top_bit_rotate_down[31;1];
+                    top_bit_rotate_down[31] = value[31];
+                }
+            }
+
+            value_rotate_down = value;
+            for (i; 32)
+            {
+                if (amount[5;0]>i)
+                {
+                    value_rotate_down[31;0] = value_rotate_down[31;1];
+                    value_rotate_down[31] = 0;
+                }
+            }
+
+            value_rotate_up = value;
+            for (i; 32)
+            {
+                if (amount[5;0]>=31-i)
+                {
+                    value_rotate_up[31;1] = value_rotate_up[31;0];
+                    value_rotate_up[0] = 0;
+                }
+            }
+        }
+
+    result_out "Result out determination":
+        {
+            result = value;
+            if (amount==0)
+            {
+                result = value;
+            }
+            elsif (amount==32)
+                {
+                    full_switch (gip_shift_op)
+                        {
+                        case gip_shift_op_lsl: {result = 0;}
+                        case gip_shift_op_lsr: {result = 0;}
+                        case gip_shift_op_asr: {result = value[31]?-1:0;}
+                        case gip_shift_op_ror: {result = value;}
+                        case gip_shift_op_rrx: {result = value_rotate_down | (carry_in?32h80000000:0);}
+                        }
+                }
+            elsif (amount[3;5]!=0)
+                {
+                    full_switch (gip_shift_op)
+                        {
+                        case gip_shift_op_lsl: {result = 0;}
+                        case gip_shift_op_lsr: {result = 0;}
+                        case gip_shift_op_asr: {result = value[31]?-1:0;}
+                        case gip_shift_op_ror: {result = value_rotate_down | value_rotate_up;}
+                        case gip_shift_op_rrx: {result = value_rotate_down | (carry_in?32h80000000:0);}
+                        }
+                }
+            else
+            {
+                full_switch (gip_shift_op)
+                    {
+                    case gip_shift_op_lsl: {result = value_rotate_up; }
+                    case gip_shift_op_lsr: {result = value_rotate_down; }
+                    case gip_shift_op_asr: {result = value_rotate_down | top_bit_rotate_down; }
+                    case gip_shift_op_ror: {result = value_rotate_down | value_rotate_up; }
+                    case gip_shift_op_rrx: {result = value_rotate_down | (carry_in?32h80000000:0);}
+                    }
+            }
+        }
+}

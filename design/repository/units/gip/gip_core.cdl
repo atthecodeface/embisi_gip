@@ -1,0 +1,351 @@
+/*a Includes
+ */
+include "gip.h"
+include "gip_internal.h"
+
+/*a Types
+ */
+
+/*a Module
+ */
+module gip_core( clock gip_clock,
+                 input bit gip_reset,
+
+                 output bit fetch_16,
+                 output t_gip_fetch_op fetch_op, // Early in the cycle, so data may be returned combinatorially
+                 input t_gip_word fetch_data,
+                 input bit fetch_data_valid,
+                 input bit[32] fetch_pc,
+                 output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
+                 output bit[32] prefetch_address,
+
+                 output t_postbus_type postbus_tx_type,
+                 output t_postbus_data postbus_tx_data,
+                 input t_postbus_ack postbus_tx_ack,
+
+                 input t_postbus_type postbus_rx_type,
+                 input t_postbus_data postbus_rx_data,
+                 output t_postbus_ack postbus_rx_ack
+
+
+
+                 )
+{
+    /*b Default clock and reset
+     */
+    default clock gip_clock;
+    default reset gip_reset;
+
+    /*b Nets
+     */
+    net bit fetch_16;
+    net t_gip_fetch_op fetch_op;
+    net t_gip_prefetch_op prefetch_op;
+    net bit[32] prefetch_address;
+
+    net t_postbus_type postbus_tx_type;
+    net t_postbus_data postbus_tx_data;
+    net t_postbus_ack postbus_rx_ack;
+
+    /*b Nets from the pipeline
+     */
+    net bit gip_pipeline_flush;
+    net bit[2] gip_pipeline_tag;
+    net bit gip_pipeline_executing;
+    net bit gip_pipeline_rfw_write_pc;
+    net bit[32] gip_pipeline_rfw_data;
+
+    /*b Nets from decode
+     */
+    net t_gip_instruction_rf dec_inst;
+    net bit dec_sched_acknowledge;
+
+    /*b Nets from RF read
+     */
+    net t_gip_instruction_rf rfr_inst;
+    net bit rfr_accepting_dec_instruction_always;
+    net bit rfr_accepting_dec_instruction_if_alu_does;
+    net bit[32] rfr_port_0;
+    net bit[32] rfr_port_1;
+    net bit rfr_postbus_read;
+    net bit[5] rfr_postbus_read_address;
+    net bit[32] rfr_postbus_read_data;
+    net bit rfr_special_read;
+    net bit[5] rfr_special_read_address;
+    net bit[32] rfr_special_read_data;
+
+    /*b Nets from RF write
+     */
+    net bit rfw_postbus_write;
+    net bit[5] rfw_postbus_write_address;
+    net bit rfw_special_write;
+    net bit[5] rfw_special_write_address;
+    net bit rfw_accepting_alu_rd;
+
+    /*b Nets from ALU
+     */
+    net t_gip_instruction_rf alu_inst;
+    net bit alu_accepting_rfr_instruction_always;
+    net bit alu_accepting_rfr_instruction_if_mem_does;
+    net bit alu_accepting_rfr_instruction_if_rfw_does;
+
+    net t_gip_mem_op alu_mem_op;
+    net t_gip_ins_r alu_mem_rd;
+    net t_gip_word alu_mem_address;
+    net t_gip_word alu_mem_write_data;
+
+    net t_gip_ins_r alu_rfw_rd;
+    net bit alu_rfw_use_shifter;
+    net bit[32] alu_rfw_arith_logic_result;
+    net bit[32] alu_rfw_shifter_result;
+
+    /*b Nets from memory stage
+     */
+    clocked t_gip_ins_r mem_rfw_rd = {type=gip_ins_r_type_none, r=0};
+    clocked bit[32] mem_rfw_result = 0;
+    clocked t_gip_instruction_rf mem_inst = {valid=0};
+
+    /*b Nets from scheduler
+     */
+    net bit sched_thread_to_start_valid;
+    net bit[3] sched_thread_to_start;
+    net bit[32] sched_thread_to_start_pc;
+    net bit[4] sched_thread_to_start_config;
+    net bit[2] sched_thread_to_start_level;
+    net bit[3] sched_thread;
+    net bit[32] sched_thread_data_pc;
+    net bit[4] sched_thread_data_config;
+
+    /*b Nets from special
+     */
+    net bit[8] special_repeat_count;
+    net bit[2] special_alu_mode;
+    net bit special_cp_trail_2;
+    net bit[32] special_semaphores;
+    net bit special_cooperative;
+    net bit special_round_robin;
+    net bit special_thread_data_write_pc;
+    net bit special_thread_data_write_config;
+    net bit[3] special_write_thread;
+    net bit[32] special_thread_data_pc;
+    net bit[4] special_thread_data_config;
+    net bit[3] special_selected_thread;
+
+    /*b Nets from postbus
+     */
+    net bit[5] postbus_semaphore_to_set;
+
+    /*b Pipeline blocking combinations
+     */
+    comb bit rfr_accepting_dec_instruction;
+    comb bit alu_accepting_rfr_instruction;
+
+    /*b Instantiate pipeline - Rf, ALU, Memory
+     */
+    pipeline_instances "Pipeline instances":
+        {
+            alu_accepting_rfr_instruction = ( alu_accepting_rfr_instruction_always ||
+                                              (alu_accepting_rfr_instruction_if_rfw_does && rfw_accepting_alu_rd) ); //alu_accepting_rfr_instruction_if_mem_does => alu_accepting_rfr_instruction_if_mem_does,
+            rfr_accepting_dec_instruction = ( rfr_accepting_dec_instruction_always ||
+                                              (rfr_accepting_dec_instruction_if_alu_does && alu_accepting_rfr_instruction) );
+
+            gip_rf rf( gip_clock <- gip_clock,
+                       gip_reset <= gip_reset,
+
+                       dec_inst <= dec_inst,
+                       rfr_inst => rfr_inst,
+
+                       rfr_accepting_dec_instruction_always => rfr_accepting_dec_instruction_always,
+                       rfr_accepting_dec_instruction_if_alu_does => rfr_accepting_dec_instruction_if_alu_does,
+                       rfr_accepting_dec_instruction <= rfr_accepting_dec_instruction,
+
+                       rfr_port_0 => rfr_port_0,
+                       rfr_port_1 => rfr_port_1,
+
+                       rfr_postbus_read => rfr_postbus_read,
+                       rfr_postbus_read_address => rfr_postbus_read_address,
+                       rfr_postbus_read_data <= rfr_postbus_read_data,
+
+                       rfr_special_read => rfr_special_read,
+                       rfr_special_read_address => rfr_special_read_address,
+                       rfr_special_read_data <= rfr_special_read_data,
+
+                       alu_inst_valid <= alu_inst.valid,
+                       alu_inst_gip_ins_rd <= alu_inst.gip_ins_rd,
+
+                       alu_rd <= alu_rfw_rd,
+                       alu_use_shifter <= alu_rfw_use_shifter,
+                       alu_arith_logic_result <= alu_rfw_arith_logic_result,
+                       alu_shifter_result <= alu_rfw_shifter_result,
+
+                       mem_rd <= mem_rfw_rd,
+                       mem_result <= mem_rfw_result,
+
+                       mem_inst_valid <= mem_inst.valid,
+                       mem_inst_gip_ins_rd <= mem_inst.gip_ins_rd,
+
+                       gip_pipeline_flush <= gip_pipeline_flush,
+
+                       rfw_accepting_alu_rd => rfw_accepting_alu_rd,
+                       rfw_postbus_write => rfw_postbus_write,
+                       rfw_postbus_write_address => rfw_postbus_write_address,
+                       rfw_special_write => rfw_special_write,
+                       rfw_special_write_address => rfw_special_write_address,
+
+                       gip_pipeline_rfw_write_pc => gip_pipeline_rfw_write_pc,
+                       gip_pipeline_rfw_data => gip_pipeline_rfw_data );
+
+            gip_alu alu( gip_clock <- gip_clock,
+                         gip_reset <= gip_reset,
+
+                         rfr_inst <= rfr_inst,
+                         rf_read_port_0 <= rfr_port_0,
+                         rf_read_port_1 <= rfr_port_1,
+
+                         alu_inst => alu_inst,
+
+                         rfw_accepting_alu_rd <= rfw_accepting_alu_rd,
+                         alu_accepting_rfr_instruction <= alu_accepting_rfr_instruction,
+
+                         alu_accepting_rfr_instruction_always => alu_accepting_rfr_instruction_always,
+                         alu_accepting_rfr_instruction_if_rfw_does => alu_accepting_rfr_instruction_if_rfw_does,
+                         alu_accepting_rfr_instruction_if_mem_does => alu_accepting_rfr_instruction_if_mem_does,
+
+                         alu_rd => alu_rfw_rd,
+                         alu_use_shifter => alu_rfw_use_shifter,
+                         alu_arith_logic_result => alu_rfw_arith_logic_result,
+                         alu_shifter_result => alu_rfw_shifter_result,
+
+                         alu_mem_op => alu_mem_op,
+                         alu_mem_rd => alu_mem_rd,
+                         alu_mem_address => alu_mem_address,
+                         alu_mem_write_data => alu_mem_write_data,
+
+                         special_cp_trail_2 <= special_cp_trail_2,
+
+                         gip_pipeline_flush => gip_pipeline_flush,
+                         gip_pipeline_tag => gip_pipeline_tag,
+                         gip_pipeline_executing => gip_pipeline_executing );
+
+
+        }
+
+    /*b Instantiate control - scheduler and decode
+     */
+    control_instances "Control instances":
+        {
+            gip_scheduler scheduler( gip_clock <- gip_clock,
+                                     gip_reset <= gip_reset,
+
+                                     dec_acknowledge_scheduler <= dec_sched_acknowledge,
+
+                                     special_semaphores <= special_semaphores,
+                                     special_cooperative <= special_cooperative,
+                                     special_round_robin <= special_round_robin,
+                                     special_thread_data_write_pc <= special_thread_data_write_pc,
+                                     special_thread_data_write_config <= special_thread_data_write_config,
+                                     special_write_thread <= special_write_thread,
+                                     special_thread_data_pc <= special_thread_data_pc,
+                                     special_thread_data_config <= special_thread_data_config,
+                                     special_selected_thread <= special_selected_thread,
+
+                                     thread_to_start_valid => sched_thread_to_start_valid,
+                                     thread_to_start => sched_thread_to_start,
+                                     thread_to_start_pc => sched_thread_to_start_pc,
+                                     thread_to_start_config => sched_thread_to_start_config,
+                                     thread_to_start_level => sched_thread_to_start_level,
+
+                                     thread => sched_thread,
+                                     thread_data_pc => sched_thread_data_pc,
+                                     thread_data_config => sched_thread_data_config );
+
+            gip_decode decode( gip_clock <- gip_clock,
+                               gip_reset <= gip_reset,
+
+                               fetch_16 => fetch_16,
+                               fetch_op => fetch_op,
+                               fetch_data <= fetch_data,
+                               fetch_data_valid <= fetch_data_valid,
+                               fetch_pc <= fetch_pc,
+                               prefetch_op => prefetch_op,
+                               prefetch_address => prefetch_address,
+
+                               dec_inst => dec_inst,
+                               rfr_accepting_dec_instruction <= rfr_accepting_dec_instruction,
+
+                               gip_pipeline_flush <= gip_pipeline_flush,
+                               gip_pipeline_rfw_write_pc <= gip_pipeline_rfw_write_pc,
+                               gip_pipeline_executing <= gip_pipeline_executing,
+                               gip_pipeline_tag <= gip_pipeline_tag,
+                               gip_pipeline_rfw_data <= gip_pipeline_rfw_data,
+
+                               sched_thread_to_start_valid <= sched_thread_to_start_valid,
+                               sched_thread_to_start <= sched_thread_to_start,
+                               sched_thread_to_start_pc <= sched_thread_to_start_pc,
+                               acknowledge_scheduler => dec_sched_acknowledge,
+
+                               special_repeat_count <= special_repeat_count,
+                               special_alu_mode <= special_alu_mode,
+                               special_cp_trail_2 <= special_cp_trail_2 );
+
+        }
+
+    /*b Instantiate peripherals - scheduler, special, postbus, APB
+     */
+    peripheral_instances "Peripheral instances":
+        {
+            gip_postbus postbus( gip_clock <- gip_clock,
+                                 gip_reset <= gip_reset,
+
+                                 read <= rfr_postbus_read,
+                                 flush <= gip_pipeline_flush,
+                                 read_address <= rfr_postbus_read_address,
+                                 read_data => rfr_postbus_read_data,
+
+                                 write <= rfw_postbus_write,
+                                 write_address <= rfw_postbus_write_address,
+                                 write_data <= gip_pipeline_rfw_data,
+
+                                 postbus_tx_type => postbus_tx_type,
+                                 postbus_tx_data => postbus_tx_data,
+                                 postbus_tx_ack <=postbus_tx_ack,
+
+                                 postbus_rx_type <=postbus_rx_type,
+                                 postbus_rx_data <=postbus_rx_data,
+                                 postbus_rx_ack => postbus_rx_ack,
+
+                                 semaphore_to_set => postbus_semaphore_to_set );
+
+            gip_special special( gip_clock <- gip_clock,
+                                 gip_reset <=gip_reset,
+
+                                 read <= rfr_special_read,
+                                 read_address <= rfr_special_read_address,
+                                 read_data => rfr_special_read_data,
+
+                                 write <= rfw_special_write,
+                                 write_address <= rfw_special_write_address,
+                                 write_data <= gip_pipeline_rfw_data,
+
+                                 sched_state_thread <= sched_thread,
+                                 sched_thread_data_config <= sched_thread_data_config,
+                                 sched_thread_data_pc <= sched_thread_data_pc,
+
+                                 postbus_semaphore_to_set <= postbus_semaphore_to_set,
+
+                                 special_repeat_count => special_repeat_count,
+                                 special_alu_mode => special_alu_mode,
+                                 special_cp_trail_2 => special_cp_trail_2,
+
+                                 special_semaphores => special_semaphores,
+                                 special_cooperative => special_cooperative,
+                                 special_round_robin => special_round_robin,
+                                 special_thread_data_write_pc => special_thread_data_write_pc,
+                                 special_thread_data_write_config => special_thread_data_write_config,
+                                 special_write_thread => special_write_thread,
+                                 special_thread_data_pc => special_thread_data_pc,
+                                 special_thread_data_config => special_thread_data_config,
+                                 special_selected_thread => special_selected_thread
+                                 );
+        }
+}

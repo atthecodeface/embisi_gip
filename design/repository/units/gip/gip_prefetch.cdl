@@ -1,0 +1,400 @@
+/*a Includes
+ */
+include "gip.h"
+
+/*a Types
+ */
+/*t t_prefetch_requested
+ */
+typedef enum [2]
+{
+    prefetch_request_none,
+    prefetch_request_new,
+    prefetch_request_last_new,
+    prefetch_request_sequential,
+} t_prefetch_requested;
+
+/*t t_sram_fetch
+ */
+typedef enum [3]
+{
+    sram_fetch_none,
+    sram_fetch_new,
+    sram_fetch_last_new,
+    sram_fetch_sequential,
+    sram_fetch_current,
+} t_sram_fetch;
+
+/*a Module
+ */
+module gip_prefetch( clock gip_clock,
+                     input bit gip_reset,
+
+                     input bit fetch_16,
+
+                     input t_gip_fetch_op fetch_op,
+                     output bit fetch_data_valid,
+                     output t_gip_word fetch_data,
+                     output bit[32]fetch_pc,
+                     input t_gip_prefetch_op prefetch_op,
+                     input bit[32] prefetch_address,
+
+                     output bit sram_read,
+                     output bit[32] sram_read_address,
+                     input bit[32] sram_read_data
+    )
+"
+    This prefetch model supports quite complex fetches
+
+    It basically maintains a local (32-bit) buffer of data read from the instruction SRAM, and two addresses.
+    It also maintains a simple hold buffer of the data it last presented.
+    The first address (last_new_address) it maintains is the last 'new' address requested
+    The second address (address) it maintains is the address of the sequential data to be returned, if a fetch of 'seq' is being done.
+
+    In addition the unit maintains a count of how many instructions are valid on the SRAM read bus and in the buffer it has.
+
+    On a completely new fetch, the SRAM read request is requesting one or two new instructions (depending on mode and address)
+    On the next cycle the SRAM read bus will have that number of instructions valid; if one is being presented, then we count that as consumed.
+    In the next cycle the buffer will have the number of instructions read from the SRAM in the previous cycle, minus the one consumed.
+      Except, if a 'new' address request is posted, then the buffer will contain NO instructions, as its contents have effectively been invalided.
+
+    Effectively if the SRAM is being asked to read data, depending on the bottom two bits of the address and the size of our fetches, it is either requesting one or two words.
+    If a new request is pending and not being fulfilled by the SRAM read, then the SRAM read cannot be for more than a single instruction
+
+    Note that the buffer and the current SRAM read data bus NEVER have instructions on them simultaneously.
+
+    Basically the operation is then
+        If a fetch is being requested then check the SRAM bus and the buffer for the data; if either has an instruction, then its data is returned
+        If a fetch is being requested and neither SRAM bus nor buffer have the data, then an immediate fetch of the current address is requested of the SRAM, and 'valid' is returned as zero.
+        If a hold fetch is being requested then the hold buffer is presented
+        If the SRAM is idle due to fetching, then it may be used for prefetch:
+        If the current prefetch is 'new' then that address is prefetched from the SRAM
+        If there is a new fetch pending then that address is prefetched from the SRAM
+        If the prefetch request is 'seq' AND the buffer and SRAM bus contain only one instruction AND we are presenting data from the bus or the buffer then we prefetch sequentially from the SRAM
+        If the prefetch request is 'seq' AND the buffer and SRAM bus contain no instructions then we prefetch sequentially from the SRAM
+
+    So an SRAM read can be one of:
+        fetch current address (our address register)
+        prefetch new address (from the prefetch_address input)
+        prefetch pending new address (from the last_new_address register)
+        prefetch sequentially (our address register + 4)
+        none
+
+"
+
+{
+
+    /*b Clock and reset
+     */
+    default clock gip_clock;
+    default reset gip_reset;
+
+    /*b Addresses and pending
+     */
+    clocked bit[32] address=0;
+    clocked bit[32] last_new_address=0;
+    comb bit new_address_will_be_pending;
+    clocked bit new_address_pending=0;
+
+    /*b Data buffers
+     */
+    clocked bit[32] buffer=0;
+    clocked bit[32] hold_data=0;
+    clocked bit hold_data_valid=0;
+    clocked bit[32] hold_pc=0;
+
+    /*b Instruction counts
+     */
+    comb bit[2] sram_read_instructions;
+    clocked bit[2] sram_bus_instructions=0;
+    clocked bit sram_bus_has_new = 0;
+    clocked bit[2] buffer_instructions=0;
+    clocked bit buffer_has_new = 0;
+
+    /*b Data sources
+     */
+    comb bit data_from_sram;
+    comb bit data_from_buffer;
+
+    /*b Fetch requests/actions
+     */
+    comb bit fetch_required;
+    comb t_prefetch_requested prefetch_requested;
+    comb t_sram_fetch sram_fetch;
+    
+    /*b Fetch data logic - fetch_data_valid, fetch_data, hold_data_valid, hold_data, data_from_sram, data_from_buffer
+     */
+    fetch_data "Return the correct data for the current fetch":
+        {
+            fetch_data_valid = 0;
+            fetch_data = sram_read_data;
+            fetch_pc = address;
+            data_from_sram = 0;
+            data_from_buffer = 0;
+            full_switch (fetch_op)
+                {
+                case gip_fetch_op_hold:
+                {
+                    fetch_data_valid = hold_data_valid;
+                    fetch_data = hold_data;
+                    fetch_pc = hold_pc;
+                }
+                case gip_fetch_op_last_prefetch:
+                {
+                    fetch_pc = last_new_address;
+                    if (sram_bus_has_new)
+                    {
+                        fetch_data = sram_read_data;
+                        fetch_data_valid = 1;
+                        data_from_sram = 1;
+                    }
+                    if (buffer_has_new)
+                    {
+                        fetch_data = buffer;
+                        fetch_data_valid = 1;
+                        data_from_buffer = 1;
+                    }
+                }
+                case gip_fetch_op_sequential:
+                {
+                    if (sram_bus_instructions!=0)
+                    {
+                        fetch_data = sram_read_data;
+                        fetch_data_valid = 1;
+                        data_from_sram = 1;
+                    }
+                    if (buffer_instructions!=0)
+                    {
+                        fetch_data = buffer;
+                        fetch_data_valid = 1;
+                        data_from_buffer = 1;
+                    }
+                }
+                case gip_fetch_op_this_prefetch:
+                {
+                    fetch_data_valid = 0;
+                }
+                }
+            hold_data <= fetch_data;
+            hold_data_valid <= fetch_data_valid;
+            hold_pc <= fetch_pc;
+            assert( ((data_from_buffer&data_from_sram)==0), "Incorrectly returning data from SRAM read bus and buffer; only one should contain data at any one time" );
+        }
+
+    /*b SRAM read determination
+     */
+    state_machine "" :
+        {
+            /*b fetch_required - we need a fetch if data is being requested and we are not supplying it
+             */
+            fetch_required = 0;
+            part_switch (fetch_op)
+                {
+                case gip_fetch_op_sequential:
+                case gip_fetch_op_last_prefetch:
+                {
+                    if (data_from_sram | data_from_buffer)
+                    {
+                        fetch_required = 0;
+                    }
+                    else
+                    {
+                        fetch_required = 1;
+                    }
+                }
+                }
+
+            /*b prefetch_requested - we can request a prefetch (if a fetch is not required) of: the new address being presented, the last new address, or sequential data
+             */
+            prefetch_requested = prefetch_request_none;
+            if (prefetch_op == gip_prefetch_op_new_address)
+            {
+                prefetch_requested = prefetch_request_new;
+            }
+            elsif (new_address_pending)
+                {
+                    prefetch_requested = prefetch_request_last_new;
+                }
+            elsif (prefetch_op == gip_prefetch_op_sequential)
+            {
+                if ((sram_bus_instructions | buffer_instructions)==0)
+                {
+                    prefetch_requested = prefetch_request_sequential;
+                }
+                if ( ((sram_bus_instructions | buffer_instructions)==1) &&
+                     (data_from_sram | data_from_buffer) )
+                {
+                    prefetch_requested = prefetch_request_sequential;
+                }
+            }
+
+            /*b SRAM fetch type - sram_fetch, sram_read, sram_read_address, sram_read_instructions
+             */
+            sram_fetch = sram_fetch_none;
+            if (fetch_required)
+            {
+                sram_fetch = sram_fetch_current;
+            }
+            else
+            {
+                full_switch (prefetch_requested)
+                    {
+                    case prefetch_request_none:
+                    {
+                        sram_fetch = sram_fetch_none;
+                    }
+                    case prefetch_request_new:
+                    {
+                        sram_fetch = sram_fetch_new;
+                    }
+                    case prefetch_request_last_new:
+                    {
+                        sram_fetch = sram_fetch_last_new;
+                    }
+                    case prefetch_request_sequential:
+                    {
+                        sram_fetch = sram_fetch_sequential;
+                    }
+                    }
+            }
+            sram_read = 0;
+            sram_read_address = prefetch_address;
+            full_switch (sram_fetch)
+                {
+                case sram_fetch_none:
+                {
+                    sram_read=0;
+                }
+                case sram_fetch_current:
+                {
+                    sram_read=1;
+                    sram_read_address = address;
+                }
+                case sram_fetch_new:
+                {
+                    sram_read=1;
+                    sram_read_address = prefetch_address;
+                }
+                case sram_fetch_last_new:
+                {
+                    sram_read=1;
+                    sram_read_address = last_new_address;
+                }
+                case sram_fetch_sequential:
+                {
+                    sram_read=1;
+                    sram_read_address = 0;
+                    sram_read_address[30;2] = address[30;2]+1;
+                }
+                }
+            sram_read_instructions = 0;
+            if (sram_read)
+            {
+                sram_read_instructions = 1;
+                if ((sram_read_address[1]==0) && fetch_16)
+                {
+                    sram_read_instructions = 2;
+                }
+            }
+
+            /*b last_new_address, new_address_pending, new_address_will_be_pending
+             */
+            new_address_will_be_pending = new_address_pending;
+            if ((prefetch_op == gip_prefetch_op_new_address) && (fetch_required))
+            {
+                new_address_will_be_pending = 1;
+            }
+            else
+            {
+                if ((sram_fetch==sram_fetch_last_new) ||
+                    (sram_fetch==sram_fetch_new))
+                {
+                    new_address_will_be_pending = 0;
+                }
+            }
+            new_address_pending <= new_address_will_be_pending;
+            if (prefetch_op == gip_prefetch_op_new_address)
+            {
+                last_new_address <= prefetch_address;
+            }
+
+            /*b address
+             */
+            if ( (sram_fetch == sram_fetch_new) ||
+                 (sram_fetch == sram_fetch_last_new) )  // Note we are not returning this data in this cycle for sure! So if we do, we will have a cycle to increment the address with the next clause
+            {
+                address <= sram_read_address;
+            }
+            elsif (fetch_data_valid)
+            {
+                if ((fetch_op==gip_fetch_op_last_prefetch) || (fetch_op==gip_fetch_op_sequential))
+                {
+                    if (fetch_16)
+                    {
+                        address <= address+2;
+                    }
+                    else
+                    {
+                        address <= address+4;
+                    }
+                }
+            }
+
+            /*b SRAM bus state - sram_bus_has_new, sram_bus_instructions
+             */
+            sram_bus_has_new <= 0;
+            sram_bus_instructions <= sram_read_instructions;
+            if (new_address_will_be_pending)
+            {
+                if (sram_read_instructions!=0)
+                {
+                    sram_bus_instructions <= 1;
+                }
+            }
+            if ( (sram_fetch == sram_fetch_new) ||
+                 (sram_fetch == sram_fetch_last_new) )
+            {
+                sram_bus_has_new <= 1;
+            }
+
+            /*b buffer, buffer_instructions, buffer_has_new
+             */
+            if ( (sram_fetch == sram_fetch_new) ||
+                 (sram_fetch == sram_fetch_last_new) )
+            {
+                buffer_instructions <= 0;
+            }
+            else
+            {
+                if (sram_bus_instructions)
+                {
+                    buffer_instructions <= sram_bus_instructions;
+                    if (data_from_sram)
+                    {
+                        buffer_instructions <= sram_bus_instructions-1;
+                    }
+                }
+                if (data_from_buffer)
+                {
+                    buffer_instructions <= buffer_instructions-1;
+                }
+            }
+            if (data_from_sram && sram_bus_has_new)
+            {
+                buffer_has_new <= 0;
+            }
+            elsif (data_from_buffer && buffer_has_new)
+            {
+                buffer_has_new <= 0;
+            }
+            else
+            {
+                buffer_has_new <= buffer_has_new | sram_bus_has_new;
+            }
+            if (sram_bus_instructions)
+            {
+                buffer <= sram_read_data;
+            }
+        }
+
+}

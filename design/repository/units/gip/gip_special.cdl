@@ -1,147 +1,201 @@
-/*a Special register handling
+/*a Includes
  */
-/*f c_gip_full::special_comb
+include "gip.h"
+
+/*a Module
  */
-void c_gip_full::special_comb( int read_select, int read_address, unsigned int *read_data )
+module gip_special( clock gip_clock,
+                    input bit gip_reset,
+
+                    input bit read,
+                    input bit[5] read_address,
+                    output bit[32] read_data,
+                    input bit write,
+                    input bit[5] write_address,
+                    input bit[32] write_data,
+
+                    input bit[3] sched_state_thread,
+                    input bit[4] sched_thread_data_config,
+                    input bit[32] sched_thread_data_pc,
+
+                    input bit[5] postbus_semaphore_to_set "Semaphore to set due to postbus receive/transmit - none if zero",
+
+                    output bit[8] special_repeat_count,
+                    output bit[2] special_alu_mode,
+                    output bit special_cp_trail_2,
+                    output bit[32] special_semaphores,
+                    output bit special_cooperative,
+                    output bit special_round_robin,
+                    output bit special_thread_data_write_pc,
+                    output bit special_thread_data_write_config,
+                    output bit[3] special_write_thread,
+                    output bit[32] special_thread_data_pc,
+                    output bit[4] special_thread_data_config,
+                    output bit[3] special_selected_thread
+
+    )
 {
-    unsigned int result;
-    result = 0;
-    switch ((t_gip_special_reg)read_address)
+    /*b Default clock and reset
+     */
+    default clock gip_clock;
+    default reset gip_reset;
+
+    /*b State in the special registers guaranteed by the design
+     */
+    clocked bit[32] special_semaphores = 0;
+    clocked bit special_cooperative = 0;
+    clocked bit special_round_robin = 0;
+    clocked bit thread_0_privilege = 0;
+    clocked bit[3] special_selected_thread = 0; // Thread to read or write
+    clocked bit[3] special_write_thread = 0; // Thread to actually use for writing thread_data_pc/config
+    clocked bit special_thread_data_write_pc = 0; // 1 if the thread_data_pc should be written to write_thread
+    clocked bit special_thread_data_write_config = 0; // 1 if the thread_data_config should be written to write_thread
+    clocked bit[32] special_thread_data_pc = 0;
+    clocked bit[4] special_thread_data_config = 0;
+    clocked bit[8] special_repeat_count=0; // repeat count
+    clocked bit[5] arm_trap_semaphore = 0;
+
+    /*b Combinatorials
+     */
+    comb bit[32]new_semaphores;
+
+    /*b NYI
+     */
+    nyi "":
+        {
+            special_cp_trail_2 = special_repeat_count[0];
+            special_alu_mode = special_repeat_count[2;0];
+        }
+    /*b Read process
+     */
+    read_process "Read the special registers":
     {
-    case gip_special_reg_semaphores:
-        result = pd->special.state.semaphores;
-        break;
-    case gip_special_reg_thread:
-        result = pd->special.state.selected_thread;
-        break;
-    case gip_special_reg_thread_pc:
-        result = pd->special.state.thread_data_pc;
-        break;
-    case gip_special_reg_thread_data:
-        result = pd->special.state.thread_data_config;
-        break;
-    case gip_special_reg_preempted_pc_l:
-        printf("special_comb:Do not have mechanism for preemption yet\n");
-        result = 0;
-        break;
-    case gip_special_reg_preempted_pc_m:
-        printf("special_comb:Do not have mechanism for preemption yet\n");
-        result = 0;
-        break;
-    case gip_special_reg_preempted_flags:
-        printf("special_comb:Do not have mechanism for preemption yet\n");
-        result = 0;
-        break;
-    default:
-        break;
-    }
-    *read_data = result;
-}
-
-/*f c_gip_full::special_preclock
- */
-void c_gip_full::special_preclock( int flush, int read_select, int read_address, int write_select, int write_address, unsigned int write_data )
-{
-    /*b Copy current to next
-     */
-    memcpy( &pd->special.next_state, &pd->special.state, sizeof(pd->special.state) );
-
-    /*b Default values for interacting with scheduler
-     */
-    pd->special.next_state.thread_data_write_pc = 0;
-    pd->special.next_state.thread_data_write_config = 0;
-    pd->special.next_state.thread_data_pc = pd->sched.thread_data_pc;
-    pd->special.next_state.thread_data_config = pd->sched.thread_data_config;
-    pd->special.next_state.write_thread = pd->special.state.selected_thread;
-
-    /*b Handle writes
-     */
-    switch ((t_gip_special_reg)write_address)
-    {
-    case gip_special_reg_gip_config:
-        if (write_select)
+        read_data = 0;
+        if (read)
         {
-            pd->special.next_state.cooperative = (write_data>>0)&1;
-            pd->special.next_state.round_robin = (write_data>>1)&1;
-            pd->special.next_state.thread_0_privilege = (write_data>>2)&1;
-            pd->arm_trap_semaphore = (write_data>>16)&0x1f;
+            part_switch (read_address)
+                {
+                case gip_special_reg_semaphores:
+                {
+                    read_data = special_semaphores;
+                }
+                case gip_special_reg_thread:
+                {
+                    read_data[3;0] = special_selected_thread;
+                }
+                case gip_special_reg_thread_pc:
+                {
+                    read_data = special_thread_data_pc;
+                }
+                case gip_special_reg_thread_data:
+                {
+                    read_data[4;1] = special_thread_data_config;
+                }
+                case gip_special_reg_preempted_pc_l:
+                {
+                    assert(0,"special_comb:Do not have mechanism for preemption yet");
+                    read_data = 0;
+                }
+                case gip_special_reg_preempted_pc_m:
+                {
+                    assert(0,"special_comb:Do not have mechanism for preemption yet");
+                    read_data = 0;
+                }
+                case gip_special_reg_preempted_flags:
+                {
+                    assert(0,"special_comb:Do not have mechanism for preemption yet");
+                    read_data = 0;
+                }
+                }
         }
-        break;
-    case gip_special_reg_semaphores_set:
-        if (write_select)
-        {
-            pd->special.next_state.semaphores = pd->special.state.semaphores | write_data;
-        }
-        break;
-    case gip_special_reg_semaphores_clear:
-        if (write_select)
-        {
-            pd->special.next_state.semaphores = pd->special.state.semaphores &~ write_data;
-        }
-        break;
-    case gip_special_reg_thread:
-        if (write_select)
-        {
-            pd->special.next_state.selected_thread = write_data & (NUM_THREADS-1);
-        }
-        break;
-    case gip_special_reg_thread_pc:
-        if (write_select)
-        {
-            pd->special.next_state.thread_data_write_pc = 1;
-            pd->special.next_state.thread_data_pc = write_data&~1;
-            if (write_data&1)
-            {
-                pd->special.next_state.write_thread = pd->sched.state.thread;
-            }
-            else
-            {
-                pd->special.next_state.write_thread = pd->special.state.selected_thread;
-            }
-            printf("special_preclock:Do not have mechanism for current thread yet\n");
-        }
-        break;
-    case gip_special_reg_thread_data:
-        if (write_select)
-        {
-            pd->special.next_state.thread_data_write_config = 1;
-            pd->special.next_state.thread_data_config = write_data;
-            if (write_data&1)
-            {
-                pd->special.next_state.write_thread = pd->sched.state.thread;
-            }
-            else
-            {
-                pd->special.next_state.write_thread = pd->special.state.selected_thread;
-            }
-        }
-        break;
-    case gip_special_reg_repeat_count:
-        if (write_select)
-        {
-            pd->special.next_state.repeat_count = write_data&0xff;
-        }
-        break;
-    default:
-        break;
     }
 
-    /*b Handle external setting of semaphores
+    /*b Write process
      */
-    if (pd->postbus.semaphore_to_set)
+    write_process "Write the special registers":
     {
-        pd->special.next_state.semaphores = pd->special.next_state.semaphores | (1<<pd->postbus.semaphore_to_set);
+        /*b Default values for interacting with scheduler
+         */
+        special_thread_data_write_pc <= 0;
+        special_thread_data_write_config <= 0;
+        special_thread_data_pc <= sched_thread_data_pc;
+        special_thread_data_config <= sched_thread_data_config;
+        special_write_thread <= special_selected_thread;
+
+        /*b Handle writes
+         */
+        new_semaphores = special_semaphores;
+        if (write)
+        {
+            part_switch (write_address)
+                {
+                case gip_special_reg_gip_config:
+                {
+                    special_cooperative <= write_data[0];
+                    special_round_robin <= write_data[1];
+                    thread_0_privilege <= write_data[2];
+                    arm_trap_semaphore <= write_data[5;16];
+                }
+                case gip_special_reg_semaphores_set:
+                {
+                    new_semaphores = special_semaphores | write_data;
+                }
+                case gip_special_reg_semaphores_clear:
+                {
+                    new_semaphores = special_semaphores &~ write_data;
+                }
+                case gip_special_reg_thread:
+                {
+                    special_selected_thread <= write_data[3;0];
+                }
+                case gip_special_reg_thread_pc:
+                {
+                    special_thread_data_write_pc <= 1;
+                    special_thread_data_pc[0] <= 0;
+                    special_thread_data_pc[31;1] <= write_data[31;1];
+                    if (write_data[0])
+                    {
+                        special_write_thread <= sched_state_thread;
+                    }
+                    else
+                    {
+                        special_write_thread <= special_selected_thread;
+                    }
+                    assert(0,"special_preclock:Do not have mechanism for current thread yet\n");
+                }
+                case gip_special_reg_thread_data:
+                {
+                    special_thread_data_write_config <= 1;
+                    special_thread_data_config <= write_data[4;1];
+                    if (write_data[0])
+                    {
+                        special_write_thread <= sched_state_thread;
+                    }
+                    else
+                    {
+                        special_write_thread <= special_selected_thread;
+                    }
+                }
+                case gip_special_reg_repeat_count:
+                {
+                    special_repeat_count <= write_data[8;0];
+                }
+                }
+        }
+
+        /*b Handle external setting of semaphores
+         */
+        if (postbus_semaphore_to_set)
+        {
+            new_semaphores[postbus_semaphore_to_set] = 1;
+        }
+
+        /*b Set semaphores
+         */
+        special_semaphores <= new_semaphores;
     }
 
     /*b Done
      */
 }
-
-/*f c_gip_full::special_clock
- */
-void c_gip_full::special_clock( void )
-{
-    memcpy( &pd->special.state, &pd->special.next_state, sizeof(pd->special.state) );
-}
-
 

@@ -1,398 +1,407 @@
-/*a Decode stage methods
+/*a Includes
  */
-/*f c_gip_full::dec_comb
- */
-void c_gip_full::dec_comb( void )
-{
-    char buffer[256];
-    unsigned int native_opcode;
+include "gip.h"
+include "gip_internal.h"
+include "gip_decode.h"
 
-    /*b Fake the prefetch of the instruction
+/*a Types
+ */
+/*t t_gip_decode_state
+ */
+typedef fsm
+{
+    gip_decode_state_idle;
+    gip_decode_state_native;
+    gip_decode_state_emulate;
+    gip_decode_state_preempt;
+} t_gip_decode_state;
+
+/*a Module
+  Fetch... (for native mode... for ARM mode 'instruction blocked' should be expanded to include 'next cycle of opcode is zero')
+    current instruction not valid AND prefetch not issued -> fetch current prefetch
+    current instruction not valid AND prefetch issued -> fetch last prefetch
+    current instruction valid AND instruction not blocked -> fetch sequential
+    current instruction valid AND instruction blocked -> fetch hold
+  Prefetch...
+    current instruction not valid AND prefetch not issued AND pc to be valid -> prefetch new address (prefetch deemed issued)
+    current instruction not valid AND prefetch issued -> prefetch sequential
+    current instruction valid AND instruction blocked -> prefetch hold
+    current instruction valid AND instruction not branch AND instruction not blocked -> prefetch sequential
+    current instruction valid AND instruction branch AND instruction not blocked -> prefetch new address
+  If flush occurs, then 'prefetch issued' is cleared in the following cycle, PC marked as invalid, and any opcode fetched is marked as invalid (prefetch deemed not issued)
+  If a write of the PC occurs then the PC is to be valid; this should only occur once the prefetch is marked as not issued (after a flush)
+
+  But... if not in native or emulate mode, then prefetch is none and fetch is hold
+
+ */
+module gip_decode( clock gip_clock,
+                   input bit gip_reset,
+
+                   output bit fetch_16,
+                   output t_gip_fetch_op fetch_op, // Early in the cycle, so data may be returned combinatorially
+                   input t_gip_word fetch_data,
+                   input bit fetch_data_valid,
+                   input bit[32] fetch_pc,
+                   output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
+                   output bit[32] prefetch_address,
+
+                   output t_gip_instruction_rf dec_inst,
+                   input bit rfr_accepting_dec_instruction,
+
+                   input bit gip_pipeline_flush,
+                   input bit gip_pipeline_rfw_write_pc,
+                   input bit gip_pipeline_executing,
+                   input bit[2] gip_pipeline_tag,
+                   input t_gip_word gip_pipeline_rfw_data,
+
+                   input bit sched_thread_to_start_valid,
+                   input bit[3] sched_thread_to_start,
+                   input bit[32] sched_thread_to_start_pc,
+                   output bit acknowledge_scheduler,
+
+                   input bit[8] special_repeat_count,
+                   input bit[2] special_alu_mode,
+                   input bit special_cp_trail_2
+
+    )
+{
+    /*b Default clock and reset
      */
-    if ( pd->dec.state.pc_valid && pd->dec.state.fetch_requested)
-    {
-        pd->dec.state.opcode = pd->memory->read_memory( pd->dec.state.pc );
-    }
+    default clock gip_clock;
+    default reset gip_reset;
+
+    /*b Scheduler interface
+     */
+    clocked bit acknowledge_scheduler=0;
+
+    /*b Prefetch/fetch interface
+     */
+    clocked t_gip_word fetched_opcode = 0;
+    clocked bit fetched_opcode_valid = 0;
+
+    clocked bit valid_prefetch_issued = 0;
+    clocked bit pc_valid = 0;
+    clocked bit[32] pc = 0;
+
+    /*b Decode state machine and current thread information
+     */
+    clocked t_gip_decode_state op_state=gip_decode_state_idle;
+    clocked bit[3] thread=0;
+
+    /*b Instruction
+     */
+    clocked t_gip_instruction_rf dec_inst = { valid=0,
+                                              gip_ins_rn = {type=gip_ins_r_type_none, r=0},
+                                              gip_ins_rd = {type=gip_ins_r_type_none, r=0},
+                                              gip_ins_rm = {type=gip_ins_r_type_none, r=0},
+                                              rm_is_imm = 0,
+                                              k=0, a=0, f=0, d=0, pc=0, tag=0 } "Instruction in the RF read stage";
+    clocked bit[5] cycle_of_opcode=0;
+
+    /*b Accumulator tracking
+     */
+    clocked bit acc_valid=0;
+    clocked bit[5] reg_in_acc=0;
+
+    /*b Conditional and delay slot tracking
+     */
+    clocked bit in_conditional_shadow = 0;
+    clocked bit in_immediate_conditional_shadow = 0;
+//    clocked bit in_delay_slot = 0;
+//    clocked bit follow_delay_pc = 0;
+//    clocked bit[32] delay_pc=0;
+
+    /*b Extended instruction data
+     */
+    clocked bit extended=0;
+    clocked bit[28] extended_immediate=0;
+    clocked t_gip_ins_r extended_rd={type=0,r=0};
+    clocked t_gip_ins_r extended_rn={type=0,r=0};
+    clocked t_gip_ins_r extended_rm={type=0,r=0};
+    clocked t_gip_ext_cmd extended_cmd={extended=0};
+
+    /*b Native instruction decoding
+     */
+    comb bit[16] native_opcode;
+    net t_gip_instruction_rf native_dec_inst;
+    net t_gip_pc_op native_dec_pc_op;
+    net bit[32] native_dec_branch_offset;
+
+    net bit native_dec_extending;
+    net bit[28] native_dec_next_extended_immediate;
+    net t_gip_ins_r native_dec_next_extended_rd;
+    net t_gip_ins_r native_dec_next_extended_rn;
+    net t_gip_ins_r native_dec_next_extended_rm;
+    net t_gip_ext_cmd native_dec_next_extended_cmd;
+
+    net bit native_dec_next_in_immediate_conditional_shadow;
+
+    /*b Selected decode results
+     */
+    comb t_gip_ins_cc dec_cc;
+    comb bit request_fetch;
+    comb bit next_pc_valid;
+    comb bit[32] next_pc;
+    comb t_gip_pc_op next_pc_op;
+
+    /*b Not implemented yet
+     */
+    comb bit instruction_blocked;
+    comb bit branch;
+    comb bit[32] branch_pc;
+
+    /*b Not implemented
+     */
+    nyi "" :
+        {
+            instruction_blocked = 0;
+            if (dec_inst.valid && !rfr_accepting_dec_instruction)
+            {
+                instruction_blocked = 1;
+            }
+            branch = 0;
+            if (native_dec_pc_op==gip_pc_op_branch)
+            {
+                branch = 1;
+            }
+            branch_pc = pc + 8 + native_dec_branch_offset;
+        }
+
+    /*b Register prefetched instruction
+     */
+    prefetched "":
+        {
+            fetch_16 = 1;
+            fetch_op = gip_fetch_op_this_prefetch;
+
+            prefetch_address = next_pc;
+            if (!fetched_opcode_valid)
+            {
+                if (!valid_prefetch_issued)
+                {
+                    fetch_op = gip_fetch_op_this_prefetch;
+                    if (next_pc_valid)
+                    {
+                        prefetch_op = gip_prefetch_op_new_address;
+                        prefetch_address = next_pc;
+                        valid_prefetch_issued <= 1;
+                    }
+                    else
+                    {
+                        prefetch_op = gip_prefetch_op_none;
+                    }
+                }
+                else
+                {
+                    fetch_op = gip_fetch_op_last_prefetch;
+                    prefetch_op = gip_prefetch_op_sequential;
+                }
+            }
+            else
+            {
+                if (instruction_blocked)
+                {
+                    fetch_op = gip_fetch_op_hold;
+                    prefetch_op = gip_prefetch_op_sequential;
+                }
+                else
+                {
+                    fetch_op = gip_fetch_op_sequential; // We have an instruction decoded okay, so this is what we want; but what if the last instruction was a branch, giving new PC? We have not fetched that. Hm.
+                    if (branch)
+                    {
+                        fetch_op = gip_fetch_op_this_prefetch; // Not if delay slot. Hmm. This is probably the issue described in the other two lines
+                        prefetch_op = gip_prefetch_op_new_address;
+                        prefetch_address = branch_pc;
+                        valid_prefetch_issued <= 1; // So what happens in the next cycle? Instruction may not be blocked - should the fetch be 'last prefetch'?
+                    }
+                    else
+                    {
+                        prefetch_op = gip_prefetch_op_sequential;
+                    }
+                }
+            }
+            // If the prefetch_op is sequential then we can speculate a fetch also
+            if (gip_pipeline_flush)
+            {
+                valid_prefetch_issued <= 0;
+                prefetch_op = gip_prefetch_op_none;
+            }
+
+            if (!fetched_opcode_valid || !instruction_blocked)
+            {
+                fetched_opcode <= fetch_data;
+                fetched_opcode_valid <= fetch_data_valid;
+                pc <= fetch_pc;
+            }
+        }
 
     /*b Native decode - use top or bottom half of instruction (pc bit 1 is set AND native AND valid)
      */
-    build_gip_instruction_nop( &pd->dec.native.inst );
-    pd->dec.gip_ins_cc = gip_ins_cc_always;
-    if (pd->dec.state.in_conditional_shadow)
-    {
-        pd->dec.gip_ins_cc = gip_ins_cc_cp;
-    }
-    pd->dec.native.inst_valid = 0;
-    native_opcode = pd->dec.state.opcode;
-    if ( (!pd->dec.state.pc_valid) ||
-         (pd->dec.state.op_state!=gip_dec_op_state_native) ||
-         ((pd->dec.state.pc&2)==0) )
-    {
-        native_opcode = native_opcode & 0xffff;
-    }
-    else
-    {
-        native_opcode = native_opcode>>16;
-    }
-    pd->dec.native.next_pc = pd->dec.state.pc;
-    pd->dec.native.next_cycle_of_opcode = 0;
-    pd->dec.native.next_in_delay_slot = 0;
-    pd->dec.native.next_follow_delay_pc = 0;
-    pd->dec.native.next_in_immediate_shadow = 0;
-    pd->dec.native.next_extended_immediate = pd->dec.state.extended_immediate;
-    pd->dec.native.extending = 0;
-    if ( decode_native_debug( native_opcode ) ||
-         decode_native_extend( native_opcode ) ||
-         decode_native_alu( native_opcode ) ||
-         decode_native_cond( native_opcode ) ||
-         decode_native_shift( native_opcode ) ||
-         decode_native_ldr( native_opcode ) ||
-         decode_native_str( native_opcode ) ||
-         decode_native_branch( native_opcode ) ||
-         0 )
-    {
-        pd->dec.native.inst_valid = !pd->dec.native.extending;
-    }
-    if (pd->dec.state.follow_delay_pc)
-    {
-        pd->dec.native.next_pc = pd->dec.state.delay_pc;
-    }
-    if ((!pd->dec.native.extending) || (pd->gip_pipeline_results.flush) )
-    {
-        pd->dec.native.next_extended_immediate = 0;
-        pd->dec.native.next_extended_cmd.extended = 0;
-        pd->dec.native.next_extended_rd.type = gip_ins_r_type_no_override;
-        pd->dec.native.next_extended_rn.type = gip_ins_r_type_no_override;
-        pd->dec.native.next_extended_rm.type = gip_ins_r_type_no_override;
-    }
-    if (!pd->dec.state.pc_valid)
-    {
-        pd->dec.native.next_pc = pd->dec.state.pc;
-        pd->dec.native.next_cycle_of_opcode = 0;
-        pd->dec.native.inst_valid = 0;
-    }
-    if (pd->gip_pipeline_results.write_pc)
-    {
-        pd->dec.native.next_pc = pd->gip_pipeline_results.rfw_data;
-    }
-    if (pd->gip_pipeline_results.flush)
-    {
-        pd->dec.native.inst_valid = 0;
-        pd->dec.native.next_in_delay_slot = 0;
-        pd->dec.native.next_follow_delay_pc = 0;
-        pd->dec.native.next_in_immediate_shadow = 0;
-    }
+    native_decode "":
+        {
+            dec_cc = gip_ins_cc_always;
+            if (in_conditional_shadow)
+            {
+                dec_cc = gip_ins_cc_cp;
+            }
+            native_opcode = fetched_opcode[16;0];
+            if ( (op_state!=gip_decode_state_native) || (!pc[1]) )
+            {
+                native_opcode = fetched_opcode[16;0];
+            }
+            else
+            {
+                native_opcode = fetched_opcode[16;16];
+            }
+            gip_decode_native native( opcode <= native_opcode,
 
-    /*b ARM decode - attempt to decode opcode, trying each instruction coding one at a time till we succeed
-     */
-    build_gip_instruction_nop( &pd->dec.arm.inst );
-    pd->dec.arm.inst_valid = 0;
-    pd->dec.arm.next_acc_valid = 0;
-    pd->dec.arm.next_reg_in_acc = pd->dec.state.reg_in_acc;
-    pd->dec.arm.next_pc = pd->dec.state.pc;
-    pd->dec.arm.next_cycle_of_opcode = pd->dec.state.cycle_of_opcode+1;
-    if ( decode_arm_debug() ||
-         decode_arm_mul() ||
-         decode_arm_alu() ||
-         decode_arm_ld_st() ||
-         decode_arm_ldm_stm() ||
-         decode_arm_branch() ||
-         decode_arm_trace() ||
-         0 )
-    {
-        pd->dec.arm.inst_valid = 1;
-    }
-    if ( (pd->dec.arm.inst.gip_ins_rn.type == gip_ins_r_type_register) &&
-         (pd->dec.arm.inst.gip_ins_rn.data.r == pd->dec.state.reg_in_acc) &&
-         (pd->dec.state.acc_valid) )
-    {
-        pd->dec.arm.inst.gip_ins_rn.type = gip_ins_r_type_internal;
-        pd->dec.arm.inst.gip_ins_rn.data.rnm_internal = gip_ins_rnm_int_acc;
-    }
-    if ( (!pd->dec.arm.inst.rm_is_imm) &&
-         (pd->dec.arm.inst.rm_data.gip_ins_rm.type == gip_ins_r_type_register) &&
-         (pd->dec.arm.inst.rm_data.gip_ins_rm.data.r == pd->dec.state.reg_in_acc) &&
-         (pd->dec.state.acc_valid) )
-    {
-        pd->dec.arm.inst.rm_data.gip_ins_rm.type = gip_ins_r_type_internal;
-        pd->dec.arm.inst.rm_data.gip_ins_rm.data.rnm_internal = gip_ins_rnm_int_acc;
-    }
-    if (!pd->dec.state.pc_valid)
-    {
-        pd->dec.arm.next_pc = pd->dec.state.pc;
-        pd->dec.arm.next_cycle_of_opcode = 0;
-        pd->dec.arm.inst_valid = 0;
-    }
-    if (pd->gip_pipeline_results.write_pc)
-    {
-        pd->dec.arm.next_pc = pd->gip_pipeline_results.rfw_data;
-    }
-    if (pd->gip_pipeline_results.flush)
-    {
-        pd->dec.arm.inst_valid = 0;
-    }
+                                      dec_cc <= gip_ins_cc_always, // If in ARM mode should use its condition
+
+                                      special_repeat_count <= special_repeat_count,
+                                      special_alu_mode <= special_alu_mode,
+
+                                      inst => native_dec_inst,
+                                      pc_op => native_dec_pc_op,
+                                      native_mapped_branch_offset => native_dec_branch_offset,
+
+                                      extended <= extended,
+                                      extended_immediate <= extended_immediate,
+                                      extended_rd <= extended_rd,
+                                      extended_rn <= extended_rn,
+                                      extended_rm <= extended_rm,
+                                      extended_cmd <= extended_cmd,
+
+                                      extending => native_dec_extending,
+                                      next_extended_immediate => native_dec_next_extended_immediate,
+                                      next_extended_rd => native_dec_next_extended_rd,
+                                      next_extended_rn => native_dec_next_extended_rn,
+                                      next_extended_rm => native_dec_next_extended_rm,
+                                      next_extended_cmd => native_dec_next_extended_cmd,
+
+                                      in_conditional_shadow <= in_conditional_shadow,
+                                      in_immediate_conditional_shadow <= in_immediate_conditional_shadow,
+                                      next_in_immediate_conditional_shadow => native_dec_next_in_immediate_conditional_shadow );
+        }
 
     /*b Handle according to operating state
      */
-    pd->dec.next_op_state = pd->dec.state.op_state;
-    pd->dec.inst_valid = 0; // Pick some default values
-    pd->dec.inst = pd->dec.arm.inst; // also here
-    switch (pd->dec.state.op_state)
-    {
-        /*b Idle - wait for schedule request
-         */
-    case gip_dec_op_state_idle:
-        pd->dec.idle.next_pc_valid = 0;
-        pd->dec.next_acknowledge_scheduler = 0;
-        if (pd->sched.state.thread_to_start_valid)
+    decode_state_machine "Handle according to operating state":
         {
-            pd->dec.next_op_state = gip_dec_op_state_emulate;
-            pd->dec.next_op_state = gip_dec_op_state_native;
-            pd->dec.next_acknowledge_scheduler = 1;
-            pd->dec.idle.next_thread = pd->sched.state.thread_to_start;
-            pd->dec.idle.next_pc = pd->sched.state.thread_to_start_pc;
-            pd->dec.idle.next_pc_valid = 1;
-            pd->dec.arm.next_cycle_of_opcode=0;
-            pd->dec.arm.next_acc_valid = 0;
-        }
-        break;
-        /*b ARM mode
-         */
-    case gip_dec_op_state_emulate:
-        /*b Disassemble instruction if verbose
-         */
-        if ( pd->dec.state.pc_valid && (pd->dec.state.cycle_of_opcode==0))
-        {
-            if (pd->verbose)
+            dec_inst <= native_dec_inst;
+            request_fetch = 0;
+            next_pc_valid = 0;
+            next_pc = 0;
+            acknowledge_scheduler <= 0;
+            full_switch (op_state)
             {
-                arm_disassemble( pd->dec.state.pc, pd->dec.state.opcode, buffer );
-                printf( "%08x %08x: %s\n", pd->dec.state.pc, pd->dec.state.opcode, buffer );
+                /*b Idle - wait for schedule request
+                 */
+            case gip_decode_state_idle:
+            {
+                if (sched_thread_to_start_valid)
+                {
+                    op_state <= gip_decode_state_native;
+                    acknowledge_scheduler <= 1;
+                    thread <= sched_thread_to_start;
+                    next_pc = sched_thread_to_start_pc;
+                    next_pc_valid = 1;
+                }
+                acc_valid <= 0;
+                cycle_of_opcode <= 0;
+                in_conditional_shadow <= 0;
+                in_immediate_conditional_shadow <= 0;
+                extended_immediate <= 0;
+                extended_cmd.extended <= 0;
+                extended_rd.type <= gip_ins_r_type_no_override;
+                extended_rn.type <= gip_ins_r_type_no_override;
+                extended_rm.type <= gip_ins_r_type_no_override;
+                dec_inst.valid <= 0;
             }
-        }
-        /*b Select ARM decode as our decode (NEED TO MUX IN NATIVE IF ENCODED NATIVE - BUT THEN STILL USE OUR CC)
-         */
-        pd->dec.inst = pd->dec.arm.inst;
-        pd->dec.inst_valid = pd->dec.arm.inst_valid;
-        break;
-        /*b Native - decode top or bottom half of instruction (pc bit 1 is set AND native AND valid)
-         */
-    case gip_dec_op_state_native:
-        /*b Disassemble instruction if verbose
-         */
-        if ( pd->dec.state.pc_valid && (pd->dec.state.cycle_of_opcode==0))
-        {
-            if (pd->verbose)
+            /*b Native - decode top or bottom half of instruction (pc bit 1 is set AND native AND valid)
+             */
+            case gip_decode_state_native:
             {
-                disassemble_native_instruction( pd->dec.state.pc, native_opcode, buffer, sizeof(buffer) );
-                printf( "%08x %04x: %s (native)\n", pd->dec.state.pc, native_opcode, buffer );
-            }
-        }
-        /*b Select native instruction as our decode
-         */
-        pd->dec.inst = pd->dec.native.inst;
-        pd->dec.inst_valid = pd->dec.native.inst_valid;
-        break;
-        /*b Preempt - NOT WRITTEN YET
-         */
-    case gip_dec_op_state_preempt:
-        break;
-        /*b All done
-         */
-    }
+                /*b Select native instruction as our decode
+                 */
+                if (rfr_accepting_dec_instruction)
+                {
+                    dec_inst <= native_dec_inst;
+                    dec_inst.pc <= pc;
+                    if (!fetched_opcode_valid)
+                    {
+                        dec_inst.valid <= 0;
+                    }
+                    else
+                    {
+                        next_pc_op = native_dec_pc_op;
+                        cycle_of_opcode <= 0;
 
-}
+//                    acc_valid <= next_acc_valid;
+//                    reg_in_acc <= next_reg_in_acc;
 
-/*f c_gip_full::dec_preclock
- */
-void c_gip_full::dec_preclock( void )
-{
-    /*b Copy current to next
-     */
-    memcpy( &pd->dec.next_state, &pd->dec.state, sizeof(pd->dec.state) );
+                        extended_immediate <= native_dec_next_extended_immediate;
+                        extended_cmd <= native_dec_next_extended_cmd;
+                        extended_rd <= native_dec_next_extended_rd;
+                        extended_rn <= native_dec_next_extended_rn;
+                        extended_rm <= native_dec_next_extended_rm;
 
-    /*b Handle according to operating state
-     */
-    pd->dec.next_state.acknowledge_scheduler = 0;
-    switch (pd->dec.state.op_state)
-    {
-        /*b Idle - wait for schedule request
-         */
-    case gip_dec_op_state_idle:
-        pd->dec.next_state.pc = pd->dec.idle.next_pc;
-        pd->dec.next_state.pc_valid = pd->dec.idle.next_pc_valid;
-        pd->dec.next_state.cycle_of_opcode = 0;
-        pd->dec.next_state.acc_valid = pd->dec.arm.next_acc_valid;
-        pd->dec.next_state.op_state = pd->dec.next_op_state;
-        pd->dec.next_state.acknowledge_scheduler = pd->dec.next_acknowledge_scheduler;
-        pd->dec.next_state.in_conditional_shadow = 0;
-        pd->dec.next_state.in_immediate_shadow = 0;
-            pd->dec.next_state.extended_immediate = 0;
-            pd->dec.next_state.extended_cmd.extended = 0;
-            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
-            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
-            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
-        printf("Idle %d %d %d\n", pd->dec.next_op_state, pd->dec.next_acknowledge_scheduler, pd->sched.state.thread_to_start_valid );
-        break;
-    case gip_dec_op_state_emulate:
-        /*b ARM - Move on PC
-         */
-        if ( (pd->rf.accepting_dec_instruction) ||
-             (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
-        {
-            pd->dec.next_state.pc = pd->dec.arm.next_pc;
-            pd->dec.next_state.cycle_of_opcode = pd->dec.arm.next_cycle_of_opcode;
-            pd->dec.next_state.acc_valid = pd->dec.arm.next_acc_valid;
-            pd->dec.next_state.reg_in_acc = pd->dec.arm.next_reg_in_acc;
-        }
-        if (pd->gip_pipeline_results.write_pc)
-        {
-            pd->dec.next_state.pc = pd->gip_pipeline_results.rfw_data;
-            pd->dec.next_state.pc_valid = 1;
-        }
-        if (pd->gip_pipeline_results.flush)
-        {
-            pd->dec.next_state.cycle_of_opcode=0;
-            pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
-            pd->dec.next_state.acc_valid = 0;
-        }
-        pd->dec.next_state.in_delay_slot = 0;
-        pd->dec.next_state.follow_delay_pc = 0;
-        pd->dec.next_state.delay_pc = 0;
-        pd->dec.next_state.in_conditional_shadow = 0;
-        pd->dec.next_state.in_immediate_shadow = 0;
-            pd->dec.next_state.extended_immediate = 0;
-            pd->dec.next_state.extended_cmd.extended = 0;
-            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
-            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
-            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
-        break;
-        /*b Native
-         */
-    case gip_dec_op_state_native:
-        if ( (pd->rf.accepting_dec_instruction) ||
-             (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
-        {
-            pd->dec.next_state.pc = pd->dec.native.next_pc;
-            pd->dec.next_state.cycle_of_opcode = pd->dec.native.next_cycle_of_opcode;
-            pd->dec.next_state.acc_valid = pd->dec.arm.next_acc_valid;
-            pd->dec.next_state.reg_in_acc = pd->dec.arm.next_reg_in_acc;
-            pd->dec.next_state.in_delay_slot = pd->dec.native.next_in_delay_slot;
-            pd->dec.next_state.follow_delay_pc = pd->dec.native.next_follow_delay_pc;
-            pd->dec.next_state.delay_pc = pd->dec.native.next_delay_pc;
-            pd->dec.next_state.extended_immediate = pd->dec.native.next_extended_immediate;
-            pd->dec.next_state.extended_cmd.extended = pd->dec.native.next_extended_cmd.extended;
-            pd->dec.next_state.extended_rd = pd->dec.native.next_extended_rd;
-            pd->dec.next_state.extended_rn = pd->dec.native.next_extended_rn;
-            pd->dec.next_state.extended_rm = pd->dec.native.next_extended_rm;
-            pd->dec.next_state.in_conditional_shadow = 0;
-            pd->dec.next_state.in_immediate_shadow = 0;
-            if (pd->dec.native.next_in_immediate_shadow)
-            {
-                pd->dec.next_state.in_conditional_shadow = 1;
-                pd->dec.next_state.in_immediate_shadow = 1;
-            }
-            if ( (pd->dec.state.in_immediate_shadow) && (pd->cp_trail_2) )
-            {
-                pd->dec.next_state.in_conditional_shadow = 1;
-            }
-        }
-        if (pd->gip_pipeline_results.write_pc)
-        {
-            pd->dec.next_state.pc = pd->gip_pipeline_results.rfw_data;
-            pd->dec.next_state.pc_valid = 1;
-        }
-        if (pd->gip_pipeline_results.flush)
-        {
-            pd->dec.next_state.cycle_of_opcode=0;
-            pd->dec.next_state.pc_valid = pd->gip_pipeline_results.write_pc;
-            pd->dec.next_state.acc_valid = 0;
-            pd->dec.next_state.in_conditional_shadow = 0;
-            pd->dec.next_state.extended_immediate = 0;
-            pd->dec.next_state.extended_cmd.extended = 0;
-            pd->dec.next_state.extended_rd.type = gip_ins_r_type_no_override;
-            pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
-            pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
-        }
-        if (pd->gip_pipeline_results.tag)
-        {
-            pd->dec.next_state.op_state = gip_dec_op_state_idle;
-        }
-        break;
-        /*b Preempt - NOT WRITTEN YET
-         */
-    case gip_dec_op_state_preempt:
-        break;
-        /*b All done
-         */
-    }
-    pd->dec.next_state.fetch_requested=0;
-    if (pd->dec.next_state.cycle_of_opcode==0)
-    {
-        pd->dec.next_state.fetch_requested=1;
-    }
-}
+                        in_conditional_shadow <= 0;
+                        in_immediate_conditional_shadow <= 0;
+                        if (native_dec_next_in_immediate_conditional_shadow)
+                        {
+                            in_conditional_shadow <= 1;
+                            in_immediate_conditional_shadow <= 1;
+                        }
+                        if ( (in_immediate_conditional_shadow) && (special_cp_trail_2) )
+                        {
+                            in_conditional_shadow <= 1;
+                        }
 
-/*f c_gip_full::dec_clock
- */
-void c_gip_full::dec_clock( void )
-{
-    /*b Debug
-     */
-    if (pd->verbose)
-    {
-        char buffer[256];
-        disassemble_int_instruction( pd->dec.inst_valid, &pd->dec.inst, buffer, sizeof(buffer) );
-        printf( "\t**:DEC %08x(%d)/%08x (ARM c %d ACC %d/%02d)\t:\t... %s\n",
-                pd->dec.state.pc,
-                pd->dec.state.pc_valid,
-                pd->dec.state.opcode,
-                pd->dec.state.cycle_of_opcode,
-                pd->dec.state.acc_valid,
-                pd->dec.state.reg_in_acc,
-                buffer
-            );
-    }
+//                        if (follow_delay_pc)
+//                        {
+//                            next_pc = delay_pc;
+//                        }
+                        if (!native_dec_extending)
+                        {
+                            extended_immediate <= 0;
+                            extended_cmd.extended <= 0;
+                            extended_rd.type <= gip_ins_r_type_no_override;
+                            extended_rn.type <= gip_ins_r_type_no_override;
+                            extended_rm.type <= gip_ins_r_type_no_override;
+                        }
 
-    /*b Handle simulation debug instructions
-     */
-    if ( (pd->rf.accepting_dec_instruction) ||
-         (pd->rf.accepting_dec_instruction_if_alu_does && pd->alu.accepting_rf_instruction) )
-    {
-        if ( (pd->dec.state.pc_valid) &&
-             ((pd->dec.state.opcode&0xff000000)==0xf0000000) )
-        {
-            switch (pd->dec.state.opcode&0xff)
-            {
-            case 0x90:
-                printf( "********************************************************************************\nTest passed\n********************************************************************************\n\n");
-                break;
-            case 0x91:
-                printf( "********************************************************************************\n--------------------------------------------------------------------------------\nTest failed\n--------------------------------------------------------------------------------\n\n");
-                break;
-            case 0xa0:
-                char buffer[256];
-                pd->memory->copy_string( buffer, pd->rf.state.regs[0], sizeof(buffer) );
-                printf( buffer, pd->rf.state.regs[1], pd->rf.state.regs[2], pd->rf.state.regs[3] );
-                break;
-            case 0xa1:
-                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nDump regs\n");
-                debug(-1);
-                break;
-            case 0xa2:
-                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose on\n");
-                pd->verbose = 1;
-                break;
-            case 0xa3:
-                printf( "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nVerbose off\n");
-                pd->verbose = 0;
-                break;
+                        if (gip_pipeline_rfw_write_pc)
+                        {
+                            next_pc = gip_pipeline_rfw_data;
+                            next_pc_valid = 1;
+                        }
+                        if (gip_pipeline_flush)
+                        {
+                            pc_valid <= 0;
+                            acc_valid <= 0;
+
+                            extended_immediate <= 0;
+                            extended_cmd.extended <= 0;
+                            extended_rd.type <= gip_ins_r_type_no_override;
+                            extended_rn.type <= gip_ins_r_type_no_override;
+                            extended_rm.type <= gip_ins_r_type_no_override;
+
+                            dec_inst.valid <= 0;
+//                            in_delay_slot <= 0;
+//                            follow_delay_pc <= 0;
+                            in_immediate_conditional_shadow <= 0;
+                            in_conditional_shadow <= 0;
+                        }
+                        if (gip_pipeline_tag && gip_pipeline_executing)
+                        {
+                            op_state <= gip_decode_state_idle;
+                        }
+                    }
+                }
+            /*b All done
+             */
             }
         }
     }
-
-    /*b Copy current to next
-     */
-    memcpy( &pd->dec.state, &pd->dec.next_state, sizeof(pd->dec.state) );
-
 }
 

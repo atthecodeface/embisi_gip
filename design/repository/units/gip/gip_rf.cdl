@@ -80,7 +80,7 @@ module gip_rf( clock gip_clock,
 
     /*b State in the RF read stage
      */
-    clocked t_gip_instruction_rf rfr_inst = { valid=0,
+    clocked t_gip_instruction_rf rfr_inst_in = { valid=0,
                                               gip_ins_rn = {type=gip_ins_r_type_none, r=0},
                                               gip_ins_rd = {type=gip_ins_r_type_none, r=0},
                                               gip_ins_rm = {type=gip_ins_r_type_none, r=0},
@@ -105,6 +105,7 @@ module gip_rf( clock gip_clock,
 
     /*b Combinatorials in the RF
      */
+    comb bit rfr_blocked;
     comb bit rfw_write_enable "Asserted if the register file is to be written with the current address and data";
     comb t_rf_src read_port_0_src "Source of RF read port 0 data";
     comb t_rf_src read_port_1_src "Source of RF read port 1 data";
@@ -120,30 +121,30 @@ module gip_rf( clock gip_clock,
 
             rf_2r_1w_32_32 rf( rf_clock <- gip_clock,
                                rf_reset <= gip_reset,
-                               rf_rd_addr_0 <= rfr_inst.gip_ins_rn.r,
+                               rf_rd_addr_0 <= rfr_inst_in.gip_ins_rn.r,
                                rf_rd_data_0 => rfr_rf_data_0,
-                               rf_rd_addr_1 <= rfr_inst.gip_ins_rm.r,
+                               rf_rd_addr_1 <= rfr_inst_in.gip_ins_rm.r,
                                rf_rd_data_1 => rfr_rf_data_1,
                                rf_wr_enable <= rfw_write_enable,
                                rf_wr_addr <= rfw_rd.r,
                                rf_wr_data <= rfw_data );
 
-            if (!rfr_inst.valid)
+            if (!rfr_inst_in.valid)
             {
                 read_port_0_src = rf_src_inst_pc; // For internal results give the PC - other possibles are ACC and SHF, which will be replaced in ALU stage anyway
             }
             else
             {
                 read_port_0_src = rf_src_inst_pc;
-                part_switch (rfr_inst.gip_ins_rn.type)
+                part_switch (rfr_inst_in.gip_ins_rn.type)
                     {
                     case gip_ins_r_type_register:
                     {
-                        if ( ( rfw_alu_rd.type == gip_ins_r_type_register) && (rfr_inst.gip_ins_rn.r == rfw_alu_rd.r ) )
+                        if ( ( rfw_alu_rd.type == gip_ins_r_type_register) && (rfr_inst_in.gip_ins_rn.r == rfw_alu_rd.r ) )
                         {
                             read_port_0_src = rf_src_alu_shf_result;
                         }
-                        elsif ( ( rfw_mem_rd.type == gip_ins_r_type_register) && (rfr_inst.gip_ins_rn.r == rfw_mem_rd.r ) )
+                        elsif ( ( rfw_mem_rd.type == gip_ins_r_type_register) && (rfr_inst_in.gip_ins_rn.r == rfw_mem_rd.r ) )
                             {
                                 read_port_0_src = rf_src_mem_result;
                             }
@@ -163,22 +164,22 @@ module gip_rf( clock gip_clock,
                     }
             }
 
-            if (!rfr_inst.valid)
+            if (!rfr_inst_in.valid)
             {
                 read_port_1_src = rf_src_inst_pc; // For internal results give the PC - other possibles are ACC and SHF, which will be replaced in ALU stage anyway
             }
             else
             {
                 read_port_1_src = rf_src_inst_pc;
-                part_switch (rfr_inst.gip_ins_rm.type)
+                part_switch (rfr_inst_in.gip_ins_rm.type)
                     {
                     case gip_ins_r_type_register:
                     {
-                        if ( ( rfw_alu_rd.type == gip_ins_r_type_register) && (rfr_inst.gip_ins_rm.r == rfw_alu_rd.r ) )
+                        if ( ( rfw_alu_rd.type == gip_ins_r_type_register) && (rfr_inst_in.gip_ins_rm.r == rfw_alu_rd.r ) )
                         {
                             read_port_1_src = rf_src_alu_shf_result;
                         }
-                        elsif ( ( rfw_mem_rd.type == gip_ins_r_type_register) && (rfr_inst.gip_ins_rm.r == rfw_mem_rd.r ) )
+                        elsif ( ( rfw_mem_rd.type == gip_ins_r_type_register) && (rfr_inst_in.gip_ins_rm.r == rfw_mem_rd.r ) )
                             {
                                 read_port_1_src = rf_src_mem_result;
                             }
@@ -204,7 +205,7 @@ module gip_rf( clock gip_clock,
             full_switch ( read_port_0_src )
             {
             case rf_src_rf:             { rfr_port_0 = rfr_rf_data_0; }
-            case rf_src_inst_pc:        { rfr_port_0 = rfr_inst.pc; }
+            case rf_src_inst_pc:        { rfr_port_0 = rfr_inst_in.pc; }
             case rf_src_alu_shf_result: { rfr_port_0 = alu_shf_result; }
             case rf_src_mem_result:     { rfr_port_0 = rfw_mem_result; }
             case rf_src_postbus:        { rfr_port_0 = rfr_postbus_read_data; }
@@ -214,7 +215,7 @@ module gip_rf( clock gip_clock,
             full_switch ( read_port_1_src )
             {
             case rf_src_rf:             { rfr_port_1 = rfr_rf_data_1; }
-            case rf_src_inst_pc:        { rfr_port_1 = rfr_inst.pc; }
+            case rf_src_inst_pc:        { rfr_port_1 = rfr_inst_in.pc; }
             case rf_src_alu_shf_result: { rfr_port_1 = alu_shf_result; }
             case rf_src_mem_result:     { rfr_port_1 = rfw_mem_result; }
             case rf_src_postbus:        { rfr_port_1 = rfr_postbus_read_data; }
@@ -229,77 +230,85 @@ module gip_rf( clock gip_clock,
             /*b If instruction is not valid, accept instruction
              */
             rfr_accepting_dec_instruction_always = 0;
-            if (!rfr_inst.valid)
+            if (!rfr_inst_in.valid)
             {
                 rfr_accepting_dec_instruction_always = 1;
             }
 
             /*b If instruction is valid, then accept instruction only if ALU takes this and we are not blocking
              */
-            rfr_accepting_dec_instruction_if_alu_does = 0;
-            if (rfr_inst.valid)
+            rfr_blocked = 0;
+            if (rfr_inst_in.valid)
             {
-                rfr_accepting_dec_instruction_if_alu_does = 1;
-                if ( (rfr_inst.gip_ins_rn.type==gip_ins_r_type_internal) && 
-                     (rfr_inst.gip_ins_rn.r==gip_ins_rnm_int_block_all) ) // Blocked if anything has a write pending
+                if ( (rfr_inst_in.gip_ins_rn.type==gip_ins_r_type_internal) && 
+                     (rfr_inst_in.gip_ins_rn.r==gip_ins_rnm_int_block_all) ) // Blocked if anything has a write pending
                 {
                     if (mem_rd.type!=gip_ins_r_type_none)
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
                     if (alu_rd.type!=gip_ins_r_type_none)
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
                     if ( alu_inst_valid &&
                          (alu_inst_gip_ins_rd.type!=gip_ins_r_type_none) )
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
                 }
-                if (rfr_inst.gip_ins_rn.type==gip_ins_r_type_register) // Blocked if ALU stage will write to Rn, or memory stage will write to Rn, or our ALU holding register is for Rn
+                if (rfr_inst_in.gip_ins_rn.type==gip_ins_r_type_register) // Blocked if ALU stage will write to Rn, or memory stage will write to Rn, or our ALU holding register is for Rn
                 {
                     if ( alu_inst_valid &&
                          (alu_inst_gip_ins_rd.type==gip_ins_r_type_register) &&
-                         (rfr_inst.gip_ins_rn.r[5;0]==alu_inst_gip_ins_rd.r[5;0]) )
+                         (rfr_inst_in.gip_ins_rn.r[5;0]==alu_inst_gip_ins_rd.r[5;0]) )
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
                     if ( (mem_inst_valid) &&
                          (mem_inst_gip_ins_rd.type==gip_ins_r_type_register) &&
-                         (rfr_inst.gip_ins_rn.r==mem_inst_gip_ins_rd.r) )
+                         (rfr_inst_in.gip_ins_rn.r==mem_inst_gip_ins_rd.r) )
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
-                    if ( (mem_rd.type!=gip_ins_r_type_none) &&
-                         (alu_rd.type==gip_ins_r_type_register) &&
-                         (rfr_inst.gip_ins_rn.r==alu_rd.r) )
+                    if ( (rfw_mem_rd.type!=gip_ins_r_type_none) &&
+                         (rfw_alu_rd.type==gip_ins_r_type_register) &&
+                         (rfr_inst_in.gip_ins_rn.r==rfw_alu_rd.r) )
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
                 }
-                if (rfr_inst.gip_ins_rm.type==gip_ins_r_type_register) // Blocked if ALU stage will write to Rm, or memory stage will write to Rm, or our ALU holding register is for Rm
+                if (rfr_inst_in.gip_ins_rm.type==gip_ins_r_type_register) // Blocked if ALU stage will write to Rm, or memory stage will write to Rm, or our ALU holding register is for Rm
                 {
                     if ( alu_inst_valid &&
                          (alu_inst_gip_ins_rd.type==gip_ins_r_type_register) &&
-                         (rfr_inst.gip_ins_rm.r==alu_inst_gip_ins_rd.r) )
+                         (rfr_inst_in.gip_ins_rm.r==alu_inst_gip_ins_rd.r) )
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
                     if ( (mem_inst_valid) &&
                          (mem_inst_gip_ins_rd.type==gip_ins_r_type_register) &&
-                         (rfr_inst.gip_ins_rm.r==mem_inst_gip_ins_rd.r) )
+                         (rfr_inst_in.gip_ins_rm.r==mem_inst_gip_ins_rd.r) )
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
-                    if ( (mem_rd.type!=gip_ins_r_type_none) && // If writing something for mem stage then block if we want the ALU stage result
-                         (alu_rd.type==gip_ins_r_type_register) &&
-                         (rfr_inst.gip_ins_rm.r==alu_rd.r) )
+                    if ( (rfw_mem_rd.type!=gip_ins_r_type_none) && // If writing something for mem stage then block if we want the ALU stage result
+                         (rfw_alu_rd.type==gip_ins_r_type_register) &&
+                         (rfr_inst_in.gip_ins_rm.r==rfw_alu_rd.r) )
                     {
-                        rfr_accepting_dec_instruction_if_alu_does = 0;
+                        rfr_blocked = 1;
                     }
                 }
             }
+            rfr_accepting_dec_instruction_if_alu_does = !rfr_blocked;
+        }
+
+    /*b Instruction to ALU
+     */
+    instruction_to_alu "Instruction to ALU":
+        {
+            rfr_inst = rfr_inst_in;
+            rfr_inst.valid = rfr_inst_in.valid && !rfr_blocked;
         }
 
     /*b Postbus and special read/write
@@ -310,30 +319,30 @@ module gip_rf( clock gip_clock,
             rfr_postbus_read_address = 0;
             rfr_special_read = 0;
             rfr_special_read_address = 0;
-            part_switch (rfr_inst.gip_ins_rn.type)
+            part_switch (rfr_inst_in.gip_ins_rn.type)
                 {
                 case gip_ins_r_type_postbus:
                 {
                     rfr_postbus_read = 1;
-                    rfr_postbus_read_address = rfr_inst.gip_ins_rn.r;
+                    rfr_postbus_read_address = rfr_inst_in.gip_ins_rn.r;
                 }
                 case gip_ins_r_type_special:
                 {
                     rfr_special_read = 1;
-                    rfr_special_read_address = rfr_inst.gip_ins_rn.r;
+                    rfr_special_read_address = rfr_inst_in.gip_ins_rn.r;
                 }
                 }
-            part_switch (rfr_inst.gip_ins_rm.type)
+            part_switch (rfr_inst_in.gip_ins_rm.type)
                 {
                 case gip_ins_r_type_postbus:
                 {
                     rfr_postbus_read = 1;
-                    rfr_postbus_read_address = rfr_postbus_read_address | rfr_inst.gip_ins_rm.r;
+                    rfr_postbus_read_address = rfr_postbus_read_address | rfr_inst_in.gip_ins_rm.r;
                 }
                 case gip_ins_r_type_special:
                 {
                     rfr_special_read = 1;
-                    rfr_special_read_address = rfr_special_read_address | rfr_inst.gip_ins_rm.r;
+                    rfr_special_read_address = rfr_special_read_address | rfr_inst_in.gip_ins_rm.r;
                 }
                 }
             rfw_postbus_write = 0;
@@ -386,17 +395,17 @@ module gip_rf( clock gip_clock,
         {
             if (rfr_accepting_dec_instruction)
             {
-                rfr_inst <= dec_inst;
+                rfr_inst_in <= dec_inst;
                 if (gip_pipeline_flush)
                 {
-                    rfr_inst.valid <= 0;
+                    rfr_inst_in.valid <= 0;
                 }
             }
             else // Not willing to take another instruction; we must have one on hold - flush if asked AND if it is not 'D'
             {
-                if ( gip_pipeline_flush && !rfr_inst.d )
+                if ( gip_pipeline_flush && !rfr_inst_in.d )
                 {
-                    rfr_inst.valid <= 0;
+                    rfr_inst_in.valid <= 0;
                 }
             }
         }

@@ -199,6 +199,7 @@ module gip_decode( clock gip_clock,
             }
             else
             {
+                prefetch_address = branch_pc;
                 if (instruction_blocked)
                 {
                     fetch_op = gip_fetch_op_hold;
@@ -211,7 +212,6 @@ module gip_decode( clock gip_clock,
                     {
                         fetch_op = gip_fetch_op_this_prefetch; // Not if delay slot. Hmm. This is probably the issue described in the other two lines
                         prefetch_op = gip_prefetch_op_new_address;
-                        prefetch_address = branch_pc;
                         valid_prefetch_issued <= 1; // So what happens in the next cycle? Instruction may not be blocked - should the fetch be 'last prefetch'?
                     }
                     else
@@ -287,7 +287,7 @@ module gip_decode( clock gip_clock,
      */
     decode_state_machine "Handle according to operating state":
         {
-            dec_inst <= native_dec_inst;
+            dec_inst <= dec_inst;
             request_fetch = 0;
             next_pc_valid = 0;
             next_pc = 0;

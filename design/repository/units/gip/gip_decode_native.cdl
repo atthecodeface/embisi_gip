@@ -473,6 +473,7 @@ module gip_decode_native( input bit[16] opcode,
                     if (ins_class==gip_native_ins_class_alu_imm)
                     {
                         inst.rm_is_imm = 1;
+                        inst.gip_ins_rm.type = gip_ins_r_type_none;
                     }
                     else
                     {
@@ -687,6 +688,7 @@ module gip_decode_native( input bit[16] opcode,
                     if (ins_class==gip_native_ins_class_cond_imm)
                     {
                         inst.rm_is_imm = 1;
+                        inst.gip_ins_rm.type = gip_ins_r_type_none;
                     }
                     else
                     {
@@ -732,6 +734,7 @@ module gip_decode_native( input bit[16] opcode,
                     if (shift_is_imm)
                     {
                         inst.rm_is_imm = 1;
+                        inst.gip_ins_rm.type = gip_ins_r_type_none;
                     }
                     else
                     {
@@ -765,24 +768,28 @@ module gip_decode_native( input bit[16] opcode,
                             inst.gip_ins_subclass = gip_ins_subclass_memory_word | gip_ins_subclass_memory_up | gip_ins_subclass_memory_preindex;
                             inst.immediate[4;0] = 0;
                             inst.rm_is_imm = 1;
+                            inst.gip_ins_rm.type = gip_ins_r_type_none;
                         }
                         case gip_native_ins_subclass_memory_half_noindex: // Preindex Up Half, immediate of zero (unless extended - then preindex up by immediate value)
                         {
                             inst.gip_ins_subclass = gip_ins_subclass_memory_half | gip_ins_subclass_memory_up | gip_ins_subclass_memory_preindex;
                             inst.immediate[4;0] = 0;
                             inst.rm_is_imm = 1;
+                            inst.gip_ins_rm.type = gip_ins_r_type_none;
                         }
                         case gip_native_ins_subclass_memory_byte_noindex: // Preindex Up Byte, immediate of zero (unless extended - then preindex up by immediate value)
                         {
                             inst.gip_ins_subclass = gip_ins_subclass_memory_byte | gip_ins_subclass_memory_up | gip_ins_subclass_memory_preindex;
                             inst.immediate[4;0] = 0;
                             inst.rm_is_imm = 1;
+                            inst.gip_ins_rm.type = gip_ins_r_type_none;
                         }
                         case gip_native_ins_subclass_memory_word_preindex_up: // Preindex Up Word, immediate of four (unless extended - then preindex up by immediate value)
                         {
                             inst.gip_ins_subclass = gip_ins_subclass_memory_word | gip_ins_subclass_memory_up | gip_ins_subclass_memory_preindex;
                             inst.immediate[4;0] = 4;
                             inst.rm_is_imm = 1;
+                            inst.gip_ins_rm.type = gip_ins_r_type_none;
                         }
                         case gip_native_ins_subclass_memory_word_preindex_up_shf: // Preindex Up Word by SHF
                         {
@@ -803,12 +810,14 @@ module gip_decode_native( input bit[16] opcode,
                             inst.gip_ins_subclass = gip_ins_subclass_memory_word | gip_ins_subclass_memory_up | gip_ins_subclass_memory_postindex;
                             inst.immediate[4;0] = 4;
                             inst.rm_is_imm = 1;
+                            inst.gip_ins_rm.type = gip_ins_r_type_none;
                         }
                         case gip_native_ins_subclass_memory_word_postindex_down: // Postindex down Word, immediate of four (unless extended - then preindex up by immediate value)
                         {
                             inst.gip_ins_subclass = gip_ins_subclass_memory_word | gip_ins_subclass_memory_down | gip_ins_subclass_memory_postindex;
                             inst.immediate[4;0] = 4;
                             inst.rm_is_imm = 1;
+                            inst.gip_ins_rm.type = gip_ins_r_type_none;
                         }
                         }
                     }
@@ -921,6 +930,7 @@ module gip_decode_native( input bit[16] opcode,
                         inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
                         inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_rd_int_eq};
                         inst.rm_is_imm = 1;
+                        inst.gip_ins_rm.type = gip_ins_r_type_none;
                         inst.immediate = 0;
                         if (branch_delay_slot)
                         {
@@ -947,6 +957,7 @@ module gip_decode_native( input bit[16] opcode,
                         inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
                         inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_rd_int_eq};
                         inst.rm_is_imm = 1;
+                        inst.gip_ins_rm.type = gip_ins_r_type_none;
                         inst.immediate = native_mapped_branch_offset;
                         //next_in_delay_slot = branch_delay_slot;
                     }

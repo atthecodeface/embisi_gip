@@ -1,0 +1,42 @@
+#a Copyright
+#  
+#  This file 'eth_0.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add postbus ROM test
+module postbus_test_rom "ptr"
+
+#b Add test harness
+option_string "clock" "system_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset"
+option_string "filename" "rom.th"
+module se_test_harness "th"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+clock system_clock 0 1 1
+drive th.system_clock system_clock
+drive ptr.int_clock system_clock
+
+#b Add wires
+wire system_reset
+wire leds[8]
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+
+#b Wire up ROM test
+drive ptr.int_reset system_reset
+drive leds ptr.leds
+
+#b End
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

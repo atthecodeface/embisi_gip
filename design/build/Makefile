@@ -13,13 +13,15 @@ doc: documentation
 .PHONY: simulation
 
 simulation:
-	make -f Makefile.simulation
+	$(MAKE) -f Makefile.simulation
 
+simclean:
+	$(MAKE) -f Makefile.simulation clean
 
 .PHONY: documentation
 
 documentation:
-	make -f Makefile.documentation
+	$(MAKE) -f Makefile.documentation
 
 #a Editor preferences and notes
 # Local Variables: ***

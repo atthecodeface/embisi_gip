@@ -1,0 +1,56 @@
+#a Copyright
+#  
+#  This file 'test.batch' copyright Gavin J Stark 2003, 2004
+#  
+
+#a Variables
+int run_length
+int vcd_create
+string vcd_full_filename
+string vcd_filename
+
+set vcd_create 1
+
+#a Main
+gosub rom_tests
+end
+
+#a Rom tests
+#f rom_tests
+rom_tests:
+
+#b rom_0
+set run_length 40000000
+#set run_length 40000
+set_string vcd_filename "rom_0"
+gosub rom_test
+
+#b Done
+return
+
+#a Rom Subroutines
+#f rom_test
+rom_test:
+read_hw_file rom.hwex
+
+beq vcd_create 0 rom_test_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "ptr.leds" "ptr.txd"
+#vcd_file_add "allsignals" "ptr" "ptr.prs" "ptr.rom" "ptr.psr" "ptr.plt" "ptr.put"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+rom_test_no_vcd:
+reset
+step run_length
+return
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***

@@ -12,6 +12,8 @@ PREFIX_OBJ_DIR := simulation/
 #a Include standard build makefile
 include ${CYCLICITY}/scripts/simulation_build_make
 
+verilog: ${VERILOG_FILES}
+
 #a Editor preferences and notes
 # Local Variables: ***
 # mode: Makefile ***

@@ -1,0 +1,62 @@
+#a Copyright
+#  
+#  This file 'rx_simple_fifo.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add MII monitor
+option_string "monitor_level" "15"
+option_string "sources" env_string("sources")
+module mii_testbench "mii"
+
+#b Add test harness
+option_string "clock" "system_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset"
+option_string "filename" "erx_0.th"
+module se_test_harness "th"
+
+#b Add IO block module
+module io_block "iob"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+clock system_clock 0 1 1
+clock mii_clock 1 2 1
+drive th.system_clock system_clock
+drive iob.int_clock system_clock
+drive iob.io_clock mii_clock
+drive mii.int_clock mii_clock
+
+#b Add wires
+wire system_reset
+wire mii_rxdv mii_rxd[4] mii_rxerr
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+
+#b Wire up IO block
+drive iob.int_reset         system_reset        
+drive iob.io_reset          system_reset        
+drive iob.mii_dv            mii_rxdv
+drive iob.mii_err           mii_rxerr
+drive iob.mii_data          mii_rxd
+
+#b MII testbench
+drive mii.int_reset          system_reset
+drive mii.mon_mii_col        mii_rxerr
+drive mii.mon_mii_crs        mii_rxdv
+drive mii.mon_mii_data       mii_rxd
+drive mii.mon_mii_enable     mii_rxdv
+drive mii_rxd                mii.rx_mii_data
+drive mii_rxdv               mii.rx_mii_dv
+drive mii_rxerr              mii.rx_mii_err
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

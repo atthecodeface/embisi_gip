@@ -1,0 +1,193 @@
+#a Copyright
+#  
+#  This file 'eth_0.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add MII
+option_int "monitor_level" 14
+option_string "sources" env_string("sources")
+option_string "sinks" env_string("sinks")
+module mii_testbench "mii"
+
+#b Add postbus source
+option_int "monitor_level" 14
+option_string "source_exec" env_string("source_exec")
+module postbus_testbench "post"
+
+#b Add postbus rom
+module postbus_rom_source "pst_rom"
+option_string "filename" env_string("post_rom_mif")
+printf "Filename %s0%" env_string("post_rom_mif")
+option_int "size" 256
+option_int "width" 32
+option_int "bits_per_enable" 32
+module se_sram_srw "pst_rom_srm"
+
+#b Add postbus router
+module postbus_simple_router "pst_mux"
+
+#b Add test harness
+option_string "clock" "system_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset"
+option_string "filename" "erx_0.th"
+module se_test_harness "th"
+
+#b Add IO block module
+module io_block_tx "iob"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+clock system_clock 0 1 1
+clock mii_clock 1 2 1
+drive th.system_clock system_clock
+drive iob.int_clock system_clock
+drive post.int_clock system_clock
+drive iob.erx_clock mii_clock
+drive iob.etx_clock mii_clock
+drive mii.int_clock mii_clock
+drive pst_rom.int_clock system_clock
+drive pst_rom_srm.sram_clock system_clock
+drive pst_mux.int_clock system_clock
+
+#b Add wires
+wire system_reset
+wire mii_rxdv mii_rxd[4] mii_rxerr
+wire mii_col mii_crs mii_txen mii_txd[4]
+wire uart0_rxd uart0_txd_fc uart0_txd uart0_rxd_fc
+
+
+wire to_iob_type[2] to_iob_data[32] to_iob_ack[2]
+
+wire pst_type_0[2] pst_data_0[32] pst_ack_0[2]
+wire pst_type_1[2] pst_data_1[32] pst_ack_1[2]
+wire pst_type_2[2] pst_data_2[32] pst_ack_2[2]
+wire pst_type_3[2] pst_data_3[32] pst_ack_3[2]
+#wire pst_type_4[2] pst_data_4[32] pst_ack_4[2]
+#wire pst_type_5[2] pst_data_5[32] pst_ack_5[2]
+#wire pst_type_6[2] pst_data_6[32] pst_ack_6[2]
+#wire pst_type_7[2] pst_data_7[32] pst_ack_7[2]
+wire pst_tgt_data[32]
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+
+#b Wire up postbus source
+drive post.int_reset system_reset
+drive pst_type_0 post.src_type
+drive pst_data_0 post.src_data
+drive post.src_ack pst_ack_0
+
+drive post.mon_type pst_type_0 
+drive post.mon_data pst_data_0 
+drive post.mon_ack pst_ack_0
+
+#b Wire up postbus ROM
+drive pst_rom.int_reset system_reset
+
+drive pst_type_1 pst_rom.postbus_type
+drive pst_data_1 pst_rom.postbus_data
+drive pst_rom.postbus_ack pst_ack_1
+
+wire pst_rom_read pst_rom_address[8] pst_rom_read_data[32] pst_rom_write_data[32] pst_rom_write_enable
+
+drive pst_rom_read pst_rom.rom_read
+drive pst_rom_address pst_rom.rom_address
+drive pst_rom.rom_data pst_rom_read_data
+
+assign pst_rom_write_enable 0
+assign pst_rom_write_data 0
+drive pst_rom_srm.write_data pst_rom_write_data
+drive pst_rom_srm.read_not_write pst_rom_read
+drive pst_rom_srm.write_enable pst_rom_write_enable
+drive pst_rom_srm.address pst_rom_address
+drive pst_rom_read_data pst_rom_srm.data_out
+
+#b Wire up postbus switch
+drive pst_mux.int_reset system_reset
+
+drive pst_mux.src_type_0 pst_type_0
+drive pst_mux.src_data_0 pst_data_0
+drive pst_ack_0 pst_mux.src_ack_0
+
+drive pst_mux.src_type_1 pst_type_1
+drive pst_mux.src_data_1 pst_data_1
+drive pst_ack_1 pst_mux.src_ack_1
+
+drive pst_mux.src_type_2 pst_type_2
+drive pst_mux.src_data_2 pst_data_2
+drive pst_ack_2 pst_mux.src_ack_2
+
+drive pst_mux.src_type_3 pst_type_3
+drive pst_mux.src_data_3 pst_data_3
+drive pst_ack_3 pst_mux.src_ack_3
+
+drive pst_tgt_data pst_mux.tgt_data
+
+drive to_iob_type pst_mux.tgt_type_0
+drive to_iob_data pst_mux.tgt_data
+drive pst_mux.tgt_ack_0 to_iob_ack
+
+assign pst_type_2 1
+assign pst_data_2 0
+assign pst_type_3 1
+assign pst_data_3 0
+
+wire no_ack[2]
+drive pst_mux.tgt_ack_1 no_ack
+drive pst_mux.tgt_ack_2 no_ack
+drive pst_mux.tgt_ack_3 no_ack
+drive pst_mux.tgt_ack_4 no_ack
+drive pst_mux.tgt_ack_5 no_ack
+drive pst_mux.tgt_ack_6 no_ack
+drive pst_mux.tgt_ack_7 no_ack
+assign no_ack 0
+
+#b Wire up IO block
+drive iob.int_reset         system_reset        
+drive iob.erx_reset          system_reset        
+drive iob.etx_reset          system_reset        
+
+drive iob.erx_mii_dv            mii_rxdv
+drive iob.erx_mii_err           mii_rxerr
+drive iob.erx_mii_data          mii_rxd
+
+drive iob.etx_mii_crs  mii_crs
+drive iob.etx_mii_col  mii_col
+drive mii_txd          iob.etx_mii_data
+drive mii_txen         iob.etx_mii_enable
+
+drive iob.postbus_tgt_type to_iob_type
+drive iob.postbus_tgt_data to_iob_data
+drive to_iob_ack iob.postbus_tgt_ack
+
+assign uart0_txd_fc 0
+drive iob.uart0_txd_fc uart0_txd_fc
+drive uart0_txd iob.uart0_txd
+drive uart0_rxd iob.uart0_txd
+drive iob.uart0_rxd uart0_rxd
+drive uart0_rxd_fc iob.uart0_rxd_fc
+
+#b MII testbench
+drive mii.int_reset          system_reset
+drive mii.mon_mii_col        mii_col
+drive mii.mon_mii_crs        mii_crs
+drive mii.mon_mii_data       mii_rxd
+drive mii.mon_mii_enable     mii_rxdv
+drive mii_rxd                mii.rx_mii_data
+drive mii_rxdv               mii.rx_mii_dv
+drive mii_rxerr              mii.rx_mii_err
+drive mii.tx_mii_data        mii_txd
+drive mii.tx_mii_enable      mii_txen
+drive mii_crs                mii.tx_mii_crs
+drive mii_col                mii.tx_mii_col
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

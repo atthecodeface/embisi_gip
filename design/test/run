@@ -4,7 +4,12 @@ $tnbt_cvs_root = $ENV{"TNBT_CVS_ROOT"};
 $cwd = `pwd`;
 chomp($cwd);
 
-chdir("$tnbt_cvs_root/hardware/design/repository/regressions/ethernet");
-#valgrind --num-callers=8 
-system("$tnbt_cvs_root/hardware/design/build/simulation/linux/sim --define run_dir=$cwd test.batch");
+#chdir("$tnbt_cvs_root/hardware/design/repository/regressions/ethernet");
+chdir("$tnbt_cvs_root/hardware/design/repository/regressions/io");
+#chdir("$tnbt_cvs_root/hardware/design/repository/regressions/postbus");
+$sim = "$tnbt_cvs_root/hardware/design/build/simulation/linux/sim";
+#$sim = $sim." --sl_debug_level 1 ";
+#$sim = "valgrind --num-callers=8 ".$sim;
+print "$sim  --define run_dir=$cwd test.batch\n";
+system("$sim  --define run_dir=$cwd test.batch");
 

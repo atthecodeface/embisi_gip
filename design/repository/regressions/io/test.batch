@@ -1,0 +1,215 @@
+#a Copyright
+#  
+#  This file 'test.batch' copyright Gavin J Stark 2003, 2004
+#  
+#  This program is free software; you can redistribute it and/or modify it under
+#  the terms of the GNU General Public License as published by the Free Software
+#  Foundation, version 2.0.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even implied warranty of MERCHANTABILITY
+#  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+#  for more details.
+
+#a Variables
+int run_length
+int vcd_create
+string vcd_full_filename
+string vcd_filename
+
+set vcd_create 1
+
+#setenv gip_mif "../gip/bin/test_pst.gif"
+#read_hw_file simple_tx.hwex
+
+#vcd_file_open "allsignals" vcd_file
+#vcd_file_add "allsignals" "mii" "etx" "th"
+#vcd_file_enable "allsignals"
+#reset
+#step 1500
+#vcd_file_close "allsignals"
+
+#a Main
+#gosub erx_0_tests
+gosub eth_0_tests
+end
+
+#a Ethernet RX 0 tests
+#f erx_0_tests
+erx_0_tests:
+
+#b erx_0_0:
+setenv sources "( ) ( ( i 12 0x1234 0 0 ) )"
+set run_length 4000
+set_string vcd_filename "erx_0_0"
+gosub erx_0_test
+
+#b Done
+return
+
+#a RX Subroutines
+#f erx_0_test
+erx_0_test:
+setenv total_packets "1000"
+read_hw_file erx_0.hwex
+
+beq vcd_create 0 erx_0_test_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "mii" "th" "iob" "iob.ingress_control" "iob.erx_sr_status" "iob.erx" "iob.ingress_sram" "iob.ingress_fifos"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+erx_0_test_no_vcd:
+reset
+step run_length
+return
+
+#a Ethernet 0 tests
+#f eth_0_tests
+eth_0_tests:
+
+#b eth_0_0:
+setenv sources "( ) ( ( i 12 0x1234 0 0 ) )"
+setenv sinks "( ) ( ( i 16 0x1234 0 0 ) )"
+setenv source_exec "eth_0_0.pst_src_ex"
+setenv post_rom_mif "eth_0_0.pst_rom.mif"
+set run_length 10000
+set_string vcd_filename "eth_0_0"
+gosub eth_0_test
+
+#b Done
+return
+
+#a Ethernet 0 Subroutines
+#f eth_0_test
+eth_0_test:
+setenv total_packets "1000"
+read_hw_file eth_0.hwex
+
+beq vcd_create 0 eth_0_test_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "mii" "th" "iob" "iob.ingress_control" "iob.erx" "iob.ingress_fifos" "iob.egress_control" "iob.etx" "iob.egress_fifos" "iob.brg0" "iob.uart0"
+vcd_file_add "allsignals"  "iob.pst" "iob.pst.tgt" "iob.pst.src"
+vcd_file_add "allsignals"  "pst_rom" "pst_rom_srm" "pst_mux"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+eth_0_test_no_vcd:
+reset
+step run_length
+return
+
+#a Simple TX FIFO tests
+#f simple_fifo_tests
+simple_fifo_tests:
+
+setenv total_packets "10"
+
+#b simple_fifo_0
+setenv fifo_exec "tx_simple_fifo_0.io_fifo.ex"
+setenv sinks "( ) ( ( i 16 0x1234 0 0 ) )"
+set run_length 1500
+set_string vcd_filename "simple_fifo_0"
+gosub tx_simple_fifo
+
+#b simple_fifo_1
+setenv fifo_exec "tx_simple_fifo_1.io_fifo.ex"
+setenv sinks "( 0 1 0 1 0 20 -1 ) ( ( i 16 0x1234 0 0 ) )"
+set_string vcd_filename "simple_fifo_1"
+set run_length 5000
+gosub tx_simple_fifo
+
+#b simple_fifo_2
+setenv fifo_exec "tx_simple_fifo_2.io_fifo.ex"
+setenv sinks "( 20 20 20 20 20 20 20 20 20 20 20 20 20 20 0 ) ( ( i 16 0x1234 0 0 ) )"
+set_string vcd_filename "simple_fifo_2"
+set run_length 2500000
+set vcd_create 0
+gosub tx_simple_fifo
+
+#b Done
+return
+
+#a Backoff tests
+#f tx_backoff_tests
+tx_backoff_tests:
+
+#b Header for all tests
+setenv fifo_exec "tx_backoff.io_fifo.ex"
+set_string vcd_filename "tx_backoff"
+set vcd_create 0
+
+#b Run 1000 with no collisions
+setenv sinks "( 0 -1 ) ( ( i 16 0x1234 0 0 ) )"
+setenv total_packets "1000"
+set run_length 150000
+gosub tx_simple_fifo
+
+#b Run 1000 with one collision
+setenv sinks "( 20 0 -1 ) ( ( i 16 0x1234 0 0 ) )"
+setenv total_packets "1000"
+set run_length 800000
+gosub tx_simple_fifo
+
+#b Run 100 with two collisions
+setenv sinks "( 20 20 0 -1 ) ( ( i 16 0x1234 0 0 ) )"
+setenv total_packets "100"
+set run_length 210000
+gosub tx_simple_fifo
+
+#b Run 100 with three collisions
+setenv sinks "( 20 20 20 0 -1 ) ( ( i 16 0x1234 0 0 ) )"
+setenv total_packets "100"
+set run_length 700000
+gosub tx_simple_fifo
+
+#b Run 100 with four collisions
+setenv sinks "( 20 20 20 20 0 -1 ) ( ( i 16 0x1234 0 0 ) )"
+setenv total_packets "100"
+set run_length 3000000
+gosub tx_simple_fifo
+
+#b Run 100 with five collisions
+setenv sinks "( 20 20 20 20 20 0 -1 ) ( ( i 16 0x1234 0 0 ) )"
+setenv total_packets "100"
+set run_length 10000000
+gosub tx_simple_fifo
+
+#b Done
+return
+
+#a TX Subroutines
+#f tx_simple_fifo
+tx_simple_fifo:
+read_hw_file tx_simple_fifo.hwex
+
+beq vcd_create 0 tx_simple_fifo_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "mii" "etx" "th" "iof"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+tx_simple_fifo_no_vcd:
+reset
+step run_length
+return
+
+
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***

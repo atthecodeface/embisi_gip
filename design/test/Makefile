@@ -8,7 +8,10 @@ all: simulation
 .PHONY: simulation
 
 simulation:
-	(cd ../build; make sim)
+	cd ../build && make sim
+
+clean:
+	cd ../build &&  make simclean
 
 
 #a Editor preferences and notes

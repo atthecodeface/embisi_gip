@@ -1,0 +1,15 @@
+# MIF file for postbus ROM source for simple testing
+# grouped by transaction, with control word
+# Control word is top 20 bits delay, bottom 8 bits size/address, bit 8 indicates jump not transaction
+# End with size of 0
+
+02
+!0b00000__00000000000000000_11_00000000 ; IO gen config (address top 5 bits)
+fff10001 ; baud rate generator 0, subtract value of -15, add value of +1
+
+02
+!0b00001__00000000000000000_11_00000000 ; IO gen config (address top 5 bits)
+fff10001 ; baud rate generator 1, subtract value of -15, add value of +1
+
+#Jump back after delay 8
+00008100

@@ -1,0 +1,81 @@
+wait 3
+
+#BRGs done in PST_ROM
+# Configure BRG0 (top 5 bits = 0, bits 8/9=3 for general config)
+#printf "(%d0%) Configure BRG 0" global_cycle()
+#source_send 2 0x00000300 0x12345678
+#wait_for_complete
+
+# Configure BRG1 (top 5 bits = 1, bits 8/9=3 for general config)
+#printf "(%d0%) Configure BRG 1" global_cycle()
+#source_send 2 0x08000300 0x12345678
+#wait_for_complete
+
+# Configure Tx cmd fifo 0 (top 5 bits = 000_1_0, bits 8/9=1 for FIFO config) to be WM 0(10) SZM1 0xff(10) Base 0x400(11)
+printf "(%d0%) Configure TX cmd FIFO" global_cycle()
+source_send 2 0x10000100 0x0007fc00
+wait_for_complete
+
+# Configure Tx cmd fifo 1 (top 5 bits = 001_1_0, bits 8/9=1 for FIFO config) to be WM 0(10) SZM1 0xff(10) Base 0x500(11)
+printf "(%d0%) Configure TX cmd FIFO" global_cycle()
+source_send 2 0x30000100 0x0007fd00
+wait_for_complete
+
+# Configure Tx data fifo 0 (top 5 bits = 000_0_0, bits 8/9=1 for FIFO config) to be WM 0(10) SZM1 0xff(10) Base 0x100(11)
+printf "(%d0%) Configure TX data FIFO" global_cycle()
+source_send 2 0x00000100 0x0007f900
+wait_for_complete
+
+# Configure Rx status fifo 0 (top 5 bits = 000_1_1, bits 8/9=1 for FIFO config) to be WM 0(10) SZM1 0xff(10) Base 0x400(11)
+printf "(%d0%) Configure RX status FIFO" global_cycle()
+source_send 2 0x18000100 0x0007fc00
+wait_for_complete
+
+# Configure Rx status fifo 1 (top 5 bits = 001_1_1, bits 8/9=1 for FIFO config) to be WM 0(10) SZM1 0xff(10) Base 0x500(11)
+printf "(%d0%) Configure RX status FIFO" global_cycle()
+source_send 2 0x38000100 0x0007fd00
+wait_for_complete
+
+# Configure Rx status fifo 2 (top 5 bits = 010_1_1, bits 8/9=1 for FIFO config) to be WM 0(10) SZM1 0xff(10) Base 0x600(11)
+printf "(%d0%) Configure RX status FIFO" global_cycle()
+source_send 2 0x58000100 0x0007fe00
+wait_for_complete
+
+# Configure Rx data fifo 0 (top 5 bits = 000_0_1, bits 8/9=1 for FIFO config) to be WM 4(10) SZM1 0xff(10) Base 0x100(11)
+printf "(%d0%) Configure RX data FIFO" global_cycle()
+source_send 2 0x08000100 0x0087f900
+wait_for_complete
+
+
+
+#b Send an ethernet packet
+# Write data to Tx data fifo (top 5 bits = 000_0_0, bits 8/9=2 for data)
+printf "(%d0%) Write data to TX data FIFO" global_cycle()
+source_send 5 0x00000200 0x00001234 0x01020304 0x05060708 0x090a0b0c 0x0d0e0f10
+wait_for_complete
+
+# Write command to Tx cmd fifo (top 5 bits = 000_1_0, bits 8/9=2 for data)
+printf "(%d0%) Write packet start to TX cmd FIFO" global_cycle()
+source_send 3 0x10000200 0xffffffff 0x300f0010
+wait_for_complete
+
+
+#b Send 'Abcde' to UART0
+# Write command to Tx cmd fifo 2 (top 5 bits = 001_1_0, bits 8/9=2 for data)
+printf "(%d0%) Write UART 'A' to TX cmd FIFO 1" global_cycle()
+source_send 3 0x30000200 0x00000050 0x16004196
+wait_for_complete
+printf "(%d0%) Write UART 'b' to TX cmd FIFO 1" global_cycle()
+source_send 3 0x30000200 0x00000100 0x16006296
+wait_for_complete
+printf "(%d0%) Write UART 'c' to TX cmd FIFO 1" global_cycle()
+source_send 3 0x30000200 0xffffffff 0x16006396
+wait_for_complete
+printf "(%d0%) Write UART 'd' to TX cmd FIFO 1" global_cycle()
+source_send 3 0x30000200 0x00000300 0x16006496
+wait_for_complete
+
+
+
+
+end

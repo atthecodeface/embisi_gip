@@ -1,0 +1,1 @@
+./arm -b -f ../../regressions/arm/bin/pass.bin

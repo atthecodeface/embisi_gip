@@ -1,0 +1,316 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "gip.h"
+include "io_uart.h"
+include "postbus_rom_source.h"
+include "memories.h"
+
+/*a Types
+ */
+
+/*a External modules required
+ */
+/*m gip_prefetch
+ */
+extern module gip_prefetch( clock gip_clock,
+                     input bit gip_reset,
+
+                     input bit fetch_16,
+
+                     input t_gip_fetch_op fetch_op,
+                     output bit fetch_data_valid,
+                     output t_gip_word fetch_data,
+                     output bit[32]fetch_pc,
+                     input t_gip_prefetch_op prefetch_op,
+                     input bit[32] prefetch_address,
+
+                     input bit sram_granted,
+                     output bit sram_read,
+                     output bit[32] sram_read_address,
+                     input bit[32] sram_read_data
+    )
+{
+    timing comb input fetch_op, fetch_16, sram_read_data;
+    timing comb output fetch_data_valid, fetch_data, fetch_pc;
+    timing to rising clock gip_clock fetch_op;
+    timing from rising clock gip_clock fetch_data, fetch_data_valid;
+    timing to rising clock gip_clock prefetch_op, prefetch_address;
+
+    timing to rising clock gip_clock sram_granted, sram_read_data;
+    timing from rising clock gip_clock sram_read, sram_read_address;
+
+}
+
+/*m gip_data_ram
+ */
+extern module gip_data_ram( clock gip_clock,
+                     input bit gip_reset,
+
+                     input t_gip_mem_op alu_mem_op,
+                     input t_gip_word alu_mem_address,
+                     input t_gip_word alu_mem_write_data,
+                     input bit[4] alu_mem_burst,
+
+                     output bit mem_alu_busy,
+                     output bit mem_read_data_valid,
+                     output bit[32] mem_read_data,
+
+                     output bit sram_not_in_use,
+                     output bit sram_read_not_write,
+                     output bit[4] sram_write_byte_enables,
+                     output bit[32] sram_address,
+                     output bit[32] sram_write_data,
+                     input bit[32] sram_read_data )
+{
+    timing to rising clock gip_clock gip_reset, alu_mem_op, alu_mem_address, alu_mem_write_data, alu_mem_burst;
+    timing comb input sram_read_data;
+    timing from rising clock gip_clock mem_alu_busy, mem_read_data_valid, mem_read_data;
+    timing from rising clock gip_clock sram_not_in_use, sram_read_not_write, sram_write_byte_enables, sram_write_data, sram_address;
+    timing comb output mem_read_data;
+}
+
+/*m gip_periph_apb
+ */
+extern module gip_periph_apb( clock gip_clock,
+                              input bit gip_reset,
+
+                              input bit read,
+                              input bit flush,
+                              input bit[5] read_address,
+                              output bit read_data_valid,
+                              output bit[32] read_data,
+
+                              input bit write,
+                              input bit[5] write_address,
+                              input bit[32] write_data,
+
+                              output bit periph_busy, // So that blocking can occur on a 'block all' instruction, until APB is done - only effected by writes (i.e. post-RF read stuff)
+
+                              output bit[5] apb_paddr,
+                              output bit apb_penable,
+                              output bit apb_pselect,
+                              output bit[32] apb_pwdata,
+                              output bit apb_prnw,
+                              input bit[32] apb_prdata,
+                              input bit apb_pwait
+    )
+{
+    timing to rising clock gip_clock gip_reset;
+    timing to rising clock gip_clock flush, read, read_address;
+    timing from rising clock gip_clock read_data, read_data_valid;
+
+    timing to rising clock gip_clock write, write_address, write_data;
+
+    timing from rising clock gip_clock periph_busy;
+
+    timing from rising clock gip_clock apb_pselect, apb_penable, apb_paddr, apb_pwdata, apb_prnw;
+    timing to rising clock gip_clock apb_pwait, apb_prdata;
+}
+
+/*a Modules
+ */
+module gip_core_plus( clock int_clock,
+                      input bit int_reset,
+
+                      output bit gip_mem_priority,
+                      output bit gip_mem_read,
+                      output bit gip_mem_write,
+                      output bit[4] gip_mem_write_byte_enables,
+                      output bit[32] gip_mem_address,
+                      output bit[32] gip_mem_write_data,
+                      input bit[32] gip_mem_read_data,
+                      input bit gip_mem_wait,
+
+                      output bit[5] apb_paddr,
+                      output bit apb_penable,
+                      output bit apb_pselect,
+                      output bit[32] apb_pwdata,
+                      output bit apb_prnw,
+                      input bit[32] apb_prdata,
+                      input bit apb_pwait,
+
+                      output t_postbus_type postbus_tx_type,
+                      output t_postbus_data postbus_tx_data,
+                      input t_postbus_ack postbus_tx_ack,
+
+                      input t_postbus_type postbus_rx_type,
+                      input t_postbus_data postbus_rx_data,
+                      output t_postbus_ack postbus_rx_ack
+
+    )
+{
+    default clock int_clock;
+    default reset int_reset;
+
+    //net bit gip_mem_priority;
+    //net bit gip_mem_read;
+    //net bit gip_mem_write;
+    net bit[4] gip_mem_write_byte_enables;
+    //net bit[24] gip_mem_address;
+    net bit[32] gip_mem_write_data;
+
+    net t_postbus_type postbus_tx_type;
+    net t_postbus_data postbus_tx_data;
+    net t_postbus_ack postbus_rx_ack;
+
+    net bit[5] apb_paddr;
+    net bit apb_penable;
+    net bit apb_pselect;
+    net bit[32] apb_pwdata;
+    net bit apb_prnw;
+
+    net bit fetch_16;
+    net t_gip_fetch_op fetch_op;
+    net t_gip_word fetch_data;
+    net bit fetch_data_valid;
+    net bit[32] fetch_pc;
+    net t_gip_prefetch_op prefetch_op;
+    net bit[32] prefetch_address;
+
+    net bit periph_read;
+    net bit[5] periph_read_address;
+    net bit periph_read_data_valid;
+    net bit[32] periph_read_data;
+    net bit periph_busy;
+    net bit periph_write;
+    net bit[5] periph_write_address;
+    net bit[32] periph_write_data;
+    net bit gipc_pipeline_flush;
+
+    net t_gip_mem_op alu_mem_op;
+    net t_gip_word alu_mem_address;
+    net t_gip_word alu_mem_write_data;
+    net bit[4] alu_mem_burst;
+
+    net bit mem_alu_busy;
+    net bit mem_read_data_valid;
+    net bit[32] mem_read_data;
+
+    net bit mem_not_in_use_by_data;
+    net bit isram_read;
+    net bit[32] isram_read_address;
+    net bit dsram_read_not_write;
+    net bit[32] dsram_address;
+
+    /*b GIP core
+     */
+    gip_core_instance "GIP core instance":
+        {
+            gip_core gip( gip_clock <- int_clock,
+                          gip_reset <= int_reset,
+
+                          fetch_op => fetch_op,
+                          fetch_16 => fetch_16,
+                          fetch_pc <= fetch_pc,
+                          fetch_data <= fetch_data,
+                          fetch_data_valid <= fetch_data_valid,
+                          prefetch_op => prefetch_op,
+                          prefetch_address => prefetch_address,
+
+                          rfr_periph_read => periph_read,
+                          rfr_periph_read_address => periph_read_address,
+                          rfr_periph_read_data <= periph_read_data,
+                          rfr_periph_read_data_valid <= periph_read_data_valid,
+                          rfr_periph_busy <= periph_busy,
+
+                          rfw_periph_write => periph_write,
+                          rfw_periph_write_address => periph_write_address,
+                          rfw_periph_write_data => periph_write_data,
+
+                          alu_mem_op => alu_mem_op,
+                          alu_mem_address => alu_mem_address,
+                          alu_mem_write_data => alu_mem_write_data,
+                          alu_mem_burst => alu_mem_burst,
+                          mem_alu_busy <= mem_alu_busy,
+                          mem_read_data <= mem_read_data,
+                          mem_read_data_valid <= mem_read_data_valid,
+
+                          postbus_rx_type <= postbus_rx_type,
+                          postbus_rx_data <= postbus_rx_data,
+                          postbus_rx_ack => postbus_rx_ack,
+
+                          postbus_tx_type => postbus_tx_type,
+                          postbus_tx_data => postbus_tx_data,
+                          postbus_tx_ack <= postbus_tx_ack,
+                        
+                          gip_pipeline_flush => gipc_pipeline_flush
+                );
+        }
+
+    /*b Prefetch and data memory interface
+     */
+    gip_mem_ctl_instance "GIP memory control instances":
+        {
+            gip_prefetch prefetch( gip_clock <- int_clock,
+                                   gip_reset <= int_reset,
+
+                                   fetch_16 <= fetch_16,
+                                   fetch_op <= fetch_op,
+                                   fetch_pc => fetch_pc,
+                                   fetch_data => fetch_data,
+                                   fetch_data_valid => fetch_data_valid,
+                                   prefetch_op <= prefetch_op,
+                                   prefetch_address <= prefetch_address,
+
+                                   sram_granted <= mem_not_in_use_by_data && !gip_mem_wait,
+                                   sram_read => isram_read,
+                                   sram_read_address => isram_read_address,
+                                   sram_read_data <= gip_mem_read_data );
+
+            gip_data_ram data_ram( gip_clock <- int_clock,
+                                   gip_reset <= int_reset, 
+
+                                   alu_mem_op <= alu_mem_op,
+                                   alu_mem_address <= alu_mem_address,
+                                   alu_mem_write_data <= alu_mem_write_data,
+                                   alu_mem_burst <= alu_mem_burst,
+                                   mem_alu_busy => mem_alu_busy,
+                                   mem_read_data => mem_read_data,
+                                   mem_read_data_valid => mem_read_data_valid,
+
+                                   sram_not_in_use => mem_not_in_use_by_data,
+                                   sram_read_not_write => dsram_read_not_write,
+                                   sram_write_byte_enables => gip_mem_write_byte_enables,
+                                   sram_address => dsram_address,
+                                   sram_write_data => gip_mem_write_data,
+                                   sram_read_data <= gip_mem_read_data );
+
+            gip_mem_priority = !mem_not_in_use_by_data; // the data does not have a wait state yet, so it has priority over refresh
+            gip_mem_read = mem_not_in_use_by_data ? isram_read : dsram_read_not_write;
+            gip_mem_write = mem_not_in_use_by_data ? 0 : !dsram_read_not_write;
+            gip_mem_address = mem_not_in_use_by_data ? isram_read_address : dsram_address;
+        }
+
+    /*b GIP peripheral/APB device access
+     */
+    gip_peripheral_apb_instance "GIP peripheral APB bus master instance":
+        {
+            gip_periph_apb gip_apb( gip_clock <- int_clock,
+                                    gip_reset <= int_reset,
+
+                                    read <= periph_read,
+                                    flush <= gipc_pipeline_flush,
+                                    read_address <= periph_read_address,
+                                    read_data => periph_read_data,
+                                    read_data_valid => periph_read_data_valid,
+
+                                    write <= periph_write,
+                                    write_address <= periph_write_address,
+                                    write_data <= periph_write_data,
+                                    periph_busy => periph_busy,
+
+                                    apb_pselect => apb_pselect,
+                                    apb_penable => apb_penable,
+                                    apb_paddr => apb_paddr,
+                                    apb_prnw => apb_prnw,
+                                    apb_pwdata => apb_pwdata,
+                                    apb_prdata <= apb_prdata,
+                                    apb_pwait <= apb_pwait );
+        }
+
+}
+

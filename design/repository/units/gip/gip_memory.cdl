@@ -40,7 +40,6 @@ module gip_memory( clock gip_clock,
 
     /*b Combinatorials
      */
-    comb bit new_mem_rd_for_pipeline;
     comb bit mem2_will_take_mem1 "This is asserted if mem2 is none, or if mem2 mem_read_data_valid is asserted";
 
     /*b Pipeline logic

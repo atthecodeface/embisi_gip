@@ -18,6 +18,10 @@ cdl test_benches/postbus postbus_test_rom_contents_0 inc:headers/cdl rmn:postbus
 cdl test_benches/postbus postbus_test_rom inc:headers/cdl inc:test_benches/postbus
 
 cdl test_benches/gip gip_simple inc:headers/cdl
+cdl test_benches/gip gip_simple_2 inc:headers/cdl
+cdl test_benches/gip gip_ddr inc:headers/cdl
+cdl test_benches/gip gip_core_plus inc:headers/cdl
+cdl test_benches/gip apb_devices inc:headers/cdl
 #cdl test_benches/gip pass_rom rmn:cdl_rom=gip_simple_boot_rom
 #cdl test_benches/gip uart_rom rmn:cdl_rom=gip_simple_boot_rom
 cdl test_benches/gip monitor_rom rmn:cdl_rom=gip_simple_boot_rom

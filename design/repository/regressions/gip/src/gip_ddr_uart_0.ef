@@ -1,0 +1,64 @@
+#a Copyright
+#  
+#  This file 'gip_simple_uart_0.ef' copyright Gavin J Stark 2003, 2004
+#  
+
+printf "Gip_simple test 0 UART exec file"
+
+printf "Wait until GIP has configured its uart"
+
+wait 300
+
+spawn rxt rx_thread 4
+spawn txt tx_thread 4
+
+end
+
+rx_thread:
+
+string line
+
+while 1
+wait_until_rx_has_line
+
+
+set_string line rx_line()
+printf "%d0%:%s1%" global_cycle() line
+
+endwhile
+
+tx_thread:
+
+#uart_tx_line "r 0"
+
+uart_tx_line "mw 80000000 12345"
+uart_tx_line "mr 80000000"
+#uart_tx_line "fe 0"
+
+#uart_tx_line "ebc c11"
+#uart_tx_line "eba 80000000"
+#uart_tx_line "ebd"
+#uart_tx_line "eba"
+#uart_tx_line "ebd beef"
+#uart_tx_line "ebd dead"
+#uart_tx_line "eba"
+
+
+end
+
+
+pass 0 "Test succeeded"
+
+end
+
+test_fail:
+printf "Test failed %d0% %d1%" global_cycle()
+fail global_cycle() "**************************************************************************** Test failed"
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

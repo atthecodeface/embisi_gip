@@ -537,10 +537,16 @@ t_sl_error_level c_ddr::clock_posedge_int_clock( void )
         if ( memory &&
              (address<ddr_size) )
         {
+            unsigned int mask;
             for (j=0; j<ddr_int_width; j++)
             {
-                memory[ address*ddr_int_width+j ] = inputs.dq_in[j];
-                fprintf(stderr,"Writing %08x/%08x\n",address, memory[ address*ddr_int_width+j] );
+                mask = 0;
+                if (inputs.dqm[0]&1) { mask|= 0xff; }
+                if (inputs.dqm[0]&2) { mask|= 0xff00; }
+                if (inputs.dqm[0]&4) { mask|= 0xff0000; }
+                if (inputs.dqm[0]&8) { mask|= 0xff000000; }
+                memory[ address*ddr_int_width+j ] = (memory[ address*ddr_int_width+j ] & mask) | (~mask & inputs.dq_in[j]);
+                fprintf(stderr,"Writing %08x/%08x:%08x\n",address, memory[ address*ddr_int_width+j],mask );
             }
         }
     }
@@ -776,10 +782,16 @@ t_sl_error_level c_ddr::clock_negedge_int_clock( void )
         if ( memory &&
              (address<ddr_size) )
         {
+            unsigned int mask;
             for (j=0; j<ddr_int_width; j++)
             {
-                memory[ address*ddr_int_width+j ] = inputs.dq_in[j];
-                fprintf(stderr,"Writing %08x/%08x\n",address, memory[ address*ddr_int_width+j] );
+                mask = 0;
+                if (inputs.dqm[0]&1) { mask|= 0xff; }
+                if (inputs.dqm[0]&2) { mask|= 0xff00; }
+                if (inputs.dqm[0]&4) { mask|= 0xff0000; }
+                if (inputs.dqm[0]&8) { mask|= 0xff000000; }
+                memory[ address*ddr_int_width+j ] = (memory[ address*ddr_int_width+j ] & mask) | (~mask & inputs.dq_in[j]);
+                fprintf(stderr,"Writing %08x/%08x:%08x\n",address, memory[ address*ddr_int_width+j],mask );
             }
         }
     }

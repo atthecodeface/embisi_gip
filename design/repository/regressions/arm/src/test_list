@@ -1,6 +1,7 @@
 common wrapper asm:wrapper
 common wrapper_download asm:wrapper_download
 common support asm:support
+common support_download asm:support_download
 test simple asm:simple common:wrapper common:support
 test pass asm:pass common:wrapper common:support
 test factorial cc:factorial common:wrapper common:support

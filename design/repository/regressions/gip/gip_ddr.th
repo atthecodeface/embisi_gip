@@ -1,0 +1,90 @@
+#a Copyright
+#  
+#  This file 'rom.th' copyright Gavin J Stark 2003, 2004
+#  
+
+int divider
+int address
+int data
+int byte_enables
+int expected_data
+set divider 12
+set address 0x1234
+
+printf "GIP test with DDR as main memory"
+
+spawn oe_checker_thread oe_checker 10
+spawn enables_thread enables 10
+
+reset "test_reset" 1
+
+wait 1
+
+reset "test_reset" 0
+
+end
+
+pass 0 "Test succeeded"
+
+end
+
+test_fail:
+printf "Test failed %d0% %d1%" global_cycle() input("result")
+fail global_cycle() "**************************************************************************** Test failed"
+end
+
+#a Output enable checker
+oe_checker:
+
+int ctl
+int ddr
+
+while 1
+wait 1
+set ctl input("dq_oe_ctl")
+set ddr input("dq_oe_ddr")
+beq ctl 1 check_ddr_oe
+no_clash:
+endwhile
+return
+
+check_ddr_oe:
+bne ddr 1 no_clash
+fail global_cycle() "Both driving bus"
+goto no_clash
+
+#a Enable thread
+enables:
+
+int divider_div_2
+int divider_div_2_minus_1
+
+div divider_div_2 divider 2
+sub divider_div_2_minus_1 divider_div_2 1
+
+#get us aligned
+while 1
+
+#now logic_clock is just going high
+drive logic_ck 1
+drive cke_last_of_logic 0
+
+wait divider_div_2
+drive logic_ck 0
+
+wait divider_div_2_minus_1
+
+drive cke_last_of_logic 1
+
+wait 1
+
+endwhile
+
+return
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

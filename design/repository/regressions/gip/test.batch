@@ -14,7 +14,8 @@ set vcd_create 1
 #a Main
 #gosub gip_prefetch_tests
 #gosub gip_tests
-gosub gip_simple_tests
+#gosub gip_simple_tests
+gosub gip_ddr_tests
 end
 
 #a Gip prefetch tests
@@ -178,6 +179,58 @@ vcd_file_close "allsignals"
 return
 
 gip_test_no_vcd:
+reset
+step run_length
+return
+
+
+#b Done
+return
+
+#a Gip ddr tests
+#f gip_ddr_tests
+gip_ddr_tests:
+
+setenv "verbose_level" 1
+
+set vcd_create 1
+gosub gip_ddr_0
+
+return
+
+#b gip_ddr_0
+gip_ddr_0:
+set run_length 12000000
+setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
+set_string vcd_filename "gip_ddr_0"
+gosub gip_ddr_test
+return
+
+#a Gip ddr subroutines
+#f gip_ddr_test
+gip_ddr_test:
+
+read_hw_file gip_ddr.hwex
+
+beq vcd_create 0 gip_ddr_test_no_vcd
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "gip_simple"
+vcd_file_add "allsignals" "ddr"
+#vcd_file_add "allsignals" "gip_ddr.gip"
+#vcd_file_add "allsignals" "gip_ddr.prefetch" "gip_ddr.data_ram" "gip_ddr.boot_rom" "gip_ddr.shared_sram"
+#vcd_file_add "allsignals" "gip_ddr.gip.decode" "gip_ddr.gip.decode.native" "gip_ddr.gip.decode.arm" "gip_ddr.gip.rf" "gip_ddr.gip.alu" "gip_ddr.gip.alu.shift_op"
+#vcd_file_add "allsignals" "gip_ddr.gip_apb"
+#vcd_file_add "allsignals" "gip_ddr.uart_apb" "gip_ddr.uart_apb.status_fifo"  "gip_ddr.uart_apb.cmd_fifo" "gip_ddr.uart_io"
+#vcd_file_add "allsignals" "gip_ddr.ext_bus_apb"
+vcd_file_add "allsignals" "rxd" "txd"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+gip_ddr_test_no_vcd:
 reset
 step run_length
 return

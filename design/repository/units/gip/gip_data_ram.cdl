@@ -156,5 +156,6 @@ module gip_data_ram( clock gip_clock,
                 }
             last_sram_data_op <= sram_data_op;
             mem_read_data_valid <= sram_read_not_write;
+            mem_alu_busy <= 0;
         }
 }

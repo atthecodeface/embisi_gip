@@ -5,7 +5,7 @@ constant integer ddr_refresh_counter_initial_value=400; // This will do for now 
 
 /*a Types
  */
-/*t t_ddr_dram_state
+/*t t_ddr_dram_init_state
  */
 typedef fsm
 {
@@ -19,7 +19,14 @@ typedef fsm
     ddr_dram_init_autorefresh_2_all "DDR initialization - autorefresh all";
     ddr_dram_init_mode_2 "DDR initialization - program mode register to clear DLL bit";
     ddr_dram_init_final_wait "DDR initialization - wait for remainder of 200 cycles";
+    ddr_dram_init_idle "DDR initialization - done";
+} t_ddr_dram_init_state;
 
+/*t t_ddr_dram_state
+ */
+typedef fsm
+{
+    ddr_dram_init "DDR doing initialization";
     ddr_dram_idle "DDR idle, waiting for refresh command or SRAM read/write on enabled clock edge";
     ddr_dram_refresh_command "DDR refresh, issuing refresh command; after this we can just go idle";
     ddr_dram_read_start "DDR read, address buffered, NOP on bus, passing address to output registers";
@@ -38,6 +45,8 @@ typedef fsm
     ddr_dram_write_strobe_hl "DDR write, strobe data (inc postamble)";
 } t_ddr_dram_state;
 
+/*t t_ddr_transaction
+ */
 typedef enum [4]
 {
     ddr_transaction_cke_low,
@@ -107,8 +116,12 @@ module ddr_dram_as_sram( clock drm_clock,
     /*b DDR state and transaction, and cke
      */
     clocked bit init_done = 0;
-    clocked bit[18] ddr_dram_counter = 1; // This should be -1 for an emulator build
-    clocked t_ddr_dram_state ddr_dram_state = ddr_dram_init_start;
+    clocked bit[18] ddr_dram_init_counter = -1; // This should be -1 for an emulator build
+    clocked bit ddr_dram_init_counter_is_zero = 0;
+    clocked t_ddr_dram_init_state ddr_dram_init_state = ddr_dram_init_start;
+    clocked t_ddr_transaction ddr_init_transaction = ddr_transaction_cke_low;
+
+    clocked t_ddr_dram_state ddr_dram_state = ddr_dram_init;
     comb t_ddr_transaction ddr_transaction;
 
     /*b Refresh counter variables
@@ -161,7 +174,7 @@ module ddr_dram_as_sram( clock drm_clock,
             next_a = buffered_address[13;8];
             next_ba = buffered_address[2;21];
             next_dq = buffered_data;
-            next_dqm = buffered_enables;
+            next_dqm = 4hf;
             next_dqoe = 0;
             next_dqs_high = 0;
             next_dqs_low = 0;
@@ -177,7 +190,7 @@ module ddr_dram_as_sram( clock drm_clock,
                 case ddr_transaction_precharge_all:
                 {
                     next_cke = 1;
-                    next_s_n = 2;
+                    next_s_n = 0;
                     next_a[10] = 1;
                     next_ras_n = 0;
                     next_cas_n = 1;
@@ -186,7 +199,7 @@ module ddr_dram_as_sram( clock drm_clock,
                 case ddr_transaction_autorefresh:
                 {
                     next_cke = 1;
-                    next_s_n = 2;
+                    next_s_n = 0;
                     next_ras_n = 0;
                     next_cas_n = 0;
                     next_we_n = 1;
@@ -194,40 +207,40 @@ module ddr_dram_as_sram( clock drm_clock,
                 case ddr_transaction_load_ext_mode_register:
                 {
                     next_cke = 1;
-                    next_s_n = 2;
+                    next_s_n = 0;
                     next_ras_n = 0;
                     next_cas_n = 0;
                     next_we_n = 0;
                     next_ba = 1;
                     next_a[0] = 0; // enable dll
                     next_a[1] = 0; // drive strength normal
-                    next_a[10;2] = 0;
+                    next_a[11;2] = 0;
                 }
                 case ddr_transaction_load_mode_register:
                 {
                     next_cke = 1;
-                    next_s_n = 2;
+                    next_s_n = 0;
                     next_ras_n = 0;
                     next_cas_n = 0;
                     next_we_n = 0;
                     next_ba = 0;
                     next_a[3;0] = 1; // BL 2
-                    next_a[3] = 0; // interleaved
+                    next_a[3] = 0; // sequential
                     next_a[3;4] = 6; // CL 2.5
-                    next_a[5;7] = 0; // no DLL reset
+                    next_a[6;7] = 0; // no DLL reset
                 }
                 case ddr_transaction_load_mode_register_dll_reset:
                 {
                     next_cke = 1;
-                    next_s_n = 2;
+                    next_s_n = 0;
                     next_ras_n = 0;
                     next_cas_n = 0;
                     next_we_n = 0;
                     next_ba = 0;
                     next_a[3;0] = 1; // BL 2
-                    next_a[3] = 0; // interleaved
+                    next_a[3] = 0; // sequential
                     next_a[3;4] = 6; // CL 2.5
-                    next_a[5;7] = 2; // DLL reset
+                    next_a[6;7] = 2; // DLL reset
                 }
                 case ddr_transaction_nop:
                 {
@@ -280,7 +293,7 @@ module ddr_dram_as_sram( clock drm_clock,
                     next_ba = buffered_address[2;21];
                     next_dqoe = 1;
                     next_dq = buffered_data;
-                    next_dqm = buffered_enables;
+                    next_dqm = ~buffered_enables;
                     next_dqs_high = 0;
                     next_dqs_low = 0;
                 }
@@ -290,7 +303,7 @@ module ddr_dram_as_sram( clock drm_clock,
                     next_s_n = 3;
                     next_dqoe = 1;
                     next_dq = buffered_data;
-                    next_dqm = buffered_enables;
+                    next_dqm = ~buffered_enables;
                     next_dqs_high = 0;
                     next_dqs_low = 0;
                 }
@@ -300,8 +313,8 @@ module ddr_dram_as_sram( clock drm_clock,
                     next_s_n = 3;
                     next_dqoe = 1;
                     next_dq = buffered_data;
-                    next_dqm = buffered_enables;
-                    next_dqs_high = 1;
+                    next_dqm = ~buffered_enables;
+                    next_dqs_high = 4hf;
                     next_dqs_low = 0;
                 }
                 }
@@ -310,114 +323,151 @@ module ddr_dram_as_sram( clock drm_clock,
              */
         }
 
+    /*b Handle DDR init state machine
+     */
+    ddr_dram_init_fsm "DDR DRAM init state machine":
+        {
+            init_done <= 0;
+            ddr_init_transaction <= ddr_transaction_nop;
+            if (ddr_dram_init_counter!=0)
+            {
+                ddr_dram_init_counter <= ddr_dram_init_counter-1;
+                ddr_dram_init_counter_is_zero <= (ddr_dram_init_counter==1);
+            }
+            else
+            {
+                ddr_dram_init_counter_is_zero <= 1;
+            }
+            full_switch (ddr_dram_init_state)
+                {
+                case ddr_dram_init_start:
+                {
+                    ddr_init_transaction <= ddr_transaction_cke_low;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_cke_up;
+                        ddr_dram_init_counter <= 16; // 16 cycles is enough for any transaction
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_nop;
+                    }
+                }
+                case ddr_dram_init_cke_up:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_precharge_all;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_precharge_all;
+                    }
+                }
+                case ddr_dram_init_precharge_all:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_ext_mode;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_load_ext_mode_register;
+                    }
+                }
+                case ddr_dram_init_ext_mode:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_mode;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_load_mode_register_dll_reset;
+                    }
+                }
+                case ddr_dram_init_mode:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_precharge_2_all;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_precharge_all;
+                    }
+                }
+                case ddr_dram_init_precharge_2_all:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_autorefresh_all;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_autorefresh;
+                    }
+                }
+                case ddr_dram_init_autorefresh_all:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_autorefresh_2_all;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_autorefresh;
+                    }
+                }
+                case ddr_dram_init_autorefresh_2_all:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_mode_2;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_load_mode_register;
+                    }
+                }
+                case ddr_dram_init_mode_2:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_final_wait;
+                        ddr_dram_init_counter <= 200; // we have done 5 transactions since mode, and waited 16 cycles each (80 cycles total). We must wait at least 200 cycles. So, 200 here is fine
+                        ddr_dram_init_counter_is_zero <= 0;
+                    }
+                }
+                case ddr_dram_init_final_wait:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if ((ddr_dram_init_counter_is_zero) && !cke_last_of_logic) // don't assert init_done just around the logic clock edge
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_idle;
+                    }
+                }
+                case ddr_dram_init_idle:
+                {
+                    init_done <= 1;
+                }
+                }
+        }
+
     /*b Handle DDR state machine
      */
     ddr_dram_fsm "DDR DRAM state machine":
         {
             ddr_refresh_issued = 0;
             ddr_transaction = ddr_transaction_nop;
-            if (ddr_dram_counter!=0)
-            {
-                ddr_dram_counter <= ddr_dram_counter-1;
-            }
             full_switch (ddr_dram_state)
                 {
-                case ddr_dram_init_start:
+                case ddr_dram_init:
                 {
-                    ddr_transaction = ddr_transaction_cke_low;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_cke_up;
-                        ddr_dram_counter <= 16; // 16 cycles is enough for any transaction
-                        ddr_transaction = ddr_transaction_nop;
-                    }
-                }
-                case ddr_dram_init_cke_up:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_precharge_all;
-                        ddr_dram_counter <= 16;
-                        ddr_transaction = ddr_transaction_precharge_all;
-                    }
-                }
-                case ddr_dram_init_precharge_all:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_ext_mode;
-                        ddr_dram_counter <= 16;
-                        ddr_transaction = ddr_transaction_load_ext_mode_register;
-                    }
-                }
-                case ddr_dram_init_ext_mode:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_mode;
-                        ddr_dram_counter <= 16;
-                        ddr_transaction = ddr_transaction_load_mode_register_dll_reset;
-                    }
-                }
-                case ddr_dram_init_mode:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_precharge_2_all;
-                        ddr_dram_counter <= 16;
-                        ddr_transaction = ddr_transaction_precharge_all;
-                    }
-                }
-                case ddr_dram_init_precharge_2_all:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_autorefresh_all;
-                        ddr_dram_counter <= 16;
-                        ddr_transaction = ddr_transaction_autorefresh;
-                    }
-                }
-                case ddr_dram_init_autorefresh_all:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_autorefresh_2_all;
-                        ddr_dram_counter <= 16;
-                        ddr_transaction = ddr_transaction_autorefresh;
-                    }
-                }
-                case ddr_dram_init_autorefresh_2_all:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_mode_2;
-                        ddr_dram_counter <= 16;
-                        ddr_transaction = ddr_transaction_load_mode_register;
-                    }
-                }
-                case ddr_dram_init_mode_2:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if (ddr_dram_counter==0)
-                    {
-                        ddr_dram_state <= ddr_dram_init_final_wait;
-                        ddr_dram_counter <= 200; // we have done 5 transactions since mode, and waited 16 cycles each (80 cycles total). We must wait at least 200 cycles. So, 200 here is fine
-                    }
-                }
-                case ddr_dram_init_final_wait:
-                {
-                    ddr_transaction = ddr_transaction_nop;
-                    if ((ddr_dram_counter==0) && !cke_last_of_logic) // don't assert init_done just around the logic clock edge
+                    ddr_transaction = ddr_init_transaction;
+                    if (init_done)
                     {
                         ddr_dram_state <= ddr_dram_idle;
-                        init_done <= 1;
+                        ddr_transaction = ddr_transaction_nop;
                     }
                 }
                 case ddr_dram_idle:
@@ -464,23 +514,23 @@ module ddr_dram_as_sram( clock drm_clock,
                     ddr_dram_state <= ddr_dram_read_read;
                     ddr_transaction = ddr_transaction_read;
                 }
-                case ddr_dram_read_read:
+                case ddr_dram_read_read: // during this cycle read is on the bus; it is captured at the end of this cycle
                 {
                     ddr_dram_state <= ddr_dram_read_cas_wait_1;
                 }
-                case ddr_dram_read_cas_wait_1:
+                case ddr_dram_read_cas_wait_1: // at the start of this cycle the 2.5 CAS latency clocks begin
                 {
                     ddr_dram_state <= ddr_dram_read_cas_wait_2;
                 }
-                case ddr_dram_read_cas_wait_2:
+                case ddr_dram_read_cas_wait_2: // at the start of this cycle 1.5 CAS latency clocks remain
                 {
                     ddr_dram_state <= ddr_dram_read_cas_wait_3;
                 }
-                case ddr_dram_read_cas_wait_3:
+                case ddr_dram_read_cas_wait_3: // at the start of this cycle the 0.5 CAS latency clocks remain; the data is therefore valid on the bus at the end of this clock, and is registered in low
                 {
                     ddr_dram_state <= ddr_dram_read_data_on_bus;
                 }
-                case ddr_dram_read_data_on_bus:
+                case ddr_dram_read_data_on_bus: // at the start of this cycle the second data word is being put out, and it should be captured in the 'input_dq_high' register; we use that as it has plenty of delay to our clock
                 {
                     ddr_dram_state <= ddr_dram_idle;
                     sram_read_data <= input_dq_high;
@@ -499,21 +549,20 @@ module ddr_dram_as_sram( clock drm_clock,
                     ddr_dram_state <= ddr_dram_write_write;
                     ddr_transaction = ddr_transaction_write;
                 }
-                case ddr_dram_write_write:
+                case ddr_dram_write_write: // during this state we are issuing cas and we, which will be latched at the end of this cycle. So in the next cycle we need to put out the preamble - low strobes
                 {
                     ddr_dram_state <= ddr_dram_write_strobe_ll;
                     ddr_transaction = ddr_transaction_strobe_ll;
                 }
-                case ddr_dram_write_strobe_ll:
+                case ddr_dram_write_strobe_ll: // in this cycle we are issuing the preamble, and in the next we must fire strobe high at the start of the cycle, and low at the falling edge.
                 {
                     ddr_dram_state <= ddr_dram_write_strobe_hl;
                     ddr_transaction = ddr_transaction_strobe_hl;
                 }
-                case ddr_dram_write_strobe_hl:
+                case ddr_dram_write_strobe_hl: // in this cycle we are strobing; the low is the postamble, so after this we can just go idle (and NOP the bus)
                 {
                     ddr_dram_state <= ddr_dram_idle;
                 }
                 }
         }
 }
-

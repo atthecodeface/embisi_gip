@@ -5,7 +5,7 @@
 
 #a Instantiate modules
 #b Add GIP simple
-module gip_simple "gip_simple"
+module gip_simple_2 "gip_simple"
 
 #b Add UART testbench
 option_string "exec_file" env_string("uart_exec_file")
@@ -33,6 +33,7 @@ drive gip_simple.int_clock system_clock
 wire system_reset
 wire leds[8]
 wire txd rxd switches[8]
+wire low_bus[32]
 
 #b Wire up test harness
 drive system_reset        th.test_reset 
@@ -44,6 +45,8 @@ drive gip_simple.int_reset system_reset
 drive gip_simple.rxd rxd
 drive txd gip_simple.txd
 drive leds gip_simple.leds
+drive gip_simple.ext_bus_read_data low_bus
+assign low_bus 0
 
 #b Wire up UART testbench
 drive uart_testbench.uart_clock system_clock

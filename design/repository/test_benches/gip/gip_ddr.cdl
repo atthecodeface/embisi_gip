@@ -1,0 +1,429 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "gip.h"
+include "io_uart.h"
+include "postbus_rom_source.h"
+include "memories.h"
+
+/*a Types
+ */
+
+/*a External modules required
+ */
+/*m apb_devices
+ */
+extern module apb_devices( clock int_clock,
+                           input bit int_reset,
+
+                           input bit apb_pselect,
+                           input bit apb_penable,
+                           input bit apb_prnw,
+                           input bit[5] apb_paddr,
+                           input bit[32] apb_pwdata,
+                           output bit[32] apb_prdata,
+                           output bit apb_pwait,
+
+                           input bit[8] switches,
+                           output bit[8] leds,
+                           output bit txd,
+                           input bit rxd,
+
+                           output bit[4]ext_bus_ce,
+                           output bit ext_bus_oe,
+                           output bit ext_bus_we,
+                           output bit[24]ext_bus_address,
+                           output bit ext_bus_write_data_enable,
+                           output bit[32]ext_bus_write_data,
+                           input bit[32]ext_bus_read_data )
+{
+    timing to rising clock int_clock int_reset;
+
+    timing to rising clock int_clock apb_pselect, apb_penable, apb_prnw, apb_paddr, apb_pwdata;
+    timing from rising clock int_clock apb_prdata, apb_pwait;
+
+    timing to rising clock int_clock switches, rxd;
+    timing from rising clock int_clock leds, txd;
+
+    timing from rising clock int_clock ext_bus_ce, ext_bus_oe, ext_bus_we, ext_bus_address, ext_bus_write_data_enable, ext_bus_write_data;
+    timing to rising clock int_clock ext_bus_read_data;
+
+}
+
+/*m gip_core_plus
+ */
+extern module gip_core_plus( clock int_clock,
+                             input bit int_reset,
+
+                             output bit gip_mem_priority,
+                             output bit gip_mem_read,
+                             output bit gip_mem_write,
+                             output bit[4] gip_mem_write_byte_enables,
+                             output bit[32] gip_mem_address,
+                             output bit[32] gip_mem_write_data,
+                             input bit[32] gip_mem_read_data,
+                             input bit gip_mem_wait,
+
+                             output bit[5] apb_paddr,
+                             output bit apb_penable,
+                             output bit apb_pselect,
+                             output bit[32] apb_pwdata,
+                             output bit apb_prnw,
+                             input bit[32] apb_prdata,
+                             input bit apb_pwait,
+
+                             output t_postbus_type postbus_tx_type,
+                             output t_postbus_data postbus_tx_data,
+                             input t_postbus_ack postbus_tx_ack,
+
+                             input t_postbus_type postbus_rx_type,
+                             input t_postbus_data postbus_rx_data,
+                             output t_postbus_ack postbus_rx_ack
+    )
+{
+    timing to rising clock int_clock int_reset;
+
+    timing from rising clock int_clock gip_mem_priority, gip_mem_read, gip_mem_write, gip_mem_write_byte_enables, gip_mem_address, gip_mem_write_data;
+    timing to rising clock int_clock gip_mem_read_data, gip_mem_wait;
+
+    timing from rising clock int_clock apb_pselect, apb_penable, apb_prnw, apb_paddr, apb_pwdata;
+    timing to rising clock int_clock apb_prdata, apb_pwait;
+
+    timing from rising clock int_clock postbus_tx_type, postbus_tx_data;
+    timing to rising clock int_clock postbus_tx_ack;
+
+    timing from rising clock int_clock postbus_rx_ack;
+    timing to rising clock int_clock postbus_rx_type, postbus_rx_data;
+}
+
+/*m gip_simple_boot_rom
+ */
+extern module gip_simple_boot_rom( clock rom_clock,
+                                   input bit rom_reset,
+                                   input bit rom_read,
+                                   input bit[11] rom_address,
+                                   output bit[32] rom_read_data )
+{
+    timing to rising clock rom_clock rom_reset, rom_read, rom_address;
+    timing from rising clock rom_clock rom_read_data;
+}
+
+/*m postbus_test_rom_contents
+ */
+extern module postbus_test_rom_contents( clock int_clock, input bit int_reset, input bit read, input bit[8] address, output bit[32] data )
+{
+    timing to rising clock int_clock int_reset, read, address;
+    timing from rising clock int_clock data;
+    timing comb input int_reset;
+}
+
+/*m ddr_dram_as_sram
+ */
+extern module ddr_dram_as_sram( clock drm_clock,
+                                clock slow_clock,
+
+                                input bit drm_ctl_reset,
+                                output bit init_done,
+
+                                input bit sram_priority,
+                                input bit sram_read,
+                                input bit sram_write,
+                                input bit[4] sram_write_byte_enables,
+                                input bit[24] sram_address,
+                                input bit[32] sram_write_data,
+                                output bit[32] sram_read_data,
+                                output bit sram_low_priority_wait,
+
+                                input bit cke_last_of_logic,
+                                output bit next_cke,
+                                output bit[2] next_s_n,
+                                output bit next_ras_n,
+                                output bit next_cas_n,
+                                output bit next_we_n,
+                                output bit[13] next_a,
+                                output bit[2] next_ba,
+                                output bit[32] next_dq,
+                                output bit[4] next_dqm,
+                                output bit next_dqoe,
+                                output bit[4] next_dqs_high,
+                                output bit[4] next_dqs_low,
+                                input bit[32] input_dq_high,
+                                input bit[32] input_dq_low )
+{
+    timing to rising clock drm_clock cke_last_of_logic;
+    timing to rising clock drm_clock drm_ctl_reset;
+    timing from rising clock drm_clock init_done;
+
+    timing from rising clock drm_clock next_cke, next_s_n, next_ras_n, next_cas_n, next_we_n, next_a, next_ba, next_dq, next_dqm, next_dqoe, next_dqs_high, next_dqs_low;
+    timing to rising clock drm_clock input_dq_high, input_dq_low;
+
+    timing to rising clock slow_clock sram_priority, sram_read, sram_write, sram_write_byte_enables, sram_address, sram_write_data;
+    timing from rising clock slow_clock sram_read_data, sram_low_priority_wait;
+}
+
+/*a Modules
+ */
+module gip_ddr( clock drm_clock,
+                clock int_clock,
+                input bit system_reset,
+                input bit[8] switches,
+                output bit[8] leds,
+                output bit txd,
+                input bit rxd,
+                output bit[4]ext_bus_ce,
+                output bit ext_bus_oe,
+                output bit ext_bus_we,
+                output bit[24]ext_bus_address,
+                output bit ext_bus_write_data_enable,
+                output bit[32]ext_bus_write_data,
+                input bit[32]ext_bus_read_data,
+
+                input bit cke_last_of_logic,
+                output bit next_cke,
+                output bit[2] next_s_n,
+                output bit next_ras_n,
+                output bit next_cas_n,
+                output bit next_we_n,
+                output bit[13] next_a,
+                output bit[2] next_ba,
+                output bit[32] next_dq,
+                output bit[4] next_dqm,
+                output bit next_dqoe,
+                output bit[4] next_dqs_high,
+                output bit[4] next_dqs_low,
+                input bit[32] input_dq_high,
+                input bit[32] input_dq_low )
+{
+    default clock int_clock;
+    default reset system_reset;
+
+    comb bit int_reset;
+
+    net bit[8] leds;
+    net bit txd;
+
+    net bit[4]ext_bus_ce;
+    net bit ext_bus_oe;
+    net bit ext_bus_we;
+    net bit[24]ext_bus_address;
+    net bit ext_bus_write_data_enable;
+    net bit[32]ext_bus_write_data;
+
+    net bit next_cke;
+    net bit[2] next_s_n;
+    net bit next_ras_n;
+    net bit next_cas_n;
+    net bit next_we_n;
+    net bit[13] next_a;
+    net bit[2] next_ba;
+    net bit[32] next_dq;
+    net bit[4] next_dqm;
+    net bit next_dqoe;
+    net bit[4] next_dqs_high;
+    net bit[4] next_dqs_low;
+
+    net bit rom_read;
+    net bit[8] rom_address;
+    net bit[32] rom_data;
+
+    net bit gip_mem_priority;
+    net bit gip_mem_read;
+    net bit gip_mem_write;
+    net bit[4] gip_mem_write_byte_enables;
+    net bit[32] gip_mem_address;
+    net bit[32] gip_mem_write_data;
+    comb bit[32] gip_mem_read_data;
+    comb bit gip_mem_wait;
+
+    net bit[5] apb_paddr;
+    net bit apb_penable;
+    net bit apb_pselect;
+    net bit[32] apb_pwdata;
+    net bit apb_prnw;
+    net bit[32] apb_prdata;
+    net bit apb_pwait;
+
+    net t_postbus_type postbus_tx_type;
+    net t_postbus_data postbus_tx_data;
+//    net t_postbus_ack postbus_tx_ack;
+
+    net t_postbus_type postbus_rx_type;
+    net t_postbus_data postbus_rx_data;
+    net t_postbus_ack postbus_rx_ack;
+
+    comb bit rom_next_access;
+    comb bit sram_next_access;
+    comb bit dram_next_access;
+    clocked bit rom_current_access = 0;
+    clocked bit sram_current_access = 0;
+    clocked bit dram_current_access = 0;
+    net bit[32] rom_read_data;
+    net bit[32] sram_read_data;
+    net bit[32] dram_read_data;
+    net bit dram_wait;
+
+    net bit ddr_ready;
+
+    /*b GIP core
+     */
+    gip_core "GIP core instance":
+        {
+            gip_core_plus gip( int_clock <- int_clock,
+                               int_reset <= int_reset,
+
+                               gip_mem_priority => gip_mem_priority,
+                               gip_mem_read => gip_mem_read,
+                               gip_mem_write => gip_mem_write,
+                               gip_mem_write_byte_enables => gip_mem_write_byte_enables,
+                               gip_mem_address => gip_mem_address,
+                               gip_mem_write_data => gip_mem_write_data,
+                               gip_mem_read_data <= gip_mem_read_data,
+                               gip_mem_wait <= gip_mem_wait,
+
+                               apb_paddr => apb_paddr,
+                               apb_penable => apb_penable,
+                               apb_pselect => apb_pselect,
+                               apb_pwdata => apb_pwdata,
+                               apb_prnw => apb_prnw,
+                               apb_prdata <= apb_prdata,
+                               apb_pwait <= apb_pwait,
+
+                               postbus_tx_type => postbus_tx_type,
+                               postbus_tx_data => postbus_tx_data,
+                               postbus_tx_ack <= 0,//postbus_tx_ack,
+
+                               postbus_rx_type <= postbus_rx_type,
+                               postbus_rx_data <= postbus_rx_data,
+                               postbus_rx_ack => postbus_rx_ack );
+        }
+
+    /*b Memory subsystem
+     */
+    memory_subsystem "Memory subsystem":
+        {
+            int_reset = system_reset || !ddr_ready;
+
+            rom_next_access = !gip_mem_address[16] && !gip_mem_address[31];
+            sram_next_access = gip_mem_address[16] && !gip_mem_address[31];
+            dram_next_access = !rom_next_access && !sram_next_access;
+            rom_current_access <= rom_next_access;
+            sram_current_access <= sram_next_access;
+            dram_current_access <= dram_next_access;
+
+            gip_simple_boot_rom boot_rom( rom_clock <- int_clock,
+                                          rom_reset <= int_reset,
+                                          rom_read <= rom_next_access && gip_mem_read,
+                                          rom_address <= gip_mem_address[11;2],
+                                          rom_read_data => rom_read_data );
+
+            memory_s_sp_2048_x_4b8 shared_sram( sram_clock <- int_clock,
+                                                sram_address <= gip_mem_address[11;2],
+                                                sram_read <= sram_next_access && gip_mem_read,
+                                                sram_write <= sram_next_access && gip_mem_write,
+                                                sram_byte_enables <= gip_mem_write_byte_enables,
+                                                sram_write_data <= gip_mem_write_data,
+                                                sram_read_data => sram_read_data );
+
+            ddr_dram_as_sram main_ram( drm_clock <- drm_clock,
+                                       slow_clock <- int_clock,
+
+                                       drm_ctl_reset <= system_reset,
+                                       init_done => ddr_ready,
+                                       
+                                       sram_priority <= gip_mem_priority,
+                                       sram_read <= dram_next_access && gip_mem_read,
+                                       sram_write <= dram_next_access && gip_mem_write,
+                                       sram_write_byte_enables <= gip_mem_write_byte_enables,
+                                       sram_address <= gip_mem_address[24;2],
+                                       sram_write_data <= gip_mem_write_data,
+                                       sram_read_data => dram_read_data,
+                                       sram_low_priority_wait => dram_wait,
+
+                                       cke_last_of_logic <= cke_last_of_logic,
+                                       next_cke => next_cke,
+                                       next_s_n => next_s_n,
+                                       next_ras_n => next_ras_n,
+                                       next_cas_n => next_cas_n,
+                                       next_we_n => next_we_n,
+                                       next_a => next_a,
+                                       next_ba => next_ba,
+                                       next_dq => next_dq,
+                                       next_dqm => next_dqm,
+                                       next_dqoe => next_dqoe,
+                                       next_dqs_high => next_dqs_high,
+                                       next_dqs_low => next_dqs_low,
+                                       input_dq_high <= input_dq_high,
+                                       input_dq_low <= input_dq_low );
+
+            gip_mem_read_data = dram_read_data;
+            if (rom_current_access)
+            {
+                gip_mem_read_data = rom_read_data;
+            }
+            if (sram_current_access)
+            {
+                gip_mem_read_data = sram_read_data;
+            }
+            gip_mem_wait = dram_next_access ? dram_wait : 0;
+
+        }
+
+    /*b APB devices
+     */
+    apb_devices_instanced "APB devices":
+        {
+            apb_devices apb( int_clock <- int_clock,
+                             int_reset <= int_reset,
+
+                             apb_pselect <= apb_pselect,
+                             apb_penable <= apb_penable,
+                             apb_paddr <= apb_paddr,
+                             apb_prnw <= apb_prnw,
+                             apb_pwdata <= apb_pwdata,
+                             apb_prdata => apb_prdata,
+                             apb_pwait => apb_pwait,
+
+                             switches <= switches,
+                             leds => leds,
+                             txd => txd,
+                             rxd <= rxd,
+
+                             ext_bus_ce => ext_bus_ce,
+                             ext_bus_oe => ext_bus_oe,
+                             ext_bus_we => ext_bus_we,
+                             ext_bus_address => ext_bus_address,
+                             ext_bus_write_data_enable => ext_bus_write_data_enable,
+                             ext_bus_write_data => ext_bus_write_data,
+                             ext_bus_read_data <= ext_bus_read_data );
+        }
+
+    /*b Postbus instances
+     */
+    postbus_instances "Postbus instances":
+        {
+
+            postbus_rom_source prs( int_clock <- int_clock,
+                                    int_reset <= int_reset,
+
+                                    rom_read => rom_read,
+                                    rom_address => rom_address,
+                                    rom_data <= rom_data,
+
+                                    postbus_type => postbus_rx_type,
+                                    postbus_data => postbus_rx_data,
+                                    postbus_ack <= postbus_rx_ack );
+
+            postbus_test_rom_contents rom( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           read <= rom_read,
+                                           address <= rom_address,
+                                           data => rom_data );
+
+
+
+        }
+}
+

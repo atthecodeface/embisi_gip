@@ -1,0 +1,21 @@
+#a Copyright
+#  
+#  This file 'postbus_src_harness.th' copyright Gavin J Stark 2003, 2004
+#  
+
+printf "Postbus source harness starting"
+
+reset "src_type" 1
+
+wait 1
+
+pass 0 "Postbus source finished"
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

@@ -1,0 +1,25 @@
+#a Copyright
+#  
+#  This file 'postbus_tgt_harness.th' copyright Gavin J Stark 2003, 2004
+#  
+
+printf "Postbus target harness starting"
+
+reset "tgt_ack" 0
+wait 1
+
+wait_until_value "tgt_type" 1
+drive tgt_ack 0
+wait 1
+
+
+pass 0 "Postbus target finished"
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

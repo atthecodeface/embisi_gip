@@ -550,8 +550,10 @@ int c_gip_pipeline_single::arm_step( int *reason, int requested_count )
 {
     int i;
     unsigned int opcode;
+    char buffer[256];
 
     *reason = 0;
+
     /*b Loop for requested count
      */
     for (i=0; i<requested_count; i++)
@@ -560,6 +562,9 @@ int c_gip_pipeline_single::arm_step( int *reason, int requested_count )
          */
         log_reset();
         opcode = pd->memory->read_memory( pd->pc );
+        arm_disassemble( pd->pc, opcode, buffer );
+        printf( "%08x %08x: %s\n", pd->pc, opcode, buffer );
+
         log( "address", pd->pc );
         log( "opcode", opcode );
 
@@ -785,7 +790,7 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
         pd->alu_result = pd->logic_result;
         if (p)
         {
-            pd->c = pd->c;
+            pd->c = pd->p;
         }
         if (s)
         {
@@ -815,6 +820,7 @@ void c_gip_pipeline_single::execute_int_alu_instruction( t_gip_alu_op alu_op, t_
         {
             pd->acc = pd->arith_result;
         }
+        pd->shf = 0;// should only be with the 'C' flag, but have not defined that yet
         break;
     case gip_alu_op_lsl:
     case gip_alu_op_lsr:
@@ -1109,7 +1115,7 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
         default:
             break;
         }
-        sprintf( text, "%s%s%s%s%s%s%s %s%s %s",
+        sprintf( text, "%s%s%s%s%s%s %s%s%s %s",
                  op,
                  cc,
                  inst->gip_ins_opts.alu.s?"S":"",
@@ -1150,6 +1156,36 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
                  cc,
                  inst->gip_ins_opts.alu.s?"S":"",
                  inst->a?"A":"",
+                 inst->f?"F":"",
+                 rn,
+                 rm,
+                 rd );
+        break;
+    case gip_ins_class_shift:
+        switch (inst->gip_ins_subclass)
+        {
+        case gip_ins_subclass_shift_lsl:
+            op = "ILSL";
+            break;
+        case gip_ins_subclass_shift_lsr:
+            op = "ILSR";
+            break;
+        case gip_ins_subclass_shift_asr:
+            op = "IASR";
+            break;
+        case gip_ins_subclass_shift_ror:
+            op = "IROR";
+            break;
+        case gip_ins_subclass_shift_ror33:
+            op = "IROR33";
+            break;
+        default:
+            break;
+        }
+        sprintf( text, "%s%s%s%s %s, %s %s",
+                 op,
+                 cc,
+                 inst->gip_ins_opts.alu.s?"S":"",
                  inst->f?"F":"",
                  rn,
                  rm,
@@ -1231,7 +1267,7 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
                  rn,
                  ((inst->gip_ins_subclass&gip_ins_subclass_memory_index)==gip_ins_subclass_memory_postindex)?")":"",
                  offset,
-                 ((inst->gip_ins_subclass&gip_ins_subclass_memory_index)==gip_ins_subclass_memory_postindex)?")":"",
+                 ((inst->gip_ins_subclass&gip_ins_subclass_memory_index)==gip_ins_subclass_memory_postindex)?"":")",
                  rm,
                  rd );
         break;
@@ -1242,7 +1278,7 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
 
     /*b Display instruction
      */
-    printf("\n%s\n", text );
+    printf("%s\n", text );
 }
 
 /*f c_gip_pipeline_single::execute_int_instruction
@@ -1250,7 +1286,7 @@ void c_gip_pipeline_single::disassemble_int_instruction( t_gip_instruction *inst
 void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_gip_pipeline_results *results )
 {
     disassemble_int_instruction( inst );
-    debug(-1);
+    //debug(6);
     results->write_pc = 0;
     results->flush = 0;
 
@@ -1290,17 +1326,24 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
         pd->op1_src = gip_alu_op1_src_a_in;
         break;
     }
-    switch (inst->rm_data.gip_ins_rm)
+    if (inst->rm_is_imm)
     {
-    case gip_ins_rnm_acc:
-        pd->op2_src = gip_alu_op2_src_acc;
-        break;
-    case gip_ins_rnm_shf:
-        pd->op2_src = gip_alu_op2_src_shf;
-        break;
-    default:
         pd->op2_src = gip_alu_op2_src_b_in;
-        break;
+    }
+    else
+    {
+        switch (inst->rm_data.gip_ins_rm)
+        {
+        case gip_ins_rnm_acc:
+            pd->op2_src = gip_alu_op2_src_acc;
+            break;
+        case gip_ins_rnm_shf:
+            pd->op2_src = gip_alu_op2_src_shf;
+            break;
+        default:
+            pd->op2_src = gip_alu_op2_src_b_in;
+            break;
+        }
     }
     switch (inst->gip_ins_class)
     {
@@ -1428,7 +1471,14 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
             pd->alu_constant = 0;
             break;
         }
-        pd->op2_src = gip_alu_op2_src_constant;
+        if (inst->gip_ins_opts.store.offset_type==1)
+        {
+            pd->op2_src = gip_alu_op2_src_shf;
+        }
+        else
+        {
+            pd->op2_src = gip_alu_op2_src_constant;
+        }
         break;
     }
     if (!pd->condition_passed)
@@ -1530,6 +1580,7 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
         results->write_pc = 1;
         break;
     default:
+        results->rfw_data = pd->alu_result;
         pd->regs[ ((int)pd->alu_rd)&0x1f ] = pd->alu_result;
         break;
     }
@@ -1552,13 +1603,15 @@ void c_gip_pipeline_single::execute_int_instruction( t_gip_instruction *inst, t_
     case gip_ins_rd_le:
         break;
     case gip_ins_rd_pc:
-//        results->rfw_data = pd->alu_result;
-//        results->write_pc = 1;
+        results->rfw_data = pd->mem_result;
+        results->write_pc = 1;
         break;
     default:
-//        pd->regs[ ((int)pd->mem_rd)&0x1f ] = pd->mem_result;
+        results->rfw_data = pd->mem_result;
+        pd->regs[ ((int)pd->mem_rd)&0x1f ] = pd->mem_result;
         break;
     }
+    //printf("RFW ALU %d MEM %d D %08x\n",pd->alu_rd, pd->mem_rd, results->rfw_data );
 
     /*b Done
      */
@@ -2302,7 +2355,7 @@ int c_gip_pipeline_single::execute_arm_ld_st( unsigned int opcode )
                     pd->pc = gip_results.rfw_data;
                 }
 
-                build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
+                build_gip_instruction_alu( &gip_instr, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
                 build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
                 build_gip_instruction_rm( &gip_instr, gip_ins_rnm_acc );
                 build_gip_instruction_rd( &gip_instr, map_destination_register(rn) );
@@ -2391,7 +2444,7 @@ int c_gip_pipeline_single::execute_arm_ld_st( unsigned int opcode )
                     pd->pc = gip_results.rfw_data;
                 }
 
-                build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
+                build_gip_instruction_alu( &gip_instr, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, (rd==15) );
                 build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
                 build_gip_instruction_rm( &gip_instr, gip_ins_rnm_acc );
                 build_gip_instruction_rd( &gip_instr, map_destination_register(rn) );
@@ -2409,9 +2462,11 @@ int c_gip_pipeline_single::execute_arm_ld_st( unsigned int opcode )
 
     /*b Handle stores - no offset, preindexed immediate, preindexed reg, preindexed reg with shift, postindexed immediate, postindexed reg, postindexed reg with shift
      */
-    if ( !not_imm && (imm_val==0) ) // no offset preindex (hence no writeback, none needed); ISTR[CC]A #0 (Rn, #0) <- Rd
+    /*b Immediate offset of zero
+     */
+    if ( !not_imm && (imm_val==0) ) // no offset (hence no writeback, none needed); ISTR[CC] #0 (Rn) <- Rd
     {
-        build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 0, 1, 0, (rn==13), 0, 1, 0 );
+        build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 0, 1, 0, (rn==13), 0, 0, 0 );
         build_gip_instruction_cc( &gip_instr, map_condition_code( cc ) );
         build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
         build_gip_instruction_rm( &gip_instr, map_source_register(rd) );
@@ -2420,19 +2475,31 @@ int c_gip_pipeline_single::execute_arm_ld_st( unsigned int opcode )
         pd->pc += 4;
         return 1;
     }
+    /*b Preindexed store
+     */
     else if (pre)
     {
-        if (!not_imm) // preindexed immediate: IADDA/ISUBA Rn, #m; ISTR[CC]A #0, (ACC, #0) <- Rd [-> Rn]
+        /*b preindexed immediate or rm no shift: IADD[CC]AC/ISUB[CC]AC Rn, #imm/Rm; ISTRCPA[S] #0, (ACC, +/-SHF) <- Rd [-> Rn]
+         */
+        if ( !not_imm ||
+             (((t_shf_type)(shf_how)==shf_type_lsl) && (shf_imm_amt==0)) )
         {
             build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-            build_gip_instruction_cc( &gip_instr, gip_ins_cc_always );
+            build_gip_instruction_cc( &gip_instr, map_condition_code(cc) );
             build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
-            build_gip_instruction_immediate( &gip_instr, imm_val );
+            if (!not_imm)
+            {
+                build_gip_instruction_immediate( &gip_instr, imm_val );
+            }
+            else
+            {
+                build_gip_instruction_rm( &gip_instr, map_source_register(shf_rm) );
+            }
             build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
             execute_int_instruction( &gip_instr, &gip_results );
 
-            build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 0, 1, 0, (rn==13), 0, 1, 0 );
-            build_gip_instruction_cc( &gip_instr, map_condition_code( cc ) );
+            build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 1, up, 1, (rn==13), 0, 1, 0 );
+            build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
             build_gip_instruction_rn( &gip_instr, gip_ins_rnm_acc );
             build_gip_instruction_rm( &gip_instr, map_source_register(rd) );
             build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
@@ -2444,38 +2511,19 @@ int c_gip_pipeline_single::execute_arm_ld_st( unsigned int opcode )
             pd->pc += 4;
             return 1;
         }
-        else if ( ((t_shf_type)(shf_how)==shf_type_lsl) && (shf_imm_amt==0) ) // preindexed rm: IADDA/ISUBA Rn, Rm; ISTR[CC]A #0, (ACC, #0) <- Rd [-> Rn]
-        {
-            build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
-            build_gip_instruction_cc( &gip_instr, gip_ins_cc_always );
-            build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
-            build_gip_instruction_rm( &gip_instr, map_source_register(shf_rm) );
-            build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
-            execute_int_instruction( &gip_instr, &gip_results );
-
-            build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 0, 1, 0, (rn==13), 0, 1, 0 );
-            build_gip_instruction_cc( &gip_instr, map_condition_code( cc ) );
-            build_gip_instruction_rn( &gip_instr, gip_ins_rnm_acc );
-            build_gip_instruction_rm( &gip_instr, map_source_register(rd) );
-            build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
-            if (wb)
-            {
-                build_gip_instruction_rd( &gip_instr, map_destination_register(rn) );
-            }
-            execute_int_instruction( &gip_instr, &gip_results );
-            pd->pc += 4;
-            return 1;
-        }
-        else // preindexed rm with shift: ISHF Rm, #imm; ISTR[CC]A #0, (Rn, +/-SHF) <- Rd [-> Rn]
+        /*b Preindexed Rm with shift: ISHF[CC] Rm, #imm; ISTRCPA[S] #0, (Rn, +/-SHF) <- Rd [-> Rn]
+         */
+        else
         {
             build_gip_instruction_shift( &gip_instr, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
+            build_gip_instruction_cc( &gip_instr, map_condition_code( cc ) );
             build_gip_instruction_rn( &gip_instr, map_source_register(shf_rm) );
             build_gip_instruction_immediate( &gip_instr, shf_imm_amt );
             build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
             execute_int_instruction( &gip_instr, &gip_results );
 
             build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 1, up, 1, (rn==13), 0, 1, 0 );
-            build_gip_instruction_cc( &gip_instr, map_condition_code( cc ) );
+            build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
             build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
             build_gip_instruction_rm( &gip_instr, map_source_register(rd) );
             build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
@@ -2488,14 +2536,16 @@ int c_gip_pipeline_single::execute_arm_ld_st( unsigned int opcode )
             return 1;
         }
     }
+    /*b Postindexed
+     */
     else // if (!pre) - must be postindexed:
     {
-        /*b immediage or reg without shift;  ISTR[CC]A[S] #0 (Rn) <-Rd; IADDCPA/ISUBCPA Rn, #Imm/Rm -> Rn
+        /*b Postindexed immediate or reg without shift;  ISTR[CC][S] #0 (Rn) <-Rd; IADDCPA/ISUBCPA Rn, #Imm/Rm -> Rn
          */
         if ( !not_imm ||
              (((t_shf_type)(shf_how)==shf_type_lsl) && (shf_imm_amt==0)) )
         {
-            build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 0, 0, 0, (rn==13), 0, 1, 0 );
+            build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 0, 0, 0, (rn==13), 0, 0, 0 );
             build_gip_instruction_cc( &gip_instr, map_condition_code(cc) );
             build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
             build_gip_instruction_rm( &gip_instr, map_source_register(rd) );
@@ -2518,26 +2568,21 @@ int c_gip_pipeline_single::execute_arm_ld_st( unsigned int opcode )
             pd->pc += 4;
             return 1;
         }
-        else //  ISTR[CC]A[S] #0 (Rn) <-Rd; ISHFCP Rm, #imm; IADDCPA/ISUBCPA Rn, SHF -> Rn
+        /*b Postindexed reg with shift
+         */
+        else //  ISHF[CC] Rm, #imm; ISTRCPA[S] #0 (Rn), +/-SHF) <-Rd -> Rn
         {
-            build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 0, 0, 0, (rn==13), 0, 1, 0 );
-            build_gip_instruction_cc( &gip_instr, map_condition_code(cc) );
-            build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
-            build_gip_instruction_rm( &gip_instr, map_source_register(rd) );
-            build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
-            execute_int_instruction( &gip_instr, &gip_results );
-
             build_gip_instruction_shift( &gip_instr, map_shift(shf_how, 1, shf_imm_amt ), 0, 0 );
-            build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
+            build_gip_instruction_cc( &gip_instr, map_condition_code( cc ) );
             build_gip_instruction_rn( &gip_instr, map_source_register(shf_rm) );
             build_gip_instruction_immediate( &gip_instr, shf_imm_amt );
             build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
             execute_int_instruction( &gip_instr, &gip_results );
 
-            build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, up?gip_ins_subclass_arith_add:gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+            build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, 0, up, 1, (rn==13), 0, 1, 0 );
             build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
             build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
-            build_gip_instruction_rm( &gip_instr, gip_ins_rnm_shf );
+            build_gip_instruction_rm( &gip_instr, map_source_register(rd) );
             build_gip_instruction_rd( &gip_instr, map_destination_register(rn) );
             execute_int_instruction( &gip_instr, &gip_results );
             pd->pc += 4;
@@ -2556,6 +2601,9 @@ int c_gip_pipeline_single::execute_arm_ld_st( unsigned int opcode )
 int c_gip_pipeline_single::execute_arm_ldm_stm( unsigned int opcode )
 {
     int cc, four, pre, up, psr, wb, load, rn, regs;
+    int i, j, first, num_regs;
+    t_gip_instruction gip_instr;
+    t_gip_pipeline_results gip_results;
 
     /*b Decode ARM instruction
      */
@@ -2574,7 +2622,159 @@ int c_gip_pipeline_single::execute_arm_ldm_stm( unsigned int opcode )
     if (four != 4)
         return 0;
 
-    return 1; 
+    /*b Calculate memory address and writeback value
+     */
+    for (i=regs, num_regs=0; i; i>>=1)
+    {
+         if (i&1)
+         {
+              num_regs++;
+         }
+    }
+
+    /*b Handle load
+     */
+    if (load)
+    {
+        /*b If DB/DA, do first instruction to generate base address: ISUB[CC]A Rn, #num_regs*4 [-> Rn]
+         */
+        first=1;
+        if (!up)
+        {
+            build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+            build_gip_instruction_cc( &gip_instr, map_condition_code(cc) );
+            build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
+            build_gip_instruction_immediate( &gip_instr, num_regs*4 );
+            if (wb)
+            {
+                build_gip_instruction_rd( &gip_instr, map_destination_register(rn) );
+            }
+            else
+            {
+                build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
+            }
+            execute_int_instruction( &gip_instr, &gip_results );
+            pd->pc += 4;
+            first=0;
+        }
+
+        /*b Generate num_regs 'ILDR[CC|CP]A[S][F] #i (Rn|Acc), #+4 or preindexed version
+         */
+        for (i=0; i<num_regs; i++)
+        {
+            for (j=0; (j<16) && ((regs&(1<<j))==0); j++);
+            regs &= ~(1<<j);
+            build_gip_instruction_load( &gip_instr, gip_ins_subclass_memory_word, pre^!up, 1, (rn==13), (num_regs-1-i), 1, (j==15)&&!(up&&wb) );
+            if (first)
+            {
+                build_gip_instruction_cc( &gip_instr, map_condition_code(cc) );
+                build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
+            }
+            else
+            {
+                build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
+                build_gip_instruction_rn( &gip_instr, gip_ins_rnm_acc );
+            }
+            build_gip_instruction_immediate( &gip_instr, 4 );
+            build_gip_instruction_rd( &gip_instr, map_destination_register(j) );
+            execute_int_instruction( &gip_instr, &gip_results );
+            if (first)
+            {
+                first = 0;
+                pd->pc += 4;
+            }
+            if (gip_results.write_pc)
+            {
+                pd->pc = gip_results.rfw_data;
+            }
+            if (gip_results.flush)
+            {
+                return 1;
+            }
+        }
+
+        /*b If IB/IA with writeback then do final MOVCP[F] Acc -> Rn; F if PC was read in the list
+         */
+        if (up&&wb)
+        {
+            build_gip_instruction_alu( &gip_instr, gip_ins_class_logic, gip_ins_subclass_logic_mov, 0, 0, 0, ((opcode&0x8000)!=0) );
+            build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
+            build_gip_instruction_rm( &gip_instr, gip_ins_rnm_acc );
+            build_gip_instruction_rd( &gip_instr, map_destination_register(rn) );
+            execute_int_instruction( &gip_instr, &gip_results );
+            if (gip_results.flush)
+            {
+                return 1;
+            }
+        }
+        return 1;
+    }
+
+    /*b Handle store
+     */
+    if (!load)
+    {
+        /*b If DB/DA, do first instruction to generate base address: ISUB[CC]A Rn, #num_regs*4 [-> Rn]
+         */
+        first=1;
+        if (!up)
+        {
+            build_gip_instruction_alu( &gip_instr, gip_ins_class_arith, gip_ins_subclass_arith_sub, 1, 0, 0, 0 );
+            build_gip_instruction_cc( &gip_instr, map_condition_code(cc) );
+            build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
+            build_gip_instruction_immediate( &gip_instr, num_regs*4 );
+            if (wb)
+            {
+                build_gip_instruction_rd( &gip_instr, map_destination_register(rn) );
+            }
+            else
+            {
+                build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
+            }
+            execute_int_instruction( &gip_instr, &gip_results );
+            first=0;
+        }
+
+        /*b Update PC
+         */
+        pd->pc += 4;
+
+        /*b Generate num_regs 'ISTR[CC|CP]A[S][F] #i (Rn|Acc), #+4 [->Rn] or preindexed version
+         */
+        for (i=0; i<num_regs; i++)
+        {
+            for (j=0; (j<16) && ((regs&(1<<j))==0); j++);
+            regs &= ~(1<<j);
+            build_gip_instruction_store( &gip_instr, gip_ins_subclass_memory_word, pre^!up, 1, 0, (rn==13), (num_regs-1-i), 1, 0 );
+            if (first)
+            {
+                build_gip_instruction_cc( &gip_instr, map_condition_code(cc) );
+                build_gip_instruction_rn( &gip_instr, map_source_register(rn) );
+            }
+            else
+            {
+                build_gip_instruction_cc( &gip_instr, gip_ins_cc_cp );
+                build_gip_instruction_rn( &gip_instr, gip_ins_rnm_acc );
+            }
+            build_gip_instruction_rm( &gip_instr, map_source_register(j) );
+            if ((i==num_regs-1) && (up) && (wb))
+            {
+                build_gip_instruction_rd( &gip_instr, map_destination_register(rn) );
+            }
+            else
+            {
+                build_gip_instruction_rd( &gip_instr, gip_ins_rd_none );
+            }
+            execute_int_instruction( &gip_instr, &gip_results );
+            first = 0;
+        }
+
+        return 1;
+    }
+
+    /*b Done
+     */
+    return 0; 
 }
 
 /*f c_gip_pipeline_single::execute_arm_mul
@@ -2598,7 +2798,7 @@ int c_gip_pipeline_single::execute_arm_mul( unsigned int opcode )
     if ((zero!=0) || (nine!=9) || (cc==15))
         return 0;
 
-    return 1; 
+    return 0; 
 }
 
 /*f c_gip_pipeline_single::execute_arm_trace

@@ -24,5 +24,15 @@ extern int test_entry_point()
         return 4;
     if (factorial_mult(2)!=2)
         return 5;
+    if (factorial_mult(3)!=6)
+        return 6;
+    if (factorial_mult(6)!=720)
+        return 7;
+    if (factorial_mult(11)!=0x02611500)
+        return 8;
+    if (factorial_mult(12)!=0x1c8cfc00) // last that fits in 32 bits
+        return 9;
+    if (factorial_mult(14)!=0x4c3b2800)
+        return 10;
     return 0;
 }

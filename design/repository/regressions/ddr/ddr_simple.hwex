@@ -1,0 +1,152 @@
+#a Copyright
+#  
+#  This file 'eth_0.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add DDR SRAM controller
+module ddr_dram_as_sram "ddr_ctrl"
+
+#b Add DDR model
+option_string "filename" "ddr.mif"
+module ddr_16m_x_32 "ddr"
+
+#b Add test harness
+option_string "clock" "ddr_clock"
+option_string "inputs" "init_done sram_read_data[32] dq_oe_ctl dq_oe_ddr sram_low_priority_wait"
+option_string "outputs" "test_reset sram_priority sram_read sram_write sram_address[24] sram_write_data[32] sram_write_byte_enables[4] cke_last_of_logic logic_ck"
+option_string "filename" "ddr.th"
+module se_test_harness "th"
+
+#b Add pin logic
+option_string "clock" "ddr_clock"
+option_string "inputs" "next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4] dq_to_ctl[32] dqs_to_ctl[4]"
+option_string "outputs" "ddr_ck cke select_n[2] ras_n cas_n we_n ba[2] a[13] dqs_out[4] dq_out[32] dqm[4] dq_in_low[32] dq_in_high[32] dq_oe_ctl"
+option_string "filename" "ddr_pins.th"
+module se_test_harness "ddr_pins"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+clock ddr_x4_clock 0 1 1
+clock ddr_clock 0 4 4
+clock logic_clock 0 40 40
+drive th.ddr_clock ddr_clock
+drive ddr_pins.ddr_clock ddr_x4_clock
+drive ddr_ctrl.drm_clock ddr_clock
+drive ddr_ctrl.slow_clock logic_clock
+drive ddr.ddr_clock ddr_clock
+
+#b Add wires
+wire system_reset
+wire init_done
+wire cke_last_of_logic
+wire sram_priority sram_read sram_write sram_address[24] sram_write_data[32] sram_read_data[32] sram_write_byte_enables[4] sram_low_priority_wait
+wire next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4]
+wire dqm[4] dq_to_ddr[32] dqs_to_ddr[4] dq_oe_ctl
+wire        dq_to_ctl[32] dqs_to_ctl[4] dq_oe_ddr
+wire dq_to_ctl_high[32] dq_to_ctl_low[32]
+wire cke a[13] ba[2] we_n cas_n ras_n select_n[2]
+wire select_0
+wire high
+extract select_0 select_n 0 1
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+drive th.init_done init_done
+drive th.sram_read_data sram_read_data
+drive cke_last_of_logic th.cke_last_of_logic
+drive sram_priority th.sram_priority
+drive sram_read th.sram_read
+drive sram_write th.sram_write
+drive sram_write_data th.sram_write_data
+drive sram_write_byte_enables th.sram_write_byte_enables
+drive sram_address th.sram_address
+drive th.dq_oe_ctl dq_oe_ctl
+drive th.dq_oe_ddr dq_oe_ddr
+drive th.sram_low_priority_wait sram_low_priority_wait
+
+#b Wire up DDR controller
+drive ddr_ctrl.drm_ctl_reset system_reset
+drive ddr_ctrl.cke_last_of_logic cke_last_of_logic
+drive init_done ddr_ctrl.init_done
+drive ddr_ctrl.sram_priority sram_priority
+drive ddr_ctrl.sram_read sram_read
+drive ddr_ctrl.sram_write sram_write
+drive ddr_ctrl.sram_address sram_address
+drive ddr_ctrl.sram_write_byte_enables sram_write_byte_enables
+drive ddr_ctrl.sram_write_data sram_write_data
+drive sram_read_data ddr_ctrl.sram_read_data
+drive sram_low_priority_wait ddr_ctrl.sram_low_priority_wait
+
+drive ddr_ctrl.input_dq_high dq_to_ctl_high
+drive ddr_ctrl.input_dq_low dq_to_ctl_low
+
+drive next_cke ddr_ctrl.next_cke
+drive next_s_n ddr_ctrl.next_s_n
+drive next_ras_n ddr_ctrl.next_ras_n
+drive next_cas_n ddr_ctrl.next_cas_n
+drive next_we_n ddr_ctrl.next_we_n
+drive next_a ddr_ctrl.next_a
+drive next_ba ddr_ctrl.next_ba
+drive next_dq ddr_ctrl.next_dq
+drive next_dqm ddr_ctrl.next_dqm
+drive next_dqoe ddr_ctrl.next_dqoe
+drive next_dqs_high ddr_ctrl.next_dqs_high
+drive next_dqs_low ddr_ctrl.next_dqs_low
+
+#b Wire up DDR model
+assign high 1
+drive ddr.dqm     dqm
+drive ddr.dq_in   dq_to_ddr
+drive ddr.dqs_in  dqs_to_ddr
+drive ddr.a       a
+drive ddr.ba      ba
+drive ddr.we_n    we_n
+drive ddr.cas_n   cas_n
+drive ddr.ras_n   ras_n
+drive ddr.select_n select_0
+drive ddr.cke     cke
+drive dq_to_ctl  ddr.dq_out
+drive dqs_to_ctl ddr.dqs_out
+drive dq_oe_ddr  ddr.dq_oe
+
+#b Wire up DDR pins model
+drive ddr_pins.next_dqs_low next_dqs_low
+drive ddr_pins.next_dqs_high next_dqs_high
+drive ddr_pins.next_dqoe next_dqoe
+drive ddr_pins.next_dqm next_dqm
+drive ddr_pins.next_dq next_dq
+drive ddr_pins.next_ba next_ba
+drive ddr_pins.next_a next_a
+drive ddr_pins.next_we_n next_we_n
+drive ddr_pins.next_cas_n next_cas_n
+drive ddr_pins.next_ras_n next_ras_n
+drive ddr_pins.next_s_n next_s_n
+drive ddr_pins.next_cke next_cke
+drive ddr_pins.dqs_to_ctl dqs_to_ctl
+drive ddr_pins.dq_to_ctl dq_to_ctl
+
+drive dqm ddr_pins.dqm
+drive dq_to_ddr  ddr_pins.dq_out
+drive dqs_to_ddr ddr_pins.dqs_out
+drive cke      ddr_pins.cke
+drive a        ddr_pins.a
+drive ba       ddr_pins.ba
+drive we_n     ddr_pins.we_n
+drive cas_n    ddr_pins.cas_n
+drive ras_n    ddr_pins.ras_n
+drive select_n ddr_pins.select_n
+
+drive dq_oe_ctl ddr_pins.dq_oe_ctl
+drive dq_to_ctl_high ddr_pins.dq_in_high
+drive dq_to_ctl_low ddr_pins.dq_in_low
+
+#b End
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

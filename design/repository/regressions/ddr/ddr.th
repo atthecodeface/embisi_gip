@@ -1,0 +1,272 @@
+#a Copyright
+#  
+#  This file 'rom.th' copyright Gavin J Stark 2003, 2004
+#  
+
+int divider
+int address
+int data
+int byte_enables
+int expected_data
+set divider 10
+set address 0x1234
+
+printf "Simple postbus rom test reset"
+
+spawn oe_checker_thread oe_checker 10
+spawn enables_thread enables 10
+
+reset "test_reset" 1
+
+wait 1
+
+reset "test_reset" 0
+
+reset sram_priority 0
+reset sram_read 0
+reset sram_write 0
+reset sram_address 0
+reset sram_write_data 0
+reset sram_write_byte_enables 0
+
+gosub test_stimulus
+
+#a Test stimulus
+test_stimulus:
+
+#b Wait until DDR has initialized
+int not_done
+sub not_done 1 input("init_done")
+while not_done
+wait divider
+sub not_done 1 input("init_done")
+endwhile
+
+int test_mem_address
+set test_mem_address 0
+memory test_mem 2048 32
+mem_load test_mem "ddr_memory_test.mif" 0
+
+#b Run through writing and reading
+while 1
+
+mem_read action test_mem test_mem_address
+printf "action %x1% at location %d0% of test_mem" test_mem_address action
+add test_mem_address test_mem_address 1
+
+beq action 0 do_hp_write
+beq action 1 do_lp_write
+beq action 2 do_hp_read
+beq action 3 do_lp_read
+beq action 4 do_pause
+beq action 0x9090 test_pass
+printf "Unexpected action %x1% at location %d0%-1 of test_mem" test_mem_address action
+fail global_cycle() "Bad test"
+
+gosub sram_idle
+wait divider
+gosub validate
+done:
+endwhile
+
+#f do_pause:
+do_pause:
+int number
+mem_read number test_mem test_mem_address
+add test_mem_address test_mem_address 1
+for i 0 number 1
+gosub sram_idle
+wait divider
+gosub validate
+next i
+goto done
+
+#f do_hp_write
+do_hp_write:
+mem_read address test_mem test_mem_address
+add test_mem_address test_mem_address 1
+mem_read data test_mem test_mem_address
+add test_mem_address test_mem_address 1
+mem_read byte_enables test_mem test_mem_address
+add test_mem_address test_mem_address 1
+gosub high_priority_write
+goto done
+
+#f do_lp_write
+do_lp_write:
+mem_read address test_mem test_mem_address
+add test_mem_address test_mem_address 1
+mem_read data test_mem test_mem_address
+add test_mem_address test_mem_address 1
+mem_read byte_enables test_mem test_mem_address
+add test_mem_address test_mem_address 1
+gosub low_priority_write
+goto done
+
+#f do_hp_read
+do_hp_read:
+mem_read address test_mem test_mem_address
+add test_mem_address test_mem_address 1
+mem_read expected_data test_mem test_mem_address
+add test_mem_address test_mem_address 1
+gosub high_priority_read
+gosub check_data
+goto done
+
+#f do_lp_read
+do_lp_read:
+mem_read address test_mem test_mem_address
+add test_mem_address test_mem_address 1
+mem_read expected_data test_mem test_mem_address
+add test_mem_address test_mem_address 1
+gosub low_priority_read
+gosub check_data
+goto done
+
+#f check_data
+int pending_check
+int pending_expected_data
+check_data:
+set pending_check 1
+set pending_expected_data expected_data
+return
+
+#f validate
+validate:
+beq pending_check 0 data_ok
+set pending_check 0
+beq pending_expected_data input("sram_read_data") data_ok
+printf "Data mismatch got %x0% expected %x1%" input("sram_read_data") pending_expected_data
+fail global_cycle() "Data mismatch"
+data_ok:
+return
+
+#f sram_idle
+sram_idle:
+drive sram_read 0
+drive sram_write 0
+drive sram_priority 0
+return
+
+#f high_priority_write
+high_priority_write:
+drive sram_read 0
+drive sram_write 1
+drive sram_priority 1
+drive sram_address address
+drive sram_write_data data
+drive sram_write_byte_enables byte_enables
+
+wait divider
+gosub validate
+return
+
+#f high_priority_read
+high_priority_read:
+
+drive sram_read 1
+drive sram_write 0
+drive sram_priority 1
+drive sram_address address
+add address address 4
+
+wait divider
+gosub validate
+return
+
+#f low_priority_write
+low_priority_write:
+drive sram_read 0
+drive sram_write 1
+drive sram_priority 0
+drive sram_address address
+drive sram_write_byte_enables byte_enables
+drive sram_write_data data
+
+wait divider
+gosub validate
+beq input("sram_low_priority_wait") 1 low_priority_write
+
+return
+
+#f low_priority_read
+low_priority_read:
+drive sram_read 1
+drive sram_write 0
+drive sram_priority 0
+drive sram_address address
+
+wait divider
+gosub validate
+beq input("sram_low_priority_wait") 1 low_priority_read
+
+return
+
+#a Output enable checker
+oe_checker:
+
+int ctl
+int ddr
+
+while 1
+wait 1
+set ctl input("dq_oe_ctl")
+set ddr input("dq_oe_ddr")
+beq ctl 1 check_ddr_oe
+no_clash:
+endwhile
+return
+
+check_ddr_oe:
+bne ddr 1 no_clash
+fail global_cycle() "Both driving bus"
+goto no_clash
+
+#a Enable thread
+enables:
+
+int divider_div_2
+int divider_div_2_minus_1
+
+div divider_div_2 divider 2
+sub divider_div_2_minus_1 divider_div_2 1
+
+#get us aligned
+while 1
+
+#now logic_clock is just going high
+drive logic_ck 1
+drive cke_last_of_logic 0
+
+wait divider_div_2
+drive logic_ck 0
+
+wait divider_div_2_minus_1
+
+drive cke_last_of_logic 1
+
+wait 1
+
+endwhile
+
+return
+
+
+#a Test pass
+test_pass:
+gosub sram_idle
+pass 0 "Test succeeded"
+
+end
+
+test_fail:
+printf "Test failed %d0% %d1%" global_cycle() input("result")
+fail global_cycle() "**************************************************************************** Test failed"
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

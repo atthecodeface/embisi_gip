@@ -1,0 +1,74 @@
+#a Copyright
+#  
+#  This file 'test.batch' copyright Gavin J Stark 2003, 2004
+#  
+
+#a Variables
+int run_length
+int vcd_create
+string vcd_full_filename
+string vcd_filename
+
+set vcd_create 1
+
+#a Main
+gosub ddr_simple_tests
+end
+
+#a DDR simple tests
+#f ddr_simple_tests
+ddr_simple_tests:
+
+setenv "verbose_level" 1
+
+set vcd_create 1
+gosub ddr_simple_0
+
+return
+
+#b gip_simple_0
+ddr_simple_0:
+set run_length 10000
+setenv "uart_exec_file" "src/ddr_simple_uart_0.ef"
+set_string vcd_filename "ddr_simple_0"
+gosub ddr_simple_test
+return
+
+#a Ddr simple subroutines
+#f ddr_simple_test
+ddr_simple_test:
+
+read_hw_file ddr_simple.hwex
+
+beq vcd_create 0 ddr_simple_test_no_vcd
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "ddr"
+vcd_file_add "allsignals" "ddr_pins"
+vcd_file_add "allsignals" "ddr_ctrl"
+vcd_file_add "allsignals" "th"
+#vcd_file_add "allsignals" "ddr_simple.gip"
+#vcd_file_add "allsignals" "ddr_simple.prefetch" "ddr_simple.data_ram" "ddr_simple.boot_rom" "ddr_simple.shared_sram"
+#vcd_file_add "allsignals" "ddr_simple.gip.decode" "ddr_simple.gip.decode.native" "ddr_simple.gip.decode.arm" "ddr_simple.gip.rf" "ddr_simple.gip.alu" "ddr_simple.gip.alu.shift_op"
+#vcd_file_add "allsignals" "ddr_simple.gip_apb"
+#vcd_file_add "allsignals" "ddr_simple.uart_apb" "ddr_simple.uart_apb.status_fifo"  "ddr_simple.uart_apb.cmd_fifo" "ddr_simple.uart_io"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+ddr_simple_test_no_vcd:
+reset
+step run_length
+return
+
+
+#b Done
+return
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***

@@ -1,8 +1,10 @@
 common wrapper asm:wrapper
-test simple asm:simple common:wrapper
-test pass asm:pass common:wrapper
-test factorial cc:factorial common:wrapper
-test alu cc:alu asm:alu_call common:wrapper
-test memory cc:memory common:wrapper
-test uart cc:uart common:wrapper
-test monitor cc:monitor cc:uart common:wrapper
+common wrapper_download asm:wrapper_download
+common support asm:support
+test simple asm:simple common:wrapper common:support
+test pass asm:pass common:wrapper common:support
+test factorial cc:factorial common:wrapper common:support
+test alu cc:alu asm:alu_call common:wrapper common:support
+test memory cc:memory common:wrapper common:support
+test uart cc:uart common:wrapper common:support
+test monitor cc:monitor cc:flash cc:uart common:wrapper common:support

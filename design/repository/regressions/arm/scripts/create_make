@@ -103,6 +103,7 @@ foreach $i (@tests) {
         print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/$test/$cc.c -o obj/${test}__$cc.o\n";
         print make "\n";
     }
+
     print make "bin/$test.bin: \\\n";
     foreach $obj (split(/@@@/,$objs)) {
         next if ($obj=~/^\s*$/);
@@ -126,6 +127,30 @@ foreach $i (@tests) {
     print make "\t\${BIN_TO_MIF} -f bin/$test.bin -o bin/$test.mif\n";
     print make "\t\${MIF_TO_CDL} -f bin/$test.mif -o bin/$test.cdl\n";
     print make "\n";
+
+    print make "bin/$test.download.bin: \\\n";
+    foreach $obj (split(/@@@/,$objs)) {
+        next if ($obj=~/^\s*$/);
+        if ($obj=~/^([^:]*):(.*)/) {
+            print make "\t\tobj/${1}__$2.o \\\n";
+        }
+    }
+    print make "\t\tscripts/build.script\n";
+    print make "\t\${ARM_LD} -T scripts/build.script --Map bin/$test.map -o obj/$test.download.elf \\\n";
+    foreach $obj (split(/@@@/,$objs)) {
+        next if ($obj=~/^\s*$/);
+        if ($obj=~/^([^:]*):(.*)/) {
+            print make "\t\t\tobj/$1__$2.o \\\n";
+        }
+    }
+    print make "\n";
+    print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.download.bin obj/$test.download.elf";
+    print make "\n";
+    print make "\n";
+    print make "bin/$test.download.mif: bin/$test.download.bin\n";
+    print make "\t\${BIN_TO_MIF} -f bin/$test.download.bin -o bin/$test.download.mif\n";
+    print make "\n";
+
 }
 print make " \n";
 

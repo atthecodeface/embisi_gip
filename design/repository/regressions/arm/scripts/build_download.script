@@ -1,12 +1,12 @@
 SECTIONS
 {
-       . = 0x0;
-		.text : { obj/common__wrapper.o(.text) }
+       . = 0x10100;
+		.text : { obj/common__wrapper_download.o(.text) }
 		.text : { obj/common__support.o(.text) }
        .text : { *(.text) }
        .rodata : { *(.rodata) }
        .rodata.str1.4 : { *(.rodata.str1.4) }
-       . = 0x10000;
+       . = 0x11000;
        .data : { *(.data) }
        .bss : { *(.bss) }
 }

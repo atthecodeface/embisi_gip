@@ -42,6 +42,11 @@ The instruction set is documented in OpenOffice
 </tr>
 
 <tr>
+<th><a href="thread/index.php">Threads and scheduling</a></th>
+<td>The thread model and hardware and the scheduling mechanisms</td>
+</tr>
+
+<tr>
 <th><a href="rf/index.php">RF</a></th>
 <td>Register file, with information on read ports, write ports, and register scoreboarding</td>
 </tr>

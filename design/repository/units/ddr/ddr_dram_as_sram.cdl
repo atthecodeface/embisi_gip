@@ -1,0 +1,519 @@
+/*a Constants
+ */
+//constant integer ddr_refresh_counter_initial_value=1328; // This will do for now - we need it to be 16us, which (at 83MHz) is 16*83 = 1328
+constant integer ddr_refresh_counter_initial_value=400; // This will do for now - we need it to be 16us, which (at 83MHz) is 16*83 = 1328
+
+/*a Types
+ */
+/*t t_ddr_dram_state
+ */
+typedef fsm
+{
+    ddr_dram_init_start "DDR initialization - hold CKE low for 200us";
+    ddr_dram_init_cke_up "DDR initialization - raise CKE with a nop";
+    ddr_dram_init_precharge_all "DDR initialization - precharge all";
+    ddr_dram_init_ext_mode "DDR initialization - program extended mode register";
+    ddr_dram_init_mode "DDR initialization - program mode register, resetting DLL";
+    ddr_dram_init_precharge_2_all "DDR initialization - precharge all";
+    ddr_dram_init_autorefresh_all "DDR initialization - autorefresh all";
+    ddr_dram_init_autorefresh_2_all "DDR initialization - autorefresh all";
+    ddr_dram_init_mode_2 "DDR initialization - program mode register to clear DLL bit";
+    ddr_dram_init_final_wait "DDR initialization - wait for remainder of 200 cycles";
+
+    ddr_dram_idle "DDR idle, waiting for refresh command or SRAM read/write on enabled clock edge";
+    ddr_dram_refresh_command "DDR refresh, issuing refresh command; after this we can just go idle";
+    ddr_dram_read_start "DDR read, address buffered, NOP on bus, passing address to output registers";
+    ddr_dram_read_active "DDR read, active command on bus; we must wait a cycle before the read command";
+    ddr_dram_read_wait "DDR read, waiting after the active command to present a read";
+    ddr_dram_read_read "DDR read, presenting the read command";
+    ddr_dram_read_cas_wait_1 "DDR read, waiting the CAS latency (1)";
+    ddr_dram_read_cas_wait_2 "DDR read, waiting the CAS latency (2)";
+    ddr_dram_read_cas_wait_3 "DDR read, waiting the CAS latency (3)";
+    ddr_dram_read_data_on_bus "DDR read, data will be on the external bus and registered in our input flops during this phase: buffer it";
+    ddr_dram_write_start "DDR write, address buffered, NOP on bus, passing address to output registers";
+    ddr_dram_write_active "DDR write, active command on bus; we must wait a cycle before the write command";
+    ddr_dram_write_wait "DDR write, waiting after the active command to present a write";
+    ddr_dram_write_write "DDR write, presenting the write command";
+    ddr_dram_write_strobe_ll "DDR write, strobe preamble";
+    ddr_dram_write_strobe_hl "DDR write, strobe data (inc postamble)";
+} t_ddr_dram_state;
+
+typedef enum [4]
+{
+    ddr_transaction_cke_low,
+    ddr_transaction_precharge_all,
+    ddr_transaction_autorefresh,
+    ddr_transaction_load_ext_mode_register,
+    ddr_transaction_load_mode_register,
+    ddr_transaction_load_mode_register_dll_reset,
+    ddr_transaction_nop,
+    ddr_transaction_active,
+    ddr_transaction_refresh,
+    ddr_transaction_read,
+    ddr_transaction_write,
+    ddr_transaction_strobe_ll,
+    ddr_transaction_strobe_hl
+} t_ddr_transaction;
+
+/*a Module
+ */
+module ddr_dram_as_sram( clock drm_clock,
+                         clock slow_clock,
+
+                         input bit drm_ctl_reset,
+                         output bit init_done,
+
+                         input bit sram_priority,
+                         input bit sram_read,
+                         input bit sram_write,
+                         input bit[4] sram_write_byte_enables,
+                         input bit[24] sram_address,
+                         input bit[32] sram_write_data,
+                         output bit[32] sram_read_data,
+                         output bit sram_low_priority_wait,
+
+                         input bit cke_last_of_logic,
+                         output bit next_cke,
+                         output bit[2] next_s_n,
+                         output bit next_ras_n,
+                         output bit next_cas_n,
+                         output bit next_we_n,
+                         output bit[13] next_a,
+                         output bit[2] next_ba,
+                         output bit[32] next_dq,
+                         output bit[4] next_dqm,
+                         output bit next_dqoe,
+                         output bit[4] next_dqs_high,
+                         output bit[4] next_dqs_low,
+                         input bit[32] input_dq_high,
+                         input bit[32] input_dq_low )
+{
+    /*b Default clock and reset
+     */
+    default clock drm_clock;
+    default reset drm_ctl_reset;
+
+    /*b SRAM read data out, and low priority wait
+     */
+    clocked bit sram_low_priority_wait=0; // this is asserted if a refresh is pending
+    clocked bit[32] sram_read_data=0;
+
+    /*b Write buffer data and buffered address
+     */
+    clocked bit[24] buffered_address = 0;
+    clocked bit[32] buffered_data = 0;
+    clocked bit[4] buffered_enables = 0;
+
+    /*b DDR state and transaction, and cke
+     */
+    clocked bit init_done = 0;
+    clocked bit[18] ddr_dram_counter = 1; // This should be -1 for an emulator build
+    clocked t_ddr_dram_state ddr_dram_state = ddr_dram_init_start;
+    comb t_ddr_transaction ddr_transaction;
+
+    /*b Refresh counter variables
+     */
+    clocked bit[12] ddr_refresh_counter = 0;
+    clocked bit ddr_refresh_needed = 0;
+    clocked bit ddr_refresh_pending = 0; // If a refresh is needed then we set pending if we can guarantee not to be at the same edge as the logic clock changing - this is guaranteed with cke_last_of_logic
+    clocked bit cke_first_of_logic = 0;
+    clocked bit cke_second_of_logic = 0;
+    comb bit ddr_refresh_issued;         // If a refresh is pending then we cannot start it unless we are driving sram_low_priority_wait
+
+    /*b Refresh counter logic
+     */
+    ddr_refresh_counter "DDR refresh counter":
+        {
+            if (ddr_refresh_needed && cke_last_of_logic)
+            {
+                ddr_refresh_pending <= 1;
+            }
+            if (ddr_refresh_issued) // override the previous wodge here - refresh_issued occurs with cke_last_of_logic
+            {
+                ddr_refresh_pending <= 0;
+                ddr_refresh_needed <= 0;
+            }
+            ddr_refresh_counter <= ddr_refresh_counter-1;
+            if (ddr_refresh_counter==0)
+            {
+                ddr_refresh_counter <= ddr_refresh_counter_initial_value;
+                ddr_refresh_needed <= 1;
+            }
+            cke_first_of_logic <= cke_last_of_logic;
+            cke_second_of_logic <= cke_first_of_logic;
+            if (cke_second_of_logic)
+            {
+                sram_low_priority_wait <= ddr_refresh_pending;
+            }
+        }
+
+    /*b Decode transaction to outputs
+     */
+    ddr_outputs "Decode transaction to DDR outputs":
+        {
+            /*b Default transaction will be a NOP
+             */
+            next_cke = 0;
+            next_s_n = 3;
+            next_ras_n = 1;
+            next_cas_n = 1;
+            next_we_n = 1;
+            next_a = buffered_address[13;8];
+            next_ba = buffered_address[2;21];
+            next_dq = buffered_data;
+            next_dqm = buffered_enables;
+            next_dqoe = 0;
+            next_dqs_high = 0;
+            next_dqs_low = 0;
+
+            /*b Now decode the actual requested transaction
+             */
+            full_switch (ddr_transaction)
+                {
+                case ddr_transaction_cke_low:
+                {
+                    next_cke = 0;
+                }
+                case ddr_transaction_precharge_all:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_a[10] = 1;
+                    next_ras_n = 0;
+                    next_cas_n = 1;
+                    next_we_n = 0;
+                }
+                case ddr_transaction_autorefresh:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 1;
+                }
+                case ddr_transaction_load_ext_mode_register:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_ba = 1;
+                    next_a[0] = 0; // enable dll
+                    next_a[1] = 0; // drive strength normal
+                    next_a[10;2] = 0;
+                }
+                case ddr_transaction_load_mode_register:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_ba = 0;
+                    next_a[3;0] = 1; // BL 2
+                    next_a[3] = 0; // interleaved
+                    next_a[3;4] = 6; // CL 2.5
+                    next_a[5;7] = 0; // no DLL reset
+                }
+                case ddr_transaction_load_mode_register_dll_reset:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_ba = 0;
+                    next_a[3;0] = 1; // BL 2
+                    next_a[3] = 0; // interleaved
+                    next_a[3;4] = 6; // CL 2.5
+                    next_a[5;7] = 2; // DLL reset
+                }
+                case ddr_transaction_nop:
+                {
+                    next_cke = 1;
+                    next_s_n = 3;
+                }
+                case ddr_transaction_active:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 0;
+                    next_cas_n = 1;
+                    next_we_n = 1;
+                    next_a = buffered_address[13;8];
+                    next_ba = buffered_address[2;21];
+                    next_dqoe = 0;
+                }
+                case ddr_transaction_refresh:
+                {
+                    next_cke = 1;
+                    next_s_n = 0;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 1;
+                    next_dqoe = 0;
+                }
+                case ddr_transaction_read:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 1;
+                    next_cas_n = 0;
+                    next_we_n = 1;
+                    next_a[0] = 0;
+                    next_a[8;1] = buffered_address[8;0];
+                    next_a[10] = 1;
+                    next_ba = buffered_address[2;21];
+                    next_dqoe = 0;
+                }
+                case ddr_transaction_write:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 1;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_a[0] = 0;
+                    next_a[8;1] = buffered_address[8;0];
+                    next_a[10] = 1;
+                    next_ba = buffered_address[2;21];
+                    next_dqoe = 1;
+                    next_dq = buffered_data;
+                    next_dqm = buffered_enables;
+                    next_dqs_high = 0;
+                    next_dqs_low = 0;
+                }
+                case ddr_transaction_strobe_ll:
+                {
+                    next_cke = 1;
+                    next_s_n = 3;
+                    next_dqoe = 1;
+                    next_dq = buffered_data;
+                    next_dqm = buffered_enables;
+                    next_dqs_high = 0;
+                    next_dqs_low = 0;
+                }
+                case ddr_transaction_strobe_hl:
+                {
+                    next_cke = 1;
+                    next_s_n = 3;
+                    next_dqoe = 1;
+                    next_dq = buffered_data;
+                    next_dqm = buffered_enables;
+                    next_dqs_high = 1;
+                    next_dqs_low = 0;
+                }
+                }
+
+            /*b Done
+             */
+        }
+
+    /*b Handle DDR state machine
+     */
+    ddr_dram_fsm "DDR DRAM state machine":
+        {
+            ddr_refresh_issued = 0;
+            ddr_transaction = ddr_transaction_nop;
+            if (ddr_dram_counter!=0)
+            {
+                ddr_dram_counter <= ddr_dram_counter-1;
+            }
+            full_switch (ddr_dram_state)
+                {
+                case ddr_dram_init_start:
+                {
+                    ddr_transaction = ddr_transaction_cke_low;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_cke_up;
+                        ddr_dram_counter <= 16; // 16 cycles is enough for any transaction
+                        ddr_transaction = ddr_transaction_nop;
+                    }
+                }
+                case ddr_dram_init_cke_up:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_precharge_all;
+                        ddr_dram_counter <= 16;
+                        ddr_transaction = ddr_transaction_precharge_all;
+                    }
+                }
+                case ddr_dram_init_precharge_all:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_ext_mode;
+                        ddr_dram_counter <= 16;
+                        ddr_transaction = ddr_transaction_load_ext_mode_register;
+                    }
+                }
+                case ddr_dram_init_ext_mode:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_mode;
+                        ddr_dram_counter <= 16;
+                        ddr_transaction = ddr_transaction_load_mode_register_dll_reset;
+                    }
+                }
+                case ddr_dram_init_mode:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_precharge_2_all;
+                        ddr_dram_counter <= 16;
+                        ddr_transaction = ddr_transaction_precharge_all;
+                    }
+                }
+                case ddr_dram_init_precharge_2_all:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_autorefresh_all;
+                        ddr_dram_counter <= 16;
+                        ddr_transaction = ddr_transaction_autorefresh;
+                    }
+                }
+                case ddr_dram_init_autorefresh_all:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_autorefresh_2_all;
+                        ddr_dram_counter <= 16;
+                        ddr_transaction = ddr_transaction_autorefresh;
+                    }
+                }
+                case ddr_dram_init_autorefresh_2_all:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_mode_2;
+                        ddr_dram_counter <= 16;
+                        ddr_transaction = ddr_transaction_load_mode_register;
+                    }
+                }
+                case ddr_dram_init_mode_2:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if (ddr_dram_counter==0)
+                    {
+                        ddr_dram_state <= ddr_dram_init_final_wait;
+                        ddr_dram_counter <= 200; // we have done 5 transactions since mode, and waited 16 cycles each (80 cycles total). We must wait at least 200 cycles. So, 200 here is fine
+                    }
+                }
+                case ddr_dram_init_final_wait:
+                {
+                    ddr_transaction = ddr_transaction_nop;
+                    if ((ddr_dram_counter==0) && !cke_last_of_logic) // don't assert init_done just around the logic clock edge
+                    {
+                        ddr_dram_state <= ddr_dram_idle;
+                        init_done <= 1;
+                    }
+                }
+                case ddr_dram_idle:
+                {
+                    if (cke_last_of_logic) // We assume that since we are emulating slowly, the control signals will have plenty of time to get to us from the logic clock edge just before the next logic clock edge
+                    {
+                        buffered_address <= sram_address;
+                        buffered_data <= sram_write_data;
+                        buffered_enables <= sram_write_byte_enables;
+                        if (!sram_priority && ddr_refresh_pending && sram_low_priority_wait)
+                        {
+                            ddr_dram_state <= ddr_dram_refresh_command;
+                            ddr_transaction = ddr_transaction_refresh;
+                            ddr_refresh_issued = 1;
+                        }
+                        else
+                        {
+                            if (sram_read)
+                            {
+                                ddr_dram_state <= ddr_dram_read_start;
+                            }
+                            if (sram_write)
+                            {
+                                ddr_dram_state <= ddr_dram_write_start;
+                            }
+                        }
+                    }
+                }
+                case ddr_dram_refresh_command:
+                {
+                    ddr_dram_state <= ddr_dram_idle; // There will be an automatic delay before the next command - we sit in idle until the clock enable comes round
+                }
+                case ddr_dram_read_start:
+                {
+                    ddr_transaction = ddr_transaction_active;
+                    ddr_dram_state <= ddr_dram_read_active;
+                }
+                case ddr_dram_read_active:
+                {
+                    ddr_dram_state <= ddr_dram_read_wait;
+                }
+                case ddr_dram_read_wait:
+                {
+                    ddr_dram_state <= ddr_dram_read_read;
+                    ddr_transaction = ddr_transaction_read;
+                }
+                case ddr_dram_read_read:
+                {
+                    ddr_dram_state <= ddr_dram_read_cas_wait_1;
+                }
+                case ddr_dram_read_cas_wait_1:
+                {
+                    ddr_dram_state <= ddr_dram_read_cas_wait_2;
+                }
+                case ddr_dram_read_cas_wait_2:
+                {
+                    ddr_dram_state <= ddr_dram_read_cas_wait_3;
+                }
+                case ddr_dram_read_cas_wait_3:
+                {
+                    ddr_dram_state <= ddr_dram_read_data_on_bus;
+                }
+                case ddr_dram_read_data_on_bus:
+                {
+                    ddr_dram_state <= ddr_dram_idle;
+                    sram_read_data <= input_dq_high;
+                }
+                case ddr_dram_write_start:
+                {
+                    ddr_transaction = ddr_transaction_active;
+                    ddr_dram_state <= ddr_dram_write_active;
+                }
+                case ddr_dram_write_active:
+                {
+                    ddr_dram_state <= ddr_dram_write_wait;
+                }
+                case ddr_dram_write_wait:
+                {
+                    ddr_dram_state <= ddr_dram_write_write;
+                    ddr_transaction = ddr_transaction_write;
+                }
+                case ddr_dram_write_write:
+                {
+                    ddr_dram_state <= ddr_dram_write_strobe_ll;
+                    ddr_transaction = ddr_transaction_strobe_ll;
+                }
+                case ddr_dram_write_strobe_ll:
+                {
+                    ddr_dram_state <= ddr_dram_write_strobe_hl;
+                    ddr_transaction = ddr_transaction_strobe_hl;
+                }
+                case ddr_dram_write_strobe_hl:
+                {
+                    ddr_dram_state <= ddr_dram_idle;
+                }
+                }
+        }
+}
+

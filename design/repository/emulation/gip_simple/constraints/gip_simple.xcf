@@ -1,0 +1,37 @@
+MODEL "apb_target_uart"
+incremental_synthesis=yes;
+
+MODEL "apb_target_ext_bus"
+incremental_synthesis=yes;
+
+MODEL "gip_core"
+incremental_synthesis=yes;
+
+MODEL "gip_data_ram"
+incremental_synthesis=yes;
+
+MODEL "gip_periph_apb"
+incremental_synthesis=yes;
+
+MODEL "gip_prefetch"
+incremental_synthesis=yes;
+
+MODEL "gip_simple_boot_rom"
+incremental_synthesis=yes;
+
+MODEL "io_uart"
+incremental_synthesis=yes;
+
+MODEL "memory_s_sp_2048_x_4b8"
+incremental_synthesis=yes;
+
+MODEL "postbus_rom_source"
+incremental_synthesis=yes;
+
+MODEL "postbus_test_rom_contents"
+incremental_synthesis=yes;
+
+MODEL "gip_simple_boot_rom" resynthesize=yes;
+MODEL "fpga_wrapper" resynthesize=yes;
+MODEL "io_uart" resynthesize=yes;
+

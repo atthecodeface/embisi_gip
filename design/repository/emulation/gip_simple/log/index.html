@@ -1,0 +1,372 @@
+gip_simple
+led 0 is clock_enable - not very useful
+other leds just count
+bottom 2 switches set UART speed to /261, /131, /66, /8
+switch 2 disables rxd
+
+fpga_wrapper
+switch 7 is reset
+
+monitor.c
+Calls uart_init, then uart_tx('a'), uart_tx('b'), uart_poll...
+uart_rx_poll() does uart_tx_hex8(tx_av)
+uart_tx ignores tx_av, but does decrement it
+uart_rx_poll
+
+monitor_just_prints_ab000003e8_1220_wed.bit
+This flashes LEDs, but does nothing else. Not UART activity, with Rx disabled or not
+This was built from scratch
+
+
+Added an inline UART tx of '*\n' to start of test_entry_point in monitor.c before uart_init
+Made gip_simple toggle LED[0] on clock_enable, which is clock/(4096*switches[8;0])
+Made LED[1] reflect uart txd
+Made LED[2] reflect uart txd
+Made baud rate 2 be very slow - 10Hz (which is 160Hz at x16, or 5000000/160=31250 = 16h7a12
+
+Rebuilt with resynthesize of fpga_wrapper; missed gip_simple_boot_rom
+
+this gives monitor_first_tx_star_1300_wed.bit
+This flashes the bottom LED independently of the switch settings. This indicates the switches are not all correct?
+The TxD and RxD LEDS are on all the time
+Ah. Bug in the clock divide code - was using the wrong bits to wrap toggle.
+
+Rebuilt with resynthesize of gip_simple_boot_rom and fpga_wrapper; also had to touch fpga_wrapper.v to make it do anything
+Started build at 13:11
+Finished build at 13:22
+
+This does no better
+
+Perhaps we have a clock skew issue? The clock divider output register appears to be being duplicated.
+That would not account for the LED not handling the divide properly though.
+
+Rebuilt with global clock BUFG for internal derived clock: started 01:51, finished at 02:01
+No improvement. There is a bug in the clock divider code. Try again.
+
+Add new toggle on baud enable/64
+Make LEDS[0 to 3] clock divider, baud enable, txd, rxd
+
+Started build at 14:16
+This one now flashes the LEDs correctly (using the switches okay), but the TxD and RxD are always on.
+So, no code running.
+
+New code load; added to wrapper.S an additional '*\n' in hard code write at the beginning.
+
+Build started at 14:52
+
+No progress
+It still has an incorrect clock
+Fixed that eventually...
+Still does no UART, but the LEDs are running fine.
+Cannot seem to get anything from UART with other bit files. Time to reset the UART with some data in it.
+
+Weds 19:16
+
+Built a new image with io_uart having tx_pend permanently asserted. This boots, and the TxD light indicates the stop bits, correctly.
+However, the PC is not receiving them!
+
+Weds 7:46
+
+Built a new image with the Tx data and config set to 0x2a, 1 start, 1 stop bit, 8 data bits - a stream of *s
+We got some stars once!!!
+
+Weds 8:02
+
+Built a new image with the baud rate 1 less - maybe its a timing issue?
+This works (once there was room for placement)
+Helps to do 'stty -F /dev/ttyS0 raw'
+and 'stty -F /dev/ttyS0 -ispeed 2400' and use the '01' setting
+
+Now. Back to turn off the UART initial output
+
+Built Weds 11pm.
+
+This outputs just a single star. Don't know why it does just one, or indeed where this one is coming from. Is the GIP executing some code? The first items of code should output '*\n'. But no '\n' yet.
+
+Try to output '!\n' from the GIP code, and remove the 'overwrite with *' in io_uart...
+
+Build Weds 11:15pm
+
+With this, nothing comes out of the UART. Strange, as this would seem to indicate that more changed.
+
+Rebuild with the 'overwrite with *' in io_uart
+
+Built Weds 11:45pm
+
+Still nothing. Maybe its something to do with the boot rom code change? Weird...
+
+Revert that change (in the wrapper), and rebuild everything overnight from scratch.
+
+Building Weds 11:55pm
+
+Thurs am. Now we get the stream of '*'s again. Why? pend_start is not driven high all the time, so this implies there is something supplying things to the command fifo.
+
+Try remove the overwrite, and rebuild from scratch.
+
+Build start at 10:29am Thurs
+Build finished at 10:45am Thurs
+
+Wow!
+We get:
+*\n
+*\nab\ncde*\n
+with the last line repeated lots of times.
+The first star and newline comes from wrapper_entry_point; that is location 0
+The *\n then comes from the entry to test_entry_point, where the UART tx is hard coded
+a comes from the start of the prompt loop
+b comes from the UART rx polling loop
+\n comes from exiting the UART rx polling loop with rx_byte less than 32
+c comes from having exited the UART rx polling loop
+d comes after parsing the input buffer
+e comes before obeying the command
+The command is probably executed by jumping to location zero...
+
+Now, maybe the SRAM model for the main SRAM is wrong?
+Try adding a load and store to the wrapper...
+Store a number 0x12345678
+read it back to a different register
+output that with an equivalent to tx_hex8
+Also make the initial '*' be a '!'
+
+Clean up project files, rebuild from scratch as before:
+Build start at 11:05am Thurs
+Build finished and downloaded at 11:27am Thurs
+
+We now get:
+!\n
+\16/\00/\0a/\65/\00/\2a/\00/\2a/
+\n
+a\n
+ab\n
+b\n
+cdcde\0\0\n
+
+We were expecting:
+!\n
+\16/\00/\0a/\96/
+*\nab\ncde* etc
+
+Hm. Probably overwriting the buffer; after 6 characters? Possibly, since we have a very tight apparent loop.
+Try adding a long delay (1/240s, or about 4000us, or 20000 cycles, i.e. a loop 5000 (8192) times per character)
+Changed wrapper to add delay, and monitor at start of polling loop
+
+Build started at 11:36
+Download complete at 12:01
+Well, the code seems to work better now...
+We get:
+!\n
+\16/\00/\0a/\96/
+*\nab\ncdeeeeeeeeee
+
+With e repeating forever
+
+Now, how about putting some of the Rx stuff back in?
+Well, it is actually in, but rx_rdy must be 1. Don't know why. So, add some display of rx_rdy and &rx_rdy.
+(Note the initial read/write is working okay)
+Also, put delay_char in wrapper, and call it from uart_tx to ensure there is no overwriting
+
+Build started at 12:11
+Build downloaded at 12:35
+!\n
+\16/\00/\0a/\96/
+*\n
+ab00000000e1a03e25ffffffffcde!\n
+
+It would seem, then, that ldr r5, [pc, #296] actually does ldr r5, [pc]. (Opcode e59f5128).
+bug in the RTL, or in Xilinx? Hm. Try in simulation now.
+
+In simulation we get:
+!\n
+\16/\00/\0a/\96/
+*\n
+ab00000000000100000000003dfcde\n
+?f\n
+
+Hm. So something up with ldr [thing, #offset] - offset is ignored, but only in emulation. Hm.
+
+Well, there was something in a Xilinx answer tip about the following may be dubious:
+a = (b?c:d) | (e?f:g);
+And we have that for ld; change that in the CDL, and rebuild.
+
+Build started at 1:18
+Download done at 01:43
+
+Now we get:
+!\n
+\16/\00/\0a/\96/
+*\n
+ab00000000 00010000 000003df cde\n
+?f\n
+
+So there is a bug in Xilinx there with those expressions.
+Rebuild gip_decode_arm with different logic for those expressions.
+Also remove the immediate 'break' in the UART polling loop
+Also remove the 'b' from the polling loop, and some of the debug tx8s for rx_rdy and tx_av
+
+Build started at 2:45pm
+Downloaded at 15:00pm
+
+Read and write work well.
+With Minicom, though, we need cr/lf, not just lf, so need to add that.
+
+Build Fri 0930am
+Ooops. forgot to build the verilog. Try again
+Build Fri 1250am
+Works fantastically!
+
+
+Monday
+Added APB ext bus peripheral, and 3 commands to read/write it.
+Appears to work in simulation.
+Time to try it in FPGA
+The wrapper has to have more added to it - output enable buffers for tristate data_av bus, etc
+
+Build Monday 1300 - added all the logic, we hope
+Finally built at 14:30
+
+The eb commands are in; forgot to make the chip select readable!
+We need to do:
+ebc fff
+eba 40000000
+ebd
+eba
+eba 40000000
+ebd 12345678
+ebd deadbeef
+eba 40000000
+ebd
+ebd
+Success!
+
+Now it is time to see if we can figure out how to use the flash
+First, we need to write to it to check its status
+(Note we should be holding FLASH_RST# high - it will be pulled high, but we should pull it up in the wrapper - it is pin L10)
+We need to write a device command to the flash
+First, read id codes. This is a write of 0x90 to any address, followed by a read of 0 or 1 for mfr and device codes.
+ebc 3ff
+eba 0
+ebd 90
+ebd 0
+ebd 1
+
+For the first ebd we get 89 - which claims to be Intel, but I think it should be Micron. Hm
+The second one returns 0 - which is odd. We expect 17 for 64Mbit. Hm.
+
+Now try reading the status register.
+eba 0
+ebd 70
+ebd
+
+Hm odd again.
+We expect 8b1000000, but we get 0
+This would imply the write state machine is busy.
+
+Try put it back to read array
+eba 0
+ebd ff
+That works
+Now putting it in to reading the status registers returns 80, correctly.
+
+Try erasing block 0
+Write 20 to a block address, then d0 to the same. Then read the status.
+So:
+ebc 3ff
+eba 0
+ebd 20
+ebd d0
+ebd 70
+ebd
+The ebd returns 'b0', for ready, successful erase, successful program
+
+Now read the data back...
+ebc fff
+eba 0
+ebd ff
+ebd
+Now we get ebd returning ffff! Yay!
+
+Clear the status, and check it.
+ebd 50
+ebd 70
+ebd
+
+We get 80, so okay
+
+Now program a word simply
+ebc 3ff
+ebd 40
+eba 0
+ebd 1234
+ebd ff
+eba 0
+ebd
+
+Yay! We get back 1234!
+Look again at the device id
+ebd 90
+eba 0
+ebd
+eba 1
+ebd
+Aha! The device is word addressed! We get 17 for the type - 64Mbit!
+
+Time to write the real boot loader
+
+Wednesday.
+Written boot loader and flash device handler.
+Time to build it: 1:15pm
+
+Ooops. NOPs not long enough. Try again.
+
+Build at 2:47
+Nope, timeout probably not long enough
+fe 0
+returns an error, but then the status is okay
+fe 1
+does indeed erase block 1 (byte address 20000, eba 10000)
+
+Rebuild, with longer timeout (1024*1024)
+Start build at 3:45
+Loaded at 4:10pm
+Seems to erase flash okay now
+Flash download seems to write to the flash, but not at the incrementing addresses.
+If I do:
+wA@@@ABCDEFGHIJKLMNOPQRSTUVWXYZ
+Then I would expect to write to word 1 (okay... I'll make that byte 1), with data 01 02 03 04 05 06 07... 19 1a
+What actually gets written is to word 1 the data 0f 10, and to word 17 the data 19 1a
+So we do need to increment the address in the write here - so fix the config in the right places
+Also, we need to check the 16-byte boundary stuff.
+Rebuild start at 4:30
+
+Build complete at 17:53. This appears to work
+
+Friday 3:30
+Built curses-based front end
+Added data writes to the monitor, tested with linux sim
+Added checksum to fd commands, as I want to make sure they work
+Flash writes in the front-end will focus on 256-byte boundaries
+
+Rebuild
+Downloads some tests! Yay!
+
+Now for the larger SRAM model.
+We will use the DDR interface, with a CAS latency of 2, but running the data as effectively SDR (i.e. the same data in adjacent memory locations)
+Also we will run it at 32-bits wide, so halving the memory capacity.
+We have a 128MB DRAM DIMM, so we will have an effective addressable SRAM of 32MB - which is okay, as we only want 1MB of ROM, and 1MB of RAM
+We need to put some memory protection on it.
+We will run the memory at either 83MHz or 100MHz, using a clock synthesis from the 125MHz DRAM DIMM clock.
+We will run the internals at a factor of 8 down from this (maybe 10 - depends on DRAM specs for write-to-active and read-to-active with autoprecharge on)
+The DRAM will run one cycle for each internal access request
+The data memory will have highest priority; then refresh; then prefetch
+Prefetch will also be a single cycle (of 8-10 DRAM clocks)
+We will use a DCM for frequency synthesis, and another then to generate 0, 90, 180 and 270 clock outputs; the 0 and 180 go to the CK and CK# pins
+A third DCM is then used for internal DRAM clock generation, with the GBUF driving the clock feeding back in to the FB0 pin to get the main DRAM clock generation with very little skew to the CK and CK# pins (on the inside)
+For output data, we are going to hold the data stable for a three CK cycles, and strobe L-H-L at the double data rate with a DDR output buffer
+For input data, which is supposed to be valid for the central portion of a CK h/l period (with 750ps Tac of invalid to each edge), we need to strobe the
+incoming data at roughly 2ns prior to the end of the CK h/l period at the DIMM (allowing for 1.25ns of sampling skew (550ps), clk tree skew (110ps), package skew (130ps)).
+Here is the guess part: if our input to output clock delay is less than 1ns, then clocking at 3ns prior to the clock edge of the internal clock will suffice.
+At 83MHz the clock period is 12ns, so a 90/270 degree clock is 3ns prior/after the external edge.
+If that works well, we can push the clock up to 100MHz perhaps.
+The alternative is to use some dynamic skewing mechanism to get the input to output clock delay negated.
+We will need to place items by hand, select STTL-II output pads, and so on.
+

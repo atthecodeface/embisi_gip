@@ -1,0 +1,64 @@
+JDF G
+// Created by Project Navigator ver 1.0
+PROJECT simple
+DESIGN simple
+DEVFAM virtex2
+DEVFAMTIME 0
+DEVICE xc2v4000
+DEVICETIME 0
+DEVPKG ff1152
+DEVPKGTIME 0
+DEVSPEED -4
+DEVSPEEDTIME 0
+DEVTOPLEVELMODULETYPE HDL
+TOPLEVELMODULETYPETIME 0
+DEVSYNTHESISTOOL XST (VHDL/Verilog)
+SYNTHESISTOOLTIME 0
+DEVSIMULATOR Other
+SIMULATORTIME 0
+DEVGENERATEDSIMULATIONMODEL VHDL
+GENERATEDSIMULATIONMODELTIME 0
+SOURCE ./src/gip_alu_arith_op.v
+SOURCE ./src/gip_alu.v
+SOURCE ./src/gip_alu_logical_op.v
+SOURCE ./src/gip_decode.v
+SOURCE ./src/gip_special.v
+SOURCE ./src/gip_postbus.v
+SOURCE ./src/gip_core.v
+SOURCE ./src/gip_prefetch.v
+SOURCE ./src/gip_rf.v
+SOURCE ./src/gip_scheduler.v
+SOURCE ./src/gip_decode_native.v
+SOURCE ./src/gip_alu_barrel_shift.v
+SOURCE ./src/apb_uart_sync_fifo.v
+SOURCE ./src/gip_memory.v
+SOURCE ./src/apb_target_uart.v
+SOURCE ./src/gip_periph_apb.v
+SOURCE ./src/gip_decode_arm.v
+SOURCE ./src/gip_data_ram.v
+SOURCE ./src/io_uart.v
+SOURCE ./src/gip_simple.v
+SOURCE ./src/postbus_test_rom_contents_0.v
+SOURCE ./src/postbus_rom_source.v
+SOURCE ./src/monitor_rom.v
+SOURCE ./src/fpga_wrapper.v
+SOURCE ./src/clock_generator.v
+SOURCE ./src/apb_target_ext_bus_master.v
+SOURCE ./macros/memory_s_dp_2048_x_32.v
+SOURCE ./macros/memory_s_sp_2048_x_4b8.v
+SOURCE ./macros/memory_s_sp_2048_x_8.v
+SOURCE ./macros/rf_2r_1w_32_32.v
+SOURCE ./macros/rf_1r_1w_32_32.v
+DEPASSOC gip_simple ./constraints/gip_simple.ucf
+DEPASSOC fpga_wrapper ./constraints/fpga_wrapper.ucf
+[Normal]
+p_EnableIncDesignFlow=xstvhd, virtex2, Implementation.t_placeAndRouteDes, 1108483442, True
+xilxMapGuideMode=xstvhd, virtex2, Implementation.t_map, 1108483442, None
+xilxPARguideMode=xstvhd, virtex2, Implementation.t_par, 1108483442, None
+_SynthConstraintsFile=xstvhd, virtex2, Schematic.t_synthesize, 1108484659, ./constraints/gip_simple.xcf
+[STRATEGY-LIST]
+FileGroup=False
+io_uart.ngcFileGroup=False
+Normal=True
+S,1108172808=False
+ta_ram.ngcFile=False

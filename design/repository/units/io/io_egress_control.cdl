@@ -6,7 +6,6 @@
 
 /*a Includes
  */
-include "io_egress.h"
 include "io_egress_fifos.h"
 include "io_egress_control_cmd_fsm.h"
 include "io_egress_control.h"

@@ -28,7 +28,7 @@ typedef enum [io_eth_tx_packet_status_bits]
 
 /*a Modules
  */
-extern module ethernet_tx( clock io_clock,
+extern module io_ethernet_tx( clock io_clock,
                            input bit io_reset,
 
                            input bit[32] data_fifo_data,

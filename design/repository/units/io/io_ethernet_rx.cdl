@@ -49,9 +49,9 @@ typedef enum [3]
     status_to_write_rx_err,
 } t_status_to_write;
 
-/*a ethernet_rx module
+/*a io_ethernet_rx module
  */
-module ethernet_rx( clock io_clock,
+module io_ethernet_rx( clock io_clock,
                     input bit io_reset,
 
                     output bit[32] data_fifo_data,

@@ -7,7 +7,6 @@
 /*a Includes
  */
 include "io.h"
-include "io_egress_control_cmd_fsm.h"
 include "io_cmd_fifo_timer.h"
 
 /*a Types

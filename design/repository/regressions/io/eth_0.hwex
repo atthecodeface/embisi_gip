@@ -35,7 +35,7 @@ option_string "filename" "erx_0.th"
 module se_test_harness "th"
 
 #b Add IO block module
-module io_block_tx "iob"
+module io_block "iob"
 
 #a Wire them up
 #b Drive clocks - name, delay, cycles high, cycles low
@@ -59,6 +59,7 @@ wire uart0_rxd uart0_txd_fc uart0_txd uart0_rxd_fc
 
 
 wire to_iob_type[2] to_iob_data[32] to_iob_ack[2]
+wire from_iob_type[2] from_iob_data[32] from_iob_ack[2]
 
 wire pst_type_0[2] pst_data_0[32] pst_ack_0[2]
 wire pst_type_1[2] pst_data_1[32] pst_ack_1[2]
@@ -161,6 +162,11 @@ drive mii_txen         iob.etx_mii_enable
 drive iob.postbus_tgt_type to_iob_type
 drive iob.postbus_tgt_data to_iob_data
 drive to_iob_ack iob.postbus_tgt_ack
+
+drive from_iob_type iob.postbus_src_type
+drive from_iob_data iob.postbus_src_data
+drive iob.postbus_src_ack from_iob_ack
+assign from_iob_ack 0
 
 assign uart0_txd_fc 0
 drive iob.uart0_txd_fc uart0_txd_fc

@@ -30,36 +30,36 @@ include "memories.h"
 /*a Types
  */
 
-/*a io_block_tx module
+/*a io_block module
  */
-module io_block_tx( clock int_clock,
-                    input bit int_reset,
+module io_block( clock int_clock,
+                 input bit int_reset,
 
-                    input t_postbus_type postbus_tgt_type,
-                    input t_postbus_data postbus_tgt_data,
-                    output t_postbus_ack postbus_tgt_ack,
+                 input t_postbus_type postbus_tgt_type,
+                 input t_postbus_data postbus_tgt_data,
+                 output t_postbus_ack postbus_tgt_ack,
 
-                    output t_postbus_type postbus_src_type,
-                    output t_postbus_data postbus_src_data,
-                    input t_postbus_ack postbus_src_ack,
+                 output t_postbus_type postbus_src_type,
+                 output t_postbus_data postbus_src_data,
+                 input t_postbus_ack postbus_src_ack,
 
-                    clock erx_clock,
-                    input bit erx_reset,
-                    input bit erx_mii_dv, // goes high during the preamble OR at the latest at the start of the SFD
-                    input bit erx_mii_err, // if goes high with dv, then abort the receive; wait until dv goes low
-                    input bit[4] erx_mii_data,
+                 clock erx_clock,
+                 input bit erx_reset,
+                 input bit erx_mii_dv, // goes high during the preamble OR at the latest at the start of the SFD
+                 input bit erx_mii_err, // if goes high with dv, then abort the receive; wait until dv goes low
+                 input bit[4] erx_mii_data,
 
-                    clock etx_clock,
-                    input bit etx_reset,
-                    output bit etx_mii_enable,
-                    output bit[4] etx_mii_data,
-                    input bit etx_mii_crs,
-                    input bit etx_mii_col,
+                 clock etx_clock,
+                 input bit etx_reset,
+                 output bit etx_mii_enable,
+                 output bit[4] etx_mii_data,
+                 input bit etx_mii_crs,
+                 input bit etx_mii_col,
 
-                    output bit uart0_txd,
-                    input bit uart0_txd_fc,
-                    input bit uart0_rxd,
-                    output bit uart0_rxd_fc
+                 output bit uart0_txd,
+                 input bit uart0_txd_fc,
+                 input bit uart0_rxd,
+                 output bit uart0_rxd_fc
     )
 {
     /*b Default clock and reset - internal clock domain
@@ -256,7 +256,7 @@ module io_block_tx( clock int_clock,
      */
     ethernet_receive "Ethernet receive module and sync interface":
         {
-            ethernet_rx erx( io_clock <- erx_clock,
+            io_ethernet_rx erx( io_clock <- erx_clock,
                              io_reset <= erx_reset,
 
                              data_fifo_data   => erx_data_fifo_data,
@@ -287,7 +287,7 @@ module io_block_tx( clock int_clock,
      */
     ethernet_transmit "Ethernet transmit module and sync interface":
         {
-            ethernet_tx etx( io_clock <- etx_clock,
+            io_ethernet_tx etx( io_clock <- etx_clock,
                              io_reset <= etx_reset,
 
                              data_fifo_data   <= egress_sram_read_data,

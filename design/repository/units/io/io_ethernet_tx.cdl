@@ -75,9 +75,9 @@ typedef struct {
     bit value;
 } t_sync;
 
-/*a ethernet_tx module
+/*a io_ethernet_tx module
  */
-module ethernet_tx( clock io_clock,
+module io_ethernet_tx( clock io_clock,
                     input bit io_reset,
 
                     input bit[32] data_fifo_data,

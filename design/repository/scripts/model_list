@@ -17,21 +17,21 @@ cdl units/postbus     postbus_simple_router       inc:headers/cdl
 cdl units/postbus     postbus_input_mux           inc:headers/cdl
 cdl units/postbus     postbus_register_demux      inc:headers/cdl
 cdl units/postbus     postbus_rom_source          inc:headers/cdl
-cdl units/io/src      ethernet_tx                 inc:headers/cdl
-cdl units/io/src      ethernet_rx                 inc:headers/cdl
-cdl units/io/src      io_cmd_fifo_timer           inc:headers/cdl
-cdl units/io/src      io_baud_rate_generator      inc:headers/cdl
-cdl units/io/src      io_ingress_fifos            inc:headers/cdl
-cdl units/io/src      io_egress_fifos             inc:headers/cdl
-cdl units/io/src      io_ingress_control          inc:headers/cdl
-cdl units/io/src      io_egress_control_cmd_fsm   inc:headers/cdl
-cdl units/io/src      io_egress_control           inc:headers/cdl
-cdl units/io/src      io_sync_request             inc:headers/cdl
-cdl units/io/src      io_postbus_target           inc:headers/cdl
-cdl units/io/src      io_postbus_source           inc:headers/cdl
-cdl units/io/src      io_postbus                  inc:headers/cdl
-cdl units/io/src      io_uart                     inc:headers/cdl
-cdl units/io/src      io_block_tx                 inc:headers/cdl
+cdl units/io          io_ethernet_tx              inc:headers/cdl
+cdl units/io          io_ethernet_rx              inc:headers/cdl
+cdl units/io          io_cmd_fifo_timer           inc:headers/cdl
+cdl units/io          io_baud_rate_generator      inc:headers/cdl
+cdl units/io          io_ingress_fifos            inc:headers/cdl
+cdl units/io          io_egress_fifos             inc:headers/cdl
+cdl units/io          io_ingress_control          inc:headers/cdl
+cdl units/io          io_egress_control_cmd_fsm   inc:headers/cdl
+cdl units/io          io_egress_control           inc:headers/cdl
+cdl units/io          io_sync_request             inc:headers/cdl
+cdl units/io          io_postbus_target           inc:headers/cdl
+cdl units/io          io_postbus_source           inc:headers/cdl
+cdl units/io          io_postbus                  inc:headers/cdl
+cdl units/io          io_uart                     inc:headers/cdl
+cdl units/io          io_block  x                 inc:headers/cdl
 
 #c_model src c_gip_cyc
 #c_src src c_gip_full

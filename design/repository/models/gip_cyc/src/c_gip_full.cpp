@@ -2189,6 +2189,10 @@ void c_gip_full::dec_preclock( void )
             pd->dec.next_state.extended_rn.type = gip_ins_r_type_no_override;
             pd->dec.next_state.extended_rm.type = gip_ins_r_type_no_override;
         }
+        if (pd->gip_pipeline_results.tag)
+        {
+            pd->dec.next_state.op_state = gip_dec_op_state_idle;
+        }
         break;
         /*b Preempt - NOT WRITTEN YET
          */

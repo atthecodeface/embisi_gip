@@ -26,28 +26,28 @@ constant integer max_counter_for_permitted_collision = 64;
 /*t t_data_fsm
  */
 typedef fsm {
-    data_fsm_idle "Idle data state, waiting for transmit start indication from packet FSM",
-        data_fsm_output_preamble "Drive out the 7 octet preamble, and read first word from the FIFO",
-        data_fsm_output_sfd "Drive out the start-of-frame delimeter",
-        data_fsm_output_first_two_bytes_of_word "Drive out first four nybbles, i.e. first two bytes, of a word",
-        data_fsm_output_last_two_bytes_of_word "Drive out last four nybbles, i.e. last two bytes, of a word and fetch next word",
-        data_fsm_permitted_collision_occurred "Indicate to packet FSM a collision occurred that was permitted, and that a backoff and retry is expected (packet FSM is responsible for reverting the data FIFO; the jam sequence will be transmitted",
-        data_fsm_late_collision_occurred "Indicate to packet FSM that a late collision occurred; transmission is aborted with the jam sequence, but the data FIFO is left inconsistent",
-        data_fsm_output_fcs "Drive out the 8 nybbles that make up the FCS",
-        data_fsm_complete_transmission "Indicate to the packet FSM that transmission is complete and then finish by heading to Idle"
+    data_fsm_idle "Idle data state, waiting for transmit start indication from packet FSM";
+    data_fsm_output_preamble "Drive out the 7 octet preamble, and read first word from the FIFO";
+    data_fsm_output_sfd "Drive out the start-of-frame delimeter";
+    data_fsm_output_first_two_bytes_of_word "Drive out first four nybbles, i.e. first two bytes, of a word";
+    data_fsm_output_last_two_bytes_of_word "Drive out last four nybbles, i.e. last two bytes, of a word and fetch next word";
+    data_fsm_permitted_collision_occurred "Indicate to packet FSM a collision occurred that was permitted, and that a backoff and retry is expected (packet FSM is responsible for reverting the data FIFO; the jam sequence will be transmitted";
+    data_fsm_late_collision_occurred "Indicate to packet FSM that a late collision occurred; transmission is aborted with the jam sequence, but the data FIFO is left inconsistent";
+    data_fsm_output_fcs "Drive out the 8 nybbles that make up the FCS";
+    data_fsm_complete_transmission "Indicate to the packet FSM that transmission is complete and then finish by heading to Idle";
 } t_data_fsm;
 
 /*t t_packet_fsm
  */
 typedef fsm {
-    packet_fsm_idle "Idle packet state, waiting for a command in the command FIFO",
-        packet_fsm_reading_command "Waiting for command to come from the FIFO",
-        packet_fsm_ensure_deferral_met "Waiting for DEFERRAL timer to complete",
-        packet_fsm_transmit "Waiting for the data FSM to return some form of completion",
-        packet_fsm_return_status,
-        packet_fsm_start_retry,
-        packet_fsm_wait_for_backoff,
-        packet_fsm_discard
+    packet_fsm_idle "Idle packet state, waiting for a command in the command FIFO";
+    packet_fsm_reading_command "Waiting for command to come from the FIFO";
+    packet_fsm_ensure_deferral_met "Waiting for DEFERRAL timer to complete";
+    packet_fsm_transmit "Waiting for the data FSM to return some form of completion";
+    packet_fsm_return_status;
+    packet_fsm_start_retry;
+    packet_fsm_wait_for_backoff;
+    packet_fsm_discard;
 } t_packet_fsm;
 
 /*t t_sync
@@ -264,9 +264,10 @@ For backoff we need a random number up to 10 bits long, with a long-term average
             next_data_fsm_bytes_left_in_packet = data_fsm_bytes_left_in_packet-1;
             data_transmission_will_be_complete = (next_data_fsm_bytes_left_in_packet==0);
 
-            fullswitch (data_fsm_state)
+            full_switch (data_fsm_state)
                 {
                 case data_fsm_idle:
+                {
                     if (start_data_fsm)
                     {
                         next_data_fsm_bytes_left_in_packet = packet_length;
@@ -280,8 +281,9 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                         }
                     }
                     next_data_fsm_counter = 0;
-                    break;
+                }
                 case data_fsm_output_preamble:
+                {
                     if (collision_detected)
                     {
                         next_data_fsm_state = data_fsm_permitted_collision_occurred;
@@ -292,8 +294,9 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                         next_data_fsm_state = data_fsm_output_sfd;
                         next_data_fsm_counter = 0;
                     }
-                    break;
+                }                 
                 case data_fsm_output_sfd:
+                {
                     if (collision_detected)
                     {
                         next_data_fsm_state = data_fsm_permitted_collision_occurred;
@@ -304,8 +307,9 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                         next_data_fsm_state = data_fsm_output_first_two_bytes_of_word;
                         next_data_fsm_counter = 0;
                     }
-                    break;
+                }
                 case data_fsm_output_first_two_bytes_of_word:
+                {
                     if (collision_detected)
                     {
                         if (data_fsm_counter > max_counter_for_permitted_collision)
@@ -332,8 +336,9 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                         {
                             next_data_fsm_state = data_fsm_output_last_two_bytes_of_word;
                         }
-                    break;
+                }
                 case data_fsm_output_last_two_bytes_of_word:
+                {
                     if (collision_detected)
                     {
                         if (data_fsm_counter > max_counter_for_permitted_collision)
@@ -360,8 +365,9 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                         {
                             next_data_fsm_state = data_fsm_output_first_two_bytes_of_word;
                         }
-                    break;
+                }
                 case data_fsm_output_fcs:
+                {
                     if (collision_detected) // Collisions during FCS are explicitly late, even for minimal sized packets (check? - collision must occur in slot time of 512 bits for normal, and slot time starts with preamble)
                     {
                         next_data_fsm_state = data_fsm_late_collision_occurred;
@@ -371,19 +377,21 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                         next_data_fsm_state = data_fsm_complete_transmission;
                         next_data_fsm_counter = 0;
                     }
-                    break;
+                }
                 case data_fsm_late_collision_occurred:
                 case data_fsm_permitted_collision_occurred:
+                {
                     if (data_fsm_counter[3;0]==7) // JAM is 32 bits, or 4 octets, or 8 nybbles
                     {
                         next_data_fsm_state = data_fsm_complete_transmission;
                         next_data_fsm_counter = 0;
                     }
-                    break;
+                }
                 case data_fsm_complete_transmission:
+                {
                     next_data_fsm_state = data_fsm_idle;
                     next_data_fsm_counter = 0;
-                    break;
+                }
                 }
             data_fsm_state <= next_data_fsm_state;
             data_fsm_counter <= next_data_fsm_counter;
@@ -397,45 +405,41 @@ For backoff we need a random number up to 10 bits long, with a long-term average
             // Default values
             data_fifo_read = 0;
 
-            partswitch (data_fsm_state)
+            part_switch (data_fsm_state)
                 {
                 case data_fsm_output_preamble:
+                {
                     if (data_fsm_counter==0) // Read data FIFO on first cycle of preamble
                     {
                         data_fifo_read = 1;
                     }
-                    break;
+                }
                 case data_fsm_output_sfd:
+                {
                     data_tx_buffer <= data_fifo_data[16;16]; // Get first two bytes to transmit from data FIFO data
-                    break;
+                }
                 case data_fsm_output_first_two_bytes_of_word:
+                {
                     if (next_data_fsm_state==data_fsm_output_last_two_bytes_of_word)
                     {
                         data_tx_buffer <= data_fifo_data[16;0]; // Get last two bytes to transmit from data FIFO data, and we'll request another word if we may (and if there is one)
                         data_fifo_read = (data_fsm_bytes_left_in_packet[max_packet_byte_length_bits-2;2]!=0); // bytes_left would be 4 for a 4-byte packet during first byte, 3 in second byte (which is where we are now). Any more and we need to read the FIFO.
                     }
-                    break;
+                }
                 case data_fsm_output_last_two_bytes_of_word:
+                {
                     if (next_data_fsm_state==data_fsm_output_first_two_bytes_of_word)
                     {
                         data_tx_buffer <= data_fifo_data[16;16]; // Get first two bytes to transmit from data FIFO data
                     }
-                    break;
                 }
-            fullswitch (data_fsm_counter[2;0])
+                }
+            full_switch (data_fsm_counter[2;0])
                 {
-                case 0:
-                    data_tx_nybble = data_tx_buffer[4;8];
-                    break;
-                case 1:
-                    data_tx_nybble = data_tx_buffer[4;12];
-                    break;
-                case 2:
-                    data_tx_nybble = data_tx_buffer[4;0];
-                    break;
-                case 3:
-                    data_tx_nybble = data_tx_buffer[4;4];
-                    break;
+                case 0: { data_tx_nybble = data_tx_buffer[4;8]; }
+                case 1: { data_tx_nybble = data_tx_buffer[4;12]; }
+                case 2: { data_tx_nybble = data_tx_buffer[4;0]; }
+                case 3: { data_tx_nybble = data_tx_buffer[4;4]; }
                 }
         }
 
@@ -464,15 +468,17 @@ For backoff we need a random number up to 10 bits long, with a long-term average
             }
 
             fcs <= 32hffffffff;
-            partswitch (data_fsm_state)
+            part_switch (data_fsm_state)
                 {
                 case data_fsm_output_first_two_bytes_of_word:
                 case data_fsm_output_last_two_bytes_of_word:
+                {
                     fcs <= next_fcs;
-                    break;
+                }
                 case data_fsm_output_fcs:
+                {
                     fcs[28;4] <= fcs[28;0]; // Rotate up the FCS as we transmit it so that the data to transmit is always ready in the top 4 bits
-                    break;
+                }
                 }
         }
 
@@ -480,41 +486,28 @@ For backoff we need a random number up to 10 bits long, with a long-term average
      */
     mii_data_and_enable "MII data and enable generation":
         {
-            fullswitch (data_fsm_state)
+            full_switch (data_fsm_state)
                 {
-                case data_fsm_idle:
-                    mii_enable = 0;
-                    mii_data = 0;
-                    break;
-                case data_fsm_output_preamble:
-                    mii_enable = 1;
-                    mii_data = 4h5; // Preamble is 0101
-                    break;
-                case data_fsm_output_sfd:
-                    mii_enable = 1;
-                    mii_data = 4hd; // SFD is 1101
-                    break;
+                case data_fsm_idle:            {mii_enable = 0; mii_data = 0; }
+                case data_fsm_output_preamble: {mii_enable = 1; mii_data = 4h5; } // Preamble is 0101
+                case data_fsm_output_sfd: {mii_enable = 1; mii_data = 4hd; } // SFD is 1101
                 case data_fsm_output_first_two_bytes_of_word:
                 case data_fsm_output_last_two_bytes_of_word:
+                {
                     mii_enable = 1;
                     mii_data = data_tx_nybble;
-                    break;
+                }
                 case data_fsm_output_fcs:
+                {
                     mii_enable = 1;
                     mii_data[31] = ~fcs[28]; // FCS is transmitted this way round, inverted
                     mii_data[30] = ~fcs[29]; // FCS is transmitted this way round, inverted
                     mii_data[29] = ~fcs[30]; // FCS is transmitted this way round, inverted
                     mii_data[28] = ~fcs[31]; // FCS is transmitted this way round, inverted
-                    break;
-                case data_fsm_complete_transmission:
-                    mii_enable = 0;
-                    mii_data = 0;
-                    break;
+                }
+                case data_fsm_complete_transmission: {mii_enable = 0; mii_data = 0; }
                 case data_fsm_late_collision_occurred:
-                case data_fsm_permitted_collision_occurred:
-                    mii_enable = 1;
-                    mii_data = 9; // Jam with anything that is not the actual CRC, and so this will do
-                    break;
+                case data_fsm_permitted_collision_occurred: {mii_enable=1; mii_data=9; } // Jam with anything that is not the actual CRC, and so this will do
                 }
         }
 
@@ -581,46 +574,55 @@ For backoff we need a random number up to 10 bits long, with a long-term average
             next_packet_fsm_state = packet_fsm_state;
             next_packet_fsm_counter = packet_fsm_counter+1;
 
-            fullswitch (packet_fsm_state)
+            full_switch (packet_fsm_state)
                 {
                 case packet_fsm_idle:
+                {
                     if (!cmd_fifo_empty)
                     {
                         next_packet_fsm_state = packet_fsm_reading_command;
                         next_packet_fsm_counter = 0;
                         retry_counter <= 0;
                     }
-                    break;
+                }
                 case packet_fsm_reading_command:
+                {
                     if (packet_fsm_counter==4)
                     {
                         next_packet_fsm_state = packet_fsm_ensure_deferral_met;
                     }
-                    break;
+                }
                 case packet_fsm_ensure_deferral_met:
+                {
                     if (deferral_complete)
                     {
                         next_packet_fsm_state = packet_fsm_transmit;
                     }
-                    break;
+                }
                 case packet_fsm_transmit:
-                    partswitch ( data_fsm_state )
+                {
+                    part_switch ( data_fsm_state )
                     {
                     case data_fsm_late_collision_occurred:
+                    {
                         next_packet_fsm_state = packet_fsm_return_status;
-                        break;
-                    case data_fsm_permitted_collision_occurred:
-                        next_packet_fsm_state = packet_fsm_start_retry;
-                        break;
-                    case data_fsm_complete_transmission:
-                        next_packet_fsm_state = packet_fsm_return_status;
-                        break;
                     }
-                    break;
+                    case data_fsm_permitted_collision_occurred:
+                    {
+                        next_packet_fsm_state = packet_fsm_start_retry;
+                    }
+                    case data_fsm_complete_transmission:
+                    {
+                        next_packet_fsm_state = packet_fsm_return_status;
+                    }
+                    }
+                }
                 case packet_fsm_return_status:
+                {
                     next_packet_fsm_state = packet_fsm_idle;
-                    break;
+                }
                 case packet_fsm_start_retry:
+                {
                     retry_counter <= retry_counter+1;
                     if (retry_counter==packet_retry_count)
                     {
@@ -631,16 +633,18 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                         next_packet_fsm_state = packet_fsm_wait_for_backoff;
                         start_backoff = 1;
                     }
-                    break;
+                }
                 case packet_fsm_wait_for_backoff:
+                {
                     if (backoff_complete)
                     {
                         next_packet_fsm_state = packet_fsm_ensure_deferral_met;
                     }
-                    break;
+                }
                 case packet_fsm_discard:
+                {
                     next_packet_fsm_state = packet_fsm_idle;
-                    break;
+                }
                 }
             packet_fsm_state <= next_packet_fsm_state;
             packet_fsm_counter <= next_packet_fsm_counter;

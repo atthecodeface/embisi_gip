@@ -5,13 +5,21 @@
 #a Targets
 all:
 
+sim: simulation
+
 doc: documentation
+
+
+.PHONY: simulation
+
+simulation:
+	make -f Makefile.simulation
+
 
 .PHONY: documentation
 
 documentation:
-	rm -rf documentation
-	$(TNBT_CVS_ROOT)/common/bin/make_web ../repository/documentation documentation index.php
+	make -f Makefile.documentation
 
 #a Editor preferences and notes
 # Local Variables: ***

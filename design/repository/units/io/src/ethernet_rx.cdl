@@ -14,13 +14,13 @@
 /*t t_data_fsm
  */
 typedef fsm {
-    data_fsm_idle "Idle data state, waiting for receive data",
-        data_fsm_wait_for_end_of_sfd               "Waiting for end of SFD; the count indication will reach 2 when the SFD completes",
-        data_fsm_reading_data                      "Reading data, calculating FCS;",
-        data_fsm_reading_data_last_nybble_of_word  "Reading data, calculating FCS, write data to FIFO, possibly write status",
-        data_fsm_packet_complete_waiting           "Packet complete, checked FCS, waiting for any previous data and status to have been written",
-        data_fsm_packet_complete                   "Packet complete, writing final data and status",
-        data_fsm_framing_error                     "Framing error (error received, data valid went away unexpectedly, etc)"
+    data_fsm_idle "Idle data state, waiting for receive data";
+    data_fsm_wait_for_end_of_sfd               "Waiting for end of SFD; the count indication will reach 2 when the SFD completes";
+    data_fsm_reading_data                      "Reading data, calculating FCS;";
+    data_fsm_reading_data_last_nybble_of_word  "Reading data, calculating FCS, write data to FIFO, possibly write status";
+    data_fsm_packet_complete_waiting           "Packet complete, checked FCS, waiting for any previous data and status to have been written";
+    data_fsm_packet_complete                   "Packet complete, writing final data and status";
+    data_fsm_framing_error                     "Framing error (error received, data valid went away unexpectedly, etc)";
 } t_data_fsm;
 
 /*t t_data_fsm_data
@@ -109,23 +109,27 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
     clocked bit[32] status_fifo_data = 0;
     clocked bit status_fifo_write = 0;
 
-    r_mii_rx_data <= mii_data;
-    r_mii_rx_dv <= mii_dv;
-    r_mii_rx_err <= mii_err;
-
-    data_register[4; 0] <= r_mii_rx_data;
-    data_register[4; 4] <= data_register[4; 0];
-    data_register[4; 8] <= data_register[4; 4];
-    data_register[4;12] <= data_register[4; 8];
-    data_register[4;16] <= data_register[4;12];
-    data_register[4;20] <= data_register[4;16];
-    data_register[4;24] <= data_register[4;20];
-    data_register[4;28] <= data_register[4;24];
-
-    if (write_word_to_data_fifo)
+    comb bit write_word_to_data_fifo;
+registers:
     {
-        data_fifo_data[ 4;0] <= r_mii_rx_dv;
-        data_fifo_data[28;4] <= data_register;
+        r_mii_rx_data <= mii_data;
+        r_mii_rx_dv <= mii_dv;
+        r_mii_rx_err <= mii_err;
+
+        data_register[4; 0] <= r_mii_rx_data;
+        data_register[4; 4] <= data_register[4; 0];
+        data_register[4; 8] <= data_register[4; 4];
+        data_register[4;12] <= data_register[4; 8];
+        data_register[4;16] <= data_register[4;12];
+        data_register[4;20] <= data_register[4;16];
+        data_register[4;24] <= data_register[4;20];
+        data_register[4;28] <= data_register[4;24];
+
+        if (write_word_to_data_fifo)
+        {
+            data_fifo_data[ 4;0] <= r_mii_rx_data;
+            data_fifo_data[28;4] <= data_register;
+        }
     }
 
     /*b Data FSM, block_complete and word_complete indications
@@ -135,9 +139,10 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
             next_data_fsm = {state=data_fsm.state, bytes_in_block=data_fsm.bytes_in_block, counter=data_fsm.counter+1};
             block_complete = 0;
             word_complete = 0;
-            fullswitch (data_fsm.state)
+            full_switch (data_fsm.state)
                 {
                 case data_fsm_idle:
+                {
                     if ( r_mii_rx_dv )
                     {
                         if (r_mii_rx_err)
@@ -159,8 +164,9 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
                             next_data_fsm.state = data_fsm_framing_error;
                         }
                     }
-                    break;
+                }
                 case data_fsm_wait_for_end_of_sfd:
+                {
                     if ( !r_mii_rx_dv || r_mii_rx_err || (r_mii_rx_data!=4h5))
                     {
                         next_data_fsm.state = data_fsm_framing_error;
@@ -171,8 +177,9 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
                             next_data_fsm.counter = 0;
                             next_data_fsm.bytes_in_block = 0;
                         }
-                    break;
+                }
                 case data_fsm_reading_data:
+                {
                     if ( !r_mii_rx_dv )
                     {
                         if (data_fsm.counter[0]==0) // Data valid taken away mid-byte
@@ -203,8 +210,9 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
                             }
                         }
                     }
-                    break;
+                }
                 case data_fsm_reading_data_last_nybble_of_word: // 7th nybble of a word should be ready; if not we have a framing error, if we do write the word and a status if we hit the 16th word
+                {
                     if ( !r_mii_rx_dv ) // Data valid taken away mid-byte
                     {
                         next_data_fsm.state = data_fsm_framing_error;
@@ -226,22 +234,25 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
                             }
                         }
                     }
-                    break;
+                }
                 case data_fsm_packet_complete_waiting:
+                {
                     if (data_fsm.counter == 5)
                     {
                         next_data_fsm.state = data_fsm_packet_complete;
                     }
-                    break;
+                }
                 case data_fsm_packet_complete: // Wrote a whole packet except last word; write last word (if any bytes ready) and write status giving full status of packet
+                {
                     if (data_fsm.bytes_in_block[2;0]!=0)
                     {
                         word_complete = 1; // DO WE HAVE TO SHIFT THE DATA UP?!?
                     }
                     block_complete = 1;
                     next_data_fsm.state = data_fsm_idle;
-                    break;
+                }
                 case data_fsm_framing_error: // Framing error; indicate with a status. Wait for status and data FIFO to complete any pending writes, then write last word (if any bytes ready) and write status
+                {
                     if (data_fsm.counter == 5)
                     {
                         if (data_fsm.bytes_in_block[2;0]!=0)
@@ -251,7 +262,7 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
                         block_complete = 1;
                         next_data_fsm.state = data_fsm_idle;
                     }
-                    break;
+                }
                 }
         }
 
@@ -280,15 +291,16 @@ Framing errors occurring in the packet (bad SFD, data valid going away mid-byte)
             }
 
             fcs <= 32hffffffff;
-            partswitch (data_fsm.state)
+            part_switch (data_fsm.state)
                 {
-                case data_fsm_output_first_two_bytes_of_word:
-                case data_fsm_output_last_two_bytes_of_word:
+                case data_fsm_reading_data:
+                {
                     fcs <= next_fcs;
-                    break;
-                case data_fsm_output_fcs:
+                }
+                case data_fsm_wait_for_end_of_sfd:
+                {
                     fcs[28;4] <= fcs[28;0]; // Rotate up the FCS as we transmit it so that the data to transmit is always ready in the top 4 bits
-                    break;
+                }
                 }
         }
 

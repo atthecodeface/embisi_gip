@@ -37,17 +37,22 @@ The instruction set is documented in OpenOffice
 </tr>
 
 <tr>
-<th><a href="alu.html">ALU</a></th>
+<th><a href="rf/index.php">RF</a></th>
+<td>Register file, with information on read ports, write ports, and register scoreboarding</td>
+</tr>
+
+<tr>
+<th><a href="alu/index.php">ALU</a></th>
 <td>ALU capabilities, outline implementation, and use for ARM emulation</td>
 </tr>
 
 <tr>
-<th><a href="arm_emulation.html">ARM emulation</a></th>
+<th><a href="arm_emulation/index.php">ARM emulation</a></th>
 <td>Details on the mechanisms used for ARM emulation</td>
 </tr>
 
 <tr>
-<th><a href="microkernel.html">Microkernel</a></th>
+<th><a href="microkernel/index.php">Microkernel</a></th>
 <td>Capabilities of the microkernel and its use in ARM emulation</td>
 </tr>
 

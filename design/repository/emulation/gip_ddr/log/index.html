@@ -680,7 +680,49 @@ peek 40000 100
 
 Looks good!
 
-Once that has been done, we will push on to the ethernet
+SystemAce build
+We use a 64Mbit system ACE MPM/SC (expert mode needed), slave serial mode, 1 chain
+To cfg address 0 assign led, 1 dram, 2 simple, 3 ddr
+Use file dipled_2v4000.bit for chain 0, ddr_sdram_top_4000.bit for chain 1, gip_simple for chain 2, gip_ddr_v1 for chain 3
+Generate the MPM file with compression
+This takes 4 minutes or so
+Initialize the jtag chain
+right-click on the systemace, and erase; this takes 2 minutes, but ought to take longer...
+assign the configuration file, and program (without erase) with verify; this may take 3 hours
+Started at 2:19pm
+
+Well, it completed at some point.
+
+Tuesday am
+
+Can download a flash build with the monitor in, with memory fill and verify
+The DDR supports 4MB of memory at 0x80000000...
+
+mmf 80000000 100000 1
+mr 803ffff0 10
+803ffff0:000ffffc 000ffffd 000ffffe 000fffff 00000000 00000001 00000002 00000003
+80400070:00000004 00000005 00000006 00000007 00000008 00000009 0000000a 0000000b
+mmv 80000000 100000 1
+mmf 80000000 100000 2
+mmv 80000000 100000 2
+
+For some reason the flash download process does not work on the new build; but the original does. Hm.
+Turns out that doing any write to the flash subsystem is not working.
+Well, the oe_n was not correctly driven - maybe we always drove that low?
+
+We are now ready to fix the serial port and run the ethernet
+
+For the ethernet, I want to make the IO block execute commands when flags become set. 'become set' can come from:
+1. not empty flag being set because IO writes status in to a FIFO; this needs to be able to cause the semaphore in the GIP to be set to mirror it
+2. postbus reads a status from the status FIFO, but the status FIFO still has data in it; this needs to be able to cause the semaphore in the GIP to be set to mirror it
+3. transmit not nearly full flag being set because IO reads data from a FIFO; this needs to be able to cause the semaphore in the GIP to be set to mirror it
+4. not nearly empty flag being set because IO writes data in to a FIFO; this needs to be able to cause the semaphore in the GIP to be set to mirror it
+5. postbus reads a set of data from a data FIFO; the 
+
+Do we want auto-push of data? I don't think so; we can use a reflector-like mechanism for this in the future if we want to.
+So, attach up to 8 single word postbus commands to the IO, each of which can come from a combination of FIFO flag events. Define the events. Determine when the events trigger. Handle the events once they are posted.
+We should be race-clean if we assume that outbound postbus commands are the 'becomes set' variety, and postbus commands in have always cleared their virtual flags.
+
 
 
 Note: programming the systemace takes an hour and a half

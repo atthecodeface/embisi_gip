@@ -85,6 +85,8 @@ module gip_core( clock gip_clock,
      */
     net t_gip_instruction_rf dec_inst;
     net bit dec_sched_acknowledge;
+    net bit dec_preempt_in_progress;
+    net bit dec_deschedule;
 
     /*b Nets from RF read
      */
@@ -142,9 +144,11 @@ module gip_core( clock gip_clock,
     net bit[32] sched_thread_to_start_pc;
     net bit[4] sched_thread_to_start_config;
     net bit[2] sched_thread_to_start_level;
+    net bit sched_thread_to_start_resuming;
     net bit[3] sched_thread;
     net bit[32] sched_thread_data_pc;
     net bit[4] sched_thread_data_config;
+    net bit[4] sched_thread_data_flag_dependencies;
 
     /*b Nets from special
      */
@@ -159,6 +163,7 @@ module gip_core( clock gip_clock,
     net bit[3] special_write_thread;
     net bit[32] special_thread_data_pc;
     net bit[4] special_thread_data_config;
+    net bit[4] special_thread_data_flag_dependencies;
     net bit[3] special_selected_thread;
 
     /*b Nets from postbus
@@ -303,6 +308,8 @@ module gip_core( clock gip_clock,
                                      gip_reset <= gip_reset,
 
                                      dec_acknowledge_scheduler <= dec_sched_acknowledge,
+                                     dec_preempt_in_progress <= dec_preempt_in_progress,
+                                     dec_deschedule <= dec_deschedule,
 
                                      special_semaphores <= special_semaphores,
                                      special_cooperative <= special_cooperative,
@@ -312,6 +319,7 @@ module gip_core( clock gip_clock,
                                      special_write_thread <= special_write_thread,
                                      special_thread_data_pc <= special_thread_data_pc,
                                      special_thread_data_config <= special_thread_data_config,
+                                     special_thread_data_flag_dependencies <= special_thread_data_flag_dependencies,
                                      special_selected_thread <= special_selected_thread,
 
                                      thread_to_start_valid => sched_thread_to_start_valid,
@@ -319,10 +327,12 @@ module gip_core( clock gip_clock,
                                      thread_to_start_pc => sched_thread_to_start_pc,
                                      thread_to_start_config => sched_thread_to_start_config,
                                      thread_to_start_level => sched_thread_to_start_level,
+                                     thread_to_start_resuming => sched_thread_to_start_resuming,
 
                                      thread => sched_thread,
                                      thread_data_pc => sched_thread_data_pc,
-                                     thread_data_config => sched_thread_data_config );
+                                     thread_data_config => sched_thread_data_config,
+                                     thread_data_flag_dependencies => sched_thread_data_flag_dependencies );
 
             gip_decode decode( gip_clock <- gip_clock,
                                gip_reset <= gip_reset,
@@ -347,7 +357,12 @@ module gip_core( clock gip_clock,
                                sched_thread_to_start_valid <= sched_thread_to_start_valid,
                                sched_thread_to_start <= sched_thread_to_start,
                                sched_thread_to_start_pc <= sched_thread_to_start_pc,
+                               sched_thread_to_start_config <= sched_thread_to_start_config,
+                               sched_thread_to_start_level <= sched_thread_to_start_level,
+                               sched_thread_to_start_resuming <= sched_thread_to_start_resuming,
                                acknowledge_scheduler => dec_sched_acknowledge,
+                               preempt_in_progress => dec_preempt_in_progress,
+                               deschedule => dec_deschedule,
 
                                special_repeat_count <= special_repeat_count,
                                special_alu_mode <= special_alu_mode,
@@ -394,6 +409,7 @@ module gip_core( clock gip_clock,
 
                                  sched_state_thread <= sched_thread,
                                  sched_thread_data_config <= sched_thread_data_config,
+                                 sched_thread_data_flag_dependencies <= sched_thread_data_flag_dependencies,
                                  sched_thread_data_pc <= sched_thread_data_pc,
 
                                  postbus_semaphore_to_set <= postbus_semaphore_to_set,
@@ -410,6 +426,7 @@ module gip_core( clock gip_clock,
                                  special_write_thread => special_write_thread,
                                  special_thread_data_pc => special_thread_data_pc,
                                  special_thread_data_config => special_thread_data_config,
+                                 special_thread_data_flag_dependencies => special_thread_data_flag_dependencies,
                                  special_selected_thread => special_selected_thread
                                  );
         }

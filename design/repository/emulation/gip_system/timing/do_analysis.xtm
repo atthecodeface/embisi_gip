@@ -1,0 +1,83 @@
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromNets ckgen_int_double_drm_clock int_double_drm_clock_buffered
+DefineEndpoints ToPads ddr_dram_clk_1 ddr_dram_clk_0_n 
+AnalyzeCustom save dram_output_clock_skew.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+Period 8.000 sys_drm_clock_in
+Period 60.000 ckgen_divided_clock
+Period 60.000 int_logic_slow_clock_buffered
+ExcludeNets body_ddr_ready
+MaxPathsPerTimingConstraint 10
+AnalyzeUserTimingConstraints save all_clock_periods.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+Period 8.000 sys_drm_clock_in
+ExcludeNets body_ddr_ready
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeUserTimingConstraints save dram_clock_periods.twr
+
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints ToNets ckgen_int_drm_clock_phase int_drm_clock_phase_1 int_drm_clock_phase_2 int_drm_clock_phase_3 int_drm_clock_phase_4
+DefineEndpoints ToFFs ckgen_int_drm_clock_phase int_drm_clock_phase_1 int_drm_clock_phase_2 int_drm_clock_phase_3 int_drm_clock_phase_4
+DefineEndpoints FromNets ckgen_int_drm_clock_phase int_drm_clock_phase_1 int_drm_clock_phase_2 int_drm_clock_phase_3 int_drm_clock_phase_4
+DefineEndpoints FromFFs ckgen_int_drm_clock_phase int_drm_clock_phase_1 int_drm_clock_phase_2 int_drm_clock_phase_3 int_drm_clock_phase_4
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save clock_phases.twr
+
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromFFs
+DefineEndpoints ToFFs
+DefineEndpoints FromRAMs
+DefineEndpoints ToRAMs
+DefineEndpoints FromPads
+DefineEndpoints ToPads ddr_dram_clk_0 ddr_dram_clk_0_n ddr_dram_clk_1 ddr_dram_clk_1_n
+DefineEndpoints FromNets
+DefineEndpoints ToNets
+DefineEndpoints FromPins
+DefineEndpoints ToPins
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_clocks.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromNets ckgen_int_double_drm_clock
+DefineEndpoints ToPins ddr_dram_dq<29>.OTCLK1 ddr_dram_a<1>.OTCLK1 ddr_dram_ras_n.OTCLK1
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_output_pin_clocks.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromFFs
+DefineEndpoints ToPads ddr_dram_a<0> ddr_dram_a<1> ddr_dram_a<2> ddr_dram_a<3> ddr_dram_a<4> ddr_dram_a<5> ddr_dram_a<6> ddr_dram_a<7> ddr_dram_a<8> ddr_dram_a<9> ddr_dram_a<10> ddr_dram_a<11> ddr_dram_a<12> ddr_dram_ba<0> ddr_dram_ba<1>
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_controls.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromFFs
+DefineEndpoints ToPads ddr_dram_dq<0> ddr_dram_dq<1> ddr_dram_dq<2> ddr_dram_dq<3> ddr_dram_dq<4> ddr_dram_dq<5> ddr_dram_dq<6> ddr_dram_dq<7> ddr_dram_dq<8> ddr_dram_dq<9> ddr_dram_dq<10> ddr_dram_dq<11> ddr_dram_dq<12>
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_dq.twr

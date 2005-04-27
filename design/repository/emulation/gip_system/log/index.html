@@ -1,0 +1,24 @@
+We are now ready to fix the serial port and run the ethernet
+
+For the ethernet, I want to make the IO block execute commands when flags become set. 'become set' can come from:
+1. not empty flag being set because IO writes status in to a FIFO; this needs to be able to cause the semaphore in the GIP to be set to mirror it
+2. postbus reads a status from the status FIFO, but the status FIFO still has data in it; this needs to be able to cause the semaphore in the GIP to be set to mirror it
+3. transmit not nearly full flag being set because IO reads data from a FIFO; this needs to be able to cause the semaphore in the GIP to be set to mirror it
+4. not nearly empty flag being set because IO writes data in to a FIFO; this needs to be able to cause the semaphore in the GIP to be set to mirror it
+5. postbus reads a set of data from a data FIFO; the 
+
+Do we want auto-push of data? I don't think so; we can use a reflector-like mechanism for this in the future if we want to.
+So, attach up to 8 single word postbus commands to the IO, each of which can come from a combination of FIFO flag events. Define the events. Determine when the events trigger. Handle the events once they are posted.
+We should be race-clean if we assume that outbound postbus commands are the 'becomes set' variety, and postbus commands in have always cleared their virtual flags.
+
+
+Note that the gip_postbus.cdl line 304 (semaphore_to_set) was commented out; probably because this does not work in the Xilinx tools
+We also need to fix bit_vector to int conversions (particularly of constants!) in CDL
+io_postbus_source.cdl does not accurately reflect requested_store_type in gtk
+
+Test semaphores on receive
+write ethernet receive code with polling
+add event store and events in postbus event source
+increase FIFO depth in postbus event commands (2, not 1)
+
+Note: programming the systemace takes an hour and a half

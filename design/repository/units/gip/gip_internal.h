@@ -49,7 +49,7 @@ typedef enum [5]
 typedef enum [3]
 {
     gip_ins_r_type_register = 0,
-    gip_ins_r_type_register_indirect = 1, // DEPRECATED
+    gip_ins_r_type_register_indirect = 1, // DEPRECATED - use to expand register space
     gip_ins_r_type_periph = 2, // access to 2-cycle peripheral space (timer, ?uart?)
     gip_ins_r_type_postbus = 3, // direct addressing of postbus register file, FIFOs and command/status
     gip_ins_r_type_special = 4, // access to DAGs, scheduler semaphores, repeat counts, ZOL data
@@ -83,6 +83,7 @@ typedef enum [4]
     gip_logic_op_xor_first=9,
     gip_logic_op_bit_reverse=11,
     gip_logic_op_byte_reverse=12,
+    gip_logic_op_read_flags=15,
 } t_gip_logic_op;
 
 /*t t_gip_arith_op - these are hand coded to match the decode; do not change!
@@ -98,6 +99,7 @@ typedef enum [4]
     gip_arith_op_init=6,
     gip_arith_op_mla=7,
     gip_arith_op_mlb=8,
+    gip_arith_op_write_flags=15,
 } t_gip_arith_op;
 
 /*t t_gip_ins_class
@@ -126,6 +128,7 @@ typedef enum [4]
     gip_ins_subclass_arith_mlb=11,
     gip_ins_subclass_arith_dva=10,
     gip_ins_subclass_arith_dvb=11,
+    gip_ins_subclass_arith_write_flags=15,
 
     gip_ins_subclass_logic_and=0,
     gip_ins_subclass_logic_or=1,
@@ -140,6 +143,7 @@ typedef enum [4]
     gip_ins_subclass_logic_xorlast=10,
     gip_ins_subclass_logic_bitreverse=11,
     gip_ins_subclass_logic_bytereverse=12,
+    gip_ins_subclass_logic_read_flags=15,
 
     gip_ins_subclass_shift_lsl=0,
     gip_ins_subclass_shift_lsr=1,
@@ -445,7 +449,12 @@ extern module gip_decode( clock gip_clock,
                           input bit sched_thread_to_start_valid,
                           input bit[3] sched_thread_to_start,
                           input bit[32] sched_thread_to_start_pc,
+                          input bit[4] sched_thread_to_start_config,
+                          input bit[2] sched_thread_to_start_level,
+                          input bit sched_thread_to_start_resuming,
                           output bit acknowledge_scheduler,
+                          output bit preempt_in_progress,
+                          output bit deschedule,
 
                           input bit[8] special_repeat_count,
                           input bit[2] special_alu_mode,
@@ -461,13 +470,14 @@ extern module gip_decode( clock gip_clock,
     timing from rising clock gip_clock prefetch_op, prefetch_address;
 
     timing to rising clock gip_clock rfr_accepting_dec_instruction;
-    timing comb input rfr_accepting_dec_instruction, gip_pipeline_flush;
+    timing comb input rfr_accepting_dec_instruction, gip_pipeline_flush, gip_pipeline_tag;
     timing comb output fetch_op, prefetch_op;
+    timing comb output deschedule;
 
     timing to rising clock gip_clock gip_pipeline_flush, gip_pipeline_rfw_write_pc, gip_pipeline_executing, gip_pipeline_tag, gip_pipeline_rfw_data;
 
-    timing to rising clock gip_clock sched_thread_to_start_valid, sched_thread_to_start, sched_thread_to_start_pc;
-    timing from rising clock gip_clock acknowledge_scheduler;
+    timing to rising clock gip_clock sched_thread_to_start_valid, sched_thread_to_start, sched_thread_to_start_pc, sched_thread_to_start_config, sched_thread_to_start_level, sched_thread_to_start_resuming;
+    timing from rising clock gip_clock acknowledge_scheduler, preempt_in_progress;
 
     timing to rising clock gip_clock special_repeat_count, special_alu_mode, special_cp_trail_2;
 }
@@ -486,6 +496,7 @@ extern module gip_special( clock gip_clock,
 
                            input bit[3] sched_state_thread,
                            input bit[4] sched_thread_data_config,
+                           input bit[4] sched_thread_data_flag_dependencies,
                            input bit[32] sched_thread_data_pc,
 
                            input bit[5] postbus_semaphore_to_set "Semaphore to set due to postbus receive/transmit - none if zero",
@@ -501,6 +512,7 @@ extern module gip_special( clock gip_clock,
                            output bit[3] special_write_thread,
                            output bit[32] special_thread_data_pc,
                            output bit[4] special_thread_data_config,
+                           output bit[4] special_thread_data_flag_dependencies,
                            output bit[3] special_selected_thread
 
     )
@@ -514,13 +526,13 @@ extern module gip_special( clock gip_clock,
 
     timing to rising clock gip_clock write, write_address, write_data;
 
-    timing to rising clock gip_clock sched_state_thread, sched_thread_data_config, sched_thread_data_pc;
+    timing to rising clock gip_clock sched_state_thread, sched_thread_data_config, sched_thread_data_flag_dependencies, sched_thread_data_pc;
 
     timing to rising clock gip_clock postbus_semaphore_to_set;
 
     timing from rising clock gip_clock special_repeat_count, special_alu_mode, special_cp_trail_2;
     timing from rising clock gip_clock special_semaphores, special_cooperative, special_round_robin;
-    timing from rising clock gip_clock special_thread_data_write_pc, special_thread_data_write_config, special_write_thread, special_thread_data_pc, special_thread_data_config, special_selected_thread;
+    timing from rising clock gip_clock special_thread_data_write_pc, special_thread_data_write_config, special_write_thread, special_thread_data_pc, special_thread_data_config, special_thread_data_flag_dependencies, special_selected_thread;
     
 }
 
@@ -574,6 +586,8 @@ extern module gip_scheduler( clock gip_clock,
                              input bit gip_reset,
 
                              input bit dec_acknowledge_scheduler,
+                             input bit dec_preempt_in_progress,
+                             input bit dec_deschedule,
                              input bit[32] special_semaphores,
                              input bit special_cooperative,
                              input bit special_round_robin,
@@ -582,6 +596,7 @@ extern module gip_scheduler( clock gip_clock,
                              input bit[3] special_write_thread,
                              input bit[32] special_thread_data_pc,
                              input bit[4] special_thread_data_config,
+                             input bit[4] special_thread_data_flag_dependencies,
                              input bit[3] special_selected_thread,
 
                              output bit thread_to_start_valid,
@@ -589,21 +604,24 @@ extern module gip_scheduler( clock gip_clock,
                              output bit[32] thread_to_start_pc,
                              output bit[4] thread_to_start_config,
                              output bit[2] thread_to_start_level,
+                             output bit thread_to_start_resuming,
 
                              output bit[3] thread,
                              output bit[32] thread_data_pc "For reading in the special registers",
-                             output bit[4] thread_data_config "For reading in the special registers"
+                             output bit[4] thread_data_config "For reading in the special registers",
+                             output bit[4] thread_data_flag_dependencies "For reading in the special registers"
+
     )
 {
     timing to rising clock gip_clock gip_reset;
 
     timing to rising clock gip_clock dec_acknowledge_scheduler;
     timing to rising clock gip_clock special_semaphores, special_cooperative, special_round_robin;
-    timing to rising clock gip_clock special_thread_data_write_pc, special_thread_data_write_config, special_write_thread, special_thread_data_pc, special_thread_data_config, special_selected_thread;
+    timing to rising clock gip_clock special_thread_data_write_pc, special_thread_data_write_config, special_write_thread, special_thread_data_pc, special_thread_data_config, special_thread_data_flag_dependencies, special_selected_thread;
 
     timing from rising clock gip_clock thread_to_start_valid, thread_to_start, thread_to_start_pc, thread_to_start_config, thread_to_start_level;
 
-    timing from rising clock gip_clock thread, thread_data_pc, thread_data_config;
+    timing from rising clock gip_clock thread, thread_data_pc, thread_data_config, thread_data_flag_dependencies;
     
 }
 

@@ -482,6 +482,7 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
     argc = sl_str_split( option_string, &string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
     for (i=0; (i<argc) && (num_sources<MAX_SOURCES); i++)
     {
+        fprintf(stderr,"Sources %s\n",argv[i]);
         if (argv[i][0]!='(') continue;
         sub_argc = sl_str_split( argv[i]+1, &sub_string_copy, sizeof(sub_argv), sub_argv, 0, 0, 1 ); // Split into strings, with potential lists
         switch (i)
@@ -498,7 +499,8 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
         case 1: // argv[1] is sources list
             for (j=0; (j<sub_argc) && (num_sources<MAX_SOURCES); j++)
             {
-                sources[num_sources].interval = 300;
+                fprintf(stderr,"Source %s\n",sub_argv[j]);
+                sources[num_sources].interval = 60;
                 sources[num_sources].data_stream = sl_data_stream_create( sub_argv[j] );
                 if (sources[num_sources].data_stream)
                 {
@@ -694,6 +696,8 @@ t_sl_error_level c_mii_testbench::evaluate_combinatorials( void )
         reset_active_high_int_reset();
     }
 
+    /*b source combinatorials
+     */
     if (num_sources>0)
     {
         switch (posedge_int_clock_state.src_fsm)
@@ -937,7 +941,7 @@ t_sl_error_level c_mii_testbench::preclock_posedge_int_clock( void )
         for (i=0; i<num_sources; i++)
         {
             next_posedge_int_clock_state.src_source_state[i].counter = posedge_int_clock_state.src_source_state[i].counter+1;
-            //fprintf(stderr,"Checking source %d.%d.%d\n",i,posedge_int_clock_state.src_source_state[i].counter,sources[i].interval );
+//            fprintf(stderr,"Checking source %d.%d.%d\n",i,posedge_int_clock_state.src_source_state[i].counter,sources[i].interval );
             if ( (!posedge_int_clock_state.src_source_state[i].pending) && (posedge_int_clock_state.src_source_state[i].counter==sources[i].interval) )
             {
                 next_posedge_int_clock_state.src_source_state[i].pending = 1;

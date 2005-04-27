@@ -388,6 +388,7 @@ t_sl_error_level c_ddr::reset( int pass )
                                            NULL );
     }
     posedge_int_clock_state.power_down = 1;
+    posedge_int_clock_state.dll_lock_counter = 0;
     posedge_int_clock_state.ddr_command = ddr_command_nop;
     posedge_int_clock_state.bank_address = -1;
     for (i=0; i<4; i++)

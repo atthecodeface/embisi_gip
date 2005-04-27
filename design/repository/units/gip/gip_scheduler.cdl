@@ -25,7 +25,9 @@ typedef struct
 module gip_scheduler( clock gip_clock,
                       input bit gip_reset,
 
-                      input bit dec_acknowledge_scheduler,
+                      input bit dec_acknowledge_scheduler "If asserted indicates that the outputs from the scheduler have been taken, and they should be removed in the next cycle",
+                      input bit dec_preempt_in_progress "If asserted indicates that the outputs from the scheduler must be held and a preempt will occur; do not assert with acknowledge",
+                      input bit dec_deschedule "If asserted indicates that the current thread is stopping due to completion, and it should be marked as no longer running",
                       input bit[32] special_semaphores,
                       input bit special_cooperative,
                       input bit special_round_robin,
@@ -34,6 +36,7 @@ module gip_scheduler( clock gip_clock,
                       input bit[3] special_write_thread,
                       input bit[32] special_thread_data_pc,
                       input bit[4] special_thread_data_config,
+                      input bit[4] special_thread_data_flag_dependencies,
                       input bit[3] special_selected_thread,
 
                       output bit thread_to_start_valid,
@@ -41,10 +44,12 @@ module gip_scheduler( clock gip_clock,
                       output bit[32] thread_to_start_pc,
                       output bit[4] thread_to_start_config,
                       output bit[2] thread_to_start_level,
+                      output bit thread_to_start_resuming,
 
                       output bit[3] thread,
                       output bit[32] thread_data_pc "For reading in the special registers",
-                      output bit[4] thread_data_config "For reading in the special registers"
+                      output bit[4] thread_data_config "For reading in the special registers",
+                      output bit[4] thread_data_flag_dependencies "For reading in the special registers"
     )
 "
   The scheduler presents (from a clock edge) its request to change to another thread
@@ -55,17 +60,21 @@ module gip_scheduler( clock gip_clock,
   This information is given to the scheduler as an acknowledge
   Note that if a deschedule instruction (even if conditional) has been inserted in to the pipeline then that must
   block any acknowledge - it implicitly ensures the 'atomic' indication is set.
-  In addition to the scheduling above, the register file read stage can indicate to the scheduler that
-  a thread execution has completed (i.e. the thread has descheduled). This may be accompanied by a restart address.
+  In addition to the scheduling above, the execute stage can indicate to the scheduler that
+  a thread execution has completed (i.e. the thread has descheduled).
   The scheduler should also restart lower priority threads when high priority threads
   complete.
   So, if we go for the discard of prefetched instructions, we have:
     decoder -> scheduler indicates that any presented thread preempt or start will be taken
     scheduler -> decoder indicates a thread to start and its PC and decode/pipeline configuration
-    register file read -> scheduler indicates that a thread has completed (possibly with restart PC)
+    decoder (from execute) -> scheduler indicates that a thread has completed
     register file write -> scheduler indicates restart PC for a thread and configuration
     decoder -> ALU indicates priority level that is being operated at (for CZVN and accumulator and shifter)
-    register file read -> decoder indicates that a deschedule event actually took place (qualifier for flush)
+    execute -> decoder indicates that a deschedule event actually took place (qualified by executing)
+
+  One can chose in the decoder to implement a deschedule instruction at the decode stage, in which case they may not be made in any sense conditional
+  A preempt in the decode can only be taken if the window is open (i.e. not atomic), and should involve entering the preempt state machine
+  This preempt state machine should insert an instruction to block on all with a flush and tag, so that when it executes the preempt stage can push the pc (somehow) and flags and then acknowledge the scheduler
 "
 {
     /*b Default clock and reset
@@ -75,21 +84,24 @@ module gip_scheduler( clock gip_clock,
 
     /*b State in the scheduler guaranteed by the design
      */
-    clocked t_gip_sched_thread[8] thread_data={{restart_pc=0, flag_dependencies=0, register_map=0, config=0, running=0}}; // 'Register file' of thread data for all eight threads
+    clocked t_gip_sched_thread[8] thread_data={{restart_pc=0, flag_dependencies=1, register_map=0, config=1, running=0}}; // 'Register file' of thread data for all eight threads
     clocked bit[3] thread=0; // Actual thread number that is currently running
     clocked bit running=0; // 1 if a thread is running, 0 otherwise
     clocked bit[3] preempted_medium_thread=0; // 0 if none, else number
     clocked bit preempted_low_thread=0; // 0 if not, else 1
 
-    clocked bit thread_to_start_valid=1; // 1 if the bus contents are valid; bus contents may only change when this signal rises
+    clocked bit thread_to_start_valid=0; // 1 if the bus contents are valid; bus contents may only change when this signal rises
     clocked bit[3] thread_to_start=0; // Thread number to start
     clocked bit[32] thread_to_start_pc=0; // Thread number to start
     clocked bit[4] thread_to_start_config=0; // GIP pipeline configuration including operating mode
     clocked bit[2] thread_to_start_level=0; // 0 for low, 1 for medium, 2 for high
-
+    clocked bit thread_to_start_resuming=0; // 0 if not resuming a preempted (previously running) thread, 1 if it is previously running
 
     comb bit[8] schedulable;
 
+    comb bit[8] masked_schedulable;
+    comb bit level_2_running;
+    comb bit level_1_running;
     comb bit[3] priority_thread;
     comb bit priority_schedulable;
     comb bit[3] round_robin_thread;
@@ -104,17 +116,39 @@ module gip_scheduler( clock gip_clock,
 
     /*b Determine the schedulability of each thread, and highest priority
      */
-    determine_scheduling "":
+    determine_scheduling "Determine which thread to attempt to schedule based on semaphores and scheduling mode":
         {
-            /*b Determine priority-based thread to start next
+            /*b Determine which threads are schedulable from their dependencies and semaphores
              */
-            priority_schedulable = 0;
-            priority_thread = 0;
             schedulable = 0;
             for (i; 8)
             {
                 schedulable[i] = (thread_data[i].flag_dependencies & special_semaphores[4;i+i+i+i]) && !thread_data[i].running;
-                if (schedulable[i])
+            }
+
+            /*b Determine priority ordered thread to schedule
+              if threads 7 and 6 are schedulable and none are running, we want 7;
+              if threads 7 and 6 are schedulable and one is running, we want none;
+              if all of threads 4-7 are not schedulable, thread 3 is schedulable and thread 2 is running, then we want thread 2 as it must have been preempted
+              so basically within a level we want to think only the preempted thread is schedulable if there is a preempted thread
+              and if any thread at a level is running then all threads at that level and below are not schedulable
+             */
+            
+            priority_schedulable = 0;
+            priority_thread = 0;
+            level_2_running = thread_data[7].running | thread_data[6].running | thread_data[5].running | thread_data[4].running;
+            level_1_running = thread_data[3].running | thread_data[2].running | thread_data[1].running;
+            masked_schedulable[7] = (schedulable[7] & !level_2_running);
+            masked_schedulable[6] = (schedulable[6] & !level_2_running);
+            masked_schedulable[5] = (schedulable[5] & !level_2_running);
+            masked_schedulable[4] = (schedulable[4] & !level_2_running);
+            masked_schedulable[3] = ((schedulable[3] & !level_1_running) | (!running && thread_data[3].running)) & !level_2_running;
+            masked_schedulable[2] = ((schedulable[2] & !level_1_running) | (!running && thread_data[2].running)) & !level_2_running;
+            masked_schedulable[1] = ((schedulable[1] & !level_1_running) | (!running && thread_data[1].running)) & !level_2_running;
+            masked_schedulable[0] = (schedulable[0] | (!running && thread_data[0].running)) & !level_2_running & !level_1_running;
+            for (i; 8)
+            {
+                if (masked_schedulable[i])
                 {
                     priority_thread = i;
                     priority_schedulable = 1;
@@ -156,11 +190,6 @@ module gip_scheduler( clock gip_clock,
         }
 
     /*b Determine requester - if not running we will pick the chosen thread; if running we only do so if preempting and the levels allow it
-    */
-    determine_requester "":
-        {
-            next_thread_to_start = chosen_thread;
-            next_thread_to_start_valid = 0;
             full_switch (chosen_thread)
                 {
                 case 0:
@@ -192,6 +221,18 @@ module gip_scheduler( clock gip_clock,
                     }
                 }
                 }
+    */
+    determine_requester "Determine data for requester, and if we want a requester":
+        {
+            next_thread_to_start = chosen_thread;
+            next_thread_to_start_valid = chosen_schedulable;
+
+            if ( thread_to_start_valid &&
+                 next_thread_to_start_valid &&
+                 (next_thread_to_start != thread_to_start ) )
+            {
+                next_thread_to_start_valid = 0;
+            }
 
             thread_data_to_read = special_selected_thread;
             if (next_thread_to_start_valid && !(thread_to_start_valid))
@@ -200,6 +241,7 @@ module gip_scheduler( clock gip_clock,
             }
             thread_data_pc = thread_data[ thread_data_to_read ].restart_pc;
             thread_data_config = thread_data[ thread_data_to_read ].config;
+            thread_data_flag_dependencies = thread_data[ thread_data_to_read ].flag_dependencies;
         }
 
     /*b Clocked state
@@ -209,19 +251,43 @@ module gip_scheduler( clock gip_clock,
             /*b Store thread and running
              */
             thread_to_start <= thread_to_start; // Ensure the bus is held constant unless we are raising request
+            thread_to_start_valid <= next_thread_to_start_valid;
             if (dec_acknowledge_scheduler)
             {
                 thread <= thread_to_start;
                 thread_data[ thread_to_start ].running <= 1;
                 running <= 1;
+                thread_to_start_valid <= 0;
             }
-            thread_to_start_valid <= next_thread_to_start_valid;
+            if (dec_deschedule)
+            {
+                thread_data[ thread ].running <= 0;
+                running <= 0;
+            }
             if (next_thread_to_start_valid && !thread_to_start_valid)
             {
                 thread_to_start <= next_thread_to_start;
                 thread_to_start_pc <= thread_data_pc;
                 thread_to_start_config <= thread_data_config;
-                thread_to_start_level <= 0;
+                thread_to_start_level <= 2;
+                if (next_thread_to_start==0)
+                {
+                    thread_to_start_level <= 0;
+                }
+                elsif (next_thread_to_start<4)
+                    {
+                        thread_to_start_level <= 1;
+                    }
+                thread_to_start_resuming <= thread_data[ next_thread_to_start ].running;
+            }
+            if (dec_preempt_in_progress)
+            {
+                thread_to_start <= thread_to_start;
+                thread_to_start_pc <= thread_to_start_pc;
+                thread_to_start_config <= thread_to_start_config;
+                thread_to_start_level <= thread_to_start_level;
+                thread_to_start_resuming <= thread_to_start_resuming;
+                thread_to_start_valid <= thread_to_start_valid;
             }
 
             /*b Write thread data register file
@@ -234,7 +300,7 @@ module gip_scheduler( clock gip_clock,
             if (special_thread_data_write_config)
             {
                 thread_data[ special_write_thread ].config <= special_thread_data_config;
-                thread_data[ special_write_thread ].flag_dependencies <= special_thread_data_config; // BUG
+                thread_data[ special_write_thread ].flag_dependencies <= special_thread_data_flag_dependencies;
             }
         }
 

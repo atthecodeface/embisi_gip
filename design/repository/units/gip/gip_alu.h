@@ -18,11 +18,16 @@ extern module gip_alu_barrel_shift( input bit carry_in,
 extern module gip_alu_logical_op( input t_gip_word op_a,
                                   input t_gip_word op_b,
                                   input t_gip_logic_op logic_op,
+                                  input bit z_in,
+                                  input bit n_in,
+                                  input bit c_in,
+                                  input bit v_in,
                                   output t_gip_word result,
                                   output bit z,
                                   output bit n )
 {
     timing comb input op_a, op_b, logic_op;
+    timing comb input z_in, n_in, c_in, v_in;
     timing comb output result, z, n;
 }
 

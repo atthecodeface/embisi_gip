@@ -15,7 +15,8 @@ set vcd_create 1
 #gosub gip_prefetch_tests
 #gosub gip_tests
 #gosub gip_simple_tests
-gosub gip_ddr_tests
+#gosub gip_ddr_tests
+gosub gip_system_tests
 end
 
 #a Gip prefetch tests
@@ -217,7 +218,7 @@ sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
 vcd_file_open "allsignals" vcd_full_filename
 vcd_file_add "allsignals" "gip_simple"
 vcd_file_add "allsignals" "ddr"
-#vcd_file_add "allsignals" "gip_ddr.gip"
+#cvcd_file_add "allsignals" "gip_ddr.gip"
 #vcd_file_add "allsignals" "gip_ddr.prefetch" "gip_ddr.data_ram" "gip_ddr.boot_rom" "gip_ddr.shared_sram"
 #vcd_file_add "allsignals" "gip_ddr.gip.decode" "gip_ddr.gip.decode.native" "gip_ddr.gip.decode.arm" "gip_ddr.gip.rf" "gip_ddr.gip.alu" "gip_ddr.gip.alu.shift_op"
 #vcd_file_add "allsignals" "gip_ddr.gip_apb"
@@ -231,6 +232,82 @@ vcd_file_close "allsignals"
 return
 
 gip_ddr_test_no_vcd:
+reset
+step run_length
+return
+
+
+#b Done
+return
+
+#a Gip system tests
+#f gip_system_tests
+gip_system_tests:
+
+setenv "verbose_level" 1
+
+set vcd_create 1
+gosub gip_system_0
+#gosub gip_system_1
+
+return
+
+#b gip_system_0
+gip_system_0:
+set run_length 120000
+setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
+setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
+set_string vcd_filename "gip_system_0"
+gosub gip_system_test
+return
+
+#b gip_system_1
+gip_system_1:
+set run_length 40000
+setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
+setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
+set_string vcd_filename "gip_system_0"
+gosub gip_system_test
+return
+
+#a Gip system subroutines
+#f gip_system_test
+gip_system_test:
+
+read_hw_file gip_system.hwex
+
+beq vcd_create 0 gip_system_test_no_vcd
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "gip_simple"
+#vcd_file_add "allsignals" "system"
+vcd_file_add "allsignals" "gip_simple.gip.gip.postbus"
+vcd_file_add "allsignals" "gip_simple.gip.gip.special"
+vcd_file_add "allsignals" "gip_simple.gip.gip.scheduler"
+#vcd_file_add "allsignals" "gip_system.prefetch" "gip_system.data_ram" "gip_system.boot_rom" "gip_system.shared_sram"
+vcd_file_add "allsignals" "gip_simple.gip.gip.decode" "gip_simple.gip.gip.decode.native" "gip_simple.gip.gip.decode.arm"
+vcd_file_add "allsignals" "gip_simple.gip.gip.rf"
+vcd_file_add "allsignals" "gip_simple.gip.gip.alu"
+vcd_file_add "allsignals" "gip_simple.gip.gip.alu.shift_op"
+#vcd_file_add "allsignals" "gip_simple.gip_apb"
+vcd_file_add "allsignals" "gip_simple.iob.pst.src"
+vcd_file_add "allsignals" "gip_simple.iob.pst.tgt"
+vcd_file_add "allsignals" "gip_simple.iob.pst.event_mgr"
+vcd_file_add "allsignals" "gip_simple.iob"
+vcd_file_add "allsignals" "gip_simple.iob.ingress_fifos"
+vcd_file_add "allsignals" "gip_simple.iob.egress_fifos"
+vcd_file_add "allsignals" "mii"
+#vcd_file_add "allsignals" "gip_simple.iob"
+#vcd_file_add "allsignals" "gip_system.uart_apb" "gip_system.uart_apb.status_fifo"  "gip_system.uart_apb.cmd_fifo" "gip_system.uart_io"
+#vcd_file_add "allsignals" "gip_system.ext_bus_apb"
+vcd_file_add "allsignals" "rxd" "txd"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+gip_system_test_no_vcd:
 reset
 step run_length
 return

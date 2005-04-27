@@ -1,0 +1,47 @@
+MODEL "apb_devices" incremental_synthesis=yes;
+
+MODEL "gip_core" incremental_synthesis=yes;
+
+MODEL "gip_data_ram" incremental_synthesis=yes;
+
+MODEL "gip_periph_apb" incremental_synthesis=yes;
+
+MODEL "gip_prefetch" incremental_synthesis=yes;
+
+MODEL "gip_simple_boot_rom" incremental_synthesis=yes;
+
+MODEL "ddr_dram_as_sram" incremental_synthesis=yes;
+
+MODEL "io_egress_control" incremental_synthesis=yes;
+MODEL "io_egress_fifos" incremental_synthesis=yes;
+MODEL "io_ingress_control" incremental_synthesis=yes;
+MODEL "io_ingress_fifos" incremental_synthesis=yes;
+MODEL "io_postbus" incremental_synthesis=yes;
+MODEL "io_ethernet_tx" incremental_synthesis=yes;
+MODEL "io_ethernet_rx" incremental_synthesis=yes;
+
+MODEL "fpga_wrapper" incremental_synthesis=yes;
+
+
+
+#MODEL "apb_devices" resynthesize=yes;
+
+#MODEL "gip_core" resynthesize=yes;
+
+#MODEL "gip_data_ram" resynthesize=yes;
+
+#MODEL "gip_periph_apb" resynthesize=yes;
+
+#MODEL "gip_prefetch" resynthesize=yes;
+
+#MODEL "gip_simple_boot_rom" resynthesize=yes;
+
+#MODEL "ddr_dram_as_sram" resynthesize=yes;
+
+#MODEL "postbus_rom_source" resynthesize=yes;
+
+#MODEL "postbus_test_rom_contents" resynthesize=yes;
+
+MODEL "fpga_wrapper" resynthesize=yes;
+
+

@@ -15,7 +15,11 @@ cc monitor flash
 cc monitor uart
 cc monitor all_cmds
 cc monitor memory
+cc ethernet ethernet
+cc scheduler scheduler
 
+test rom  scheduler scheduler:scheduler common:support common:wrapper
+test rom  ethernet ethernet:ethernet common:support common:wrapper
 test rom  simple simple:simple common:support common:wrapper
 test rom  pass pass:pass common:wrapper common:support
 test rom  factorial factorial:factorial common:wrapper common:support

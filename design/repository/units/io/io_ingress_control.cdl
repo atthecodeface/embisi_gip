@@ -47,13 +47,15 @@ module io_ingress_control( clock int_clock "Internal system clock",
                            input bit postbus_fifo_address_from_read_ptr "Asserted if the postbus wants to use the read address of a FIFO",
                            input bit postbus_fifo_op_to_status  "Assert if the postbus wants to address the status FIFO",
                            input bit[2] postbus_fifo_to_access "Fifo the postbus wants to address",
+                           input t_io_fifo_event_type postbus_fifo_event_type  "Type of event for the FIFO flags the postbus is generating",
                            input t_io_sram_data_op postbus_sram_data_op  "SRAM data operation the postbus wants",
                            input t_io_sram_address_op postbus_sram_address_op "SRAM address source that the postbus wants",
 
                            output t_io_fifo_op ingress_fifo_op "Operation to perform",
                            output bit ingress_fifo_op_to_status "Asserted for status FIFO operations, deasserted for Rx Data FIFO operations",
-                           output bit ingress_fifo_address_from_read_ptr "Asserted if the FIFO address output should be for the read ptr of the specified FIFO, deasserted for write",
                            output bit[2] ingress_fifo_to_access "Number of FIFO to access for operations",
+                           output bit ingress_fifo_address_from_read_ptr "Asserted if the FIFO address output should be for the read ptr of the specified FIFO, deasserted for write",
+                           output t_io_fifo_event_type ingress_fifo_event_type "Type of flag event that should be flagged to the postbus system",
 
                            output t_io_sram_data_op ingress_sram_data_op,
                            output t_io_sram_data_reg_op ingress_sram_data_reg_op,
@@ -72,6 +74,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
     clocked t_io_fifo_op last_postbus_fifo_op = io_fifo_op_none;
     clocked bit last_postbus_fifo_address_from_read_ptr = 0;
     clocked bit last_postbus_fifo_op_to_status = 0;
+    clocked t_io_fifo_event_type last_postbus_fifo_event_type = io_fifo_event_type_none;
     clocked t_io_sram_data_op last_postbus_sram_data_op = io_sram_data_op_none;
     clocked t_io_sram_address_op last_postbus_sram_address_op = io_sram_address_op_fifo_ptr;
 
@@ -185,6 +188,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
             ingress_fifo_op = io_fifo_op_none;
             ingress_fifo_op_to_status = 0;
             ingress_fifo_address_from_read_ptr = 1;
+            ingress_fifo_event_type = io_fifo_event_type_none;
 
             ingress_sram_data_op = io_sram_data_op_none;
             ingress_sram_data_reg_op = io_sram_data_reg_op_hold;
@@ -208,6 +212,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
                     postbus_ack = 1;
                     last_postbus_fifo_op <= postbus_fifo_op;
                     last_postbus_fifo_address_from_read_ptr <= postbus_fifo_address_from_read_ptr;
+                    last_postbus_fifo_event_type <= postbus_fifo_event_type;
                     last_postbus_fifo_op_to_status <= postbus_fifo_op_to_status;
                     last_postbus_sram_data_op <= postbus_sram_data_op;
                     last_postbus_sram_address_op <= postbus_sram_address_op;
@@ -219,12 +224,14 @@ module io_ingress_control( clock int_clock "Internal system clock",
                 case ingress_state_idle:
                 {
                     ingress_fifo_op = io_fifo_op_none;
+                    ingress_fifo_event_type = io_fifo_event_type_none;
                     ingress_sram_data_op = io_sram_data_op_none;
                 }
                 case ingress_state_status_timer_write:
                 {
                     ingress_fifo_op = io_fifo_op_none;
                     ingress_fifo_address_from_read_ptr = 0;
+                    ingress_fifo_event_type = io_fifo_event_type_none;
                     ingress_fifo_op_to_status = 1;
                     ingress_sram_data_op = io_sram_data_op_write_time;
                     ingress_sram_data_reg_op = io_sram_data_reg_op_status;
@@ -234,6 +241,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
                 {
                     ingress_fifo_op = io_fifo_op_inc_write_ptr;
                     ingress_fifo_address_from_read_ptr = 0;
+                    ingress_fifo_event_type = io_fifo_event_type_edge;
                     ingress_fifo_op_to_status = 1;
                     ingress_sram_data_op = io_sram_data_op_write_data_reg;
                     ingress_sram_address_op = io_sram_address_op_fifo_ptr_set_bit_0;
@@ -242,6 +250,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
                 {
                     ingress_fifo_op = io_fifo_op_inc_write_ptr;
                     ingress_fifo_address_from_read_ptr = 0;
+                    ingress_fifo_event_type = io_fifo_event_type_edge;
                     ingress_fifo_op_to_status = 0;
                     ingress_sram_data_op = io_sram_data_op_write_data;
                     ingress_sram_address_op = io_sram_address_op_fifo_ptr;
@@ -250,6 +259,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
                 {
                     ingress_fifo_op = last_postbus_fifo_op;
                     ingress_fifo_address_from_read_ptr = last_postbus_fifo_address_from_read_ptr;
+                    ingress_fifo_event_type = last_postbus_fifo_event_type;
                     ingress_fifo_op_to_status = last_postbus_fifo_op_to_status;
                     ingress_sram_data_op = last_postbus_sram_data_op;
                     ingress_sram_address_op = last_postbus_sram_address_op;

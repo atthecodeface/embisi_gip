@@ -71,28 +71,35 @@ typedef enum [3]
 /*a Module
  */
 module io_egress_fifos( clock int_clock "Internal system clock",
-                                input bit int_reset "Internal system reset",
+                        input bit int_reset "Internal system reset",
 
-                                input t_io_fifo_op fifo_op "Operation to perform",
-                                input bit fifo_op_to_cmd "Asserted for status FIFO operations, deasserted for Rx Data FIFO operations",
-                                input bit fifo_address_from_read_ptr "Asserted if the FIFO address output should be for the read ptr of the specified FIFO, deasserted for write",
-                                input bit[2] fifo_to_access "Number of FIFO to access for operations",
-                                output bit[io_sram_log_size] fifo_address "FIFO address out",
+                        input t_io_fifo_op fifo_op "Operation to perform",
+                        input bit fifo_op_to_cmd "Asserted for status FIFO operations, deasserted for Rx Data FIFO operations",
+                        input bit fifo_address_from_read_ptr "Asserted if the FIFO address output should be for the read ptr of the specified FIFO, deasserted for write",
+                        input bit[2] fifo_to_access "Number of FIFO to access for operations",
+                        input t_io_fifo_event_type fifo_event_type "Describes what sort of FIFO event to watch for",
+                        output bit[io_sram_log_size] fifo_address "FIFO address out",
 
-                                output bit[4] cmd_fifo_empty       "Per-cmd FIFO, asserted if more than zero entries are present",
-                                output bit[4] cmd_fifo_full        "Per-cmd FIFO, asserted if read_ptr==write_ptr and not empty",
-                                output bit[4] cmd_fifo_overflowed  "Per-cmd FIFO, asserted if FIFO has overflowed since last reset or configuration write",
-                                output bit[4] cmd_fifo_underflowed "Per-cmd FIFO, asserted if FIFO has underflowed since last reset or configuration write",
+                        output bit[4] cmd_fifo_empty       "Per-cmd FIFO, asserted if more than zero entries are present",
+                        output bit[4] cmd_fifo_full        "Per-cmd FIFO, asserted if read_ptr==write_ptr and not empty",
+                        output bit[4] cmd_fifo_overflowed  "Per-cmd FIFO, asserted if FIFO has overflowed since last reset or configuration write",
+                        output bit[4] cmd_fifo_underflowed "Per-cmd FIFO, asserted if FIFO has underflowed since last reset or configuration write",
 
-                                output bit[4] tx_data_fifo_empty       "Per-tx_data FIFO, asserted if more than zero entries are present",
-                                output bit[4] tx_data_fifo_watermark   "Per-tx_data FIFO, asserted if more than watermak entries are present in the FIFO",
-                                output bit[4] tx_data_fifo_full        "Per-tx_data FIFO, asserted if read_ptr==write_ptr and not empty",
-                                output bit[4] tx_data_fifo_overflowed  "Per-tx_data FIFO, asserted if FIFO has overflowed since last reset or configuration write",
-                                output bit[4] tx_data_fifo_underflowed "Per-tx_data FIFO, asserted if FIFO has underflowed since last reset or configuration write",
+                        output bit[4] tx_data_fifo_empty       "Per-tx_data FIFO, asserted if more than zero entries are present",
+                        output bit[4] tx_data_fifo_watermark   "Per-tx_data FIFO, asserted if more than watermak entries are present in the FIFO",
+                        output bit[4] tx_data_fifo_full        "Per-tx_data FIFO, asserted if read_ptr==write_ptr and not empty",
+                        output bit[4] tx_data_fifo_overflowed  "Per-tx_data FIFO, asserted if FIFO has overflowed since last reset or configuration write",
+                        output bit[4] tx_data_fifo_underflowed "Per-tx_data FIFO, asserted if FIFO has underflowed since last reset or configuration write",
 
-                                input bit[io_sram_log_size] cfg_base_address,
-                                input bit[io_sram_log_size] cfg_size_m_one,
-                                input bit[io_sram_log_size] cfg_watermark )
+                        output bit event_from_cmd "Asserted if event comes from a cmd FIFO",
+                        output bit[2] event_fifo "Fifo number last written to",
+                        output t_io_fifo_event event_empty "Indicates value of empty and if empty changed (and edge event)",
+                        output t_io_fifo_event event_watermark "Indicates value of watermark and if watermark changed (and edge event)",
+
+                        input bit[io_sram_log_size] cfg_base_address,
+                        input bit[io_sram_log_size] cfg_size_m_one,
+                        input bit[io_sram_log_size] cfg_watermark,
+                        output bit[32] read_cfg_status )
 {
 
     /*b Default clock and reset
@@ -115,6 +122,9 @@ module io_egress_fifos( clock int_clock "Internal system clock",
 
     comb bit current_empty;
     comb bit current_full;
+    comb bit current_overflowed;
+    comb bit current_underflowed;
+    comb bit current_watermark_flag;
 
     /*b Combinatorials for next FIFO state on an operation
      */
@@ -137,8 +147,15 @@ module io_egress_fifos( clock int_clock "Internal system clock",
     clocked t_sfifo_state[4] sfifo_state = { {empty=1, full=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0} };
     clocked t_sfifo_cfg[4] sfifo_cfg = { { base_address=0, size_m_one=0 } };
 
-    clocked t_dfifo_state[4] dfifo_state = { {empty=1, full=0,  watermark=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0} };
+    clocked t_dfifo_state[4] dfifo_state = { {empty=1, full=0,  watermark=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0, commit_ptr=0} };
     clocked t_dfifo_cfg[4] dfifo_cfg = { {base_address=0, size_m_one=0, watermark=0 } };
+
+    /*b Events
+     */
+    clocked bit event_from_cmd=0;
+    clocked bit[2] event_fifo=0;
+    clocked t_io_fifo_event event_empty={event=0, value=0};
+    clocked t_io_fifo_event event_watermark={event=0, value=0};
 
     /*b Drive outputs
      */
@@ -160,6 +177,14 @@ module io_egress_fifos( clock int_clock "Internal system clock",
                 tx_data_fifo_overflowed[i] = dfifo_state[i].overflowed;
                 tx_data_fifo_underflowed[i] = dfifo_state[i].underflowed;
             }
+            read_cfg_status = 0;
+            read_cfg_status[io_sram_log_size;0] = current_base_address;
+            read_cfg_status[io_sram_log_size;io_sram_log_size] = current_size_m_one;
+            read_cfg_status[31] = current_empty;
+            read_cfg_status[30] = current_full;
+            read_cfg_status[29] = current_watermark_flag;
+            read_cfg_status[28] = current_overflowed;
+            read_cfg_status[27] = current_underflowed;
         }
 
     /*b Read data from current FIFO
@@ -174,6 +199,9 @@ module io_egress_fifos( clock int_clock "Internal system clock",
             current_watermark = 0;
             current_full = 0;
             current_empty = 0;
+            current_underflowed = 0;
+            current_overflowed = 0;
+            current_watermark_flag = 0;
             
             if (fifo_op_to_cmd)
             {
@@ -184,6 +212,9 @@ module io_egress_fifos( clock int_clock "Internal system clock",
                 current_size_m_one[io_sram_log_size-1;0] = sfifo_cfg[ fifo_to_access ].size_m_one;
                 current_full = sfifo_state[ fifo_to_access ].full;
                 current_empty = sfifo_state[ fifo_to_access ].empty;
+                current_underflowed = sfifo_state[ fifo_to_access ].underflowed;
+                current_overflowed = sfifo_state[ fifo_to_access ].overflowed;
+                current_watermark_flag = 0;
             }
             else
             {
@@ -195,6 +226,9 @@ module io_egress_fifos( clock int_clock "Internal system clock",
                 current_watermark[io_sram_log_size;0]    = dfifo_cfg[ fifo_to_access ].watermark;
                 current_full = dfifo_state[ fifo_to_access ].full;
                 current_empty = dfifo_state[ fifo_to_access ].empty;
+                current_underflowed = dfifo_state[ fifo_to_access ].underflowed;
+                current_overflowed = dfifo_state[ fifo_to_access ].overflowed;
+                current_watermark_flag = dfifo_state[ fifo_to_access ].watermark;
             }
         }
 
@@ -227,6 +261,7 @@ module io_egress_fifos( clock int_clock "Internal system clock",
             set_overflowed = 0;
             set_underflowed = 0;
 
+            next_ptr = 0;
             full_switch (ptr_op)
                 {
                 case ptr_op_none:
@@ -358,6 +393,8 @@ module io_egress_fifos( clock int_clock "Internal system clock",
      */
     fifo_operation "Handle the FIFO":
         {
+            event_empty.event <= 0;
+            event_watermark.event <= 0;
             set_flags = 0;
             ptr_op = ptr_op_none;
             part_switch (fifo_op)
@@ -381,41 +418,63 @@ module io_egress_fifos( clock int_clock "Internal system clock",
                 {
                     if (fifo_op_to_cmd)
                     {
+                        print("Command fifo reset");
                         sfifo_state[fifo_to_access] <= { empty=1, full=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
                     }
                     else
                     {
+                        print("Data fifo reset");
                         dfifo_state[fifo_to_access] <= { empty=1, full=0, watermark=0, overflowed=0, underflowed=0, read_ptr=0, commit_ptr=0, write_ptr=0 };
                     }
                 }
                 case io_fifo_op_inc_write_ptr:
                 {
+                    print("Inc write");
                     ptr_op = ptr_op_inc_write_ptr;
                     set_flags = 1;
                 }
                 case io_fifo_op_inc_read_ptr:
                 {
+                    print("Inc read with commit");
                     ptr_op = ptr_op_inc_read_ptr_commit;
                     set_flags = 1;
                 }
                 case io_fifo_op_inc_read_ptr_without_commit:
                 {
+                    print("Inc read without commit");
                     ptr_op = ptr_op_inc_read_ptr_no_commit;
                     set_flags = 1;
                 }
                 case io_fifo_op_commit_read_ptr:
                 {
+                    print("Committing read ptr");
                     ptr_op = ptr_op_commit_read_ptr;
                     set_flags = 1;
                 }
                 case io_fifo_op_revert_read_ptr:
                 {
+                    print("Reverting read ptr");
                     ptr_op = ptr_op_revert_read_ptr;
                     set_flags = 1;
                 }
                 }
             if (set_flags)
             {
+                event_from_cmd <= fifo_op_to_cmd;
+                event_fifo <= fifo_to_access;
+                part_switch (fifo_event_type)
+                    {
+                    case io_fifo_event_type_level:
+                    {
+                        event_empty <= {event=1, value=next_empty};
+                        event_watermark <= {event=1, value=next_watermark};
+                    }
+                    case io_fifo_event_type_edge:
+                    {
+                        event_empty <= {event=(next_empty!=current_empty), value=next_empty};
+                        event_watermark <= {event=(next_watermark!=current_watermark_flag), value=next_watermark};
+                    }
+                    }
                 if (fifo_op_to_cmd)
                 {
                     sfifo_state[fifo_to_access].write_ptr <= next_write_ptr[io_sram_log_size-1;0];

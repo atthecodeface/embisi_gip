@@ -200,7 +200,7 @@ extern int flash_download( void )
 
         // commands coming down can be erase, write, read
         address = buffer[2] | (buffer[3]<<8) | (buffer[4]<<16) | (buffer[5]<<24);
-        fprintf(stderr, "Address %08x length %d csum %02x buffer %02x %02x\n", address, length, csum, buffer[0], buffer[1] );
+//        fprintf(stderr, "Address %08x length %d csum %02x buffer %02x %02x\n", address, length, csum, buffer[0], buffer[1] );
         result = 0;
         if ((length>=6) && (csum==0))
         {

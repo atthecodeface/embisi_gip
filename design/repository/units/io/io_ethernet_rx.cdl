@@ -202,7 +202,7 @@ registers:
      */
     data_fsm "Data FSM":
         {
-            next_data_fsm = {state=data_fsm.state, bytes_in_block=data_fsm.bytes_in_block, counter=data_fsm.counter+1};
+            next_data_fsm = {state=data_fsm.state, bytes_in_block=data_fsm.bytes_in_block, counter=data_fsm.counter+1, blocks_in_packet=data_fsm.blocks_in_packet};
             data_fsm <= next_data_fsm;
             word_complete = 0;
             status_write <= 0;

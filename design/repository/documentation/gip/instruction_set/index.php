@@ -17,8 +17,10 @@ page_sp();
 <?php page_section( "overview", "Overview" ); ?>
 
 <p>
+
 This area describes the GIP internal instruction set, which is executed by the GIP execution pipeline on behalf of
 the native 16-bit GIP instruction set decoder and the ARM 32-bit instruction emulation system.
+
 </p>
 
 <p>

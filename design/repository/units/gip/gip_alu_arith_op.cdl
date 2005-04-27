@@ -56,6 +56,11 @@ This module implements the arithmetic operations for the GIP
             v = ( (adder_op_a[31] && adder_op_b[31] && !result[31]) ||
                   (!adder_op_a[31] && !adder_op_b[31] && result[31]));
             c = sum_h[1];
+            if (arith_op==gip_arith_op_write_flags)
+            {
+                c = op_b[2];
+                v = op_b[3];
+            }
         }
 
     /*b Final result
@@ -64,6 +69,11 @@ This module implements the arithmetic operations for the GIP
         {
             z = (result==0);
             n = result[31];
+            if (arith_op==gip_arith_op_write_flags)
+            {
+                z = op_b[0];
+                n = op_b[1];
+            }
         }
 
     /*b Determine adder inputs

@@ -116,7 +116,7 @@ module ddr_dram_as_sram( clock drm_clock,
     /*b DDR state and transaction, and cke
      */
     clocked bit init_done = 0;
-    clocked bit[18] ddr_dram_init_counter = -1; // This should be -1 for an emulator build
+    clocked bit[18] ddr_dram_init_counter = 1; // This should be -1 for an emulator build
     clocked bit ddr_dram_init_counter_is_zero = 0;
     clocked t_ddr_dram_init_state ddr_dram_init_state = ddr_dram_init_start;
     clocked t_ddr_transaction ddr_init_transaction = ddr_transaction_cke_low;

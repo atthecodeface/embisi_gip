@@ -8,6 +8,10 @@ include "gip_internal.h"
 module gip_alu_logical_op( input t_gip_word op_a,
                            input t_gip_word op_b,
                            input t_gip_logic_op logic_op,
+                           input bit z_in,
+                           input bit n_in,
+                           input bit c_in,
+                           input bit v_in,
                            output t_gip_word result,
                            output bit z,
                            output bit n )
@@ -156,6 +160,7 @@ This module implements the logical operations for the GIP
                 case gip_logic_op_xor_first: { result[5;0] = first_bit_number; }
                 case gip_logic_op_bit_reverse: { result = op_b; result[8;0] = bit_reversed_byte; }
                 case gip_logic_op_byte_reverse: { result = byte_reversed; }
+                case gip_logic_op_read_flags: { result[0] = z_in; result[1] = n_in; result[2] = c_in; result[3] = v_in; }
                 }
             z = (result==0);
             n = result[31];

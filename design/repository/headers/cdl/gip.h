@@ -21,9 +21,10 @@ typedef enum [5]
     gip_special_reg_thread_data = 6, // thread restart semaphore mask, decoder type, pipeline config (trail, sticky), ALU mode (for native) - restart data; on reads actually you get the selected thread, but only if no scheduling is going on
     gip_special_reg_thread_regmap = 7, // Need something here - may be part of data?
     gip_special_reg_repeat_count = 8, // Register repeat count; for nested, one can use immediate or this value, so not two variable nested! - not readable
-    gip_special_reg_preempted_pc_l = 12, // Low priority PC value stacked, if thread 0 was preempted; bit 0 indicates 1 for invalid (not preempted)
-    gip_special_reg_preempted_pc_m = 13, // Medium priority PC value stacked, if thread 1-3 was preempted; bit 0 indicaes 1 for invalid (not preempted)
-    gip_special_reg_preempted_flags = 14, // Low priority flags (0-7), medium priority flags (8-15), if preempted
+    gip_special_reg_preempted_pc_l = 12, // Low priority PC value stacked, if thread 0 was preempted
+    gip_special_reg_preempted_pc_m = 13, // Medium priority PC value stacked, if thread 1-3 was preempted
+    gip_special_reg_preempted_flags_l = 14, // ZNCV in 0 thru 3 for low priority thread
+    gip_special_reg_preempted_flags_m = 15, // ZNCV in 0 thru 3 for medium priority thread
     gip_special_reg_dag_value_0 = 16, // Data-address generator 0 value
     gip_special_reg_dag_base_0 = 17, // Data-address generator 0 config base
     gip_special_reg_dag_config_0 = 18, // Data-address generator 0 config size, current offset, bit reverse
@@ -35,9 +36,9 @@ typedef enum [5]
 
 /*t t_gip_postbus_reg
  */
+constant integer    gip_postbus_reg_fifo_bit = 2; // bit number that indicates FIFO
 typedef enum [5]
 {
-    gip_postbus_reg_fifo_bit = 2, // bit number that indicates FIFO
     gip_postbus_reg_fifo_mask = 12, // bit mask that indicates FIFO
 
     gip_postbus_reg_fifo_0 = 0, // bit values that indicates FIFO 0

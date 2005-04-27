@@ -29,6 +29,15 @@ include "memories.h"
 
 /*a Types
  */
+/*t t_postbus_src_read_data_source
+ */
+typedef enum [2]
+{
+    postbus_src_read_data_source_ingress_fifo_status,
+    postbus_src_read_data_source_ingress_sram,
+    postbus_src_read_data_source_egress_fifo_status,
+    postbus_src_read_data_source_egress_sram,
+} t_postbus_src_read_data_source;
 
 /*a io_block module
  */
@@ -136,7 +145,13 @@ module io_block( clock int_clock,
     net bit ingress_fifo_op_to_status;
     net bit[2] ingress_fifo_to_access;
     net bit ingress_fifo_address_from_read_ptr;
+    net t_io_fifo_event_type ingress_fifo_event_type;
     net bit[io_sram_log_size] ingress_fifo_address;
+    net bit[32] ingress_fifo_cfg_status;
+    net bit ingress_event_from_status;
+    net bit[2] ingress_event_fifo;
+    net t_io_fifo_event ingress_event_empty;
+    net t_io_fifo_event ingress_event_watermark;
 
     clocked bit[32] ingress_data_reg = 0;
 
@@ -160,7 +175,13 @@ module io_block( clock int_clock,
     net bit egress_fifo_op_to_cmd;
     net bit[2] egress_fifo_to_access;
     net bit egress_fifo_address_from_read_ptr;
+    net t_io_fifo_event_type egress_fifo_event_type;
     net bit[io_sram_log_size] egress_fifo_address;
+    net bit[32] egress_fifo_cfg_status;
+    net bit egress_event_from_cmd;
+    net bit[2] egress_event_fifo;
+    net t_io_fifo_event egress_event_empty;
+    net t_io_fifo_event egress_event_watermark;
 
     clocked bit[32] egress_data_reg = 0;
 
@@ -170,6 +191,7 @@ module io_block( clock int_clock,
 
     net t_postbus_type postbus_src_type;
     net t_postbus_data postbus_src_data;
+    comb bit[32] postbus_src_read_data;
 
     net bit[32] postbus_write_data;
     net bit[5] postbus_write_address;
@@ -178,6 +200,7 @@ module io_block( clock int_clock,
     net t_io_fifo_op         egress_postbus_fifo_op;
     net bit                  egress_postbus_fifo_op_to_cmd_status;
     net bit[2]               egress_postbus_fifo_to_access;
+    net t_io_fifo_event_type egress_postbus_fifo_event_type;
     net bit                  egress_postbus_fifo_address_from_read_ptr;
     net t_io_sram_address_op egress_postbus_sram_address_op;
     net t_io_sram_data_op    egress_postbus_sram_data_op;
@@ -185,9 +208,14 @@ module io_block( clock int_clock,
     net t_io_fifo_op         ingress_postbus_fifo_op;
     net bit                  ingress_postbus_fifo_op_to_cmd_status;
     net bit[2]               ingress_postbus_fifo_to_access;
+    net t_io_fifo_event_type ingress_postbus_fifo_event_type;
     net bit                  ingress_postbus_fifo_address_from_read_ptr;
     net t_io_sram_address_op ingress_postbus_sram_address_op;
     net t_io_sram_data_op    ingress_postbus_sram_data_op;
+
+    clocked t_postbus_src_read_data_source postbus_src_read_data_source = postbus_src_read_data_source_egress_sram;
+    clocked t_postbus_src_read_data_source next_postbus_src_read_data_source = postbus_src_read_data_source_egress_sram;
+    clocked bit[32] sram_read_data_fifo_status = 0;
 
     /*b Status registers
      */
@@ -378,6 +406,7 @@ module io_block( clock int_clock,
                                                 postbus_fifo_op <= ingress_postbus_fifo_op,
                                                 postbus_fifo_address_from_read_ptr <= ingress_postbus_fifo_address_from_read_ptr,
                                                 postbus_fifo_op_to_status <= ingress_postbus_fifo_op_to_cmd_status,
+                                                postbus_fifo_event_type <= ingress_postbus_fifo_event_type,
                                                 postbus_fifo_to_access <= ingress_postbus_fifo_to_access,
 
                                                 postbus_sram_data_op <= ingress_postbus_sram_data_op,
@@ -387,6 +416,7 @@ module io_block( clock int_clock,
                                                 ingress_fifo_op_to_status => ingress_fifo_op_to_status,
                                                 ingress_fifo_to_access => ingress_fifo_to_access,
                                                 ingress_fifo_address_from_read_ptr => ingress_fifo_address_from_read_ptr,
+                                                ingress_fifo_event_type => ingress_fifo_event_type,
 
                                                 ingress_sram_data_op => ingress_sram_data_op,
                                                 ingress_sram_data_reg_op => ingress_sram_data_reg_op,
@@ -414,6 +444,7 @@ module io_block( clock int_clock,
                                             fifo_op_to_status <= ingress_fifo_op_to_status,
                                             fifo_address_from_read_ptr <= ingress_fifo_address_from_read_ptr,
                                             fifo_address => ingress_fifo_address,
+                                            fifo_event_type <= ingress_fifo_event_type,
                                             fifo_to_access <= ingress_fifo_to_access,
 
                                             status_fifo_empty => status_fifo_empty,
@@ -427,9 +458,15 @@ module io_block( clock int_clock,
                                             rx_data_fifo_overflowed => rx_data_fifo_overflowed,
                                             rx_data_fifo_underflowed => rx_data_fifo_underflowed,
 
+                                            event_from_status => ingress_event_from_status,
+                                            event_fifo => ingress_event_fifo,
+                                            event_empty => ingress_event_empty,
+                                            event_watermark => ingress_event_watermark,
+
                                             cfg_base_address <= cfg_base_address,
                                             cfg_size_m_one <= cfg_size_m_one,
-                                            cfg_watermark <= cfg_watermark );
+                                            cfg_watermark <= cfg_watermark,
+                                            read_cfg_status => ingress_fifo_cfg_status );
 
             erx_data_fifo_full = rx_data_fifo_full[0];
         }
@@ -479,6 +516,10 @@ module io_block( clock int_clock,
                 {
                     ingress_sram_read = 1;
                 }
+                case io_sram_data_op_read_fifo_status:
+                {
+                    ingress_sram_read = 0;
+                }
                 }
 
             /*b Handle the data reg - should select the appropriate interface, but we have just one at present
@@ -491,13 +532,20 @@ module io_block( clock int_clock,
                 }
                 case io_sram_data_reg_op_status:
                 {
-                    if (ingress_fifo_to_access==0)
+                    full_switch (ingress_fifo_to_access)
+                    {
+                    case 0:
                     {
                         ingress_data_reg <= erx_status_fifo_data;
                     }
-                    else
+                    case 1:
+                    {
+                        ingress_data_reg <= etx_status_fifo_data;
+                    }
+                    case 2:
                     {
                         ingress_data_reg <= uart0_status_fifo_data;
+                    }
                     }
                 }
                 }
@@ -540,10 +588,10 @@ module io_block( clock int_clock,
 
     /*b Command and TxData FIFO ptrs and their arbiter
      */
-    comb bit[io_cmd_timestamp_length]io_timer;
+    comb bit[io_cmd_timestamp_length+2]io_timer;
     command_fifos_and_arbiter "Command, Tx data fifos, and arbiter":
         {
-            io_timer = status_timer[io_cmd_timestamp_length;0];
+            io_timer = status_timer[io_cmd_timestamp_length+2;0];
             io_egress_control egress_control( int_clock <- int_clock,
                                               int_reset <= int_reset,
 
@@ -561,6 +609,7 @@ module io_block( clock int_clock,
                                               postbus_fifo_op <= egress_postbus_fifo_op,
                                               postbus_fifo_address_from_read_ptr <= egress_postbus_fifo_address_from_read_ptr,
                                               postbus_fifo_op_to_cmd <= egress_postbus_fifo_op_to_cmd_status,
+                                              postbus_fifo_event_type <= egress_postbus_fifo_event_type,
                                               postbus_fifo_to_access <= egress_postbus_fifo_to_access,
 
                                               postbus_sram_data_op <= egress_postbus_sram_data_op,
@@ -570,6 +619,7 @@ module io_block( clock int_clock,
                                               egress_fifo_op_to_cmd => egress_fifo_op_to_cmd,
                                               egress_fifo_to_access => egress_fifo_to_access,
                                               egress_fifo_address_from_read_ptr => egress_fifo_address_from_read_ptr,
+                                              egress_fifo_event_type => egress_fifo_event_type,
                                               egress_cmd_fifo_empty <= cmd_fifo_empty,
 
                                               egress_sram_data_op => egress_sram_data_op,
@@ -617,6 +667,7 @@ module io_block( clock int_clock,
                                           fifo_op_to_cmd <= egress_fifo_op_to_cmd,
                                           fifo_address_from_read_ptr <= egress_fifo_address_from_read_ptr,
                                           fifo_address => egress_fifo_address,
+                                          fifo_event_type <= egress_fifo_event_type,
                                           fifo_to_access <= egress_fifo_to_access,
 
                                           cmd_fifo_empty => cmd_fifo_empty,
@@ -630,9 +681,15 @@ module io_block( clock int_clock,
                                           tx_data_fifo_overflowed => tx_data_fifo_overflowed,
                                           tx_data_fifo_underflowed => tx_data_fifo_underflowed,
 
+                                          event_from_cmd => egress_event_from_cmd,
+                                          event_fifo => egress_event_fifo,
+                                          event_empty => egress_event_empty,
+                                          event_watermark => egress_event_watermark,
+
                                           cfg_base_address <= cfg_base_address,
                                           cfg_size_m_one <= cfg_size_m_one,
-                                          cfg_watermark <= cfg_watermark );
+                                          cfg_watermark <= cfg_watermark,
+                                          read_cfg_status => egress_fifo_cfg_status );
 
         }
 
@@ -671,9 +728,13 @@ module io_block( clock int_clock,
                     egress_sram_write = 1;
                     egress_sram_write_data = last_postbus_write_data;
                 }
+                case io_sram_data_op_read_fifo_status:
+                {
+                    egress_sram_read = 0;
+                }
                 }
 
-            /*b Handle the data reg - should select the appropriate interface, but we have just one at present
+            /*b Handle the data reg - DOES NOTHING! should select the appropriate interface, but we have just one at present
              */
             full_switch ( egress_sram_data_reg_op )
                 {
@@ -685,6 +746,7 @@ module io_block( clock int_clock,
 
             /*b Handle the SRAM address
              */
+            egress_sram_address = egress_fifo_address;
             full_switch ( egress_sram_address_op )
                 {
                 case io_sram_address_op_egress_addressed:
@@ -765,10 +827,16 @@ module io_block( clock int_clock,
                             egress_fifo_op => egress_postbus_fifo_op,
                             egress_fifo_op_to_cmd_status => egress_postbus_fifo_op_to_cmd_status,
                             egress_fifo_to_access => egress_postbus_fifo_to_access,
+                            egress_fifo_event_type => egress_postbus_fifo_event_type,
                             egress_fifo_address_from_read_ptr => egress_postbus_fifo_address_from_read_ptr,
 
                             egress_sram_address_op => egress_postbus_sram_address_op,
                             egress_sram_data_op => egress_postbus_sram_data_op,
+
+                            egress_event_from_cmd <= egress_event_from_cmd,
+                            egress_event_fifo <= egress_event_fifo,
+                            egress_event_empty <= egress_event_empty,
+                            egress_event_watermark <= egress_event_watermark,
 
                             ingress_req => ingress_postbus_req,
                             ingress_ack <= ingress_postbus_ack,
@@ -776,16 +844,61 @@ module io_block( clock int_clock,
                             ingress_fifo_op => ingress_postbus_fifo_op,
                             ingress_fifo_op_to_cmd_status => ingress_postbus_fifo_op_to_cmd_status,
                             ingress_fifo_to_access => ingress_postbus_fifo_to_access,
+                            ingress_fifo_event_type => ingress_postbus_fifo_event_type,
                             ingress_fifo_address_from_read_ptr => ingress_postbus_fifo_address_from_read_ptr,
 
                             ingress_sram_address_op => ingress_postbus_sram_address_op,
                             ingress_sram_data_op => ingress_postbus_sram_data_op,
 
-                            read_data <= ingress_sram_read_data,
+                            ingress_event_from_status <= ingress_event_from_status,
+                            ingress_event_fifo <= ingress_event_fifo,
+                            ingress_event_empty <= ingress_event_empty,
+                            ingress_event_watermark <= ingress_event_watermark,
+
+                            read_data <= postbus_src_read_data,
 
                             configuration_write => postbus_configuration_write,
                             write_address => postbus_write_address,
                             write_data => postbus_write_data );
+            full_switch (postbus_src_read_data_source)
+            {
+            case postbus_src_read_data_source_ingress_fifo_status:
+            case postbus_src_read_data_source_egress_fifo_status:
+            {
+                postbus_src_read_data = sram_read_data_fifo_status;
+            }
+            case postbus_src_read_data_source_ingress_sram:
+            {
+                postbus_src_read_data = ingress_sram_read_data; // if last but one ingress_req and was 
+            }
+            case postbus_src_read_data_source_egress_sram:
+            {
+                postbus_src_read_data = egress_sram_read_data;
+            }
+            }
+            postbus_src_read_data_source <= next_postbus_src_read_data_source;
+            next_postbus_src_read_data_source <= postbus_src_read_data_source_egress_sram;
+            if (ingress_postbus_req)
+            {
+                next_postbus_src_read_data_source <= postbus_src_read_data_source_ingress_sram;
+                if (ingress_postbus_sram_data_op==io_sram_data_op_read_fifo_status)
+                {
+                    next_postbus_src_read_data_source <= postbus_src_read_data_source_ingress_fifo_status;
+                }
+            }
+            else
+            {
+                next_postbus_src_read_data_source <= postbus_src_read_data_source_egress_sram;
+                if (egress_postbus_sram_data_op==io_sram_data_op_read_fifo_status)
+                {
+                    next_postbus_src_read_data_source <= postbus_src_read_data_source_egress_fifo_status;
+                }
+            }
+            sram_read_data_fifo_status <= ingress_fifo_cfg_status;
+            if (postbus_src_read_data_source==postbus_src_read_data_source_egress_fifo_status)
+            {
+                sram_read_data_fifo_status <= egress_fifo_cfg_status;
+            }
         }
 
     /*b Configuration registers for postbus to handle later

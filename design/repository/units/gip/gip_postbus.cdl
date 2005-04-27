@@ -19,6 +19,7 @@ include "postbus.h"
  */
 typedef fsm {
     gip_postbus_rx_fsm_idle; // Waiting for first data - go to hold or buffer_last
+    gip_postbus_rx_fsm_start; // Buffer has start - write to status, holding postbus, then go to data state
     gip_postbus_rx_fsm_hold; // Buffer full - write data, then go to data state
     gip_postbus_rx_fsm_data; // Buffer empty, write data directly to RF (if not GIP) and buffer in case
     gip_postbus_rx_fsm_buffer_last; // Buffer full with last word - write data
@@ -93,7 +94,9 @@ module gip_postbus( clock gip_clock,
     clocked t_gip_word_a[gip_postbus_nfifo] status = { {a=0} }; // 32-bit status registers, used in rx; basically user-defined data
     clocked t_gip_postbus_fifo[gip_postbus_nfifo] tx_fifo = {{base=0, end=0, read=0, write=0}}; // 4 write FIFOs - just read/write pointers, base, end, 5-bits each
     clocked t_gip_postbus_fifo[gip_postbus_nfifo] rx_fifo = {{base=0, end=0, read=0, write=0}}; // 4 read FIFOs - just read/write pointers, base, end, 5-bits each
+    comb bit postbus_use_rx_buffer; // Indicates if the last access did not write the FIFO, and the buffered data should be used
     clocked bit[32] postbus_rx_buffer = 0; // One word store for transfer to the rf if it is being read by GIP
+    comb bit[32] postbus_rx_fifo_status; // Fixes a bug in the xilinx tools to extract it here
 
     clocked bit[gip_postbus_log_nfifo] postbus_rx_fifo = 0; // 0 for rx transfer to rx_fifo[0], 1 for transfer to rx_fifo[1], etc
     clocked t_gip_postbus_rx_fsm postbus_rx_fsm = gip_postbus_rx_fsm_idle; // FSM for receive side of postbus
@@ -237,7 +240,7 @@ module gip_postbus( clock gip_clock,
                                rf_rd_data_0 => rf_read_data,
                                rf_wr_enable <= gip_rf_write | postbus_rf_write,
                                rf_wr_addr <= gip_rf_write ? gip_rf_write_r : postbus_rf_write_r,
-                               rf_wr_data <= gip_rf_write ? write_data : 0  ); //postbus_rx_data of some form; register or input data
+                               rf_wr_data <= gip_rf_write ? write_data : (postbus_use_rx_buffer ? postbus_rx_buffer : postbus_rx_data)  ); // OR postbus_rx_data of some form; register or input data
         }
 
     /*b Decode the FSMs
@@ -293,6 +296,7 @@ module gip_postbus( clock gip_clock,
                 {
                     postbus_rx_ack = postbus_ack_taken;
                 }
+                case gip_postbus_rx_fsm_start:
                 case gip_postbus_rx_fsm_buffer_last:
                 case gip_postbus_rx_fsm_hold:
                 {
@@ -301,7 +305,7 @@ module gip_postbus( clock gip_clock,
                 case gip_postbus_rx_fsm_signal:
                 {
                     postbus_rx_ack = postbus_ack_hold;
-//                    semaphore_to_set = status[postbus_rx_fifo].a[5;postbus_command_rx_signal_start];
+                    semaphore_to_set = postbus_rx_fifo_status[5;postbus_command_rx_signal_start];
                 }
                 }
         }
@@ -524,19 +528,34 @@ module gip_postbus( clock gip_clock,
             postbus_rf_write_r = rx_fifo[0].write;
             rx_fifo_written_okay = !gip_rf_write;
             postbus_buffer_write = 0;
+            postbus_use_rx_buffer = 1;
+            postbus_rx_fifo_status = status[postbus_rx_fifo].a;
+
             full_switch (postbus_rx_fsm)
             {
-            case gip_postbus_rx_fsm_idle:
+            case gip_postbus_rx_fsm_idle: // we will take any data presented - it will be buffered, and we can write the status in the next cycle
             {
                 if (postbus_rx_type != postbus_word_type_idle)
                 {
-                    postbus_rx_fsm <= gip_postbus_rx_fsm_hold;
+                    postbus_rx_fsm <= gip_postbus_rx_fsm_start;
                     postbus_rx_last <= postbus_rx_data[postbus_command_last_bit];
                     postbus_buffer_write = 1;
-                    postbus_rx_fifo <= postbus_rx_data[31];
+                    postbus_rx_fifo <= postbus_rx_data[postbus_command_rx_fifo_start];
                 }
             }
-            case gip_postbus_rx_fsm_hold:
+            case gip_postbus_rx_fsm_start: // hold data on postbus - buffer is full with header, so write it to status
+            {
+                status[postbus_rx_fifo].a <= postbus_rx_buffer;
+                if (postbus_rx_last)
+                {
+                    postbus_rx_fsm <= gip_postbus_rx_fsm_signal;
+                }
+                else
+                {
+                    postbus_rx_fsm <= gip_postbus_rx_fsm_data;
+                }
+            }
+            case gip_postbus_rx_fsm_hold: // hold data on databus - buffer is full - write the buffer to FIFO
             {
                 postbus_rf_write = 1;
                 if (rx_fifo_written_okay)
@@ -551,10 +570,11 @@ module gip_postbus( clock gip_clock,
                     }
                 }
             }
-            case gip_postbus_rx_fsm_data:
+            case gip_postbus_rx_fsm_data: // we will take (write if possible, else buffer) any data presented - the buffer is empty on entry
             {
                 postbus_buffer_write = 1;
                 postbus_rf_write = 1;
+                postbus_use_rx_buffer = 0;
                 postbus_rx_last <= 0;
                 part_switch (postbus_rx_type)
                 {
@@ -566,7 +586,7 @@ module gip_postbus( clock gip_clock,
                         postbus_rx_fsm <= gip_postbus_rx_fsm_hold;
                     }
                 }
-                case postbus_word_type_last:
+                case postbus_word_type_last: // we will hold any new packet on postbus while we tidy up
                 {
                     if (rx_fifo_written_okay)
                     {
@@ -574,17 +594,10 @@ module gip_postbus( clock gip_clock,
                     }
                     else
                     {
-                        postbus_rx_fsm <= gip_postbus_rx_fsm_buffer_last;
+                        postbus_rx_last <= 1;
+                        postbus_rx_fsm <= gip_postbus_rx_fsm_hold;
                     }
                 }
-                }
-            }
-            case gip_postbus_rx_fsm_buffer_last:
-            {
-                postbus_rf_write = 1;
-                if (rx_fifo_written_okay)
-                {
-                    postbus_rx_fsm <= gip_postbus_rx_fsm_signal;
                 }
             }
             case gip_postbus_rx_fsm_signal:
@@ -593,10 +606,13 @@ module gip_postbus( clock gip_clock,
                 postbus_rx_fsm <= gip_postbus_rx_fsm_idle; // We assume the signalling always works
             }
             }
-            clock_rx_fifo_write = 0;
             if (postbus_buffer_write)
             {
                 postbus_rx_buffer <= postbus_rx_data;
+            }
+            clock_rx_fifo_write = 0;
+            if (postbus_rf_write)
+            {
                 clock_rx_fifo_write = rx_fifo_written_okay;
             }
         }

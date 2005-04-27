@@ -27,6 +27,7 @@ extern module io_postbus_target( clock int_clock "main system clck",
                                  output bit fifo_op_to_cmd_status,
                                  output bit[2] fifo_to_access,
                                  output bit fifo_address_from_read_ptr,
+                                 output t_io_fifo_event_type fifo_event_type,
                                  output t_io_sram_address_op sram_address_op,
                                  output t_io_sram_data_op sram_data_op,
 
@@ -35,6 +36,9 @@ extern module io_postbus_target( clock int_clock "main system clck",
 
                                  output bit ingress_req,
                                  input bit ingress_ack,
+
+                                 output bit command_req,
+                                 input bit command_ack,
 
                                  output bit configuration_write,
 
@@ -47,10 +51,10 @@ extern module io_postbus_target( clock int_clock "main system clck",
     timing to rising clock int_clock postbus_type, postbus_data;
     timing from rising clock int_clock postbus_ack;
 
-    timing from rising clock int_clock egress_req, ingress_req;
-    timing to rising clock int_clock egress_ack, ingress_ack;
+    timing from rising clock int_clock egress_req, ingress_req, command_req;
+    timing to rising clock int_clock egress_ack, ingress_ack, command_ack;
 
-    timing from rising clock int_clock fifo_op, fifo_op_to_cmd_status, fifo_to_access, fifo_address_from_read_ptr;
+    timing from rising clock int_clock fifo_op, fifo_op_to_cmd_status, fifo_to_access, fifo_event_type, fifo_address_from_read_ptr;
     timing from rising clock int_clock sram_address_op, sram_data_op;
 
     timing from rising clock int_clock configuration_write, write_address, write_data;

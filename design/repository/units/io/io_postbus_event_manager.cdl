@@ -1,0 +1,215 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Constants
+ */
+constant integer number_events=4;
+constant integer log_number_events=2;
+
+/*a Includes
+ */
+include "io.h"
+include "io_postbus_source.h"
+include "io_postbus_event_manager.h"
+
+/*a Types
+ */
+/*t t_event
+ */
+typedef struct
+{
+    bit[2] fifo;       // fifo to watch for
+    bit    cmd_status; // fifo to watch for
+    bit    ingress;    // fifo to watch for
+    bit    empty_not_watermark; // flag to watch for
+    bit    level;      // level to watch for
+    bit    pending;    // asserted if pending
+} t_event;
+
+/*t t_postbus_cmd
+ */
+typedef struct
+{
+    t_postbus_src_cmd_op op;
+    bit[5]               length;
+    bit    header_route_number;
+} t_postbus_cmd;
+
+/*t t_postbus_header_details
+ */
+typedef struct
+{
+    bit[31] details;
+} t_postbus_header_details;
+
+/*a Modules
+ */
+module io_postbus_event_manager ( clock int_clock "main system clck",
+                                  input bit int_reset "Internal system reset",
+
+                                  input bit target_req,
+                                  output bit target_ack,
+                                  input bit[5] target_write_address,
+                                  input bit[32] target_write_data,
+
+                                  input bit egress_event_from_cmd "Asserted if event comes from a status FIFO",
+                                  input bit[2] egress_event_fifo "Fifo number last written to",
+                                  input t_io_fifo_event egress_event_empty "Indicates value of empty and if empty changed (and edge event)",
+                                  input t_io_fifo_event egress_event_watermark "Indicates value of watermark and if watermark changed (and edge event)",
+
+                                  input bit ingress_event_from_status "Asserted if event comes from a status FIFO",
+                                  input bit[2] ingress_event_fifo "Fifo number last written to",
+                                  input t_io_fifo_event ingress_event_empty "Indicates value of empty and if empty changed (and edge event)",
+                                  input t_io_fifo_event ingress_event_watermark "Indicates value of watermark and if watermark changed (and edge event)",
+
+                                  output bit post_src_cmd_req,
+                                  input bit post_src_cmd_ack,
+                                  output t_postbus_src_cmd_op post_src_cmd_op, // read and send data or send FIFO status
+                                  output bit [2]post_src_cmd_fifo, // FIFO number (0 to 3)
+                                  output bit post_src_cmd_from_cmd_status, // 1 if from data FIFO
+                                  output bit post_src_cmd_from_ingress, // 1 if from ingress FIFO
+                                  output bit[5] post_src_cmd_length, // 0 through 31, if op is read and send data (0 for just getting a header)
+                                  output bit[31] post_src_cmd_hdr_details // route(7;1), semaphore(5;27), destination target information (2;8), source information, flow control (6;15)
+ )
+{
+    default clock int_clock;
+    default reset int_reset;
+
+    clocked bit target_ack = 0;
+
+    clocked t_postbus_header_details[2] header_routes = { {details=0} }; // possible header routes
+    clocked t_event[number_events] events = { {fifo=3, cmd_status=0, ingress=1, empty_not_watermark=1, level=0, pending=0} }; // events to watch for
+    clocked t_postbus_cmd[number_events] event_cmds = { {op=post_src_cmd_op_read_data, length=0, header_route_number=0} }; // cmds to perform on those events
+
+    clocked bit[log_number_events] event_in_action = 0;
+    clocked bit event_presented=0;
+
+    events_to_commands "Handle events to generate commands":
+        {
+            if (!event_presented)
+            {
+                for (i; number_events)
+                {
+                    if (events[i].ingress)
+                    {
+                        if ( (events[i].cmd_status == ingress_event_from_status) &&
+                             (events[i].fifo == ingress_event_fifo) )
+                        {
+                            if (events[i].empty_not_watermark)
+                            {
+                                if ( (ingress_event_empty.event) &&
+                                     (events[i].level==ingress_event_empty.value) )
+                                {
+                                    events[i].pending <= 1;
+                                }
+                            }
+                            else
+                            {
+                                if ( (ingress_event_watermark.event) &&
+                                     (events[i].level==ingress_event_watermark.value) )
+                                {
+                                    events[i].pending <= 1;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if ( (events[i].cmd_status == egress_event_from_cmd) &&
+                             (events[i].fifo == egress_event_fifo) )
+                        {
+                            if (events[i].empty_not_watermark)
+                            {
+                                if ( (egress_event_empty.event) &&
+                                     (events[i].level==egress_event_empty.value) )
+                                {
+                                    events[i].pending <= 1;
+                                }
+                            }
+                            else
+                            {
+                                if ( (egress_event_watermark.event) &&
+                                     (events[i].level==egress_event_watermark.value) )
+                                {
+                                    events[i].pending <= 1;
+                                }
+                            }
+                        }
+                    }
+
+                    if (events[i].pending)
+                    {
+                        event_in_action <= i;
+                        event_presented <= 1;
+                    }
+                }
+            }
+
+            post_src_cmd_req = event_presented;
+            post_src_cmd_op       = event_cmds[event_in_action].op;
+            post_src_cmd_length   = event_cmds[event_in_action].length;
+            post_src_cmd_fifo            = events[event_in_action].fifo;
+            post_src_cmd_from_cmd_status = events[event_in_action].cmd_status;
+            post_src_cmd_from_ingress    = events[event_in_action].ingress;
+            post_src_cmd_hdr_details     = header_routes[0].details;//event_cmds[event_in_action].header_route_number
+
+            if (post_src_cmd_ack)
+            {
+                events[event_in_action].pending <= 0;
+                event_presented <= 0;
+            }
+//        }
+//    
+//    handle_target "Handle target interface to write event and command file":
+//        {
+            target_ack <= 0;
+
+            if (target_req)
+            {
+                if (target_write_address[4])
+                {
+                    target_ack <= 1;
+                    if (target_write_address[0])
+                    {
+                        header_routes[target_write_address[2;2]].details <= target_write_data[31;postbus_command_route_start];
+                    }
+                    else
+                    {
+                        events[target_write_address[2;2]] <= {
+                            fifo                = target_write_data[2;2],
+                            cmd_status          = target_write_data[1],
+                            ingress             = target_write_data[0],
+                            empty_not_watermark = target_write_data[4],
+                            level               = target_write_data[5],
+                            pending             = 0
+                        };
+                        event_cmds[target_write_address[2;2]] <= {
+                            op                  = target_write_data[2;postbus_command_io_cmd_op_start],
+                            length              = target_write_data[5;postbus_command_tx_length_start],
+                            header_route_number = target_write_data[0]
+                        };
+                    }
+                }
+                else
+                {
+                    if (!events[0].pending)
+                    {
+                        target_ack <= 1;
+                        events[0].fifo <= target_write_address[2;2];
+                        events[0].cmd_status <= target_write_address[1];
+                        events[0].ingress <= target_write_address[0];
+                        events[0].pending <= 1;
+                        event_cmds[0].op <= target_write_data[2;postbus_command_io_cmd_op_start];
+                        event_cmds[0].length <= target_write_data[5;postbus_command_tx_length_start];
+                        event_cmds[0].header_route_number <= 0;
+                        header_routes[0].details <= target_write_data[31;postbus_command_route_start];
+                    }
+                }
+            }
+
+        }
+}
+

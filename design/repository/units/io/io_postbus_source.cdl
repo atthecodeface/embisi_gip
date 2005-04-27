@@ -17,10 +17,11 @@ include "io.h"
  */
 /*t t_store_type
  */
-typedef enum [2]
+typedef enum [3]
 {
     store_type_empty,
     store_type_first,
+    store_type_first_and_last,
     store_type_middle,
     store_type_last,
 } t_store_type;
@@ -37,15 +38,25 @@ typedef struct
  */
 typedef fsm {
     op_state_idle;
-    op_state_wait_for_first_data;
-    op_state_first_data_acked;
-    op_state_first_data_ready;
+    op_state_read_data;
+    op_state_read_data_first_of_status;
+    op_state_send_header;
+    op_state_send_fifo_status;
 } t_op_state;
 
 /*a io_postbus_source module
  */
 module io_postbus_source( clock int_clock "main system clck",
                           input bit int_reset "Internal system reset",
+
+                          input bit post_src_cmd_req,
+                          output bit post_src_cmd_ack,
+                          input t_postbus_src_cmd_op post_src_cmd_op, // (read and send data, send FIFO status)
+                          input bit [2]post_src_cmd_fifo, // FIFO number (0 to 3)
+                          input bit post_src_cmd_from_cmd_status, // 1 if from data FIFO
+                          input bit post_src_cmd_from_ingress, // 1 if from ingress, 0 for egress
+                          input bit[5] post_src_cmd_length, // 0 through 31, if op is read and send data
+                          input bit[31] post_src_cmd_hdr_details, // route(7;1), semaphore(5;27), destination target information (2;8), source information, flow control (6;15)
 
                           output t_postbus_type postbus_type,
                           output t_postbus_data postbus_data,
@@ -54,6 +65,7 @@ module io_postbus_source( clock int_clock "main system clck",
                           output t_io_fifo_op fifo_op,
                           output bit fifo_op_to_cmd_status,
                           output bit[2] fifo_to_access,
+                          output t_io_fifo_event_type fifo_event_type,
                           output bit fifo_address_from_read_ptr,
                           output t_io_sram_address_op sram_address_op,
                           output t_io_sram_data_op sram_data_op,
@@ -102,12 +114,15 @@ presented to the internal system with the pipeline of requests full (for maximum
     default clock int_clock;
     default reset int_reset;
 
-    /*b Request generator
+    /*b Request handling
      */
-    clocked bit[10] countdown = 32;
-    clocked bit request_pending = 0;
-    comb bit request_taken;
-    clocked bit[4] data_left_to_fetch = 0;
+    comb bit guaranteed_req;
+    comb bit request_acknowledged;
+    clocked bit post_src_cmd_ack = 0;
+    clocked bit[5] data_left_to_fetch = 0;
+    clocked bit fifo_op_to_cmd_status = 0;
+    clocked bit fifo_op_to_ingress = 0;
+    clocked bit[2] fifo_to_access = 0;
 
     /*b Request pipeline
       We can only request if fifo_space_count indicates one more buffer than we have used in pending requests
@@ -117,12 +132,15 @@ presented to the internal system with the pipeline of requests full (for maximum
       i.e. fifo_space_count (+1 if buffer_store_type==empty) > 0 (+1 if current!=store_type_empty) (+1 if presented!=store_type_empty)
       means we can present a request
      */
+    comb t_store_type requesting_store_type;
     clocked t_store_type presented_store_type = store_type_empty "Access being presented to SRAM, i.e. what we presented in previous cycle, if acked";
     clocked t_store_type current_access_store_type = store_type_empty "Access being performed by SRAM";
     clocked t_store_type buffer_store_type = store_type_empty "Type of data from SRAM read, unless backed up";
     clocked bit[32] buffer_data = 0 "Data contents to push in to FIFO";
     comb bit[2] presented_request_count "Number of presented requests pending; 2 if presented and current are full, 1 if only one is, zero if neither are";
     comb bit room_for_new_request "Asserted if there is room in the FIFO and buffer for outstanding requests and a further request";
+    comb bit room_for_new_header "Asserted if there is room in the FIFO and buffer for a header and no outstanding requests exist (as the header data has a single pending register)";
+    clocked bit[32] header_data=0;
 
     /*b Flow-through FIFO
      */
@@ -145,8 +163,18 @@ presented to the internal system with the pipeline of requests full (for maximum
 
     /*b Request pipeline
      */
-    request_pipeline "Request pipeline":
+    request_pipeline "Request pipeline: take a request from ingress or egress, and put in 'presented' (this means presented to SRAM); move 'presented' to 'current' (in current the data is being fetched); move 'current' to 'buffer' (and store SRAM data) if it is not take by the main FIFO":
         {
+            /*b request_acknowledged
+             */
+            request_acknowledged = 0;
+            if ( (ingress_req && ingress_ack) ||
+                 (egress_req && egress_ack) ||
+                 guaranteed_req )
+            {
+                request_acknowledged = 1;
+            }
+
             /*b fifo_write_data, fifo_write_store_type - from the buffer
              */
             fifo_write_data = buffer_data;
@@ -154,14 +182,27 @@ presented to the internal system with the pipeline of requests full (for maximum
 
             /*b buffer_store_type, buffer_store_data; pipe the current access (and SRAM read data), and empty if the FIFO took the last lot and we did not fill it
              */
-            if (current_access_store_type != store_type_empty) // Assume we were wise enough only to request when we could, so we can push in to the buffer
-            {
-                buffer_store_type <= current_access_store_type;
-                buffer_data <= read_data;
-            }
-            elsif (fifo_taking_data) // If the fifo takes data, it takes it from the buffer
+            part_switch (current_access_store_type)
                 {
-                    buffer_store_type <= store_type_empty;
+                case store_type_first:
+                case store_type_first_and_last:
+                {
+                    buffer_store_type <= current_access_store_type;
+                    buffer_data <= header_data;
+                }
+                case store_type_middle:
+                case store_type_last:
+                {
+                    buffer_store_type <= current_access_store_type;
+                    buffer_data <= read_data;
+                }
+                case store_type_empty:
+                {
+                    if (fifo_taking_data) // If the fifo takes data, it takes it from the buffer
+                    {
+                        buffer_store_type <= store_type_empty;
+                    }
+                }
                 }
 
             /*b current_access_store_type - pipe the presented type
@@ -170,45 +211,52 @@ presented to the internal system with the pipeline of requests full (for maximum
 
             /*b presented_store_type - if acked, we fill it with the data type (first, middle of last) of the current request
              */
-            if ( (ingress_req && ingress_ack) ||
-                 (egress_req && egress_ack) )
+            if ( request_acknowledged )
             {
-                presented_store_type <= store_type_something; // first, last or middle... depends on data_left_to_fetch, and whether its the first
+                presented_store_type <= requesting_store_type; // first, last or middle... depends on data_left_to_fetch, and whether its the first
             }
             else
             {
                 presented_store_type <= store_type_empty;
             }
 
-            /*b room_for_new_request - juggle the numbers
+            /*b room_for_new_request, room_for_new_header - juggle the numbers
              */
-            presented_request_count = 0;
+            presented_request_count = 0; // Count the number of requests in the current access and presented stores; 0, 1 or 2
             if (presented_store_type!=store_type_empty) {presented_request_count = presented_request_count+1;}
             if (current_access_store_type!=store_type_empty) {presented_request_count = presented_request_count+1;}
             room_for_new_request = 0;
+            room_for_new_header = 0; // Room for a header if we have no pending requests prior to the buffer, AND if there is room for a request
             full_switch (fifo_space_count)
                 {
-                case 0:
+                case 0: // only room if we have nothing in our pre-FIFO buffer and if nothing is going to fill that
                 {
                     if ((buffer_store_type==store_type_empty) && (presented_request_count==0))
                     {
                         room_for_new_request = 1;
+                        room_for_new_header = 1;
                     }
                 }
-                case 1:
+                case 1: // room if we have requested nothing (as a new request can fit in the FIFO), or if the buffer is empty and we are only requesting 1
                 {
                     if (presented_request_count==0)
                     {
                         room_for_new_request = 1;
+                        room_for_new_header = 1;
                     }
                     elsif ((presented_request_count==1) && (buffer_store_type==store_type_empty))
                         {
                             room_for_new_request = 1;
                         }
                 }
-                case 2:
+                case 2: // room if we are requesting zero or one (as they will fit in the FIFO with a new request) or if the buffer is empty and we are requesting 2, as our request will fit in the buffer
                 {
-                    if ((presented_request_count==0) || (presented_request_count==1))
+                    if (presented_request_count==0)
+                    {
+                        room_for_new_header = 1;
+                        room_for_new_request = 1;
+                    }
+                    elsif (presented_request_count==1)
                     {
                         room_for_new_request = 1;
                     }
@@ -219,7 +267,11 @@ presented to the internal system with the pipeline of requests full (for maximum
                 }
                 case 3:
                 {
-                        room_for_new_request = 1;
+                    if (presented_request_count==0)
+                    {
+                        room_for_new_header = 1;
+                    }
+                    room_for_new_request = 1;
                 }
                 }
         }
@@ -315,6 +367,7 @@ presented to the internal system with the pipeline of requests full (for maximum
                         full_switch (fifo_stage[0].store_type)
                             {
                             case store_type_first:
+                            case store_type_first_and_last:
                             case store_type_empty:
                             {
                                 postbus_type = postbus_word_type_idle;
@@ -340,6 +393,13 @@ presented to the internal system with the pipeline of requests full (for maximum
                     postbus_data = output_data_register;
                     postbus_type = postbus_word_type_start;
                 }
+                case store_type_first_and_last:
+                {
+                    postbus_active <= 0;
+                    postbus_data = output_data_register; // should already have 1 in the bottom bit
+                    postbus_type = postbus_word_type_start;
+                    assert( output_data_register[0]==1, "First and last word of a postbus transaction did not have bit 0 set");
+                }
                 case store_type_last:
                 {
                     postbus_active <= 0;
@@ -347,11 +407,6 @@ presented to the internal system with the pipeline of requests full (for maximum
                     if (postbus_active)
                     {
                         postbus_type = postbus_word_type_last;
-                    }
-                    else
-                    {
-                        postbus_data[0] = 1;
-                        postbus_type = postbus_word_type_start;
                     }
                 }
                 case store_type_middle:
@@ -382,75 +437,131 @@ presented to the internal system with the pipeline of requests full (for maximum
             }
         }
 
-    /*b Request generator
-     */
-    a "":
-        {
-            countdown <= countdown-1;
-            if (countdown==0)
-            {
-                countdown <= 32;
-                request_pending <= 1;
-            }
-            if (request_taken)
-            {
-                request_pending <= 0;
-            }
-        }
-
     /*b Internal request fsm
      */
-    test "":
+    internal_request_fsm "Internal request FSM":
         {
             fifo_op = io_fifo_op_none;
-            fifo_op_to_cmd_status = 0;
-            fifo_to_access = 0;
-            fifo_address_from_read_ptr = 0;
+            fifo_event_type = io_fifo_event_type_none;
+            fifo_address_from_read_ptr = 1;
             sram_address_op = io_sram_address_op_fifo_ptr;
             sram_data_op = io_sram_data_op_none;
 
             egress_req = 0;
             ingress_req = 0;
-            request_taken = 0;
+            guaranteed_req = 0;
+            requesting_store_type = store_type_empty;
+            post_src_cmd_ack <= 0;
 
             full_switch (op_state)
                 {
                 case op_state_idle:
                 {
-                    if (request_pending)
+                    if (post_src_cmd_req && room_for_new_header)
                     {
-                        data_left_to_fetch <= 2;
-                        request_taken = 1;
-                        op_state <= op_state_wait_for_first_data;
+                        post_src_cmd_ack <= 1;
+                        guaranteed_req = 1;
+                        requesting_store_type = store_type_first;
+                        fifo_to_access <= post_src_cmd_fifo;
+                        fifo_op_to_cmd_status <= post_src_cmd_from_cmd_status;
+                        fifo_op_to_ingress <= post_src_cmd_from_ingress;
+                        data_left_to_fetch <= post_src_cmd_length;
+                        header_data <= 0; // header is 0 in bit 0 plus details coming in; bit 0 is overridden below if required
+                        header_data[31;1] <= post_src_cmd_hdr_details;
+                        full_switch (post_src_cmd_op)
+                            {
+                            case post_src_cmd_op_read_data:
+                            {
+                                if (post_src_cmd_length==0)
+                                {
+                                    op_state <= op_state_send_header;
+                                    header_data[0] <= 1;
+                                    requesting_store_type = store_type_first_and_last;
+                                }
+                                elsif (post_src_cmd_from_cmd_status)
+                                {
+                                    op_state <= op_state_read_data_first_of_status;
+                                }
+                                else
+                                {
+                                    op_state <= op_state_read_data;
+                                }
+                            }
+                            case post_src_cmd_op_send_overall_status: // send the details we were given with a body of status from the FIFOs; flags for all of them? 20 bits for data fifos (e/f/wm/of/uf), 16 bits for cmd/status fifos
+                            {
+                                op_state <= op_state_send_fifo_status;
+                            }
+                            }
                     }
                 }
-                case op_state_wait_for_first_data: // request from us in this cycle
-                {
-                    ingress_req = 1;
-                    fifo_op = io_fifo_op_inc_read_ptr;
-                    fifo_op_to_cmd_status = 1;
-                    fifo_to_access = 0;
-                    fifo_address_from_read_ptr = 1;
-                    sram_address_op = io_sram_address_op_fifo_ptr;
-                    sram_data_op = io_sram_data_op_read;
-
-                    if (ingress_ack)
-                    {
-                        op_state <= op_state_first_data_acked;
-                        data_left_to_fetch <= data_left_to_fetch-1;
-                    }
-                }
-                case op_state_first_data_acked: // transaction goes to SRAM in this cycle; we can request next data if holding register is not full and if we need more
-                {
-                    if (data_left_to_fetch!=0)
-                    {
-                        ingress_req = 1;
-                    }
-                    op_state <= op_state_first_data_ready;
-                }
-                case op_state_first_data_ready: // data is ready from SRAM in this cycle
+                case op_state_send_header: // Sending the header - got to spend a cycle in this state so that the request can go away
                 {
                     op_state <= op_state_idle;
+                }
+                case op_state_send_fifo_status: // Send FIFO status - 4 words, one word per FIFO
+                {
+                    if (room_for_new_request)
+                    {
+                        fifo_op = io_fifo_op_none;
+                        fifo_address_from_read_ptr = 1;
+                        sram_address_op = io_sram_address_op_fifo_ptr;
+                        sram_data_op = io_sram_data_op_read_fifo_status;
+                        requesting_store_type = store_type_middle;
+                        ingress_req = fifo_op_to_ingress;
+                        egress_req = !fifo_op_to_ingress;
+                        if (data_left_to_fetch==1)
+                        {
+                            requesting_store_type = store_type_last;
+                        }
+                    }
+                    if ( request_acknowledged )
+                    {
+                        data_left_to_fetch <= data_left_to_fetch-1;
+                        fifo_to_access <= fifo_to_access+1;
+                        if (data_left_to_fetch==1)
+                        {
+                            op_state <= op_state_idle;
+                        }
+                    }
+                }
+                case op_state_read_data:
+                case op_state_read_data_first_of_status:
+                {
+                    if (room_for_new_request)
+                    {
+                        fifo_op = io_fifo_op_none;
+                        sram_address_op = io_sram_address_op_fifo_ptr;
+                        if (op_state==op_state_read_data)
+                        {
+                            fifo_op = io_fifo_op_inc_read_ptr;
+                            if (fifo_op_to_cmd_status)
+                            {
+                                sram_address_op = io_sram_address_op_fifo_ptr_set_bit_0;
+                            }
+                        }
+                        fifo_address_from_read_ptr = 1;
+                        sram_data_op = io_sram_data_op_read;
+                        requesting_store_type = store_type_middle;
+                        ingress_req = fifo_op_to_ingress;
+                        egress_req = !fifo_op_to_ingress;
+                        if (data_left_to_fetch==1)
+                        {
+                            requesting_store_type = store_type_last;
+                            fifo_event_type = io_fifo_event_type_level;
+                        }
+                    }
+                    if (request_acknowledged)
+                    {
+                        data_left_to_fetch <= data_left_to_fetch-1;
+                        if (data_left_to_fetch==1)
+                        {
+                            op_state <= op_state_idle;
+                        }
+                        else
+                        {
+                            op_state <= op_state_read_data;
+                        }
+                    }
                 }
                 }
         }

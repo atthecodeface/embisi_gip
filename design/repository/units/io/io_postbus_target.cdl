@@ -21,6 +21,7 @@ typedef fsm {
     op_state_idle;
     op_state_transaction_start; // Command word stored, data should be coming...
     op_state_configuration_perform; // Commmand and data stored; be here for one cycle
+    op_state_command; // Commmand and data stored; be here until ack'd from the arbiter
     op_state_fifo_config; // Commmand and data stored; be here until ack'd from the arbiter
     op_state_fifo_write_first_data; // Command and first data stored: store new data in holding, and try to write stored data
     op_state_fifo_write_first_data_holding_full; // Command and first data stored and holding full: try to write stored data
@@ -41,6 +42,7 @@ module io_postbus_target( clock int_clock "main system clck",
                           output bit fifo_op_to_cmd_status,
                           output bit[2] fifo_to_access,
                           output bit fifo_address_from_read_ptr,
+                          output t_io_fifo_event_type fifo_event_type,
                           output t_io_sram_address_op sram_address_op,
                           output t_io_sram_data_op sram_data_op,
 
@@ -49,6 +51,9 @@ module io_postbus_target( clock int_clock "main system clck",
 
                           output bit ingress_req,
                           input bit ingress_ack,
+
+                          output bit command_req,
+                          input bit command_ack,
 
                           output bit configuration_write,
 
@@ -72,9 +77,11 @@ module io_postbus_target( clock int_clock "main system clck",
              write_address = postbus_command_word[5;postbus_command_io_dest_start];
              egress_req = 0;
              ingress_req = 0;
+             command_req = 0;
              fifo_to_access = postbus_command_word[2;30];
              fifo_op_to_cmd_status = postbus_command_word[1;29];
              fifo_op = io_fifo_op_write_cfg;
+             fifo_event_type = io_fifo_event_type_none;
              sram_data_op = io_sram_data_op_none;
              sram_address_op = io_sram_address_op_fifo_ptr;
              postbus_ack = 0;
@@ -100,7 +107,7 @@ module io_postbus_target( clock int_clock "main system clck",
                              {
                              case 0: // channel configuration/provocation
                              {
-                                 op_state <= op_state_idle; // not yet supported
+                                 op_state <= op_state_command;
                              }
                              case 1: // tx/rx data / command/status fifo config; single word access, specify FIFO number and type in top 5 bits
                              {
@@ -147,6 +154,16 @@ module io_postbus_target( clock int_clock "main system clck",
                          }
                      }
                  }
+                 case op_state_command: // Perform a write to the command interface (program events, and immediate commands)
+                 {
+                     postbus_ack = 0;
+                     op_state <= op_state_command;
+                     command_req = 1;
+                     if (command_ack)
+                     {
+                         op_state <= op_state_idle;
+                     }
+                 }
                  case op_state_fifo_write_first_data: // Perform a FIFO data write, with the data we have received (first): we have to wait for an ack from the appropriate side (which is combinatorial on our req)
                  {
                      sram_data_op = io_sram_data_op_write_postbus; // or cmd or value, but the effect is the same I believe
@@ -165,6 +182,7 @@ module io_postbus_target( clock int_clock "main system clck",
                      postbus_ack = 1;
                      if (last_postbus_type==postbus_word_type_last)
                      {
+                         fifo_event_type = io_fifo_event_type_level;
                          postbus_ack = 0;
                      }
 
@@ -238,6 +256,7 @@ module io_postbus_target( clock int_clock "main system clck",
                      postbus_ack = 1; // holding register is empty, so we can take data directly or to holding
                      if (last_postbus_type==postbus_word_type_last) // however, if we have ended a transaction, then don't start a new one
                      {
+                         fifo_event_type = io_fifo_event_type_level;
                          postbus_ack = 0;
                      }
 

@@ -12,6 +12,23 @@ constant integer io_sram_log_size=11;
 
 /*a Types
  */
+/*t t_io_fifo_event_type
+ */
+typedef enum [2]
+{
+    io_fifo_event_type_none,
+    io_fifo_event_type_level,
+    io_fifo_event_type_edge,
+} t_io_fifo_event_type;
+
+/*t t_io_fifo_event
+ */
+typedef struct
+{
+    bit event;
+    bit value;
+} t_io_fifo_event;
+
 /*t t_io_fifo_op
  */
 typedef enum [3]
@@ -32,6 +49,7 @@ typedef enum [3]
 {
     io_sram_data_op_none,
     io_sram_data_op_read,
+    io_sram_data_op_read_fifo_status,
     io_sram_data_op_write_time,
     io_sram_data_op_write_data,
     io_sram_data_op_write_data_reg,

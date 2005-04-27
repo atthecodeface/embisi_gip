@@ -1,4 +1,6 @@
 #!/bin/csh -f
-cp bin/pass.cdl ../../test_benches/gip/pass_rom.cdl
-cp bin/uart.cdl ../../test_benches/gip/uart_rom.cdl
-cp bin/monitor.cdl ../../test_benches/gip/monitor_rom.cdl
+cp bin/pass.rom.cdl ../../test_benches/gip/pass_rom.cdl
+cp bin/uart.rom.cdl ../../test_benches/gip/uart_rom.cdl
+cp bin/monitor.rom.cdl ../../test_benches/gip/monitor_rom.cdl
+cp bin/ethernet.rom.cdl ../../test_benches/gip/ethernet_rom.cdl
+cp bin/scheduler.rom.cdl ../../test_benches/gip/scheduler_rom.cdl

@@ -231,14 +231,73 @@ bit_breakout_bits( -1, "Extcmd, ExtRnRm, ExtRdRm<br>Writes back Rd (=Rn if not e
 
 bit_breakout_hdr( "B" );
 bit_breakout_bits_split( "0110" );
-bit_breakout_bits( 1, "Dly" );
 bit_breakout_bits( 11, "Offset" );
+bit_breakout_bits( 1, "Dly" );
 bit_breakout_bits( -1, "Extimm" );
 
-bit_breakout_hdr( "Special" );
+
+bit_breakout_hdr( "RestartAt" );
 bit_breakout_bits_split( "0111" );
-bit_breakout_bits( 12, "Undefined" );
-bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm" );
+bit_breakout_bits( 11, "Offset" );
+bit_breakout_bits( 1, "0" );
+bit_breakout_bits( -1, "Extimm" );
+
+bit_breakout_hdr( "RestartData" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 3, "000" );
+bit_breakout_bits( 4, "flags" );
+bit_breakout_bits( 4, "config" );
+bit_breakout_bits( 1, "1" );
+bit_breakout_bits( -1, "Performed at execute stage" );
+
+bit_breakout_hdr( "Block" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 3, "001" );
+bit_breakout_bits( 8, "undefined" );
+bit_breakout_bits( 1, "1" );
+bit_breakout_bits( -1, "Block" );
+
+bit_breakout_hdr( "Desched" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 3, "010" );
+bit_breakout_bits( 8, "undefined" );
+bit_breakout_bits( 1, "1" );
+bit_breakout_bits( -1, "Performed at execute stage" );
+
+bit_breakout_hdr( "special" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 3, "011" );
+bit_breakout_bits( 8, "undefined" );
+bit_breakout_bits( 1, "1" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm<br>Performed at execute stage" );
+
+bit_breakout_hdr( "special" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 3, "100" );
+bit_breakout_bits( 8, "undefined" );
+bit_breakout_bits( 1, "1" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm<br>Performed at decode stage" );
+
+bit_breakout_hdr( "special" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 3, "101" );
+bit_breakout_bits( 8, "" );
+bit_breakout_bits( 1, "1" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm<br>Performed at decode stage" );
+
+bit_breakout_hdr( "special" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 3, "110" );
+bit_breakout_bits( 8, "undefined" );
+bit_breakout_bits( 1, "1" );
+bit_breakout_bits( -1, "Extimm, Extcmd, ExtRnRm, ExtRdRm<br>Performed at decode stage" );
+
+bit_breakout_hdr( "Atomic" );
+bit_breakout_bits_split( "0111" );
+bit_breakout_bits( 3, "111" );
+bit_breakout_bits( 8, "cycles" );
+bit_breakout_bits( 1, "1" );
+bit_breakout_bits( -1, "Set atomic for 'n' cycles<br>Performed at decode stage" );
 
 
 
@@ -894,35 +953,31 @@ mapping_end();
 
 Any extended immediate value is ignored by store instructions. If extended with extcmd, then 'op' of 0 indicates standard operation, op of 1 indicates half-word accesses and op of 2 indicates byte accesses, as shown above.
 
+<?php page_section( "notes", "Notes on instructions" ); ?>
+
+Coprocessors are accesed through the postbus, which is a register set.
+
+<p>
+
+There are a set of registers marked as 'special' which allow for control of the sticky/unsticky flags control, condition passed shadow size, endianness, unaligned accesses.
+
+<p>
+
+The scheduler is also accessed as a set of registers, to allow for control of the threads. This provides mechanisms for moving to and from ARM and native mode.
+
 <?php page_section( "missing", "Missing instructions" ); ?>
 
 Missing:
 
 <ul>
 
-<li> Memory commands (prefetch, flush, and such like)
+<li>Memory commands (prefetch, flush, and such like)
 
-<li> Coprocessor/memory DMA commands
+<li>Coprocessor/memory DMA commands
 
-<li>Change mode
+<li>Zero-overhead loops
 
-<li>Deschedule
-
-<li>Shift to ARM mode
-
-<li>Shift to 16-bit mode (so that ARM may issue it...)
-
-<li>Shift to sticky/unsticky flags
-
-<li>Condition passed shadow size
-
-<li>Endianness
-
-<li>Unaligned accesses
-
-<li>Atomicity (exclusive for 'n' instructions) - note atomic in shadow of conditionals and branches
-
-<li>Scheduler control - start other threads, test and set/clear flags, read flags
+<li>Repeat count - can be set by writes to registers, but want a decode
 
 </ul>
 

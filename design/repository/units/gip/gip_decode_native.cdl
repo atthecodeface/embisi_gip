@@ -182,6 +182,7 @@ module gip_decode_native( input bit[16] opcode,
             inst.rm_is_imm = 0;
             inst.immediate = native_mapped_immediate;
             inst.gip_ins_rd = native_mapped_rd;
+            inst.tag = 0;
             inst.valid = 0;
 
             if (extended_cmd.extended)
@@ -947,6 +948,88 @@ module gip_decode_native( input bit[16] opcode,
                     inst.f = native_mapped_rd_is_pc;
                     inst.valid = 1;
                 }
+                /*b Special instructions
+                 */
+                case gip_native_ins_class_special:
+                {
+                    if (!opcode[0]) // RestartAt instruction
+                    {
+                        inst.gip_ins_class = gip_ins_class_arith;
+                        inst.gip_ins_subclass = gip_ins_subclass_arith_add;
+                        inst.a = 0;
+                        inst.s_or_stack = 0;
+                        inst.p_or_offset_is_shift = 0;
+                        inst.f = 0;
+                        inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                        inst.gip_ins_rd = {type=gip_ins_r_type_special, r=gip_special_reg_thread_pc};
+                        inst.rm_is_imm = 1;
+                        inst.immediate = native_mapped_branch_offset;
+
+                        inst.valid = 1;
+                        pc_op = gip_pc_op_sequential;
+                    }
+                    else // block, restart semaphores, restart mode
+                    {
+                        full_switch (opcode[3;9])
+                            {
+                            case 0: // restart data
+                            {
+                                inst.gip_ins_class = gip_ins_class_logic;
+                                inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.f = 0;
+                                inst.gip_ins_rd = {type=gip_ins_r_type_special, r=gip_special_reg_thread_data};
+                                inst.rm_is_imm = 1;
+                                inst.immediate[8;0] = opcode[8;1];
+
+                                inst.valid = 1;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                            case 1: // block
+                            {
+                                inst.gip_ins_class = gip_ins_class_logic;
+                                inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                                inst.a = 0;
+                                inst.s_or_stack = 0;
+                                inst.p_or_offset_is_shift = 0;
+                                inst.f = 0;
+                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_block_all};
+                                inst.gip_ins_rd.type=gip_ins_r_type_none;
+                                inst.valid = 1;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                            case 2: // deschedule
+                            {
+                                inst.f = 1;
+                                inst.tag = 1;
+                                inst.valid = 1;
+                                pc_op = gip_pc_op_sequential;
+                            }
+                            case 3:
+                            {
+                                inst.valid = 0;
+                            }
+                            case 4:
+                            {
+                                inst.valid = 0;
+                            }
+                            case 5:
+                            {
+                                inst.valid = 0;
+                            }
+                            case 6:
+                            {
+                                inst.valid = 0;
+                            }
+                            case 7:
+                            {
+                                inst.valid = 0;
+                            }
+                            }
+                    }
+                }
                 /*b Branch instructions
                  */
                 case gip_native_ins_class_branch:
@@ -995,6 +1078,7 @@ module gip_decode_native( input bit[16] opcode,
                         inst.immediate = native_mapped_branch_offset;
                         //next_in_delay_slot = branch_delay_slot;
                     }
+                    inst.valid = 1;
                 }
                 /*b Done all instructions
                  */

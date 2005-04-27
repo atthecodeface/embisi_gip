@@ -24,6 +24,20 @@ constant integer postbus_command_flow_type_start = 15; // bit 15-16 of first tra
 constant integer postbus_command_flow_value_start = 17; // bit 17-20 of first transaction word indicates the data for the flow control action
 constant integer postbus_command_spare = 21; // bit 21 of first transaction word spare
 constant integer postbus_command_tx_signal_start = 22; // bit 22-26 of command (first transcation word out) indicates (if nonzero) the semaphore to set on completion of push to postbus
+constant integer postbus_command_io_cmd_op_start = 22; // bit 22-23 of first transaction word indicates the operation to be performed in an I/O command
 constant integer postbus_command_rx_signal_start = 27; // bit 27-31 of first transaction word indicates (if nonzero) the semaphore to set on completion of push postbus
 constant integer postbus_command_io_dest_start = 27; // bit 27-31 of first transaction word indicates the channel or data/command FIFO an IO transaction word is for
-
+// for commands to I/O
+// FFFFFSSSSS.ccccCCLLLLLddRRRRRRRl
+// ........................PPPPPPPP
+// .....GGGGG.......GGGGG..........
+// IIIII.................II........
+// FFFFF is... .FFCI
+//  FF is fifo
+//  C is cmd/status not data
+//  I is ingress not egress
+// and the data field holds a return header...
+// SSSSS...oo.ccccCC.LLLLddRRRRRRRl
+// ........................PPPPPPPP
+// GGGGG.................GG........
+// ........II........IIII..........

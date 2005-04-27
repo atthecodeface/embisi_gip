@@ -1,7 +1,7 @@
 JDF G
 // Created by Project Navigator ver 1.0
 PROJECT simple
-DESIGN simple
+DESIGN gip_ddr
 DEVFAM virtex2
 DEVFAMTIME 0
 DEVICE xc2v4000
@@ -40,7 +40,6 @@ SOURCE ./src/io_uart.v
 SOURCE ./src/gip_simple.v
 SOURCE ./src/postbus_test_rom_contents_0.v
 SOURCE ./src/postbus_rom_source.v
-SOURCE ./src/monitor_rom.v
 SOURCE ./src/fpga_wrapper.v
 SOURCE ./src/clock_generator.v
 SOURCE ./src/apb_target_ext_bus_master.v
@@ -49,13 +48,26 @@ SOURCE ./macros/memory_s_sp_2048_x_4b8.v
 SOURCE ./macros/memory_s_sp_2048_x_8.v
 SOURCE ./macros/rf_2r_1w_32_32.v
 SOURCE ./macros/rf_1r_1w_32_32.v
+SOURCE ./src/ddr_dram_as_sram.v
+SOURCE ./src/fpga_wrapper_leds.v
+SOURCE ./macros/boot_rom_wrapper.v
+SOURCE ./macros/boot_rom.xco
+SOURCE ./macros/brw.vhd
+SOURCE ./src/gip_ddr.v
+SOURCE ./src/apb_devices.v
+SOURCE ./src/gip_core_plus.v
 DEPASSOC gip_simple ./constraints/gip_simple.ucf
 DEPASSOC fpga_wrapper ./constraints/fpga_wrapper.ucf
 [Normal]
 p_EnableIncDesignFlow=xstvhd, virtex2, Implementation.t_placeAndRouteDes, 1108483442, True
-xilxMapGuideMode=xstvhd, virtex2, Implementation.t_map, 1108483442, None
+p_parGenAsyDlyRpt=xstvhd, virtex2, Implementation.t_par, 1110397729, True
+xilxMapGuideMode=xstvhd, virtex2, Verilog.t_map, 1108483442, None
+xilxMapReportDetail=xstvhd, virtex2, Verilog.t_map, 1110809634, True
+xilxPAReffortLevel=xstvhd, virtex2, Implementation.t_par, 1110397729, Medium
 xilxPARguideMode=xstvhd, virtex2, Implementation.t_par, 1108483442, None
 _SynthConstraintsFile=xstvhd, virtex2, Schematic.t_synthesize, 1108484659, ./constraints/gip_simple.xcf
+[STATUS-ALL]
+fpga_wrapper.bitgenGroup=OK,0
 [STRATEGY-LIST]
 FileGroup=False
 io_uart.ngcFileGroup=False

@@ -12,6 +12,7 @@ include "postbus.h"
 
 include "io_postbus.h"
 include "io_postbus_source.h"
+include "io_postbus_event_manager.h"
 include "io_postbus_target.h"
 
 /*a Constants
@@ -39,10 +40,16 @@ module io_postbus( clock int_clock,
                    output t_io_fifo_op egress_fifo_op,
                    output bit egress_fifo_op_to_cmd_status,
                    output bit[2] egress_fifo_to_access,
+                   output t_io_fifo_event_type egress_fifo_event_type,
                    output bit egress_fifo_address_from_read_ptr,
 
                    output t_io_sram_address_op egress_sram_address_op,
                    output t_io_sram_data_op egress_sram_data_op,
+
+                   input bit egress_event_from_cmd "Asserted if event comes from a status FIFO",
+                   input bit[2] egress_event_fifo "Fifo number last written to",
+                   input t_io_fifo_event egress_event_empty "Indicates value of empty and if empty changed (and edge event)",
+                   input t_io_fifo_event egress_event_watermark "Indicates value of watermark and if watermark changed (and edge event)",
 
                    output bit ingress_req,
                    input bit ingress_ack,
@@ -50,10 +57,16 @@ module io_postbus( clock int_clock,
                    output t_io_fifo_op ingress_fifo_op,
                    output bit ingress_fifo_op_to_cmd_status,
                    output bit[2] ingress_fifo_to_access,
+                   output t_io_fifo_event_type ingress_fifo_event_type,
                    output bit ingress_fifo_address_from_read_ptr,
 
                    output t_io_sram_address_op ingress_sram_address_op,
                    output t_io_sram_data_op ingress_sram_data_op,
+
+                   input bit ingress_event_from_status "Asserted if event comes from a status FIFO",
+                   input bit[2] ingress_event_fifo "Fifo number last written to",
+                   input t_io_fifo_event ingress_event_empty "Indicates value of empty and if empty changed (and edge event)",
+                   input t_io_fifo_event ingress_event_watermark "Indicates value of watermark and if watermark changed (and edge event)",
 
                    input bit[32] read_data,
 
@@ -81,14 +94,28 @@ module io_postbus( clock int_clock,
      */
     net bit tgt_egress_req;
     net bit tgt_ingress_req;
+    net bit tgt_command_req;
+    net bit tgt_command_ack;
 
     net t_io_fifo_op tgt_fifo_op;
     net bit tgt_fifo_op_to_cmd_status;
     net bit[2] tgt_fifo_to_access;
+    net t_io_fifo_event_type tgt_fifo_event_type;
     net bit tgt_fifo_address_from_read_ptr;
 
     net t_io_sram_address_op tgt_sram_address_op;
     net t_io_sram_data_op tgt_sram_data_op;
+
+    /*b Source nets
+     */
+    net bit src_cmd_req;
+    net bit src_cmd_ack;
+    net t_postbus_src_cmd_op src_cmd_op;
+    net bit[2] src_cmd_fifo;
+    net bit src_cmd_from_cmd_status;
+    net bit src_cmd_from_ingress;
+    net bit [5]src_cmd_length;
+    net bit[31] src_cmd_hdr_details;
 
     /*b Source nets
      */
@@ -98,6 +125,7 @@ module io_postbus( clock int_clock,
     net t_io_fifo_op src_fifo_op;
     net bit src_fifo_op_to_cmd_status;
     net bit[2] src_fifo_to_access;
+    net t_io_fifo_event_type src_fifo_event_type;
     net bit src_fifo_address_from_read_ptr;
 
     net t_io_sram_address_op src_sram_address_op;
@@ -130,6 +158,7 @@ module io_postbus( clock int_clock,
                 egress_fifo_op                    = tgt_fifo_op;
                 egress_fifo_op_to_cmd_status      = tgt_fifo_op_to_cmd_status;
                 egress_fifo_to_access             = tgt_fifo_to_access;
+                egress_fifo_event_type            = tgt_fifo_event_type;
                 egress_fifo_address_from_read_ptr = tgt_fifo_address_from_read_ptr;
                 egress_sram_address_op            = tgt_sram_address_op;
                 egress_sram_data_op               = tgt_sram_data_op;
@@ -141,6 +170,7 @@ module io_postbus( clock int_clock,
                 egress_fifo_op                    = src_fifo_op;
                 egress_fifo_op_to_cmd_status      = src_fifo_op_to_cmd_status;
                 egress_fifo_to_access             = src_fifo_to_access;
+                egress_fifo_event_type            = src_fifo_event_type;
                 egress_fifo_address_from_read_ptr = src_fifo_address_from_read_ptr;
                 egress_sram_address_op            = src_sram_address_op;
                 egress_sram_data_op               = src_sram_data_op;
@@ -160,6 +190,7 @@ module io_postbus( clock int_clock,
                 ingress_fifo_op                    = tgt_fifo_op;
                 ingress_fifo_op_to_cmd_status      = tgt_fifo_op_to_cmd_status;
                 ingress_fifo_to_access             = tgt_fifo_to_access;
+                ingress_fifo_event_type            = tgt_fifo_event_type;
                 ingress_fifo_address_from_read_ptr = tgt_fifo_address_from_read_ptr;
                 ingress_sram_address_op            = tgt_sram_address_op;
                 ingress_sram_data_op               = tgt_sram_data_op;
@@ -171,13 +202,14 @@ module io_postbus( clock int_clock,
                 ingress_fifo_op                    = src_fifo_op;
                 ingress_fifo_op_to_cmd_status      = src_fifo_op_to_cmd_status;
                 ingress_fifo_to_access             = src_fifo_to_access;
+                ingress_fifo_event_type            = src_fifo_event_type;
                 ingress_fifo_address_from_read_ptr = src_fifo_address_from_read_ptr;
                 ingress_sram_address_op            = src_sram_address_op;
                 ingress_sram_data_op               = src_sram_data_op;
             }
         }
 
-    /*b Instantiage target and source
+    /*b Instantiate target and source
      */
     postbus_instances "Postbus target and source subinstances":
         {
@@ -191,6 +223,7 @@ module io_postbus( clock int_clock,
                                    fifo_op => tgt_fifo_op,
                                    fifo_op_to_cmd_status => tgt_fifo_op_to_cmd_status,
                                    fifo_to_access => tgt_fifo_to_access,
+                                   fifo_event_type => tgt_fifo_event_type,
                                    fifo_address_from_read_ptr => tgt_fifo_address_from_read_ptr,
                                    sram_address_op => tgt_sram_address_op,
                                    sram_data_op => tgt_sram_data_op,
@@ -201,13 +234,57 @@ module io_postbus( clock int_clock,
                                    ingress_req => tgt_ingress_req,
                                    ingress_ack <= tgt_ingress_ack,
 
+                                   command_req => tgt_command_req,
+                                   command_ack <= tgt_command_ack,
+
                                    configuration_write => configuration_write,
 
                                    write_address => write_address,
                                    write_data => write_data
                 );
+
+            io_postbus_event_manager event_mgr ( int_clock <- int_clock,
+                                                 int_reset <= int_reset,
+
+                                                 target_req <= tgt_command_req,
+                                                 target_ack => tgt_command_ack,
+                                                 target_write_address <= write_address,
+                                                 target_write_data <= write_data,
+
+                                                 egress_event_from_cmd <= egress_event_from_cmd,
+                                                 egress_event_fifo <= egress_event_fifo,
+                                                 egress_event_empty <= egress_event_empty,
+                                                 egress_event_watermark <= egress_event_watermark,
+
+                                                 ingress_event_from_status <= ingress_event_from_status,
+                                                 ingress_event_fifo <= ingress_event_fifo,
+                                                 ingress_event_empty <= ingress_event_empty,
+                                                 ingress_event_watermark <= ingress_event_watermark,
+
+                                                 post_src_cmd_req => src_cmd_req,
+                                                 post_src_cmd_ack <= src_cmd_ack,
+                                                 post_src_cmd_op => src_cmd_op,
+                                                 post_src_cmd_fifo => src_cmd_fifo,
+                                                 post_src_cmd_from_cmd_status => src_cmd_from_cmd_status,
+                                                 post_src_cmd_from_ingress => src_cmd_from_ingress,
+                                                 post_src_cmd_length => src_cmd_length,
+                                                 post_src_cmd_hdr_details => src_cmd_hdr_details );
+
+            // we want to take a command from our postbus_command block
+            // the command should have a full header, and a fifo command of some form
+            // this will be acked with a slow ack (req only valid if ack low, ack not combinatorial on req)
+            // req must be taken away after the ack cycle
             io_postbus_source src( int_clock <- int_clock,
                                    int_reset <= int_reset,
+
+                                   post_src_cmd_req <= src_cmd_req,
+                                   post_src_cmd_ack => src_cmd_ack,
+                                   post_src_cmd_op <= src_cmd_op,
+                                   post_src_cmd_fifo <= src_cmd_fifo,
+                                   post_src_cmd_from_cmd_status <= src_cmd_from_cmd_status,
+                                   post_src_cmd_from_ingress <= src_cmd_from_ingress,
+                                   post_src_cmd_length <= src_cmd_length,
+                                   post_src_cmd_hdr_details <= src_cmd_hdr_details,
 
                                    postbus_type => postbus_src_type,
                                    postbus_data => postbus_src_data,
@@ -216,6 +293,7 @@ module io_postbus( clock int_clock,
                                    fifo_op => src_fifo_op,
                                    fifo_op_to_cmd_status => src_fifo_op_to_cmd_status,
                                    fifo_to_access => src_fifo_to_access,
+                                   fifo_event_type => src_fifo_event_type,
                                    fifo_address_from_read_ptr => src_fifo_address_from_read_ptr,
                                    sram_address_op => src_sram_address_op,
                                    sram_data_op => src_sram_data_op,

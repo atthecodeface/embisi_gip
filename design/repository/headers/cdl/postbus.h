@@ -15,29 +15,31 @@ typedef enum [2]
     postbus_ack_taken = 1,
 } t_postbus_ack_e;
 
+// bits 0 through 7 are consumed by routing
+// bits 8 through 17 are consumed by source (e.g. 5 bits length, 5 bits semaphore; 5 bits length, 2 bits operation)
+// bits 18 through 24 are consumed by flow control (future)
+// bits 25 through 31 are consumed by target (e.g. 2 bits fifo, 5 bits semaphore; 5 bits fifo, 2 bits command)
+constant integer postbus_command_route_size = 7;
+constant integer postbus_command_source_size = 10;
+constant integer postbus_command_flow_control_size = 7;
+constant integer postbus_command_target_size = 7;
+
 constant integer postbus_command_last_bit = 0; // bit 0 of first transaction word indicates its also the last
 constant integer postbus_command_route_start = 1; // bits 1-7 of first transaction word indicates the destination (routing information) for the transaction
-constant integer postbus_command_rx_fifo_start = 8; // bit 8-9 of first transaction word indicates the receive FIFO to receive into
-constant integer postbus_command_io_dest_type_start = 8; // bit 8-9 of first transaction word indicates the type of destination - 00=>channel, 01=>data FIFO, 10=>command FIFO, 11=>IO interface config
-constant integer postbus_command_tx_length_start = 10; // bits 10-14 of first transaction word indicates the length (to GIP)
-constant integer postbus_command_flow_type_start = 15; // bit 15-16 of first transaction word indicates the flow control action to do on receive (00=>write, 01=>set, 10=>add)
-constant integer postbus_command_flow_value_start = 17; // bit 17-20 of first transaction word indicates the data for the flow control action
-constant integer postbus_command_spare = 21; // bit 21 of first transaction word spare
-constant integer postbus_command_tx_signal_start = 22; // bit 22-26 of command (first transcation word out) indicates (if nonzero) the semaphore to set on completion of push to postbus
-constant integer postbus_command_io_cmd_op_start = 22; // bit 22-23 of first transaction word indicates the operation to be performed in an I/O command
-constant integer postbus_command_rx_signal_start = 27; // bit 27-31 of first transaction word indicates (if nonzero) the semaphore to set on completion of push postbus
-constant integer postbus_command_io_dest_start = 27; // bit 27-31 of first transaction word indicates the channel or data/command FIFO an IO transaction word is for
-// for commands to I/O
-// FFFFFSSSSS.ccccCCLLLLLddRRRRRRRl
-// ........................PPPPPPPP
-// .....GGGGG.......GGGGG..........
-// IIIII.................II........
-// FFFFF is... .FFCI
-//  FF is fifo
-//  C is cmd/status not data
-//  I is ingress not egress
-// and the data field holds a return header...
-// SSSSS...oo.ccccCC.LLLLddRRRRRRRl
-// ........................PPPPPPPP
-// GGGGG.................GG........
-// ........II........IIII..........
+constant integer postbus_command_source_start = postbus_command_route_start + postbus_command_route_size;
+constant integer postbus_command_flow_control_start = postbus_command_source_start + postbus_command_source_size;
+constant integer postbus_command_target_start = postbus_command_flow_control_start + postbus_command_flow_control_size;
+
+constant integer postbus_command_source_gip_tx_length_start = postbus_command_source_start;
+constant integer postbus_command_source_gip_tx_signal_start = postbus_command_source_gip_tx_length_start+5;
+constant integer postbus_command_source_io_length_start = postbus_command_source_start;
+constant integer postbus_command_source_io_cmd_op_start = postbus_command_source_io_length_start+5;
+
+constant integer postbus_command_target_gip_rx_fifo_start = postbus_command_target_start;                    //  the receive FIFO to receive into
+constant integer postbus_command_target_gip_rx_semaphore_start = postbus_command_target_gip_rx_fifo_start+2; //  the semaphore to signal once completely received
+
+constant integer postbus_command_target_io_dest_type_start = postbus_command_target_start;               // 2 bits of the destination type; general config, fifo config, data, command
+constant integer postbus_command_target_io_dest_start = postbus_command_target_io_dest_type_start+2;     // 5 bits of write address OR ...
+constant integer postbus_command_target_io_fifo_start = postbus_command_target_io_dest_type_start+2;     // 2 bits of fifo number
+constant integer postbus_command_target_io_ingress = postbus_command_target_io_fifo_start+2;             // 1 bit for tx/rx (ingress)
+constant integer postbus_command_target_io_cmd_status = postbus_command_target_io_ingress+1;             // 1 bit for cmd status / data

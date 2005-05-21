@@ -1,29 +1,11 @@
 /*a Includes
  */
+#include "gip_support.h"
+#include "postbus.h"
 #include "../common/wrapper.h"
 
 /*a Defines
  */
-#define NOP { __asm__ volatile(" movnv r0, r0"); }
-#define NOP_WRINT { NOP; NOP; NOP; }
-static void nop_many( void ) { NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;   NOP; NOP; NOP; NOP; }
-#define NOP_WREXT { nop_many(); }
-#define FLASH_CONFIG_READ(v) { __asm__ volatile (" .word 0xec00ce04 \n mov %0, r8" : "=r" (v) ); }
-#define FLASH_CONFIG_WRITE(v) { __asm__ volatile (" .word 0xec00c48e \n mov r8, %0" : : "r" (v) ); NOP_WRINT; }
-#define FLASH_ADDRESS_READ(v) { __asm__ volatile (" .word 0xec00ce04 \n mov %0, r10" : "=r" (v) ); }
-#define FLASH_ADDRESS_WRITE(v) { __asm__ volatile (" .word 0xec00c4ae \n mov r8, %0" : : "r" (v) ); NOP_WRINT; }
-#define FLASH_DATA_READ(v) { __asm__ volatile (" .word 0xec00ce04 \n mov %0, r9" : "=r" (v) ); }
-#define FLASH_DATA_WRITE( v ) { __asm__ volatile (" .word 0xec00c49e \n mov r8, %0" : : "r" (v) ); NOP_WREXT; }
-
- // data == watermark (10;21), size_m_one (10;11), base (11;0)
- // cmd == fifo(2;29)=0, status_fifo(28)=0, ingress(27)=0, length_m_one(5;10)=0, io_dest_type(2;8)=1, route(7)=0, last(1)=0 -- configure tx data fifo
-#define POSTBUS_IO_FIFO_CFG( data, rx, fifo, base, size_m_one, wm ) { \
-    unsigned int s; \
-    s = ((wm)<<21) | ((size_m_one)<<11) | ((base)<<0); \
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); \
-    s = ((fifo)<<29) | ((!(data))<<28) | ((rx)<<27) | (0<<10) | (1<<8); \
-    __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); \
-}
 
 /*a Ethernet handling functions
  */
@@ -35,63 +17,25 @@ static void tx_ethernet_packet( int byte_length, unsigned int *data )
     unsigned int s;
     for (i=j=0; i<(byte_length+3)/4; i++)
     {
-        __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (data[i]) ); // postbus data 0
+        GIP_POST_TXD_0( data[i] );
         j++;
         if (j==8)
         {
             // wait for txpending[0] to be clear?
-            s = 0x00000200; // fifo(2;29)=0, status_fifo(28)=0, ingress(27)=0, length_m_one(5;10)=0, io_dest_type(2;8)=2, route(7)=0, last(1)=0 -- configure tx data fifo
-            s |= ((j-1)<<10);
-            __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // postbus cmd 0
+            GIP_POST_TXC_0_IO_FIFO_DATA( 0,j-1,0, 0,0,0 ); // add j words to etx fifo (egress data fifo 0)
             j = 0;
         }
     }
     if (j>0)
     {
         // wait for txpending[0] to be clear?
-        s = 0x00000200; // fifo(2;29)=0, status_fifo(28)=0, ingress(27)=0, length_m_one(5;10)=0, io_dest_type(2;8)=2, route(7)=0, last(1)=0 -- configure tx data fifo
-        s |= ((j-1)<<10);
-        __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // postbus cmd 0
+        GIP_POST_TXC_0_IO_FIFO_DATA( 0,j-1,0, 0,0,0 ); // add j words to etx fifo (egress data fifo 0)
     }
 
     // wait for txpending[0] to be clear?
-    s = 0x01000000; // cmd for eth tx - immediate
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); // postbus data 0
-    s = 0x21800000; // cmd for eth tx tx_fcs(29), half_duplex (28), deferral_restart_value (8;20), retry_count (4;16), length (16;0)
-    s |= byte_length;
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); // postbus data 0
-    s = 0x10000600; // fifo(2;29)=0, status_fifo(28)=1, ingress(27)=0, length_m_one(5;10)=1, io_dest_type(2;8)=2, route(7)=0, last(1)=0 -- 
-    __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // postsbus cmd 0
-}
-
-/*f Poll the rx status fifo
-  return 1 if not empty
- */
-static int poll_rx_status_fifo( void )
-{
-    unsigned int s;
-    // clear the semaphore
-    s = 1<<5;
-    __asm__ volatile ( " .word 0xec00c82e \n mov r0, %0 \n" : : "r" (s) ); // extrdrm (c): dnxm n/m is top 3.1, type 7 for no override - special is sems 0, semsset 1, semsclr 2
-
-    // send cmd to give us its status
-    s = 0x28800400; // header for I/O to send back: route(7;1)=0, dest GIP FIFO (2;8)=0, I/O length(4;10)=1, I/O cmd (2;22)=2 (read status), signal (5;27)=5
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-    s = 0x18000000; // fifo(2;29)=0, status_fifo(28)=1, ingress(27)=1, length_m_one(5;10)=0, io_dest_type(2;8)=0, route(7)=0, last(1)=0 -- do 'event cmd' command
-    __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-
-    // wait for the data to come back
-    s = 0;
-    while (!(s&0x20))
-    {
-        __asm__ volatile (" .word 0xec00ce08 \n mov %0, r0" : "=r" (s) );
-    }
-
-    // Read the postbus rx fifo to get its data word
-    __asm__ volatile (" .word 0xec00ce06 \n mov %0, r1" : "=r" (s) );
-
-    // Check the empty bit of the status
-    return (s&0x80000000)==0;
+    GIP_POST_TXD_0( 0x01000000 );
+    GIP_POST_TXD_0( 0x21800000 | byte_length );
+    GIP_POST_TXC_0_IO_FIFO_DATA( 0,1,1, 0,0,1 ); // add to egress cmd fifo 0, set semaphore 1 on completion
 }
 
 /*f Handle a non-empty ethernet rx status fifo
@@ -101,63 +45,41 @@ static int poll_rx_status_fifo( void )
  */
 static void handle_rx_status_fifo( void )
 {
-    unsigned int s;
-    unsigned int time;
-    // clear the semaphore
-    s = 1<<5;
-    __asm__ volatile ( " .word 0xec00c82e \n mov r0, %0 \n" : : "r" (s) ); // extrdrm (c): dnxm n/m is top 3.1, type 7 for no override - special is sems 0, semsset 1, semsclr 2
+    unsigned int s, time;
 
-    // read 2 words from the status fifo
-    s = 0x28000800; // header for I/O to send back: route(7;1)=0, dest GIP FIFO (2;8)=0, I/O length(4;10)=2, I/O cmd (2;22)=0 (read data), signal (5;27)=5
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-    s = 0x18000000; // fifo(2;29)=0, status_fifo(28)=1, ingress(27)=1, length_m_one(5;10)=0, io_dest_type(2;8)=0, route(7)=0, last(1)=0 -- do 'event cmd' command
-    __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
+    GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<31 );
+    GIP_POST_TXD_0( (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
+    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc );
 
     // wait for the data to come back
-    s = 0;
-    while (!(s&0x20))
+    while (1)
     {
-        __asm__ volatile (" .word 0xec00ce08 \n mov %0, r0" : "=r" (s) );
+        GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<31 );
+        if ((s>>31)&1) break;
     }
-    
-    // read the status and the time
-    __asm__ volatile (" .word 0xec00ce06 \n mov %0, r1" : "=r" (time) );
-    __asm__ volatile (" .word 0xec00ce06 \n mov %0, r1" : "=r" (s) );
-    s = (s>>16)&3;
-    if (s==0) {} // tx ok
-    if (s==1) {} // late coll
-    if (s==2) {} // retries exceeded
+    GIP_POST_RXD_0(time);
+    GIP_POST_RXD_0(s);
 
-}
-
-/*f Poll the tx status fifo
-  return 1 if not empty
- */
-static int poll_tx_status_fifo( void )
-{
-    unsigned int s;
-    // clear the semaphore
-    s = 1<<5;
-    __asm__ volatile ( " .word 0xec00c82e \n mov r0, %0 \n" : : "r" (s) ); // extrdrm (c): dnxm n/m is top 3.1, type 7 for no override - special is sems 0, semsset 1, semsclr 2
-
-    // send cmd to give us its status
-    s = 0x28800400; // header for I/O to send back: route(7;1)=0, dest GIP FIFO (2;8)=0, I/O length(4;10)=1, I/O cmd (2;22)=2 (read status), signal (5;27)=5
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-    s = 0x38000000; // fifo(2;29)=1, status_fifo(28)=1, ingress(27)=1, length_m_one(5;10)=0, io_dest_type(2;8)=0, route(7)=0, last(1)=0 -- do 'event cmd' command
-    __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-
-    // wait for the data to come back
-    s = 0;
-    while (!(s&0x20))
+    unsigned int size, status;
+    status = (s>>24)&7;
+    size = (s>>16)&0xff; // read this (number of bytes+3)/4 words
+    // 0 => fcs ok; 1=>fcs bad; 2=> odd nybbles; 3=> complete block; 4=>fifo overrun!; 5=>framing error
+    // we get 03400040, 03400080, 00120092 for a 146 byte packet
+    if (size>0)
     {
-        __asm__ volatile (" .word 0xec00ce08 \n mov %0, r0" : "=r" (s) );
+        int i;
+        GIP_POST_TXD_0( (0<<postbus_command_source_io_cmd_op_start) | (((size+3)/4)<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=0, length=1 (get status), semaphore=0
+        GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x4 ); // eth rx d, ingr data fifo 0
+        while (1)
+        {
+            GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<31 );
+            if ((s>>31)&1) break;
+        }
+        for (i=0; i<((size+3)/4); i++)
+        {
+            GIP_POST_RXD_0(s);
+        }
     }
-
-    // Read the postbus rx fifo to get its data word
-    __asm__ volatile (" .word 0xec00ce06 \n mov %0, r1" : "=r" (s) );
-
-    // Check the empty bit of the status
-    return (s&0x80000000)==0;
 }
 
 /*f Handle a non-empty ethernet tx fifo
@@ -166,28 +88,20 @@ static int poll_tx_status_fifo( void )
  */
 static void handle_tx_status_fifo( void )
 {
-    unsigned int s;
-    unsigned int time;
-    // clear the semaphore
-    s = 1<<5;
-    __asm__ volatile ( " .word 0xec00c82e \n mov r0, %0 \n" : : "r" (s) ); // extrdrm (c): dnxm n/m is top 3.1, type 7 for no override - special is sems 0, semsset 1, semsclr 2
+    unsigned int s, time;
 
-    // read 2 words from the status fifo
-    s = 0x28000800; // header for I/O to send back: route(7;1)=0, dest GIP FIFO (2;8)=0, I/O length(4;10)=2, I/O cmd (2;22)=0 (read data), signal (5;27)=5
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-    s = 0x38000000; // fifo(2;29)=1, status_fifo(28)=1, ingress(27)=1, length_m_one(5;10)=0, io_dest_type(2;8)=0, route(7)=0, last(1)=0 -- do 'event cmd' command
-    __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
+    GIP_POST_TXD_0( (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (0<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
+    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xd );
 
     // wait for the data to come back
     s = 0;
-    while (!(s&0x20))
+    while (!(s&2))
     {
-        __asm__ volatile (" .word 0xec00ce08 \n mov %0, r0" : "=r" (s) );
+        GIP_POST_STATUS_0(s);
     }
-    
-    // read the status and the time
-    __asm__ volatile (" .word 0xec00ce06 \n mov %0, r1" : "=r" (time) );
-    __asm__ volatile (" .word 0xec00ce06 \n mov %0, r1" : "=r" (s) );
+    GIP_POST_RXD_0(time);
+    GIP_POST_RXD_0(s);
+
     s = (s>>16)&3;
     if (s==0) {} // tx ok
     if (s==1) {} // late coll
@@ -219,34 +133,25 @@ extern int test_entry_point()
     int empty;
     FLASH_CONFIG_WRITE( 0x355 );
     FLASH_ADDRESS_WRITE( 0x80000000 ); // CE 2
-//    __asm__ volatile ( " .word 0xec00de06 \n mov %0, r0 \n" : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override
-    s = 0x08081008; // base 8, end 16, read 8, write 8
-    __asm__ volatile ( " .word 0xec00c70e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-
-    s = 0x00000800; // base 0, end 8, read 0, write 0
-    __asm__ volatile ( " .word 0xec00c71e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
+    GIP_POSTIF_CFG( 0, 0x00001000 ); // Rx fifo 0 config base 0, end 16, read 0, write 0 - can overlap with tx as we use one at a time
+    GIP_POSTIF_CFG( 1, 0x00001000 ); // Tx fifo 0 config base 0, end 16, read 0, write 0
 
     NOP;
     NOP;
     NOP;
     NOP;
 
-    __asm__ volatile ( " .word 0xec00de07 \n mov %0, r1 \n" : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-    FLASH_DATA_WRITE( s );
-
-    __asm__ volatile ( " .word 0xec00de07 \n mov %0, r0 \n" : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - rx fifo config
-    FLASH_DATA_WRITE( s );
-
-    NOP;
-    NOP;
-    NOP;
-    NOP;
-
-    POSTBUS_IO_FIFO_CFG( 1, 0, 0,     0, 511, 3 ); // etx d data, rx, fifo #,  base, size-1, wm
-    POSTBUS_IO_FIFO_CFG( 0, 0, 0,  512,  15, 3 ); // etx c data, rx, fifo #,  base, size-1, wm
-    POSTBUS_IO_FIFO_CFG( 1, 1, 0,     0, 511, 3 ); // erx d data, rx, fifo #,  base, size-1, wm
-    POSTBUS_IO_FIFO_CFG( 0, 1, 0,  512,  15, 3 ); // erx s data, rx, fifo #,  base, size-1, wm
-    POSTBUS_IO_FIFO_CFG( 0, 1, 1,  528,  15, 3 ); // etx s data, rx, fifo #,  base, size-1, wm
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 0,  512,  15, 3 );  // etx cmd
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 1,  528,  15, 3 );  // uart0 cmd
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 2,  544,  15, 3 );  // ss cmd
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 0,     0, 255, 3 ); // etx data
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 1,   256, 32, 3 );  // ss tx data
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 0,  512,  15, 3 );  // erx status
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 1,  528,  15, 3 );  // etx status
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 2,  544,  15, 3 );  // uar0 status
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 3,  560,  15, 3 );  // ss status
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 0,     0, 255, 3 ); // erx data
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 1,   256, 255, 3 ); // ss rx data
 
 // invoke the postbus target to send us a header back - test the path, really
 //    s = 0x18000000; // header for I/O to send back: route(7;1)=0, dest GIP FIFO (2;8)=0, I/O length(4;10)=0, I/O cmd (2;22)=0 (send hdr), signal (5;27)=3
@@ -259,42 +164,70 @@ extern int test_entry_point()
 // header_details[0] is all we have at the moment
 // set header_details[0] to point to us
 // 0x11, 0x15, 0x19, 0x1d are 4 header_details
-    s = 0 | (0<<8) | (3<<27); // header details: route=0, dest_gip_fifo=0, rx_signal=3
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-    s = 0 | (0<<8) | (0<<10) | (0x11<<27); // route=0, io_dest_type=0, length_m_one = 0, io_dest=0x11
-    __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override
+    GIP_POST_TXD_0( GIP_POSTBUS_COMMAND( 0, 0, 0 ) ); // header details: route=0
+    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x11 );
+    NOP;NOP;NOP;NOP;NOP;NOP;
 
 // 0x10, 0x14, 0x18, 0x1c are 4 events
-// set event[1] to be erxs not empty send header_details[0] as command
-    s = (1<<0) | (1<<1) | (0<<2) | (1<<4) | (0<<5) | (0<<10) | (0<<22) ; // ingress=1, cmd_status=1, fifo=0, empty_not_watermark=1, level=0, length=0, cmd_op=0 (read data length 0)
-    __asm__ volatile ( " .word 0xec00c62e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
-    s = 0 | (0<<8) | (0<<10) | (0x14<<27); // route=0, io_dest_type=0, length_m_one = 0, io_dest=0x10
-    __asm__ volatile ( " .word 0xec00c61e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override
+// set event[1] to be erxs not empty send header_details[0] as command, setting semaphore 3
+// set event[2] to be etxs not empty send header_details[0] as command, setting semaphore 3
+    GIP_POST_TXD_0( (0<<0) | (1<<2) | (1<<3) | (1<<4) | (0<<5) | (0<<postbus_command_source_io_cmd_op_start) | (0<<postbus_command_source_io_length_start) | (3<<postbus_command_target_gip_rx_semaphore_start) ); // fifo, cmdstatus, ingress, empty/watermark, level, target
+    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x14 );
+    NOP;NOP;NOP;NOP;NOP;NOP;
+    GIP_POST_TXD_0( (1<<0) | (1<<2) | (1<<3) | (1<<4) | (0<<5) | (0<<postbus_command_source_io_cmd_op_start) | (0<<postbus_command_source_io_length_start) | (3<<postbus_command_target_gip_rx_semaphore_start) ); // fifo, cmdstatus, ingress, empty/watermark, level, target
+    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x18 );
+    NOP;NOP;NOP;NOP;NOP;NOP;
 
-//    for (s=0; s<30; s++) NOP; // 650ns per loop
+// MDIO something
+    GIP_POST_TXD_0( 0x5ada1234 ); // data to go out... write to '10101' reg '' 
+    GIP_POST_TXC_0_IO_FIFO_DATA(0,0,0,1,0,0); // add to egress data fifo 1
+    NOP;NOP;NOP;NOP;NOP;NOP;
+    GIP_POST_TXD_0( 0x01000000 ); // immediate
+    GIP_POST_TXD_0( 0x10700420 ); // cont 0, type 2, cpha 0, cpol 0, cl 0, inp 0, cs 7, tristate no, div 8, 32 bits
+    GIP_POST_TXC_0_IO_FIFO_DATA(0,1,0,2,0,1); // add to egress cmd fifo 2
+    NOP;NOP;NOP;NOP;NOP;NOP;
 
+// MDIO something else
+    GIP_POST_TXD_0( 0x6ada0000 ); // data to go out... read of '10101' reg '10110'
+    GIP_POST_TXC_0_IO_FIFO_DATA(0,0,0,1,0,0); // add to egress data fifo 1
+    NOP;NOP;NOP;NOP;NOP;NOP;
+    GIP_POST_TXD_0( 0x01000000 ); // immediate
+    GIP_POST_TXD_0( 0x107e0420 ); // cont 0, type 2, cpha 0, cpol 0, cl 0, inp 0, cs 7, tristate after 14, div 8, 32 bits
+    GIP_POST_TXC_0_IO_FIFO_DATA(0,1,2,2,0,1); // add to egress cmd fifo 2; set semaphore 2 on completion
+    NOP;NOP;NOP;NOP;NOP;NOP;
 
     tx_ethernet_packet( 16, (unsigned int *)"this is the day that the Lord has made" );
 
     while (1)
     {
-        // Check tx status fifo empty
-//        if (poll_tx_status_fifo())
-//        {
-//            handle_tx_status_fifo();
-//        }
-//        if (poll_rx_status_fifo())
-//        {
-//            handle_rx_status_fifo();
-//        }
+        unsigned int s;
+        int tx_ne;
+        GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<3 );
+        if (s&(1<<3))
+        { // status ready somewhere; read both FIFO status' for now
+            GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (0<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
+            GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
+            GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (0<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
+            GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xd ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
+            NOP;NOP;NOP;NOP;NOP;NOP; // cmd and data are RF writes, so delay, and give a chance for the data to get back
+            NOP;NOP;NOP;NOP;NOP;NOP; // cmd and data are RF writes, so delay, and give a chance for the data to get back
+            GIP_POST_RXD_0(s); // get status of erx status fifo
+            if ((s&0x80000000)==0) // if not empty
+            {
+                GIP_POST_RXD_0(s);
+                tx_ne = ((s&0x80000000)==0);
+                handle_rx_status_fifo();
+            }
+            else
+            {
+                GIP_POST_RXD_0(s);
+                tx_ne = ((s&0x80000000)==0);
+            }
+            if (tx_ne)
+            {
+                handle_tx_status_fifo();
+            }
+        }
     }
 
 }
-
-// status 0 => erx
-// status 1 => etx
-// status 2 => uart 0
-// cmd 0 => etx
-// cmd 1 => uart 0
-// txdata 0 => etx
-// rxdata 0 => erx

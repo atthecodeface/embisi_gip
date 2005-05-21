@@ -1,0 +1,404 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+  Add continuation
+ */
+
+/*a Includes
+ */
+include "io_cmd.h"
+include "io_sync_serial.h"
+
+/*a Constants
+ */
+
+/*a Types
+ */
+/*t t_serial_fsm
+ */
+typedef fsm {
+    serial_fsm_idle;
+    serial_fsm_wait_for_data;
+    serial_fsm_first_phase_of_clock;
+    serial_fsm_second_phase_of_clock;
+    serial_fsm_trailer;
+    serial_fsm_done;
+} t_serial_fsm;
+
+/*a io_sync_serial module
+ */
+module io_sync_serial( clock int_clock,
+                       input bit int_reset,
+
+                       input bit[32] tx_data_fifo_data,
+                       output t_io_tx_data_fifo_cmd tx_data_fifo_cmd,
+                       output bit tx_data_fifo_toggle,
+
+                       output bit[32] rx_data_fifo_data,
+                       output bit rx_data_fifo_toggle,
+
+                       input bit cmd_fifo_empty,
+                       input bit[32] cmd_fifo_data,
+                       output bit cmd_fifo_toggle,
+
+                       output bit status_fifo_toggle,
+                       output bit[32] status_fifo_data,
+
+                       output bit[2] sscl,
+                       output bit[2] sscl_oe,
+                       output bit ssdo,
+                       output bit ssdo_oe,
+                       input bit[2] ssdi,
+                       output bit[8] sscs
+                       )
+
+    /*b Documentation
+     */
+"
+   MDC   MDIO(in) MDIO(out)
+  |        |  |     |  |
+  \        |  |     |  |
+   \       |  |     |  |
+    |      |xx|     |  |
+    |      |xx|     |  |
+   /       |xx|     |  |
+  /        |xx|     |xx|
+  |        |xx|     |xx|
+  |        |  |     |  |
+  \        |  |     |  |
+   \       |  |     |  |
+    |      |xx|     |  |
+    |      |xx|     |  |
+   /       |xx|     |  |
+  /        |xx|     |xx|
+  |        |xx|     |xx|
+
+MDC max frequency 2.5MHz (400ns)
+MDC min frequency 0MHz
+MDC to MDIO(in) 0 to 300ns on National part
+MDIO(in) setup to MDC rising 50ns
+MDIO(out) setup to MDC rising at PHY 10ns
+MDIO(out) hold after MDC rising at PHY 10ns
+MDIO(out) driven low, optionally driven high, possibly for a fixed small time
+MDIO protocol for write is:
+    idle - all 1s, floating ; preamble of 32 zs is standard
+    start - drive 0, drive 1
+    opcode - drive 0, drive 1, for write
+    device address - 5 bits, msb first
+    register address - 5 bits, msb first
+    (not turnaround) drive 1, drive 0
+    16 bits of data msb first
+    idle (at least one bit)
+
+MDIO protocol for read is:
+    idle - all 1s, floating ; preamble of 32 zs is standard
+    start - drive 0, drive 1
+    opcode - drive 0, drive 1, for write
+    device address - 5 bits, msb first
+    register address - 5 bits, msb first
+    turnaround - both high impedance, PHY drives 0
+    16 bits of data from PHY msb first
+    idle (at least one bit)
+
+MDIO should be driven out on MDC falling
+MDIO should be run from an incoming MDC, which we can generate internally, but which is basically a pin input (one of the 4? (2xRMII+?) clock in per IO)
+
+I2S - with TDM? although we can do it here with continuations and chip selects, but it is probably too fast a frame signal
+SPI - this is a serial clocked interface, with data driven off an edge and captured off an edge; it can use separate input and output lines, or can be shared (in which case treat the first n bits as inputs, and drive for the remainder)
+The length of the clocking should be specified, and data sucked in to status or in to the data FIFO (for flash). Same for output data - can get it from the data FIFO, or from the command.
+Command should give length (short/long), tristate amount (short only), data (16 bits max), chip select to enable (3 bits?)
+
+Our plan...
+Have a command interface with:
+1 bit of continuation expected - dont go to CS deassertion state if another command is pending
+2 bits type (00->SPI no output, 01->SPI with output, 10->MDIO, 11->?)
+2 bits subtype (CPOL, CPHA for SPI; not used for MDIO)
+1 bit indicates which clock pin to use (output)
+1 bit indicates input pin to use (component has 2 input pins, 1 output pin, 1 output enable for data, plus 2 clock out and enable, plus 8 chip-selects)
+3 bits of chip select
+4 bits of tristate delay; gives number 0 to 15 for cycles delay for SPI before output is enabled, or number of initial cycles that MDIO output is enabled
+8 bits clock divider (to go down from our input clock to an output clock for MDIO of e.g. 1MHz, SPI of 20MHz, same pins)
+8 bits length (top bit set indicates 7 bits give 0-127 32 bit words, top bit clear indicates 0-127 bits)
+
+Always take/put data in data FIFOs
+If length has top bit set then one status is issued per 128 bits received, and one at the end
+SPI idle state has CS deasserted, clock deasserted. FSM goes idle to 
+    get data
+    wait for data with clock driven idle (low if CPOL=0), CS deasserted
+    clock driven phase 1 (low if CPOL=0, CPHA=0), CS asserted, data out driven (if tristate permits)
+    clock driven phase 2 (high if CPOL=0, CPHA=1), data out held, data in captured
+    clock driven phase 1, data out changes with clock
+    clock driven phase 2, data out held, data in captured
+    clock driven phase 1, data out changes with clock
+    etc
+    do this for the given length; at the end or at every 128 bits issue a status giving bits remaining to go (somehow) and number of words of input stored
+    at every 32 bits write the data input register to the data FIFO (use a holding register for this)
+    at end if continuation is clear then clock driven idle (low if CPOL=0), CS deasserted
+    NEAR end if continuation is set and another command is pending, it should be read early and transition made to the active SPI state (clock driven low, CS asserted, data out driven
+    When to fetch new data? When a command is active or pending and the data out hold is empty?
+    Clock it all off an effective 2x clock (e.g. 40MHz for 20MHz SPI)
+
+SPI modes...
+SPI mode 0 has clock low when CS falls, pumps once per bit leaving clock low when CS rises
+SPI mode 0 and 2 (CPHA=0) do not change the clock as CS falls
+SPI modes 1 and 3 (CPHA=1) do change the clock as CS falls, and hence effectively run the clock one phase earlier than modes 0 and 2; thus falling edge in mode 1 is equivalent to rising edge in mode 0, also
+SPI modes 2 and 3 (CPOL=1) use the clock inverted compared to SPI modes 0 and 1
+"
+
+{
+
+    /*b Clock and reset
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b State for pins
+     */
+    clocked bit[2] sscl=0;
+    clocked bit[2] sscl_oe=0;
+    clocked bit ssdo=0;
+    clocked bit ssdo_oe=0;
+    clocked bit[8] sscs=0;
+
+    /*b State for I/O fifo interfaces
+     */
+    clocked t_io_tx_data_fifo_cmd         tx_data_fifo_cmd = io_tx_data_fifo_cmd_read_and_commit_fifo;
+    clocked bit                           tx_data_fifo_toggle = 0;
+    clocked bit[32] tx_shift_register = 0    "Shift register; bit 31 is driven out first";
+
+    clocked bit                           cmd_fifo_toggle = 0;
+
+//    clocked bit[32] status_fifo_data = 0 "Data to write to status FIFO";
+    clocked bit status_fifo_toggle = 0 "Toggled to indicate a write to the status FIFO should occur";
+
+    clocked bit[32] rx_shift_register = 0;
+    clocked bit[32] rx_data_fifo_data = 0    "Data to write to the data fifo";
+    clocked bit rx_data_fifo_toggle = 0      "Toggled to indicate that the data in data_fifo_data should be written to the data FIFO";
+
+    /*b State and combinatorials for the data FSM
+     */
+    clocked bit[8] clock_divide = 0 "Clock divider; 0 -> clock out is max half of io_clock for this block";
+    clocked bit[12] length_remaining = 0 "Number of bits left to transmit/receive";
+    clocked bit[7] bits_till_status = 0 "Number of bits left until a status should be sent; only used if more than 127 bits to send";
+    clocked bit[5] bit_of_sr = 0 "Number of bits valid in rx shift register, 32-number valid in tx shift register; we fetch another data word (and command word) if required when this reaches 16";
+    clocked bit continuing = 0 "Asserted if, with 16 bits remaining to go, a new command is available and the current command indicates continuation";
+    clocked bit[4] output_tristate_toggle_delay = 0 "Delay from first bit to toggle of tristate for output";
+    clocked t_serial_fsm serial_fsm_state = serial_fsm_idle;
+
+    /*b Breakout of command data (combinatorial)
+     */
+    comb bit[8] cmd_transfer_length;
+    comb bit[8] cmd_clock_divide;
+    comb bit cmd_cpol;
+    comb bit cmd_cpha;
+    comb bit cmd_clock_pin;
+    comb bit[3] cmd_chip_select;
+    comb bit cmd_continuation_requested;
+    comb bit[2] cmd_type;
+    comb bit cmd_input_pin;
+    comb bit[4] cmd_tristate_delay;
+
+    /*b Break out cmd_fifo_data
+     */
+    breakout_cmd_fifo_data "Breakout cmd_fifo_data":
+        {
+            cmd_transfer_length         = cmd_fifo_data[ io_sync_serial_transfer_length_bits;         io_sync_serial_cfd_transfer_length_start_bit ];
+            cmd_clock_divide            = cmd_fifo_data[ io_sync_serial_clock_divide_bits;            io_sync_serial_cfd_clock_divide_start_bit ];
+            cmd_tristate_delay          = cmd_fifo_data[ io_sync_serial_tristate_delay_bits;          io_sync_serial_cfd_tristate_delay_start_bit ];
+            cmd_clock_pin               = cmd_fifo_data[ io_sync_serial_cfd_clock_pin_bit ];
+            cmd_input_pin               = cmd_fifo_data[ io_sync_serial_cfd_input_pin_bit ];
+            cmd_chip_select             = cmd_fifo_data[ io_sync_serial_chip_select_bits;             io_sync_serial_cfd_chip_select_start_bit ];
+            cmd_cpol                    = cmd_fifo_data[ io_sync_serial_cfd_cpol_bit ];
+            cmd_cpha                    = cmd_fifo_data[ io_sync_serial_cfd_cpha_bit ];
+            cmd_type                    = cmd_fifo_data[ io_sync_serial_type_bits;                    io_sync_serial_cfd_type_start_bit ];
+            cmd_continuation_requested  = cmd_fifo_data[ io_sync_serial_cfd_continuation_requested_bit ];
+        }
+
+    /*b Serial FSM - serial_fsm_state, clock_divide, length_remaining, bits_till_status, bit_of_sr, continuing
+     */
+    serial_fsm "Serial FSM":
+        {
+            status_fifo_data = cmd_fifo_data;
+            full_switch (serial_fsm_state)
+                {
+                case serial_fsm_idle:
+                {
+                    sscl_oe <= 0;
+                    sscs <= 0;
+                    ssdo_oe <= 0;
+
+                    if (!cmd_fifo_empty)
+                    {
+                        clock_divide <= 16; // We will wait 16 ticks for the data to be valid; this will give a max input clock frequency of ? compared to the internal
+                        tx_data_fifo_toggle <= ~tx_data_fifo_toggle; // get first word of data; length must not be zero :-)
+                        serial_fsm_state <= serial_fsm_wait_for_data;
+                        sscl[cmd_clock_pin] <= cmd_cpol;
+                        sscl_oe[cmd_clock_pin] <= 1;
+                    }
+                }
+                case serial_fsm_wait_for_data: // clock idle, cs deasserted
+                {
+                    clock_divide <= clock_divide-1;
+                    if (clock_divide==0) // data is now valid, copy to shift register and kick us off - data out, cs asserted, clock phase 0
+                    {
+                        clock_divide <= cmd_clock_divide;
+                        serial_fsm_state <= serial_fsm_first_phase_of_clock;
+
+                        sscs[cmd_chip_select] <= 1;
+                        ssdo <= tx_data_fifo_data[31];
+                        sscl[cmd_clock_pin] <= cmd_cpha;
+
+                        rx_shift_register <= 0;
+
+                        tx_shift_register <= tx_data_fifo_data;
+                        clock_divide <= cmd_clock_divide;
+                        length_remaining <= 0;
+                        if (cmd_transfer_length[7])
+                        {
+                            length_remaining[7;5] <= cmd_transfer_length[7;0];
+                            if (cmd_transfer_length[5;2]==0)
+                            {
+                                bits_till_status <= 0;
+                                bits_till_status[2;5] <= cmd_transfer_length[2;0];
+                            }
+                            else
+                            {
+                                bits_till_status <= 127;
+                            }
+                        }
+                        else
+                        {
+                            length_remaining[7;0] <= cmd_transfer_length[7;0];
+                            bits_till_status <= cmd_transfer_length[7;0]; // not used, but do this anyway
+                        }
+                        bit_of_sr <= 0;
+                        continuing <= cmd_continuation_requested;
+
+                        // No need to register type, subtype, clock pin, input pin, chip select as these should be constant across continuations
+                        full_switch (cmd_type)
+                            {
+                            case io_sync_serial_cmd_type_spi_output:
+                            {
+                                output_tristate_toggle_delay <= cmd_tristate_delay;
+                                ssdo_oe <= (cmd_tristate_delay==0);
+                            }
+                            case io_sync_serial_cmd_type_spi_no_output:
+                            {
+                                output_tristate_toggle_delay <= 0;
+                                ssdo_oe <= 0;
+                            }
+                            case io_sync_serial_cmd_type_mdio:
+                            {
+                                output_tristate_toggle_delay <= cmd_tristate_delay;
+                                ssdo_oe <= 1;
+                            }
+                            }
+                    }
+                }
+                case serial_fsm_first_phase_of_clock: // first phase of clock for a bit; clock 'low', data bit driven out (if tristate says), cs asserted
+                {
+                    clock_divide <= clock_divide-1;
+                    if (clock_divide==0) // going to second phase of clock
+                    {
+                        clock_divide <= cmd_clock_divide;
+                        serial_fsm_state <= serial_fsm_second_phase_of_clock;
+
+                        sscs[cmd_chip_select] <= 1;
+                        sscl[cmd_clock_pin] <= !cmd_cpha;
+
+                        rx_shift_register[31;1] <= rx_shift_register[31;0];
+                        rx_shift_register[0] <= ssdi[cmd_input_pin];
+                    }
+                }
+                case serial_fsm_second_phase_of_clock: // second phase of clock for a bit; clock 'high', data bit driven out (if tristate says), cs asserted
+                {
+                    clock_divide <= clock_divide-1;
+                    if (clock_divide==0) // going to first phase of clock for the next bit, continue, or done
+                    {
+                        bit_of_sr <= bit_of_sr+1;
+                        bits_till_status <= bits_till_status-1;
+                        if (output_tristate_toggle_delay!=0)
+                        {
+                            output_tristate_toggle_delay <= output_tristate_toggle_delay-1;
+                        }
+                        tx_shift_register[31;1] <= tx_shift_register[31;0];
+                        length_remaining <= length_remaining-1;
+
+                        if ((bit_of_sr==17) && (length_remaining[8;4]!=0)) // if we have put in bit 17 and we still have 16 bits to go or more, we need to get them from the data fifo...
+                        {
+                            tx_data_fifo_toggle <= ~tx_data_fifo_toggle; // this gives us 15 data bits to get the next data - plenty
+                        }
+
+                        if (length_remaining==1) // last bit being done, so go to trailer (clock idle, cs asserted)
+                        {
+                            clock_divide <= cmd_clock_divide;
+                            serial_fsm_state <= serial_fsm_trailer;
+
+                            sscs[cmd_chip_select] <= 1;
+                            sscl[cmd_clock_pin] <= cmd_cpol;
+
+                        }
+                        else
+                        {
+                            clock_divide <= cmd_clock_divide;
+                            serial_fsm_state <= serial_fsm_first_phase_of_clock;
+                            if (bit_of_sr==31)
+                            {
+                                rx_data_fifo_data <= rx_shift_register;
+                                rx_data_fifo_toggle <= ~rx_data_fifo_toggle;
+                                tx_shift_register <= tx_data_fifo_data;
+                            }
+                            if (bits_till_status==1)
+                            {
+                                status_fifo_toggle <= ~status_fifo_toggle; // there will be at least 32 more bits till next toggle, worst case
+                            }
+
+                            sscs[cmd_chip_select] <= 1;
+                            sscl[cmd_clock_pin] <= cmd_cpha;
+                        }
+
+                        ssdo <= tx_shift_register[30]; // 30 is next 31 :-)
+                        if (output_tristate_toggle_delay==1)
+                        {
+                            ssdo_oe <= ~ssdo_oe;
+                        }
+
+                    }
+                }
+                case serial_fsm_trailer: // trailer - cs asserted, clock idle
+                {
+                    clock_divide <= clock_divide-1;
+                    if (clock_divide==0) // going to done
+                    {
+                        clock_divide <= cmd_clock_divide;
+                        serial_fsm_state <= serial_fsm_done;
+
+                        sscs <= 0;
+                        sscl_oe <= 0;
+                        ssdo_oe <= 0;
+
+                        rx_data_fifo_data <= rx_shift_register;
+                        rx_data_fifo_toggle <= ~rx_data_fifo_toggle;
+
+                        status_fifo_toggle <= ~status_fifo_toggle;
+                        cmd_fifo_toggle <= ~cmd_fifo_toggle;
+                    }
+                }
+                case serial_fsm_done: // done, all inactive - go to idle after timeout
+                {
+                    sscs <= 0;
+                    sscl_oe <= 0;
+                    ssdo_oe <= 0;
+                    clock_divide <= clock_divide-1;
+                    if (clock_divide==0) // going to idle
+                    {
+                        serial_fsm_state <= serial_fsm_idle;
+                    }
+                }
+                }
+        }
+
+    /*b All done
+     */
+}

@@ -23,6 +23,7 @@
 /*a Defines
  */
 #define MAX_INT_WIDTH (8)
+#define MAX_CLOCKS (2)
 #define INPUT( name, width, clk ) \
     { \
         engine->register_input_signal( engine_handle, #name, width, (int **)&inputs.name ); \
@@ -36,9 +37,9 @@
         combinatorials.name = 0; \
     }
 
-#define STATE_OUTPUT( name, width, clk )\
+#define STATE_OUTPUT( name, port, width, clk )\
     { \
-        engine->register_output_signal( engine_handle, #name, width, (int *)&posedge_int_clock_state.name ); \
+        engine->register_output_signal( engine_handle, #name, width, (int *)&posedge_int_clock_state[port].name ); \
         engine->register_output_generated_on_clock( engine_handle, #name, #clk, 1 ); \
     }
 
@@ -76,18 +77,18 @@ typedef struct t_memory_inputs
 class c_memory
 {
 public:
-    c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, int byte_enables, int shared_ports, int read_ports, int write_ports );
+    c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, int clocks, int byte_enables, int shared_ports, int read_ports, int write_ports );
     c_memory::~c_memory();
     t_sl_error_level c_memory::delete_instance( void );
     t_sl_error_level c_memory::reset( int pass );
-    t_sl_error_level c_memory::preclock_posedge_int_clock( void );
-    t_sl_error_level c_memory::clock_posedge_int_clock( void );
+    t_sl_error_level c_memory::preclock_posedge_int_clock( int port );
+    t_sl_error_level c_memory::clock_posedge_int_clock( int port, int do_read, int do_write );
 private:
     c_engine *engine;
     void *engine_handle;
     t_memory_inputs inputs;
-    t_memory_posedge_int_clock_state next_posedge_int_clock_state;
-    t_memory_posedge_int_clock_state posedge_int_clock_state;
+    t_memory_posedge_int_clock_state next_posedge_int_clock_state[MAX_CLOCKS];
+    t_memory_posedge_int_clock_state posedge_int_clock_state[MAX_CLOCKS];
 
     unsigned int memory_size;
     int memory_log_size; // power of 2 >= memory_size
@@ -110,7 +111,7 @@ private:
 static t_sl_error_level memory_s_sp_2048_x_32_instance_fn( c_engine *engine, void *engine_handle )
 {
     c_memory *mod;
-    mod = new c_memory( engine, engine_handle, 2048, 32, 0, 1, 0, 0); // 2048 entries of 32 bytes without byte enables; 1 shared r/w, 0 r, 0w
+    mod = new c_memory( engine, engine_handle, 2048, 32, 1, 0, 1, 0, 0); // 2048 entries of 32 bytes without byte enables; 1 shared r/w, 0 r, 0w
     if (!mod)
         return error_level_fatal;
     return error_level_okay;
@@ -121,7 +122,7 @@ static t_sl_error_level memory_s_sp_2048_x_32_instance_fn( c_engine *engine, voi
 static t_sl_error_level memory_s_sp_2048_x_4b8_instance_fn( c_engine *engine, void *engine_handle )
 {
     c_memory *mod;
-    mod = new c_memory( engine, engine_handle, 2048, 32, 4, 1, 0, 0); // 2048 entries of 32 bytes with 4 byte enables; 1 shared r/w, 0 r, 0w
+    mod = new c_memory( engine, engine_handle, 2048, 32, 1, 4, 1, 0, 0); // 2048 entries of 32 bytes with 4 byte enables; 1 shared r/w, 0 r, 0w
     if (!mod)
         return error_level_fatal;
     return error_level_okay;
@@ -132,7 +133,18 @@ static t_sl_error_level memory_s_sp_2048_x_4b8_instance_fn( c_engine *engine, vo
 static t_sl_error_level memory_s_dp_2048_x_32_instance_fn( c_engine *engine, void *engine_handle )
 {
     c_memory *mod;
-    mod = new c_memory( engine, engine_handle, 2048, 32, 0, 0, 1, 1 ); // 2048 entries of 32 bytes without byte enables; 1 shared r/w, 0 r, 0w
+    mod = new c_memory( engine, engine_handle, 2048, 32, 1, 0, 0, 1, 1 ); // 2048 entries of 32 bytes without byte enables; 1 shared r/w, 0 r, 0w
+    if (!mod)
+        return error_level_fatal;
+    return error_level_okay;
+}
+
+/*f memory_ss_dp_2048_x_32_instance_fn
+*/
+static t_sl_error_level memory_ss_dp_2048_x_32_instance_fn( c_engine *engine, void *engine_handle )
+{
+    c_memory *mod;
+    mod = new c_memory( engine, engine_handle, 2048, 32, 2, 0, 0, 1, 1 ); // 2048 entries of 32 bytes without byte enables; 1 shared r/w, 0 r, 0w
     if (!mod)
         return error_level_fatal;
     return error_level_okay;
@@ -165,7 +177,7 @@ static t_sl_error_level memory_preclock_posedge_int_clock_fn( void *handle )
 {
     c_memory *mod;
     mod = (c_memory *)handle;
-    return mod->preclock_posedge_int_clock();
+    return mod->preclock_posedge_int_clock( 0 );
 }
 
 /*f memory_clock_posedge_int_clock_fn
@@ -174,14 +186,50 @@ static t_sl_error_level memory_clock_posedge_int_clock_fn( void *handle )
 {
     c_memory *mod;
     mod = (c_memory *)handle;
-    return mod->clock_posedge_int_clock();
+    return mod->clock_posedge_int_clock( 0, 1, 1 ); // single clock domain, so do both reads and writes
+}
+
+/*f memory_preclock_posedge_int_read_clock_fn
+*/
+static t_sl_error_level memory_preclock_posedge_int_read_clock_fn( void *handle )
+{
+    c_memory *mod;
+    mod = (c_memory *)handle;
+    return mod->preclock_posedge_int_clock( 0 );
+}
+
+/*f memory_clock_posedge_int_read_clock_fn
+*/
+static t_sl_error_level memory_clock_posedge_int_read_clock_fn( void *handle )
+{
+    c_memory *mod;
+    mod = (c_memory *)handle;
+    return mod->clock_posedge_int_clock( 0, 1, 0 );
+}
+
+/*f memory_preclock_posedge_int_write_clock_fn
+*/
+static t_sl_error_level memory_preclock_posedge_int_write_clock_fn( void *handle )
+{
+    c_memory *mod;
+    mod = (c_memory *)handle;
+    return mod->preclock_posedge_int_clock( 1 );
+}
+
+/*f memory_clock_posedge_int_write_clock_fn
+*/
+static t_sl_error_level memory_clock_posedge_int_write_clock_fn( void *handle )
+{
+    c_memory *mod;
+    mod = (c_memory *)handle;
+    return mod->clock_posedge_int_clock( 1, 1, 0 );
 }
 
 /*a Constructors and destructors for memory
 */
 /*f c_memory::c_memory
 */
-c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, int byte_enables, int shared_ports, int read_ports, int write_ports )
+c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, int clocks, int byte_enables, int shared_ports, int read_ports, int write_ports )
 {
     int i;
 
@@ -210,25 +258,45 @@ c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, 
      */
     engine->register_delete_function( engine_handle, (void *)this, memory_delete_fn );
     engine->register_reset_function( engine_handle, (void *)this, memory_reset_fn );
-    engine->register_clock_fns( engine_handle, (void *)this, "sram_clock", memory_preclock_posedge_int_clock_fn, memory_clock_posedge_int_clock_fn );
+    if (clocks<2)
+    {
+        engine->register_clock_fns( engine_handle, (void *)this, "sram_clock", memory_preclock_posedge_int_clock_fn, memory_clock_posedge_int_clock_fn );
 
-    INPUT( sram_read, 1, sram_clock );
-    INPUT( sram_write, 1, sram_clock );
-    if (memory_has_byte_enables)
-    {
-        INPUT( sram_byte_enables, memory_byte_width, sram_clock );
-    }
-    if (shared_ports)
-    {
-        INPUT( sram_address, memory_log_size, sram_clock );
+        INPUT( sram_read, 1, sram_clock );
+        INPUT( sram_write, 1, sram_clock );
+        if (memory_has_byte_enables)
+        {
+            INPUT( sram_byte_enables, memory_byte_width, sram_clock );
+        }
+        if (shared_ports)
+        {
+            INPUT( sram_address, memory_log_size, sram_clock );
+        }
+        else
+        {
+            INPUT( sram_write_address, memory_log_size, sram_clock );
+            INPUT( sram_read_address, memory_log_size, sram_clock );
+        }
+        INPUT( sram_write_data, memory_width, sram_clock );
+        STATE_OUTPUT( sram_read_data, 0, memory_width, sram_clock );
     }
     else
     {
-        INPUT( sram_write_address, memory_log_size, sram_clock );
-        INPUT( sram_read_address, memory_log_size, sram_clock );
+        engine->register_clock_fns( engine_handle, (void *)this, "sram_read_clock", memory_preclock_posedge_int_read_clock_fn, memory_clock_posedge_int_read_clock_fn );
+        engine->register_clock_fns( engine_handle, (void *)this, "sram_write_clock", memory_preclock_posedge_int_write_clock_fn, memory_clock_posedge_int_write_clock_fn );
+
+        INPUT( sram_read, 1, sram_read_clock );
+        INPUT( sram_read_address, memory_log_size, sram_read_clock );
+        STATE_OUTPUT( sram_read_data, 0, memory_width, sram_read_clock );
+
+        INPUT( sram_write, 1, sram_write_clock );
+        if (memory_has_byte_enables)
+        {
+            INPUT( sram_byte_enables, memory_byte_width, sram_write_clock );
+        }
+        INPUT( sram_write_address, memory_log_size, sram_write_clock );
+        INPUT( sram_write_data, memory_width, sram_write_clock );
     }
-    INPUT( sram_write_data, memory_width, sram_clock );
-    STATE_OUTPUT( sram_read_data, memory_width, sram_clock );
 
     /*b Register state then reset
      */
@@ -260,48 +328,51 @@ t_sl_error_level c_memory::delete_instance( void )
 */
 t_sl_error_level c_memory::reset( int pass )
 {
-    int i;
-    posedge_int_clock_state.writing = 0;
-    posedge_int_clock_state.byte_enables = 0;
-    posedge_int_clock_state.reading = 0;
-    posedge_int_clock_state.sram_read_address = 0;
-    posedge_int_clock_state.sram_write_address = 0;
-    for (i=0; i<MAX_INT_WIDTH; i++)
+    int i, j;
+    for (j=0; j<MAX_CLOCKS; j++)
     {
-        posedge_int_clock_state.sram_read_data[i] = 0;
-        posedge_int_clock_state.sram_write_data[i] = 0;
+        posedge_int_clock_state[j].writing = 0;
+        posedge_int_clock_state[j].byte_enables = 0;
+        posedge_int_clock_state[j].reading = 0;
+        posedge_int_clock_state[j].sram_read_address = 0;
+        posedge_int_clock_state[j].sram_write_address = 0;
+        for (i=0; i<MAX_INT_WIDTH; i++)
+        {
+            posedge_int_clock_state[j].sram_read_data[i] = 0;
+            posedge_int_clock_state[j].sram_write_data[i] = 0;
+        }
     }
     return error_level_okay;
 }
 
 /*f c_memory::preclock_posedge_int_clock
 */
-t_sl_error_level c_memory::preclock_posedge_int_clock( void )
+t_sl_error_level c_memory::preclock_posedge_int_clock( int port )
 {
     int i;
 
     /*b Copy current state to next state
      */
-    memcpy( &next_posedge_int_clock_state, &posedge_int_clock_state, sizeof(posedge_int_clock_state) );
+    memcpy( &next_posedge_int_clock_state[port], &posedge_int_clock_state[port], sizeof(posedge_int_clock_state[port]) );
 
     /*b Record inputs
      */
-    next_posedge_int_clock_state.reading = inputs.sram_read[0];
-    next_posedge_int_clock_state.writing = inputs.sram_write[0];
+    next_posedge_int_clock_state[port].reading = inputs.sram_read[port];
+    next_posedge_int_clock_state[port].writing = inputs.sram_write[port];
     if (shared_ports)
     {
-        next_posedge_int_clock_state.sram_read_address = inputs.sram_address[0];
-        next_posedge_int_clock_state.sram_write_address = inputs.sram_address[0];
+        next_posedge_int_clock_state[port].sram_read_address = inputs.sram_address[port];
+        next_posedge_int_clock_state[port].sram_write_address = inputs.sram_address[port];
     }
     else
     {
-        next_posedge_int_clock_state.sram_read_address = inputs.sram_read_address[0];
-        next_posedge_int_clock_state.sram_write_address = inputs.sram_write_address[0];
+        next_posedge_int_clock_state[port].sram_read_address = inputs.sram_read_address[port];
+        next_posedge_int_clock_state[port].sram_write_address = inputs.sram_write_address[port];
     }
     if (memory_has_byte_enables)
-        next_posedge_int_clock_state.byte_enables = inputs.sram_byte_enables[0];
+        next_posedge_int_clock_state[port].byte_enables = inputs.sram_byte_enables[port];
     for (i=0; i<memory_int_width; i++)
-        next_posedge_int_clock_state.sram_write_data[i] = inputs.sram_write_data[i];
+        next_posedge_int_clock_state[port].sram_write_data[i] = inputs.sram_write_data[i];
 
     /*b Done
      */
@@ -310,20 +381,20 @@ t_sl_error_level c_memory::preclock_posedge_int_clock( void )
 
 /*f c_memory::clock_posedge_int_clock
 */
-t_sl_error_level c_memory::clock_posedge_int_clock( void )
+t_sl_error_level c_memory::clock_posedge_int_clock( int port, int do_read, int do_write )
 {
     int i;
 
     /*b Copy next state to current
     */
-    memcpy( &posedge_int_clock_state, &next_posedge_int_clock_state, sizeof(posedge_int_clock_state) );
+    memcpy( &posedge_int_clock_state[port], &next_posedge_int_clock_state[port], sizeof(posedge_int_clock_state[port]) );
 
     /*b Read and write the memory if required
      */
-    if (posedge_int_clock_state.writing)
+    if (do_write && posedge_int_clock_state[port].writing)
     {
-//        fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:Writing address %04x data %08x\n", this, posedge_int_clock_state.sram_write_address, posedge_int_clock_state.sram_write_data[0] );
-        if (posedge_int_clock_state.sram_write_address<memory_size)
+//        fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:Writing address %04x data %08x\n", this, posedge_int_clock_state.sram_write_address, posedge_int_clock_state.sram_write_data[port] );
+        if (posedge_int_clock_state[port].sram_write_address<memory_size)
         {
             if (data)
             {
@@ -331,9 +402,9 @@ t_sl_error_level c_memory::clock_posedge_int_clock( void )
                 {
                     for (i=0; i<memory_byte_width; i++)
                     {
-                        if (posedge_int_clock_state.byte_enables&(1<<i))
+                        if (posedge_int_clock_state[port].byte_enables&(1<<i))
                         {
-                            data[posedge_int_clock_state.sram_write_address*memory_byte_width+i] = ((char *)(posedge_int_clock_state.sram_write_data))[i];
+                            data[posedge_int_clock_state[port].sram_write_address*memory_byte_width+i] = ((char *)(posedge_int_clock_state[port].sram_write_data))[i];
                         }
                     }
                 }
@@ -341,7 +412,7 @@ t_sl_error_level c_memory::clock_posedge_int_clock( void )
                 {
                     for (i=0; i<memory_byte_width; i++)
                     {
-                        data[posedge_int_clock_state.sram_write_address*memory_byte_width+i] = ((char *)(posedge_int_clock_state.sram_write_data))[i];
+                        data[posedge_int_clock_state[port].sram_write_address*memory_byte_width+i] = ((char *)(posedge_int_clock_state[port].sram_write_data))[i];
                     }
                 }
             }
@@ -351,23 +422,30 @@ t_sl_error_level c_memory::clock_posedge_int_clock( void )
             fprintf(stderr,"c_memory::Out of range write\n");
         }
     }
-    if (posedge_int_clock_state.reading)
+    if (do_read)
     {
-        if (posedge_int_clock_state.sram_read_address<memory_size)
+        for (i=0; i<MAX_INT_WIDTH; i++)
         {
-            if (data)
+            posedge_int_clock_state[port].sram_read_data[i] = 0;
+        }
+        if (posedge_int_clock_state[port].reading)
+        {
+            if (posedge_int_clock_state[port].sram_read_address<memory_size)
             {
-                for (i=0; i<memory_byte_width; i++)
+                if (data)
                 {
-                    ((char *)(posedge_int_clock_state.sram_read_data))[i] = data[posedge_int_clock_state.sram_read_address*memory_byte_width+i];
+                    for (i=0; i<memory_byte_width; i++)
+                    {
+                        ((char *)(posedge_int_clock_state[port].sram_read_data))[i] = data[posedge_int_clock_state[port].sram_read_address*memory_byte_width+i];
+                    }
                 }
             }
+            else
+            {
+                fprintf(stderr,"c_memory::Out of range read\n");
+            }
+            //fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:Reading address %04x data %08x\n", this, posedge_int_clock_state.sram_read_address, posedge_int_clock_state.sram_read_data[port]  );
         }
-        else
-        {
-            fprintf(stderr,"c_memory::Out of range read\n");
-        }
-        //fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:Reading address %04x data %08x\n", this, posedge_int_clock_state.sram_read_address, posedge_int_clock_state.sram_read_data[0] );
     }
 
     /*b Done
@@ -384,6 +462,7 @@ extern void c_memory__init( void )
     se_external_module_register( 1, "memory_s_sp_2048_x_32", memory_s_sp_2048_x_32_instance_fn );
     se_external_module_register( 1, "memory_s_sp_2048_x_4b8", memory_s_sp_2048_x_4b8_instance_fn );
     se_external_module_register( 1, "memory_s_dp_2048_x_32", memory_s_dp_2048_x_32_instance_fn );
+    se_external_module_register( 1, "memory_ss_dp_2048_x_32", memory_ss_dp_2048_x_32_instance_fn );
 }
 
 /*a Scripting support code

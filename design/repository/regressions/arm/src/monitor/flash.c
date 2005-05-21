@@ -290,8 +290,8 @@ extern int flash_read_object( unsigned int address, unsigned int *csum, char *bu
         cs += (v&0xffff);
         buffer+=2;
     }
-    cs = (cs+(cs<<16));
-    cs = cs >> 16;
+    cs = (cs&0xffff)+(cs>>16);
+    cs = ((cs >> 16) + cs)&0xffff;
     *csum = cs;
     *offset += i;
 

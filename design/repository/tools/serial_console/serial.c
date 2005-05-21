@@ -28,7 +28,9 @@
 
 /*a Defines
  */
-#define CHAR_TIME (1000*1000/120)
+// CHAR_TIME is time for 10 bits at the baud rate in us, so 1e6/(baud/10)
+//#define CHAR_TIME (1000*1000/120)
+#define CHAR_TIME (1000*1000/960)
 
 /*a Serial handling routines
  */

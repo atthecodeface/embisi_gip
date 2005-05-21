@@ -69,17 +69,19 @@ extern int flash_download_wait( void )
 extern void flash_download_command( char cmd, unsigned char *data, int length )
 {
     int i, j;
-    int c;
     unsigned char buffer[256+4]; // this is the limit in the boot ROM in the FPGA
     unsigned int csum;
 
     sprintf( (char *)buffer, "fdc:'%c':%d:", cmd, length );
+    fprintf(serlog, "\nfdc:'%c':%d:", cmd, length );
     waddstr(command_window, (char *)buffer );
-    for (i=0; (i<length) && (i<64); i++)
+    for (i=0; (i<length) && (i<100); i++)
     {
         sprintf( (char *)buffer, "%02x ", data[i] );
+        fprintf(serlog, "%02x ", data[i] );
         waddstr(command_window, (char *)buffer );
     }
+    fprintf(serlog, "\n" );
     wechochar( command_window, '\n' );
     wrefresh(command_window);
     csum = cmd;

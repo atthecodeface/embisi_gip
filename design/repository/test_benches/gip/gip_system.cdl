@@ -199,10 +199,6 @@ module gip_system( clock drm_clock,
                    input bit[32] input_dq_high,
                    input bit[32] input_dq_low,
 
-                   output bit eth_mdc,
-                   input bit eth_mdio_in,
-                   output bit eth_mdio_out, // high for no drive
-
                    clock eth_mii_tx_clock,
                    output bit eth_mii_tx_en,
                    output bit[4] eth_mii_tx_d,
@@ -214,7 +210,17 @@ module gip_system( clock drm_clock,
                    input bit eth_mii_rx_er,
 
                    input bit eth_mii_col,
-                   input bit eth_mii_crs
+                   input bit eth_mii_crs,
+
+                   output bit[2] sscl,
+                   output bit[2] sscl_oe,
+                   output bit ssdo,
+                   output bit ssdo_oe,
+                   input bit[2] ssdi,
+                   output bit[8] sscs,
+
+                   clock analyzer_clock,
+                   output bit[32] analyzer_signals
                    )
 {
     default clock int_clock;
@@ -284,8 +290,6 @@ module gip_system( clock drm_clock,
     net bit ddr_ready;
 
     comb bit io_reset;
-//    comb bit eth_mdc;
-//    comb bit eth_mdio_out;
     net bit eth_mii_tx_en;
     net bit[4] eth_mii_tx_d;
 //    comb bit eth_mii_tx_er;
@@ -294,6 +298,15 @@ module gip_system( clock drm_clock,
     comb bit uart0_txd_fc;
     net bit uart0_rxd_fc;
     comb bit uart0_rxd;
+
+    net bit[2] sscl;
+    net bit[2] sscl_oe;
+    net bit ssdo;
+    net bit ssdo_oe;
+    net bit[8] sscs;
+
+    comb bit[32] analyzer_mux_control;
+    net bit[32] iob_analyzer_signals;
 
     /*b GIP core
      */
@@ -434,8 +447,6 @@ module gip_system( clock drm_clock,
         {
 
             io_reset = int_reset;
-            eth_mdc = 0;
-            eth_mdio_out = 1;
             eth_mii_tx_er = 0;
             io_block iob( int_clock <- int_clock,
                           int_reset <= int_reset,
@@ -465,7 +476,20 @@ module gip_system( clock drm_clock,
                           uart0_txd => uart0_txd,
                           uart0_txd_fc <= uart0_txd_fc,
                           uart0_rxd <= uart0_rxd,
-                          uart0_rxd_fc => uart0_rxd_fc );
+                          uart0_rxd_fc => uart0_rxd_fc,
+
+                          sscl => sscl,
+                          sscl_oe => sscl_oe,
+                          ssdo => ssdo,
+                          ssdo_oe => ssdo_oe,
+                          ssdi <= ssdi,
+                          sscs => sscs,
+
+                          analyzer_mux_control <= analyzer_mux_control[2;0],
+                          analyzer_signals => iob_analyzer_signals );
+
+            analyzer_mux_control = 0;
+            analyzer_signals = iob_analyzer_signals;
             uart0_rxd = 1;
             uart0_txd_fc = 1;
         }

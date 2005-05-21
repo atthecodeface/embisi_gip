@@ -83,6 +83,9 @@ assign eth_mdio_in 0
 assign eth_mii_col 0
 assign eth_mii_crs 0
 
+wire ssdo
+wire ssdi[2]
+
 #b Wire up test harness
 drive system_reset        th.test_reset 
 drive cke_last_of_logic th.cke_last_of_logic
@@ -125,6 +128,10 @@ drive gip_simple.eth_mii_crs    eth_mii_crs
 
 drive eth_mii_tx_en gip_simple.eth_mii_tx_en
 drive eth_mii_tx_d  gip_simple.eth_mii_tx_d
+
+extract ssdi eth_mii_rx_d 0 2
+drive gip_simple.ssdi ssdi
+drive ssdo gip_simple.ssdo
 
 #b Wire up DDR model
 assign high 1

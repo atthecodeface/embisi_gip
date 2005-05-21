@@ -400,6 +400,7 @@ module gip_core( clock gip_clock,
                                  gip_reset <=gip_reset,
 
                                  read <= rfr_special_read,
+                                 flush <= gip_pipeline_flush,
                                  read_address <= rfr_special_read_address,
                                  read_data => rfr_special_read_data,
 

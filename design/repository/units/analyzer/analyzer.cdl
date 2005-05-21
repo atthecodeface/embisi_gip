@@ -1,0 +1,278 @@
+/*a To add
+ action on pass - store type as well as 'go to state'
+ action on fail - store type as well as 'go to state'
+ invert trigger
+ syncs on trigger enable and reset
+ */
+
+/*a Includes
+ */
+include "memories.h"
+
+/*a Constants
+ */
+constant integer analyzer_signal_width = 32;
+constant integer analyzer_trigger_signal_width = 16;
+constant integer analyzer_trigger_counter_width = 16;
+constant integer analyzer_trigger_depth_log = 2;
+constant integer analyzer_trigger_depth = 4;
+constant integer analyzer_ram_depth_log = 11; // 2048 by 32 for the RAM sounds good
+
+/*a Types
+ */
+/*t t_analyzer_action
+ */
+typedef enum [2]
+{
+    analyzer_action_idle,
+    analyzer_action_store_signal, // Store signal values
+    analyzer_action_store_residence, // Store a value on exit indicating the actual residence in internal cycles
+//    analyzer_action_compress,
+} t_analyzer_action;
+
+/*t t_analyzer_trigger
+ */
+typedef struct
+{
+    bit[analyzer_trigger_signal_width] mask     "Mask for incoming signal bits";
+    bit[analyzer_trigger_signal_width] compare  "Value the masked signal should be to match";
+    bit[analyzer_trigger_counter_width] counter "Number of cycles that the masked signal should match; ==0 means only leave if false";
+    bit[analyzer_trigger_depth_log] if_false    "State to enter if masked value does not match";
+    bit[analyzer_trigger_depth_log] if_done     "State to enter if masked value matched for cycle given by 'counter'";
+    t_analyzer_action action "Action to take whilst in this state";
+} t_analyzer_trigger;
+
+/*a Module
+ */
+module analyzer( clock analyzer_clock,
+                 clock output_clock,
+                 clock apb_clock,
+
+                 input bit analyzer_reset,
+
+                 input bit[3] apb_paddr,
+                 input bit apb_penable,
+                 input bit apb_pselect,
+                 input bit[32] apb_pwdata,
+                 input bit apb_prnw,
+                 output bit[32] apb_prdata,
+                 output bit apb_pwait,
+
+                 output bit[32]analyzer_mux_control,
+                 input bit[analyzer_signal_width]internal_signal_in,
+
+                 input bit ext_trigger_reset,
+                 input bit ext_trigger_enable,
+                 output bit trace_valid,
+                 output bit[analyzer_signal_width] trace_out )
+{
+    /*b Default clock and reset
+     */
+    default clock analyzer_clock;
+    default reset analyzer_reset;
+
+    /*b Outputs
+     */
+    clocked clock output_clock bit trace_valid = 0;
+    clocked clock output_clock bit[analyzer_signal_width] trace_out = 0;
+
+    /*b APB interface
+     */
+    clocked clock apb_clock bit apb_trigger_reset = 0;
+    clocked clock apb_clock bit apb_trigger_enable = 0;
+    clocked clock apb_clock bit[analyzer_trigger_depth_log] apb_trigger_stage = 0;
+    clocked clock apb_clock bit[32] analyzer_mux_control = 0;
+
+    /*b Trigger
+     */
+    clocked clock apb_clock t_analyzer_trigger[analyzer_trigger_depth] trigger = { { mask=0, compare=0, counter=0, if_false=0, if_done=0, action=analyzer_action_idle } };
+    clocked bit trigger_reset = 0;
+    clocked bit trigger_enable = 0;
+    clocked bit[analyzer_trigger_depth_log] trigger_stage = 0;
+    clocked bit[analyzer_trigger_counter_width] counter = 1;
+    comb bit[analyzer_trigger_signal_width] trigger_mask;
+    comb bit[analyzer_trigger_signal_width] trigger_compare;
+    comb bit trigger_match;
+    comb t_analyzer_action trigger_action;
+
+    /*b Register incoming data and store in FIFO
+     */
+    clocked bit[analyzer_signal_width] buffered_input = 0;
+    clocked bit[analyzer_ram_depth_log] write_ptr = 0;
+
+    /*b Read out of FIFO
+     */
+    clocked bit[analyzer_ram_depth_log] read_ptr = 0;
+    clocked bit fifo_reading = 0;
+    net bit[analyzer_signal_width] fifo_read_data;
+    clocked bit[analyzer_signal_width] buffered_read_data=0;
+    comb bit fifo_empty;
+    comb bit fifo_filled;
+    comb bit fifo_write;
+    comb bit fifo_read;
+    clocked bit int_ack_sync_0 = 0;
+    clocked bit int_ack_sync_1 = 0;
+    clocked bit valid = 0;
+
+    /*b Synchronize and read out of FIFO
+     */
+    clocked clock output_clock bit out_valid_sync_0 = 0;
+    clocked clock output_clock bit out_valid_sync_1 = 0;
+    clocked clock output_clock bit trace_ack = 0;
+
+    /*b Signal path logic
+     */
+    signal_path "Signal path logic":
+        {
+            buffered_input <= internal_signal_in;
+        }
+
+    /*b Overall control
+     */
+    overall_control "Overall control":
+        {
+            trigger_reset <= ext_trigger_reset || apb_trigger_reset;
+            trigger_enable <= ext_trigger_enable || apb_trigger_enable;
+        }
+
+    /*b Trigger logic
+     */
+    trigger_logic "Trigger logic":
+        {
+            trigger_mask = trigger[trigger_stage].mask;
+            trigger_compare = trigger[trigger_stage].compare;
+            trigger_match = ((buffered_input[analyzer_trigger_signal_width;0]&trigger_mask)==trigger_compare);
+
+            trigger_action = analyzer_action_idle;
+            if (trigger_match)
+            {
+                trigger_action = trigger[trigger_stage].action;
+                counter <= counter+1;
+                if ( (trigger[trigger_stage].counter!=0) &&
+                     (trigger[trigger_stage].counter==counter) )
+                {
+                    trigger_stage <= trigger[trigger_stage].if_false;
+                    counter <= 1;
+                }
+            }
+            else
+            {
+                trigger_stage <= trigger[trigger_stage].if_false;
+                counter <= 1;
+            }
+            if (!trigger_enable)
+            {
+                trigger_stage <= 0;
+                counter <= 1;
+            }
+        }
+
+    /*b Trace readout (async interface)
+     */
+    async_trace_readout "Async trace readout":
+        {
+            out_valid_sync_0 <= valid;
+            out_valid_sync_1 <= out_valid_sync_0;
+            trace_valid <= 0;
+            trace_ack <= out_valid_sync_1;
+            if (out_valid_sync_1)
+            {
+                trace_out <= buffered_read_data;
+                trace_valid <= 1;
+            }
+        }
+
+    /*b Store data in our FIFO depending on action, and read it out
+     */
+    store_data "Store data in FIFO and read out":
+        {
+            int_ack_sync_0 <= trace_ack;
+            int_ack_sync_1 <= int_ack_sync_0;
+            if (int_ack_sync_1)
+            {
+                valid <= 0;
+            }
+            if (fifo_reading)
+            {
+                valid <= 1;
+                buffered_read_data <= fifo_read_data;
+            }
+
+            fifo_empty = (read_ptr==write_ptr);
+            if ( (!int_ack_sync_1) && (!valid) && (!fifo_reading) && (!fifo_empty) )
+            {
+                fifo_read = 1;
+                fifo_reading <= 1;
+                read_ptr <= read_ptr+1;
+            }
+
+            fifo_write=0;
+            fifo_filled = ((write_ptr+1)==0);
+            part_switch (trigger_action)
+                {
+                case analyzer_action_store_signal:
+                {
+                    fifo_write = 1;
+                    write_ptr <= write_ptr+1;
+                }
+                }
+            if (fifo_filled)
+            {
+                fifo_write = 0;
+                write_ptr <= write_ptr;
+            }
+            if (trigger_reset)
+            {
+                write_ptr <= 0;
+            }
+
+            memory_s_dp_2048_x_32 trace_sram( sram_clock <- internal_clock,
+                                              sram_read <= fifo_read,
+                                              sram_read_address <= read_ptr,
+                                              sram_write <= fifo_write,
+                                              sram_write_address <= write_ptr,
+                                              sram_write_data <= buffered_input,
+                                              sram_read_data => fifo_read_data );
+        }
+
+    /*b APB write interface
+     */
+    apb_interface "APB interface":
+        {
+            apb_prdata = 0;
+            apb_pwait = 0;
+            if (apb_pselect && !apb_prnw && apb_penable)
+            {
+                part_switch (apb_paddr)
+                    {
+                    case 0:
+                    {
+                        apb_trigger_reset <= apb_pwdata[0];
+                        apb_trigger_enable <= apb_pwdata[1];
+                        apb_trigger_stage <= apb_pwdata[analyzer_trigger_depth_log;8];
+                    }
+                    case 1:
+                    {
+                        trigger[ apb_trigger_stage ] <= { counter=apb_pwdata[analyzer_trigger_counter_width;0],
+                                                          if_done=apb_pwdata[analyzer_trigger_depth_log;16],
+                                                          if_false=apb_pwdata[analyzer_trigger_depth_log;24] };
+                    }
+                    case 2:
+                    {
+                        trigger[ apb_trigger_stage ].mask <= apb_pwdata[ analyzer_trigger_signal_width; 0];
+                    }
+                    case 3:
+                    {
+                        trigger[ apb_trigger_stage ].compare <= apb_pwdata[ analyzer_trigger_signal_width; 0];
+                    }
+                    case 4:
+                    {
+                        analyzer_mux_control <= apb_pwdata;
+                    }
+                    }
+            }
+        }
+
+    /*b Done
+     */
+}

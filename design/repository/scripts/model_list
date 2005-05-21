@@ -29,6 +29,8 @@ cdl test_benches/gip apb_devices inc:headers/cdl
 cdl test_benches/gip ethernet_rom rmn:cdl_rom=gip_simple_boot_rom
 #cdl test_benches/gip scheduler_rom rmn:cdl_rom=gip_simple_boot_rom
 
+cdl units/analyzer    analyzer                    inc:headers/cdl
+
 cdl units/ddr         ddr_dram_as_sram            inc:headers/cdl
 
 cdl units/gip         gip_alu_arith_op            inc:units/gip inc:headers/cdl
@@ -60,6 +62,7 @@ cdl units/postbus     postbus_input_mux           inc:headers/cdl
 cdl units/postbus     postbus_register_demux      inc:headers/cdl
 cdl units/postbus     postbus_rom_source          inc:headers/cdl
 
+cdl units/io          io_sync_serial              inc:headers/cdl
 cdl units/io          io_ethernet_tx              inc:headers/cdl
 cdl units/io          io_ethernet_rx              inc:headers/cdl
 cdl units/io          io_cmd_fifo_timer           inc:headers/cdl

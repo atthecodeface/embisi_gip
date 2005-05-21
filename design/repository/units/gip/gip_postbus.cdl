@@ -2,6 +2,11 @@
  */
 
 /*a To do
+  put back in two fifos
+  get rid of 4 fifos
+  make command and status not readable
+  don't keep status
+  allow for 8 fifo 0 rx/tx data registers, and 8 for fifo 1 so ldm/stm can load/store postbus fifo
  */
 
 /*a Includes
@@ -91,16 +96,17 @@ module gip_postbus( clock gip_clock,
      */
     net bit[32] rf_read_data;
     clocked t_gip_word_a[gip_postbus_nfifo] command = { {a=0} }; // 32-bit command registers, used in tx; includes length (in words) for transfer
-    clocked t_gip_word_a[gip_postbus_nfifo] status = { {a=0} }; // 32-bit status registers, used in rx; basically user-defined data
-    clocked t_gip_postbus_fifo[gip_postbus_nfifo] tx_fifo = {{base=0, end=0, read=0, write=0}}; // 4 write FIFOs - just read/write pointers, base, end, 5-bits each
-    clocked t_gip_postbus_fifo[gip_postbus_nfifo] rx_fifo = {{base=0, end=0, read=0, write=0}}; // 4 read FIFOs - just read/write pointers, base, end, 5-bits each
+//    clocked t_gip_postbus_fifo[gip_postbus_nfifo] tx_fifo = {{base=0, end=0, read=0, write=0}}; // 4 write FIFOs - just read/write pointers, base, end, 5-bits each
+//    clocked t_gip_postbus_fifo[gip_postbus_nfifo] rx_fifo = {{base=0, end=0, read=0, write=0}}; // 4 read FIFOs - just read/write pointers, base, end, 5-bits each
+    clocked t_gip_postbus_fifo tx_fifo = {base=0, end=0, read=0, write=0}; // 4 write FIFOs - just read/write pointers, base, end, 5-bits each
+    clocked t_gip_postbus_fifo rx_fifo = {base=0, end=0, read=0, write=0}; // 4 read FIFOs - just read/write pointers, base, end, 5-bits each
     comb bit postbus_use_rx_buffer; // Indicates if the last access did not write the FIFO, and the buffered data should be used
     clocked bit[32] postbus_rx_buffer = 0; // One word store for transfer to the rf if it is being read by GIP
-    comb bit[32] postbus_rx_fifo_status; // Fixes a bug in the xilinx tools to extract it here
 
     clocked bit[gip_postbus_log_nfifo] postbus_rx_fifo = 0; // 0 for rx transfer to rx_fifo[0], 1 for transfer to rx_fifo[1], etc
     clocked t_gip_postbus_rx_fsm postbus_rx_fsm = gip_postbus_rx_fsm_idle; // FSM for receive side of postbus
     clocked bit postbus_rx_last = 0; // 1 if this is the first word and last word
+    clocked bit[5] postbus_rx_semaphore = 0;
 
     clocked bit[gip_postbus_nfifo] pending_tx_xfrs = 0; // 1 bit for each command, indicating transfers pending
     clocked bit[gip_postbus_log_nfifo] postbus_tx_fifo = 0; // 0 for tx transfer from tx_fifo[0], 1 for transfer from tx_fifo[1], etc
@@ -141,36 +147,51 @@ module gip_postbus( clock gip_clock,
             read_fifo = read_address[gip_postbus_log_nfifo;gip_postbus_reg_fifo_bit];
             clock_rx_fifo_read = 0;
             gip_rf_read = 0;
-            gip_rf_read_r = rx_fifo[read_fifo].read;
+//            gip_rf_read_r = rx_fifo[read_fifo].read;
+            gip_rf_read_r = rx_fifo.read;
             read_data = 0;
 
             write_fifo = write_address[gip_postbus_log_nfifo;gip_postbus_reg_fifo_bit];
             clock_tx_fifo_write = 0;
             gip_rf_write = 0;
-            gip_rf_write_r = tx_fifo[write_fifo].write;
+//            gip_rf_write_r = tx_fifo[write_fifo].write;
+            gip_rf_write_r = tx_fifo.write;
 
-            part_switch (read_address)
+            full_switch (read_address)
                 {
                 case gip_postbus_reg_status_0:
                 case gip_postbus_reg_status_1:
-                case gip_postbus_reg_status_2:
-                case gip_postbus_reg_status_3:
                 {
                     read_data[gip_postbus_nfifo;8] = pending_tx_xfrs;
-                    read_data[1] = (rx_fifo[read_fifo].read != rx_fifo[read_fifo].write);
+                    //                    read_data[1] = (rx_fifo[read_fifo].read != rx_fifo[read_fifo].write);
+                    read_data[1] = (rx_fifo.read != rx_fifo.write);
                     read_data[0] = pending_tx_xfrs[read_fifo];
                 }
-                case gip_postbus_reg_command_0:
-                case gip_postbus_reg_command_1:
-                case gip_postbus_reg_command_2:
-                case gip_postbus_reg_command_3:
+                case gip_postbus_reg_tx_fifo_config_0:
+                case gip_postbus_reg_tx_fifo_config_1:
                 {
-//                    read_data = command[read_fifo].a;
+//                    read_data[5; 0] = tx_fifo[read_fifo].base;
+//                    read_data[5; 8] = tx_fifo[read_fifo].end;
+//                    read_data[5;16] = tx_fifo[read_fifo].read;
+//                    read_data[5;24] = tx_fifo[read_fifo].write;
+                    read_data[5; 0] = tx_fifo.base;
+                    read_data[5; 8] = tx_fifo.end;
+                    read_data[5;16] = tx_fifo.read;
+                    read_data[5;24] = tx_fifo.write;
                 }
-                case gip_postbus_reg_rx_fifo_0:
-                case gip_postbus_reg_rx_fifo_1:
-                case gip_postbus_reg_rx_fifo_2:
-                case gip_postbus_reg_rx_fifo_3:
+                case gip_postbus_reg_rx_fifo_config_0:
+                case gip_postbus_reg_rx_fifo_config_1:
+                {
+//                    read_data[5; 0] = rx_fifo[read_fifo].base;
+//                    read_data[5; 8] = rx_fifo[read_fifo].end;
+//                    read_data[5;16] = rx_fifo[read_fifo].read;
+//                    read_data[5;24] = rx_fifo[read_fifo].write;
+                    read_data[5; 0] = rx_fifo.base;
+                    read_data[5; 8] = rx_fifo.end;
+                    read_data[5;16] = rx_fifo.read;
+                    read_data[5;24] = rx_fifo.write;
+                }
+                default:
                 {
                     if (read)
                     {
@@ -182,44 +203,26 @@ module gip_postbus( clock gip_clock,
                     }
                     read_data = rf_read_data;
                 }
-                case gip_postbus_reg_tx_fifo_config_0:
-                case gip_postbus_reg_tx_fifo_config_1:
-                case gip_postbus_reg_tx_fifo_config_2:
-                case gip_postbus_reg_tx_fifo_config_3:
-                {
-                    read_data[5; 0] = tx_fifo[read_fifo].base;
-                    read_data[5; 8] = tx_fifo[read_fifo].end;
-                    read_data[5;16] = tx_fifo[read_fifo].read;
-                    read_data[5;24] = tx_fifo[read_fifo].write;
-                }
-                case gip_postbus_reg_rx_fifo_config_0:
-                case gip_postbus_reg_rx_fifo_config_1:
-                case gip_postbus_reg_rx_fifo_config_2:
-                case gip_postbus_reg_rx_fifo_config_3:
-                {
-                    read_data[5; 0] = rx_fifo[read_fifo].base;
-                    read_data[5; 8] = rx_fifo[read_fifo].end;
-                    read_data[5;16] = rx_fifo[read_fifo].read;
-                    read_data[5;24] = rx_fifo[read_fifo].write;
-                }
                 }
 
-            part_switch (write_address)
+            full_switch (write_address)
                 {
+                case gip_postbus_reg_tx_fifo_config_0:
+                case gip_postbus_reg_tx_fifo_config_1:
+                case gip_postbus_reg_rx_fifo_config_0:
+                case gip_postbus_reg_rx_fifo_config_1:
+                {
+                    ;
+                }
                 case gip_postbus_reg_command_0:
                 case gip_postbus_reg_command_1:
-                case gip_postbus_reg_command_2:
-                case gip_postbus_reg_command_3:
                 {
                     if (write)
                     {
                         command[write_fifo].a <= write_data;
                     }
                 }
-                case gip_postbus_reg_tx_fifo_0:
-                case gip_postbus_reg_tx_fifo_1:
-                case gip_postbus_reg_tx_fifo_2:
-                case gip_postbus_reg_tx_fifo_3:
+                default:
                 {
                     if (write)
                     {
@@ -249,7 +252,8 @@ module gip_postbus( clock gip_clock,
         {
             semaphore_to_set = 0; // 0 means no semaphore to set
             postbus_rf_read = 0;
-            postbus_rf_read_r = tx_fifo[postbus_tx_fifo].read;
+//            postbus_rf_read_r = tx_fifo[postbus_tx_fifo].read;
+            postbus_rf_read_r = tx_fifo.read;
 
             postbus_tx_type = postbus_word_type_idle;
             full_switch (postbus_tx_fsm)
@@ -305,7 +309,7 @@ module gip_postbus( clock gip_clock,
                 case gip_postbus_rx_fsm_signal:
                 {
                     postbus_rx_ack = postbus_ack_hold;
-                    semaphore_to_set = postbus_rx_fifo_status[5;postbus_command_rx_signal_start];
+                    semaphore_to_set = postbus_rx_semaphore;
                 }
                 }
         }
@@ -316,65 +320,86 @@ module gip_postbus( clock gip_clock,
         {
             if (clock_tx_fifo_read)
             {
-                tx_fifo[postbus_tx_fifo].read <= tx_fifo[postbus_tx_fifo].read+1;
-                if ( (tx_fifo[postbus_tx_fifo].read+1) == tx_fifo[postbus_tx_fifo].end)
+//                tx_fifo[postbus_tx_fifo].read <= tx_fifo[postbus_tx_fifo].read+1;
+//                if ( (tx_fifo[postbus_tx_fifo].read+1) == tx_fifo[postbus_tx_fifo].end)
+//                {
+//                    tx_fifo[postbus_tx_fifo].read <= tx_fifo[postbus_tx_fifo].base;
+//                }
+                tx_fifo.read <= tx_fifo.read+1;
+                if ( (tx_fifo.read+1) == tx_fifo.end)
                 {
-                    tx_fifo[postbus_tx_fifo].read <= tx_fifo[postbus_tx_fifo].base;
+                    tx_fifo.read <= tx_fifo.base;
                 }
             }
             if (clock_rx_fifo_read)
             {
-                rx_fifo[read_fifo].read <= rx_fifo[read_fifo].read+1;
-                if ((rx_fifo[read_fifo].read+1)==rx_fifo[read_fifo].end)
+//                rx_fifo[read_fifo].read <= rx_fifo[read_fifo].read+1;
+//                if ((rx_fifo[read_fifo].read+1)==rx_fifo[read_fifo].end)
+//                {
+//                    rx_fifo[read_fifo].read <= rx_fifo[read_fifo].base;
+//                }
+                rx_fifo.read <= rx_fifo.read+1;
+                if ((rx_fifo.read+1)==rx_fifo.end)
                 {
-                    rx_fifo[read_fifo].read <= rx_fifo[read_fifo].base;
+                    rx_fifo.read <= rx_fifo.base;
                 }
             }
             if (clock_rx_fifo_write)
             {
-                rx_fifo[postbus_rx_fifo].write <= rx_fifo[postbus_rx_fifo].write+1;
-                if ((rx_fifo[postbus_rx_fifo].write+1)==rx_fifo[postbus_rx_fifo].end)
+//                rx_fifo[postbus_rx_fifo].write <= rx_fifo[postbus_rx_fifo].write+1;
+//                if ((rx_fifo[postbus_rx_fifo].write+1)==rx_fifo[postbus_rx_fifo].end)
+//                {
+//                    rx_fifo[postbus_rx_fifo].write <= rx_fifo[postbus_rx_fifo].base;
+//                }
+                rx_fifo.write <= rx_fifo.write+1;
+                if ((rx_fifo.write+1)==rx_fifo.end)
                 {
-                    rx_fifo[postbus_rx_fifo].write <= rx_fifo[postbus_rx_fifo].base;
+                    rx_fifo.write <= rx_fifo.base;
                 }
             }
             if (clock_tx_fifo_write)
             {
-                tx_fifo[write_fifo].write <= tx_fifo[write_fifo].write+1;
-                if ((tx_fifo[write_fifo].write+1) == tx_fifo[write_fifo].end)
+//                tx_fifo[write_fifo].write <= tx_fifo[write_fifo].write+1;
+//                if ((tx_fifo[write_fifo].write+1) == tx_fifo[write_fifo].end)
+//                {
+//                    tx_fifo[write_fifo].write <= tx_fifo[write_fifo].base;
+//                }
+                tx_fifo.write <= tx_fifo.write+1;
+                if ((tx_fifo.write+1) == tx_fifo.end)
                 {
-                    tx_fifo[write_fifo].write <= tx_fifo[write_fifo].base;
+                    tx_fifo.write <= tx_fifo.base;
                 }
             }
-            part_switch (write_address)
-                {
-                case gip_postbus_reg_tx_fifo_config_0:
-                case gip_postbus_reg_tx_fifo_config_1:
-                case gip_postbus_reg_tx_fifo_config_2:
-                case gip_postbus_reg_tx_fifo_config_3:
-                {
-                    if (write)
+            if (write)
+            {
+                part_switch (write_address)
                     {
-                        tx_fifo[write_fifo].base  <= write_data[5; 0];
-                        tx_fifo[write_fifo].end   <= write_data[5; 8];
-                        tx_fifo[write_fifo].read  <= write_data[5;16];
-                        tx_fifo[write_fifo].write <= write_data[5;24];
-                    }
-                }
-                case gip_postbus_reg_rx_fifo_config_0:
-                case gip_postbus_reg_rx_fifo_config_1:
-                case gip_postbus_reg_rx_fifo_config_2:
-                case gip_postbus_reg_rx_fifo_config_3:
-                {
-                    if (write)
+                    case gip_postbus_reg_tx_fifo_config_0:
+                    case gip_postbus_reg_tx_fifo_config_1:
                     {
-                        rx_fifo[write_fifo].base  <= write_data[5; 0];
-                        rx_fifo[write_fifo].end   <= write_data[5; 8];
-                        rx_fifo[write_fifo].read  <= write_data[5;16];
-                        rx_fifo[write_fifo].write <= write_data[5;24];
+//                        tx_fifo[write_fifo].base  <= write_data[5; 0];
+//                        tx_fifo[write_fifo].end   <= write_data[5; 8];
+//                        tx_fifo[write_fifo].read  <= write_data[5;16];
+//                        tx_fifo[write_fifo].write <= write_data[5;24];
+                        tx_fifo.base  <= write_data[5; 0];
+                        tx_fifo.end   <= write_data[5; 8];
+                        tx_fifo.read  <= write_data[5;16];
+                        tx_fifo.write <= write_data[5;24];
                     }
-                }
-                }
+                    case gip_postbus_reg_rx_fifo_config_0:
+                    case gip_postbus_reg_rx_fifo_config_1:
+                    {
+//                        rx_fifo[write_fifo].base  <= write_data[5; 0];
+//                        rx_fifo[write_fifo].end   <= write_data[5; 8];
+//                        rx_fifo[write_fifo].read  <= write_data[5;16];
+//                        rx_fifo[write_fifo].write <= write_data[5;24];
+                        rx_fifo.base  <= write_data[5; 0];
+                        rx_fifo.end   <= write_data[5; 8];
+                        rx_fifo.read  <= write_data[5;16];
+                        rx_fifo.write <= write_data[5;24];
+                    }
+                    }
+            }
         }
 
     /*b Handle the Tx FSM
@@ -422,7 +447,7 @@ module gip_postbus( clock gip_clock,
                         }
 
                     postbus_tx_data <= command[ postbus_next_tx_fifo ].a;
-                    postbus_tx_semaphore <= command[postbus_next_tx_fifo].a[5;postbus_command_tx_signal_start];
+                    postbus_tx_semaphore <= command[postbus_next_tx_fifo].a[5;postbus_command_source_gip_tx_signal_start];
                     if (command[ postbus_next_tx_fifo ].a[postbus_command_last_bit])
                     {
                         postbus_tx_fsm <= gip_postbus_tx_fsm_present_single;
@@ -431,7 +456,7 @@ module gip_postbus( clock gip_clock,
                     {
                         postbus_tx_fsm <= gip_postbus_tx_fsm_present_first;
                     }
-                    postbus_tx_left <= command[ postbus_next_tx_fifo ].a[5;postbus_command_tx_length_start];
+                    postbus_tx_left <= command[ postbus_next_tx_fifo ].a[5;postbus_command_source_gip_tx_length_start];
                     postbus_tx_fifo <= postbus_next_tx_fifo;
                 }
             }
@@ -509,8 +534,6 @@ module gip_postbus( clock gip_clock,
                 {
                 case gip_postbus_reg_command_0:
                 case gip_postbus_reg_command_1:
-                case gip_postbus_reg_command_2:
-                case gip_postbus_reg_command_3:
                 {
                     if (write)
                     {
@@ -525,11 +548,12 @@ module gip_postbus( clock gip_clock,
     rx_fsm "Postbus receive FSM":
         {
             postbus_rf_write = 0;
-            postbus_rf_write_r = rx_fifo[0].write;
+            clock_rx_fifo_write = 0;
+//            postbus_rf_write_r = rx_fifo[0].write;
+            postbus_rf_write_r = rx_fifo.write;
             rx_fifo_written_okay = !gip_rf_write;
             postbus_buffer_write = 0;
             postbus_use_rx_buffer = 1;
-            postbus_rx_fifo_status = status[postbus_rx_fifo].a;
 
             full_switch (postbus_rx_fsm)
             {
@@ -540,12 +564,12 @@ module gip_postbus( clock gip_clock,
                     postbus_rx_fsm <= gip_postbus_rx_fsm_start;
                     postbus_rx_last <= postbus_rx_data[postbus_command_last_bit];
                     postbus_buffer_write = 1;
-                    postbus_rx_fifo <= postbus_rx_data[postbus_command_rx_fifo_start];
+                    postbus_rx_fifo <= postbus_rx_data[postbus_command_target_gip_rx_fifo_start];
+                    postbus_rx_semaphore <= postbus_rx_data[5;postbus_command_target_gip_rx_semaphore_start];
                 }
             }
             case gip_postbus_rx_fsm_start: // hold data on postbus - buffer is full with header, so write it to status
             {
-                status[postbus_rx_fifo].a <= postbus_rx_buffer;
                 if (postbus_rx_last)
                 {
                     postbus_rx_fsm <= gip_postbus_rx_fsm_signal;
@@ -558,6 +582,7 @@ module gip_postbus( clock gip_clock,
             case gip_postbus_rx_fsm_hold: // hold data on databus - buffer is full - write the buffer to FIFO
             {
                 postbus_rf_write = 1;
+                clock_rx_fifo_write = rx_fifo_written_okay;
                 if (rx_fifo_written_okay)
                 {
                     if (postbus_rx_last)
@@ -574,10 +599,15 @@ module gip_postbus( clock gip_clock,
             {
                 postbus_buffer_write = 1;
                 postbus_rf_write = 1;
+                clock_rx_fifo_write = rx_fifo_written_okay;
                 postbus_use_rx_buffer = 0;
                 postbus_rx_last <= 0;
                 part_switch (postbus_rx_type)
                 {
+                case postbus_word_type_idle:
+                {
+                    clock_rx_fifo_write = 0;
+                }
                 case postbus_word_type_data:
                 case postbus_word_type_start: // we treat start as data - its defensive
                 {
@@ -609,11 +639,6 @@ module gip_postbus( clock gip_clock,
             if (postbus_buffer_write)
             {
                 postbus_rx_buffer <= postbus_rx_data;
-            }
-            clock_rx_fifo_write = 0;
-            if (postbus_rf_write)
-            {
-                clock_rx_fifo_write = rx_fifo_written_okay;
             }
         }
 

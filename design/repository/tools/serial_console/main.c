@@ -86,6 +86,11 @@ static void cmd_help( char *cmd, char *cmd_end );
 static void cmd_flash_write( char *cmd, char *cmd_end );
 static void cmd_exec( char *cmd, char *cmd_end );
 
+/*a Global variables
+ */
+FILE *serlog;
+FILE *outputlog;
+
 /*a Static variables
  */
 /*v Statics that just make it easy
@@ -243,37 +248,38 @@ static void flash_download_command_object( t_obj_type type, unsigned char *buffe
     unsigned int csum;
     int max_size;
 
+    obj_length = (length+length_2+1); // include type in the length
+    obj_length = (obj_length+1)&~1; // add padding to next 16-bits
+
     csum = type;
-    for (i=0; i<length; i++)
+    for (i=0, j=1; i<length; i++, j++)
     {
-        if (i&1)
-        {
-            csum += buffer[i];
-        }
-        else
+        if (j&1) // odd bytes are top 8 bits of 16-bit word
         {
             csum += buffer[i]<<8;
         }
+        else // even bytes are bottom 8 bits of 16-bit word
+        {
+            csum += buffer[i];
+        }
     }
-    j = i;
     for (i=0; buffer_2 && (i<length_2); i++, j++)
     {
         if (j&1)
         {
-            csum += buffer_2[i];
+            csum += buffer_2[i]<<8;
         }
         else
         {
-            csum += buffer_2[i]<<8;
+            csum += buffer_2[i];
         }
     }
-    csum = csum + (csum<<16);
-    csum = csum>>16;
+    fprintf(serlog,"\n\ncsum %08x, i %d, j %d, obj_length %d\n\n", csum, i, j, obj_length );
+    csum = (csum&0xffff)+(csum>>16);
+    csum = ((csum >> 16) + csum)&0xffff;
 
-    obj_length = (length+length_2+1);
-    obj_length = (obj_length+1)&~1;
     hdr_reqd = 1;
-    for (i=0; i<length+length_2;)
+    for (i=0; i<obj_length;)
     {
         j=0;
         max_size = 64-(flash_address&0x3f);  // this will get us 64-byte aligned after the first write
@@ -287,19 +293,21 @@ static void flash_download_command_object( t_obj_type type, unsigned char *buffe
             write_buffer[j++] = (obj_length>>8 )&0xff;
             write_buffer[j++] = (csum>>0 )&0xff;
             write_buffer[j++] = (csum>>8 )&0xff;
-            write_buffer[j++] = (type>>0 )&0xff;
+            write_buffer[j++] = (type>>0 )&0xff; // first byte of actual data is the type
+            i++;
         }
-        for (; (j<4+max_size) && (i<length); i++, j++)
+        for (; (j<4+max_size) && (i<length+1); i++, j++) // bytes 1 to length inclusive
         {
-            write_buffer[j] = buffer[i];
+            write_buffer[j] = buffer[i-1];
         }
-        for (; buffer_2 && (j<4+max_size) && (i<length+length_2); i++, j++)
+        for (; buffer_2 && (j<4+max_size) && (i<length+length_2+1); i++, j++) // bytes length+1 to length+length_2+1 inclusive
         {
-            write_buffer[j] = buffer_2[i-length];
+            write_buffer[j] = buffer_2[i-length-1];
         }
-        if (j&1)
+        for (; (j<4+max_size) && (i<obj_length); j++) // bytes length+length_2+1 to obj_length inclusive
         {
-            write_buffer[j++] = 0; // padding, should only occur at end
+            write_buffer[j] = 0; // padding at end with 0
+            i++;
         }
         flash_download_command( 'w', write_buffer, j );
         flash_address += j-4;
@@ -553,6 +561,7 @@ static void command_obey( char *cmd )
  */
 static void command_mode_enter( void )
 {
+    fprintf(serlog,"\ncmd_mode_enter\n");
      mode = cmd_mode;
      cmd[0] = 0;
      waddstr( command_window, "Command: (ctl-g to return) > ");
@@ -617,6 +626,7 @@ static void text_mode_enter( void )
      wechochar( command_window, '\r' );
 //     wechochar( command_window, '\n' );
      wrefresh( text_window );
+     fprintf(serlog,"\ntext_mode_enter\n");
 }
 
 /*f text_mode_key
@@ -642,7 +652,6 @@ static void text_mode_key( char c )
  */
 /*f main
  */
-FILE *serlog;
 extern int main (int argc, char **argv)
 {
      char *filename;
@@ -650,7 +659,8 @@ extern int main (int argc, char **argv)
      char buffer[256];
      int done;
 
-     serlog = fopen("/tmp/serlog", "w");
+     serlog = fopen("/tmp/serial.log", "w");
+     outputlog = fopen("/tmp/output.log", "w");
      filename = "/dev/ttyS0";
      verbose = 0;
      baud = 9600;
@@ -715,6 +725,7 @@ extern int main (int argc, char **argv)
                if (buffer[0]!='\r')
                {
                     wechochar(text_window, buffer[0]);
+                    fprintf(outputlog,"%c",buffer[0]);
                }
           }
      }

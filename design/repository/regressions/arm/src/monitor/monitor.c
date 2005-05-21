@@ -218,6 +218,7 @@ extern int test_entry_point()
     cmd_chain.next = (t_command_chain *)0;
     chain_extra_cmds( &cmd_chain );
     uart_init();
+    extra_init();
     while (1)
     {
         /*b Display the prompt

@@ -488,6 +488,7 @@ extern module gip_special( clock gip_clock,
                            input bit gip_reset,
 
                            input bit read,
+                           input bit flush,
                            input bit[5] read_address,
                            output bit[32] read_data,
                            input bit write,

@@ -83,7 +83,7 @@ sources independent of the target they which to send to.
                 }
                 case arb_fsm_xfr_0:
                 {
-                    if ( (src_type_0==postbus_word_type_last) || ((xfr_first_word) && (src_data_0[0])) )
+                    if ( (src_type_0==postbus_word_type_last) || ((xfr_first_word) && (src_data_0[postbus_command_last_bit])) )
                     {
                         next_state = arb_fsm_idle;
                         if (src_type_3==postbus_word_type_start) { next_state = arb_fsm_xfr_3; }
@@ -93,7 +93,7 @@ sources independent of the target they which to send to.
                 }
                 case arb_fsm_xfr_1:
                 {
-                    if ( (src_type_1==postbus_word_type_last) || ((xfr_first_word) && (src_data_1[0])) )
+                    if ( (src_type_1==postbus_word_type_last) || ((xfr_first_word) && (src_data_1[postbus_command_last_bit])) )
                     {
                         next_state = arb_fsm_idle;
                         if (src_type_0==postbus_word_type_start) { next_state = arb_fsm_xfr_0; }
@@ -103,7 +103,7 @@ sources independent of the target they which to send to.
                 }
                 case arb_fsm_xfr_2:
                 {
-                    if ( (src_type_2==postbus_word_type_last) || ((xfr_first_word) && (src_data_2[0])) )
+                    if ( (src_type_2==postbus_word_type_last) || ((xfr_first_word) && (src_data_2[postbus_command_last_bit])) )
                     {
                         next_state = arb_fsm_idle;
                         if (src_type_1==postbus_word_type_start) { next_state = arb_fsm_xfr_1; }
@@ -113,7 +113,7 @@ sources independent of the target they which to send to.
                 }
                 case arb_fsm_xfr_3:
                 {
-                    if ( (src_type_3==postbus_word_type_last) || ((xfr_first_word) && (src_data_3[0])) )
+                    if ( (src_type_3==postbus_word_type_last) || ((xfr_first_word) && (src_data_3[postbus_command_last_bit])) )
                     {
                         next_state = arb_fsm_idle;
                         if (src_type_2==postbus_word_type_start) { next_state = arb_fsm_xfr_2; }

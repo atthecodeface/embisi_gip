@@ -21,6 +21,7 @@ include "io_postbus_event_manager.h"
  */
 typedef struct
 {
+    bit    valid;      // 0 if event is not to be watched for, 1 if it is
     bit[2] fifo;       // fifo to watch for
     bit    cmd_status; // fifo to watch for
     bit    ingress;    // fifo to watch for
@@ -35,14 +36,15 @@ typedef struct
 {
     t_postbus_src_cmd_op op;
     bit[5]               length;
-    bit    header_route_number;
+    bit                  header_route_number;
+    bit[postbus_command_target_size] header_target;
 } t_postbus_cmd;
 
 /*t t_postbus_header_details
  */
 typedef struct
 {
-    bit[31] details;
+    bit[postbus_command_route_size] route; // all except bit 0, last bit
 } t_postbus_header_details;
 
 /*a Modules
@@ -80,9 +82,9 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
 
     clocked bit target_ack = 0;
 
-    clocked t_postbus_header_details[2] header_routes = { {details=0} }; // possible header routes
-    clocked t_event[number_events] events = { {fifo=3, cmd_status=0, ingress=1, empty_not_watermark=1, level=0, pending=0} }; // events to watch for
-    clocked t_postbus_cmd[number_events] event_cmds = { {op=post_src_cmd_op_read_data, length=0, header_route_number=0} }; // cmds to perform on those events
+    clocked t_postbus_header_details[2] header_routes = { {route=0} }; // possible header routes
+    clocked t_event[number_events] events = { {fifo=3, cmd_status=0, ingress=1, empty_not_watermark=1, level=0, pending=0, valid=0} }; // events to watch for
+    clocked t_postbus_cmd[number_events] event_cmds = { {op=post_src_cmd_op_read_data, length=0, header_route_number=0, header_target=0} }; // cmds to perform on those events
 
     clocked bit[log_number_events] event_in_action = 0;
     clocked bit event_presented=0;
@@ -103,7 +105,7 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                                 if ( (ingress_event_empty.event) &&
                                      (events[i].level==ingress_event_empty.value) )
                                 {
-                                    events[i].pending <= 1;
+                                    events[i].pending <= events[i].valid;
                                 }
                             }
                             else
@@ -111,7 +113,7 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                                 if ( (ingress_event_watermark.event) &&
                                      (events[i].level==ingress_event_watermark.value) )
                                 {
-                                    events[i].pending <= 1;
+                                    events[i].pending <= events[i].valid;
                                 }
                             }
                         }
@@ -126,7 +128,7 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                                 if ( (egress_event_empty.event) &&
                                      (events[i].level==egress_event_empty.value) )
                                 {
-                                    events[i].pending <= 1;
+                                    events[i].pending <= events[i].valid;
                                 }
                             }
                             else
@@ -134,7 +136,7 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                                 if ( (egress_event_watermark.event) &&
                                      (events[i].level==egress_event_watermark.value) )
                                 {
-                                    events[i].pending <= 1;
+                                    events[i].pending <= events[i].valid;
                                 }
                             }
                         }
@@ -154,7 +156,9 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
             post_src_cmd_fifo            = events[event_in_action].fifo;
             post_src_cmd_from_cmd_status = events[event_in_action].cmd_status;
             post_src_cmd_from_ingress    = events[event_in_action].ingress;
-            post_src_cmd_hdr_details     = header_routes[0].details;//event_cmds[event_in_action].header_route_number
+            post_src_cmd_hdr_details       = 0;
+            post_src_cmd_hdr_details[postbus_command_route_size;postbus_command_route_start-1] = header_routes[0].route;//event_cmds[event_in_action].header_route_number
+            post_src_cmd_hdr_details[postbus_command_target_size;postbus_command_target_start-1] = event_cmds[event_in_action].header_target;
 
             if (post_src_cmd_ack)
             {
@@ -174,23 +178,26 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                     target_ack <= 1;
                     if (target_write_address[0])
                     {
-                        header_routes[target_write_address[2;2]].details <= target_write_data[31;postbus_command_route_start];
+                        header_routes[target_write_address[2;2]].route <= target_write_data[postbus_command_route_size;postbus_command_route_start];
                     }
                     else
                     {
                         events[target_write_address[2;2]] <= {
-                            fifo                = target_write_data[2;2],
-                            cmd_status          = target_write_data[1],
-                            ingress             = target_write_data[0],
+                            fifo                = target_write_data[2;0],
+                            ingress             = target_write_data[2],
+                            cmd_status          = target_write_data[3],
                             empty_not_watermark = target_write_data[4],
                             level               = target_write_data[5],
-                            pending             = 0
+                            pending             = 0,
+                            valid               = 1
                         };
                         event_cmds[target_write_address[2;2]] <= {
-                            op                  = target_write_data[2;postbus_command_io_cmd_op_start],
-                            length              = target_write_data[5;postbus_command_tx_length_start],
-                            header_route_number = target_write_data[0]
+                            op                  = target_write_data[2;postbus_command_source_io_cmd_op_start],
+                            length              = target_write_data[5;postbus_command_source_io_length_start],
+                            header_route_number = target_write_data[0],
+                            header_target       = target_write_data[postbus_command_target_size;postbus_command_target_start]
                         };
+                        print("Writing the event_cmds header route number is not correct yet");
                     }
                 }
                 else
@@ -198,14 +205,16 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                     if (!events[0].pending)
                     {
                         target_ack <= 1;
-                        events[0].fifo <= target_write_address[2;2];
-                        events[0].cmd_status <= target_write_address[1];
-                        events[0].ingress <= target_write_address[0];
+                        events[0].fifo <= target_write_address[2;0];
+                        events[0].ingress <= target_write_address[2];
+                        events[0].cmd_status <= target_write_address[3];
                         events[0].pending <= 1;
-                        event_cmds[0].op <= target_write_data[2;postbus_command_io_cmd_op_start];
-                        event_cmds[0].length <= target_write_data[5;postbus_command_tx_length_start];
+                        events[0].valid <= 0;
+                        event_cmds[0].op <= target_write_data[2;postbus_command_source_io_cmd_op_start];
+                        event_cmds[0].length <= target_write_data[5;postbus_command_source_io_length_start];
                         event_cmds[0].header_route_number <= 0;
-                        header_routes[0].details <= target_write_data[31;postbus_command_route_start];
+                        event_cmds[0].header_target <= target_write_data[postbus_command_target_size;postbus_command_target_start];
+                        header_routes[0].route <= target_write_data[postbus_command_route_size;postbus_command_route_start];
                     }
                 }
             }

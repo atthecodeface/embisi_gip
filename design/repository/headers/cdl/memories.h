@@ -53,3 +53,19 @@ extern module memory_s_dp_2048_x_32( clock sram_clock "SRAM clock",
     timing from rising clock sram_clock sram_read_data;
 }
 
+/*m memory_ss_dp_2048_x_32
+ */
+extern module memory_ss_dp_2048_x_32( clock sram_read_clock "SRAM read clock",
+                                      clock sram_write_clock "SRAM write clock",
+                                      input bit sram_read "SRAM read",
+                                      input bit[11] sram_read_address "SRAM address",
+                                      input bit sram_write "SRAM write",
+                                      input bit[11] sram_write_address "SRAM address",
+                                      input bit[32] sram_write_data "SRAM write data",
+                                      output bit[32] sram_read_data "SRAM read data" )
+{
+    timing to rising clock sram_read_clock sram_read, sram_read_address;
+    timing to rising clock sram_write_clock sram_write, sram_write_address, sram_write_data;
+    timing from rising clock sram_read_clock sram_read_data;
+}
+

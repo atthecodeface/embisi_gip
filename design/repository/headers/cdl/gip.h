@@ -12,9 +12,8 @@ typedef bit[32] t_gip_word;
  */
 typedef enum [5]
 {
-    gip_special_reg_semaphores = 0, // read only
-    gip_special_reg_semaphores_set = 1, // write only
-    gip_special_reg_semaphores_clear = 2, // write only
+    gip_special_reg_semaphores_clear = 0, // read returns semaphores, and clears bits in mask, clears mask; write writes mask
+    gip_special_reg_semaphores_set   = 1, // read returns semaphores, and sets bits in mask, clears mask; write writes mask
     gip_special_reg_gip_config = 3, // scheduler mode, ARM trap semaphore, privelege state of thread 0
     gip_special_reg_thread = 4, // thread to write with 'selected' thread; may be read
     gip_special_reg_thread_pc = 5, // thread restart address, bottom bit indicates current thread or selected thread; on reads actually you get the selected thread, but only if no scheduling is going on
@@ -36,44 +35,27 @@ typedef enum [5]
 
 /*t t_gip_postbus_reg
  */
-constant integer    gip_postbus_reg_fifo_bit = 2; // bit number that indicates FIFO
+constant integer    gip_postbus_reg_fifo_bit = 4; // bit number that indicates FIFO
 typedef enum [5]
 {
-    gip_postbus_reg_fifo_mask = 12, // bit mask that indicates FIFO
+    gip_postbus_reg_fifo_mask = 16, // bit mask that indicates FIFO
 
     gip_postbus_reg_fifo_0 = 0, // bit values that indicates FIFO 0
-    gip_postbus_reg_fifo_1 = 4, // bit values that indicates FIFO 1 rather than FIFO 0
-    gip_postbus_reg_fifo_2 = 8, // bit values that indicates FIFO 2 rather than FIFO 0
-    gip_postbus_reg_fifo_3 = 12, // bit values that indicates FIFO 3 rather than FIFO 0
+    gip_postbus_reg_fifo_1 = 16, // bit values that indicates FIFO 1 rather than FIFO 0
 
-    gip_postbus_reg_status_0 = 0 , // Status register 0 - bit 0 is cmd 0 tx pending (cmd and data still in use), bit 1 is rx fifo ptrs differ, bits 8 thru 11 are all 4 bits of pending
-    gip_postbus_reg_command_0 = 1, // Command register 0
-    gip_postbus_reg_tx_fifo_0 = 2, // Data FIFO write 0
-    gip_postbus_reg_rx_fifo_0 = 3, // Data FIFO read 0
+    gip_postbus_reg_tx_fifo_0 = 0, // write only - in fact, anything below command register is tx fifo
+    gip_postbus_reg_rx_fifo_0 = 0, // read only - in fact, anything below status register is rx fifo
+    gip_postbus_reg_status_0         = 12 , // Status register 0 - read only - bit 0 is cmd 0 tx pending (cmd and data still in use), bit 1 is rx fifo ptrs differ, bits 8 thru 11 are all 4 bits of pending
+    gip_postbus_reg_command_0        = 12, // Command register 0 - write only - see postbus.h for details of its contents
+    gip_postbus_reg_rx_fifo_config_0 = 14, // Data Rx FIFO config 0
+    gip_postbus_reg_tx_fifo_config_0 = 15, // Data Tx FIFO config 0
 
-    gip_postbus_reg_status_1 = 4 , // Status register 1
-    gip_postbus_reg_command_1 = 5, // Command register 1
-    gip_postbus_reg_tx_fifo_1 = 6, // Data FIFO write 1
-    gip_postbus_reg_rx_fifo_1 = 7, // Data FIFO read 1
-
-    gip_postbus_reg_status_2 = 8 , // Status register 2
-    gip_postbus_reg_command_2 = 9, // Command register 2
-    gip_postbus_reg_tx_fifo_2 = 10, // Data FIFO write 2
-    gip_postbus_reg_rx_fifo_2 = 11, // Data FIFO read 2
-
-    gip_postbus_reg_status_3 = 12 , // Status register 3
-    gip_postbus_reg_command_3 = 13, // Command register 3
-    gip_postbus_reg_tx_fifo_3 = 14, // Data FIFO write 3
-    gip_postbus_reg_rx_fifo_3 = 15, // Data FIFO read 3
-
-    gip_postbus_reg_rx_fifo_config_0 = 16, // Data Rx FIFO config 0
-    gip_postbus_reg_tx_fifo_config_0 = 17, // Data Tx FIFO config 0
-    gip_postbus_reg_rx_fifo_config_1 = 20, // Data Rx FIFO config 1
-    gip_postbus_reg_tx_fifo_config_1 = 21, // Data Tx FIFO config 1
-    gip_postbus_reg_rx_fifo_config_2 = 24, // Data Rx FIFO config 2
-    gip_postbus_reg_tx_fifo_config_2 = 25, // Data Tx FIFO config 2
-    gip_postbus_reg_rx_fifo_config_3 = 26, // Data Rx FIFO config 3
-    gip_postbus_reg_tx_fifo_config_3 = 27, // Data Tx FIFO config 3
+    gip_postbus_reg_tx_fifo_1 = 16, // write only - in fact, anything below command register is tx fifo
+    gip_postbus_reg_rx_fifo_1 = 16, // read only - in fact, anything below status register is rx fifo
+    gip_postbus_reg_status_1         = 28 , // Status register 0 - read only - bit 0 is cmd 0 tx pending (cmd and data still in use), bit 1 is rx fifo ptrs differ, bits 8 thru 11 are all 4 bits of pending
+    gip_postbus_reg_command_1        = 28, // Command register 0 - write only - see postbus.h for details of its contents
+    gip_postbus_reg_rx_fifo_config_1 = 30, // Data Rx FIFO config 0
+    gip_postbus_reg_tx_fifo_config_1 = 31, // Data Tx FIFO config 0
 
 } t_gip_postbus_reg;
 

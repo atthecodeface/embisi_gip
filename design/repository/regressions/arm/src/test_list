@@ -14,7 +14,9 @@ cc monitor no_cmds
 cc monitor flash
 cc monitor uart
 cc monitor all_cmds
+cc monitor bonus_cmds
 cc monitor memory
+cc monitor ethernet
 cc ethernet ethernet
 cc scheduler scheduler
 
@@ -28,3 +30,4 @@ test rom  memory memory:memory common:wrapper common:support
 test rom  uart uart:uart common:wrapper common:support
 test rom  monitor monitor:monitor monitor:no_cmds monitor:flash monitor:uart common:wrapper common:support
 test dram monitor_full monitor:monitor monitor:all_cmds monitor:memory monitor:flash monitor:uart common:wrapper_download common:support_download
+test dram monitor_extra monitor:monitor monitor:bonus_cmds monitor:memory monitor:ethernet monitor:flash monitor:uart common:wrapper_download common:support_download

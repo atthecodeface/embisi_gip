@@ -67,7 +67,7 @@ potential postbus sources.
                 }
                 case arb_fsm_src_0:
                 {
-                    if ( (src_type_0==postbus_word_type_last) || ((src_first_word) && (src_data_0[0])) )
+                    if ( (src_type_0==postbus_word_type_last) || ((src_first_word) && (src_data_0[postbus_command_last_bit])) )
                     {
                         next_state = arb_fsm_idle;
                         if (src_type_3==postbus_word_type_start) { next_state = arb_fsm_src_3; }
@@ -77,7 +77,7 @@ potential postbus sources.
                 }
                 case arb_fsm_src_1:
                 {
-                    if ( (src_type_1==postbus_word_type_last) || ((src_first_word) && (src_data_1[0])) )
+                    if ( (src_type_1==postbus_word_type_last) || ((src_first_word) && (src_data_1[postbus_command_last_bit])) )
                     {
                         next_state = arb_fsm_idle;
                         if (src_type_0==postbus_word_type_start) { next_state = arb_fsm_src_0; }
@@ -87,7 +87,7 @@ potential postbus sources.
                 }
                 case arb_fsm_src_2:
                 {
-                    if ( (src_type_2==postbus_word_type_last) || ((src_first_word) && (src_data_2[0])) )
+                    if ( (src_type_2==postbus_word_type_last) || ((src_first_word) && (src_data_2[postbus_command_last_bit])) )
                     {
                         next_state = arb_fsm_idle;
                         if (src_type_1==postbus_word_type_start) { next_state = arb_fsm_src_1; }
@@ -97,7 +97,7 @@ potential postbus sources.
                 }
                 case arb_fsm_src_3:
                 {
-                    if ( (src_type_3==postbus_word_type_last) || ((src_first_word) && (src_data_3[0])) )
+                    if ( (src_type_3==postbus_word_type_last) || ((src_first_word) && (src_data_3[postbus_command_last_bit])) )
                     {
                         next_state = arb_fsm_idle;
                         if (src_type_2==postbus_word_type_start) { next_state = arb_fsm_src_2; }

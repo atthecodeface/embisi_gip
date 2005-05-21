@@ -74,12 +74,13 @@ module io_postbus_target( clock int_clock "main system clck",
      postbus_target "Postbus target":
          {
              configuration_write = 0;
-             write_address = postbus_command_word[5;postbus_command_io_dest_start];
+             write_address = postbus_command_word[5;postbus_command_target_io_dest_start];
+             fifo_to_access = postbus_command_word[2;postbus_command_target_io_fifo_start];
+             fifo_op_to_cmd_status = postbus_command_word[postbus_command_target_io_cmd_status];
+
              egress_req = 0;
              ingress_req = 0;
              command_req = 0;
-             fifo_to_access = postbus_command_word[2;30];
-             fifo_op_to_cmd_status = postbus_command_word[1;29];
              fifo_op = io_fifo_op_write_cfg;
              fifo_event_type = io_fifo_event_type_none;
              sram_data_op = io_sram_data_op_none;
@@ -103,7 +104,7 @@ module io_postbus_target( clock int_clock "main system clck",
                      {
                          write_data <= postbus_data;
                          last_postbus_type <= postbus_type;
-                         full_switch ( postbus_command_word[ 2;postbus_command_io_dest_type_start])
+                         full_switch ( postbus_command_word[ 2;postbus_command_target_io_dest_type_start])
                              {
                              case 0: // channel configuration/provocation
                              {
@@ -133,11 +134,9 @@ module io_postbus_target( clock int_clock "main system clck",
                  case op_state_fifo_config: // Perform a FIFO configuration write, with the data we have received: we have to wait for an ack from the appropriate side (which is combinatorial on our req)
                  {
                      postbus_ack = 0;
-                     fifo_to_access = postbus_command_word[2;29];
-                     fifo_op_to_cmd_status = postbus_command_word[28];
                      fifo_op = io_fifo_op_write_cfg;
                      op_state <= op_state_fifo_config;
-                     if (postbus_command_word[27])
+                     if (postbus_command_word[postbus_command_target_io_ingress])
                      {
                          ingress_req = 1;
                          if (ingress_ack)
@@ -168,8 +167,6 @@ module io_postbus_target( clock int_clock "main system clck",
                  {
                      sram_data_op = io_sram_data_op_write_postbus; // or cmd or value, but the effect is the same I believe
                      sram_address_op = io_sram_address_op_fifo_ptr; // for second to cmd/status use set_bit_0
-                     fifo_to_access = postbus_command_word[2;29];
-                     fifo_op_to_cmd_status = postbus_command_word[28];
                      if (fifo_op_to_cmd_status)
                      {
                          fifo_op = io_fifo_op_none;
@@ -215,8 +212,6 @@ module io_postbus_target( clock int_clock "main system clck",
                  {
                      sram_data_op = io_sram_data_op_write_postbus; // or cmd or value, but the effect is the same I believe
                      sram_address_op = io_sram_address_op_fifo_ptr; // for second to cmd/status use set_bit_0
-                     fifo_to_access = postbus_command_word[2;29];
-                     fifo_op_to_cmd_status = postbus_command_word[28];
                      if (fifo_op_to_cmd_status)
                      {
                          fifo_op = io_fifo_op_none;
@@ -249,8 +244,6 @@ module io_postbus_target( clock int_clock "main system clck",
                      {
                          sram_address_op = io_sram_address_op_fifo_ptr;
                      }
-                     fifo_to_access = postbus_command_word[2;29];
-                     fifo_op_to_cmd_status = postbus_command_word[28];
                      fifo_op = io_fifo_op_inc_write_ptr; // for data or cmd
 
                      postbus_ack = 1; // holding register is empty, so we can take data directly or to holding
@@ -282,7 +275,7 @@ module io_postbus_target( clock int_clock "main system clck",
                          }
                      else // nothing changed - no ack, no new data, so hang in this state
                      {
-                         op_state <= op_state_fifo_write_first_data;
+                         op_state <= op_state_fifo_write_later_data;
                      }
                  }
                  case op_state_fifo_write_later_data_holding_full: // Perform a FIFO data write, with the data we have received (not first), holding register full: we have to wait for an ack from the appropriate side (which is combinatorial on our req)
@@ -296,8 +289,6 @@ module io_postbus_target( clock int_clock "main system clck",
                      {
                          sram_address_op = io_sram_address_op_fifo_ptr;
                      }
-                     fifo_to_access = postbus_command_word[2;29];
-                     fifo_op_to_cmd_status = postbus_command_word[28];
                      fifo_op = io_fifo_op_inc_write_ptr; // for data or cmd
 
                      postbus_ack = 0; // holding register is full, so we cannot take to holding

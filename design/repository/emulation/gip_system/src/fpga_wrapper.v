@@ -87,7 +87,10 @@ module fpga_wrapper
     gmii_mdio,
     gmii_mdc,
 
-    leds
+    leds,
+
+    analyzer_clock,
+    analyzer_signals
 );
 
 //b Inputs and outputs
@@ -143,6 +146,8 @@ module fpga_wrapper
 
     //b Outputs
     output [7:0]leds;
+    output analyzer_clock;
+    output [31:0]analyzer_signals;
 
 //b Assign pins and I/O standards
     //IOSTANDARD is pg 431 of constraints guide
@@ -242,6 +247,11 @@ module fpga_wrapper
     //synthesis attribute IOSTANDARD of eb_data is "LVTTL";
     //synthesis attribute IOSTANDARD of eb_oe_n is "LVTTL";
     //synthesis attribute IOSTANDARD of eb_we_n is "LVTTL";
+
+    //b Logic analyzer
+    // on JP16, data on pins 1 thru 32, clock on 50 (GEN_IO1_0 thru 31 and 49)
+    //synthesis attribute LOC of analyzer_signals is "J24 F24 G24 D24   K23 C24 H23 G23   C23 D23 F23 J23   D22 C22 F22 E22   E21 G22 H21 H22   J22 K22 K21 H20   H19 J21 C18 F19   F18 K20 H18 D18";
+    //synthesis attribute LOC of analyzer_clock is "D29";
 
 //b Reset and clock signals/pins
 wire int_double_drm_clock_buffered;
@@ -364,7 +374,7 @@ always @(posedge int_drm_clock_90_buffered or posedge system_reset_in)
 begin
     if (system_reset_in)
     begin
-        ddr_dram_s_n <= 2'b11;
+        ddr_dram_s_n <= 2'b11; //'
         ddr_dram_ras_n <= 1;
         ddr_dram_cas_n <= 1;
         ddr_dram_we_n <= 1;
@@ -502,62 +512,75 @@ reg cke_last_of_logic;
 always @(posedge int_drm_clock_buffered) begin cke_last_of_logic <= cke_next_will_be_last_of_logic; end
 
 //b DDR DRAM controller instance
-wire mdio_out, mdio_in;
-assign mdio_in = gmii_mdio;
-assign gmii_mdio = mdio_out ? 1'bz: 1'b0;
+wire [1:0]sscl;
+wire [1:0]sscl_oe;
+wire ssdo, ssdo_oe;
+wire [1:0]ssdi;
+wire [7:0]sscs;
+assign gmii_mdc = sscl[0];
+assign gmii_mdio = ssdo_oe ? ssdo : 1'bz; //'
+assign ssdi[0] = gmii_mdio;
+assign ssdi[1] = 0;
 assign gbe_rst_n = !system_reset;
+assign analyzer_clock = int_logic_slow_clock_buffered;
 gip_system body( .drm_clock(int_drm_clock_buffered),
                  .int_clock(int_logic_slow_clock_buffered),
 
-    .eth_mii_rx_clock(gmii_rx_clk), // gmii_rx_clk pin 57 av data38 pin 6   data_av38
-    .eth_mii_tx_clock(gmii_tx_clk), // gmii_tx_clk pin 60 av data46 pin 12  data_av46
+                 .eth_mii_rx_clock(gmii_rx_clk), // gmii_rx_clk pin 57 av data38 pin 6   data_av38
+                 .eth_mii_tx_clock(gmii_tx_clk), // gmii_tx_clk pin 60 av data46 pin 12  data_av46
 
-    .eth_mii_crs(gmii_crs), // gmii_crs pin 40 av data35 pin 73       data_av35
-    .eth_mii_col(gmii_col), // gmii_col pin 39 av data34 pin 3        data_av34
-    .eth_mii_rx_er(gmii_rx_er), // gmii_rx_er pin 41 av data37 pin 5  data_av37
-    .eth_mii_rx_d(gmii_rxd), // gmii_rxd[3:0] pins 51, 52, 55, 56 av data42 data44 data45 data47 pins 9 80 11 82 data_av22/44/45/47
-    .eth_mii_rx_dv(gmii_rx_dv), // gmii_rx_dv pin 44 av data39 pin 76 data_av39
-    .eth_mdio_in(mdio_in), // gmii_mdio pin 80 av data33 pin 2        data_av33
+                 .eth_mii_crs(gmii_crs), // gmii_crs pin 40 av data35 pin 73       data_av35
+                 .eth_mii_col(gmii_col), // gmii_col pin 39 av data34 pin 3        data_av34
+                 .eth_mii_rx_er(gmii_rx_er), // gmii_rx_er pin 41 av data37 pin 5  data_av37
+                 .eth_mii_rx_d(gmii_rxd), // gmii_rxd[3:0] pins 51, 52, 55, 56 av data42 data44 data45 data47 pins 9 80 11 82 data_av22/44/45/47
+                 .eth_mii_rx_dv(gmii_rx_dv), // gmii_rx_dv pin 44 av data39 pin 76 data_av39
 
-    .eth_mii_tx_er(gmii_tx_er), // gmii_tx_er pin 61 av data48 pin 83 data_av48
-    .eth_mii_tx_d(gmii_txd), //gmii_txd[3:0] pin 71 72 75 76 av data55 data54 data58 data57 pins 88 18 21 20 data_av55/54/58/57
-    .eth_mii_tx_en(gmii_tx_en), // gmii_tx_en pin 62 av data49 pin 14  data_av49
-    .eth_mdio_out(mdio_out), // gmii_mdio pin 80 av data33 pin 2      data_av33
-    .eth_mdc(gmii_mdc), // gmii_mdc pin 81 av data32 pin 72           data_av32
+                 .eth_mii_tx_er(gmii_tx_er), // gmii_tx_er pin 61 av data48 pin 83 data_av48
+                 .eth_mii_tx_d(gmii_txd), //gmii_txd[3:0] pin 71 72 75 76 av data55 data54 data58 data57 pins 88 18 21 20 data_av55/54/58/57
+                 .eth_mii_tx_en(gmii_tx_en), // gmii_tx_en pin 62 av data49 pin 14  data_av49
 
-                       .system_reset( system_reset ),
+                 .sscl(sscl), //  2 bits - bit 0 to gmii_mdc pin 81 av data32 pin 72           data_av32
+                 .sscl_oe(sscl_oe), // 2 bits - bit 0 oe not used as gmii_mdc is driven
+                 .ssdo(ssdo), // 1 pin - to gmii_mdio pin 80 av data33 pin 2      data_av33
+                 .ssdo_oe(ssdo_oe), // 1 pin - to gmii_mdio oe pin 80 av data33 pin 2      data_av33
+                 .ssdi(ssdi), // 2 pins - pin 0 from gmii_mdio pin 80 av data33 pin 2      data_av33
+                 .sscs(sscs), // 8 pins - unused
 
-                     .switches(switches),
-                     .rxd(rxd),
-                     .leds(leds),
-                     .txd(txd),
-                     .ext_bus_read_data( ext_bus_read_data),
-                     .ext_bus_write_data( ext_bus_write_data ),
-                     .ext_bus_write_data_enable( ext_bus_write_data_enable ),
-                     .ext_bus_address( ext_bus_address ),
-                     .ext_bus_we( ext_bus_we ),
-                     .ext_bus_oe( ext_bus_oe ),
-                     .ext_bus_ce( ext_bus_ce ),
-    
+                 .system_reset( system_reset ),
 
-                      .cke_last_of_logic( cke_last_of_logic ),
+                 .switches(switches),
+                 .rxd(rxd),
+                 .leds(leds),
+                 .txd(txd),
+                 .ext_bus_read_data( ext_bus_read_data),
+                 .ext_bus_write_data( ext_bus_write_data ),
+                 .ext_bus_write_data_enable( ext_bus_write_data_enable ),
+                 .ext_bus_address( ext_bus_address ),
+                 .ext_bus_we( ext_bus_we ),
+                 .ext_bus_oe( ext_bus_oe ),
+                 .ext_bus_ce( ext_bus_ce ),
 
-                       .next_cke( drm_next_cke ), // these signals all to be clocked on int_drm_clock_buffered, and driven out on int_drm_clock_90_buffered
-                       .next_s_n(drm_next_s_n),
-                       .next_ras_n(drm_next_ras_n),
-                       .next_cas_n(drm_next_cas_n),
-                       .next_we_n(drm_next_we_n),
-                       .next_a(drm_next_a),
-                       .next_ba(drm_next_ba),
-                       .next_dq(drm_next_dq),     // we run these at clock rate, not ddr; output on int_drm_clock_buffered
-                       .next_dqm(drm_next_dqm),   // we run these at clock rate, not ddr; output on int_drm_clock_buffered
-                       .next_dqoe(drm_next_dqoe), // we run these at clock rate, not ddr; it drives dq and dqs; use on int_drm_clock_buffered
-                       .next_dqs_low(drm_next_dqs_low), // dqs strobes for low period of drm_clock (register on int_drm_clock_buffered and drive when that is low)
-                       .next_dqs_high(drm_next_dqs_high), // dqs strobes for high period of drm_clock
 
-                       .input_dq_low(drm_input_dq_low), // last dq data during low period of drm_clock
-                       .input_dq_high(drm_input_dq_high) // last dq data during high period of drm_clock
+                 .cke_last_of_logic( cke_last_of_logic ),
 
+                 .next_cke( drm_next_cke ), // these signals all to be clocked on int_drm_clock_buffered, and driven out on int_drm_clock_90_buffered
+                 .next_s_n(drm_next_s_n),
+                 .next_ras_n(drm_next_ras_n),
+                 .next_cas_n(drm_next_cas_n),
+                 .next_we_n(drm_next_we_n),
+                 .next_a(drm_next_a),
+                 .next_ba(drm_next_ba),
+                 .next_dq(drm_next_dq),     // we run these at clock rate, not ddr; output on int_drm_clock_buffered
+                 .next_dqm(drm_next_dqm),   // we run these at clock rate, not ddr; output on int_drm_clock_buffered
+                 .next_dqoe(drm_next_dqoe), // we run these at clock rate, not ddr; it drives dq and dqs; use on int_drm_clock_buffered
+                 .next_dqs_low(drm_next_dqs_low), // dqs strobes for low period of drm_clock (register on int_drm_clock_buffered and drive when that is low)
+                 .next_dqs_high(drm_next_dqs_high), // dqs strobes for high period of drm_clock
+
+                 .input_dq_low(drm_input_dq_low), // last dq data during low period of drm_clock
+                 .input_dq_high(drm_input_dq_high), // last dq data during high period of drm_clock
+
+                 .analyzer_clock(analyzer_clock),
+                 .analyzer_signals(analyzer_signals)
     );
 //assign drm_next_a = drm_input_dq_low[12:0];
 //assign drm_next_ba = drm_input_dq_low[14:13];

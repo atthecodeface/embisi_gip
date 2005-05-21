@@ -29,7 +29,17 @@ extern module io_block( clock int_clock,
                         output bit uart0_txd,
                         input bit uart0_txd_fc,
                         input bit uart0_rxd,
-                        output bit uart0_rxd_fc
+                        output bit uart0_rxd_fc,
+
+                        output bit[2] sscl,
+                        output bit[2] sscl_oe,
+                        output bit ssdo,
+                        output bit ssdo_oe,
+                        input bit[2] ssdi,
+                        output bit[8] sscs,
+
+                        input bit[2] analyzer_mux_control,
+                        output bit[32] analyzer_signals
     )
 {
     timing to rising clock int_clock int_reset;
@@ -44,4 +54,11 @@ extern module io_block( clock int_clock,
     timing to rising clock etx_clock etx_reset;
     timing to rising clock etx_clock etx_mii_crs, etx_mii_col;
     timing from rising clock etx_clock etx_mii_enable, etx_mii_data;
+
+    timing from rising clock int_clock sscl, sscl_oe, ssdo, ssdo_oe, sscs;
+    timing to rising clock int_clock ssdi;
+
+    timing from rising clock int_clock analyzer_signals;
+    timing from rising clock etx_clock analyzer_signals;
+    timing from rising clock erx_clock analyzer_signals;
 }

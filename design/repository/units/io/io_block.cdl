@@ -13,6 +13,7 @@ include "postbus.h"
 
 include "io_ethernet_rx.h"
 include "io_ethernet_tx.h"
+include "io_sync_serial.h"
 include "io_uart.h"
 include "io_baud_rate_generator.h"
 
@@ -68,7 +69,17 @@ module io_block( clock int_clock,
                  output bit uart0_txd,
                  input bit uart0_txd_fc,
                  input bit uart0_rxd,
-                 output bit uart0_rxd_fc
+                 output bit uart0_rxd_fc,
+
+                 output bit[2] sscl,
+                 output bit[2] sscl_oe,
+                 output bit ssdo,
+                 output bit ssdo_oe,
+                 input bit[2] ssdi,
+                 output bit[8] sscs,
+                 
+                 input bit[2] analyzer_mux_control,
+                 output bit[32] analyzer_signals
     )
 {
     /*b Default clock and reset - internal clock domain
@@ -96,6 +107,7 @@ module io_block( clock int_clock,
 
     net t_io_tx_data_fifo_cmd etx_data_fifo_cmd;
     net bit                   etx_data_fifo_toggle;
+    clocked bit[32]           etx_data_fifo_data = 0;
     net bit                   etx_txd_req;
     comb bit                  etx_txd_ack;
 
@@ -127,6 +139,36 @@ module io_block( clock int_clock,
     comb bit                  uart0_status_ack;
     comb bit                  uart0_status_fifo_full;
 
+    /*b Sync serial wiring
+     */
+    net t_io_tx_data_fifo_cmd ss_tx_data_fifo_cmd;
+    net bit                   ss_tx_data_fifo_toggle;
+    clocked bit[32]           ss_tx_data_fifo_data = 0;
+    net bit                   ss_txd_req;
+    comb bit                  ss_txd_ack;
+
+    clocked bit[32]           ss_cmd_data = 0;
+    net bit                   ss_cmd_fifo_toggle;
+    comb bit                  ss_cmd_available;
+    net bit                   ss_cmd_req;
+    comb bit                  ss_cmd_ack;
+
+    net bit[32]               ss_rx_data_fifo_data;
+    net bit                   ss_rx_data_fifo_toggle;
+    net bit                   ss_rxd_req;
+    comb bit                  ss_rxd_ack;
+
+    net bit[32]               ss_status_fifo_data;
+    net bit                   ss_status_fifo_toggle;
+    net bit                   ss_status_req;
+    comb bit                  ss_status_ack;
+
+    net bit[2] sscl;
+    net bit[2] sscl_oe;
+    net bit ssdo;
+    net bit ssdo_oe;
+    net bit[8] sscs;
+    
     /*b Ingress arbiter and controller wiring
      */
     comb bit[4] status_req_bus;
@@ -163,6 +205,8 @@ module io_block( clock int_clock,
     comb bit[4]    cmd_req_bus;
     comb bit[4]    tx_data_req_bus;
     net bit[4]     tx_data_ack_bus;
+    clocked bit[4] tx_data_read_being_presented_bus=0;
+    clocked bit[4] tx_data_reading_bus = 0;
 
     net bit egress_postbus_req;
     net bit egress_postbus_ack;
@@ -280,6 +324,23 @@ module io_block( clock int_clock,
     comb bit[io_baud_rate_divider_size] cfg_baud_addition_value;
     comb bit[io_baud_rate_divider_size] cfg_baud_subtraction_value;
 
+    /*b Analyzer signals
+     */
+    analyzer_signal_setting "Analyzer signals":
+        {
+            analyzer_signals = 0;
+            analyzer_signals[0] = egress_postbus_req;
+            analyzer_signals[1] = egress_postbus_ack;
+            analyzer_signals[2] = egress_sram_write;
+            analyzer_signals[3] = egress_sram_read;
+            analyzer_signals[4;4] = egress_sram_write_data[4;0];
+            analyzer_signals[4;8] = egress_sram_read_data[4;0];
+            analyzer_signals[12] = etx_cmd_fifo_toggle;
+            analyzer_signals[13] = etx_cmd_available;
+            analyzer_signals[14] = etx_data_fifo_toggle;
+            analyzer_signals[15] = etx_txd_ack;
+        }
+
     /*b Ethernet receive 0 instantiation
      */
     ethernet_receive "Ethernet receive module and sync interface":
@@ -316,23 +377,23 @@ module io_block( clock int_clock,
     ethernet_transmit "Ethernet transmit module and sync interface":
         {
             io_ethernet_tx etx( io_clock <- etx_clock,
-                             io_reset <= etx_reset,
+                                io_reset <= etx_reset,
 
-                             data_fifo_data   <= egress_sram_read_data,
-                             data_fifo_cmd    => etx_data_fifo_cmd,
-                             data_fifo_toggle => etx_data_fifo_toggle,
+                                data_fifo_data   <= etx_data_fifo_data,
+                                data_fifo_cmd    => etx_data_fifo_cmd,
+                                data_fifo_toggle => etx_data_fifo_toggle,
 
-                             cmd_fifo_empty   <= !etx_cmd_available,
-                             cmd_fifo_data    <= etx_cmd_data,
-                             cmd_fifo_toggle  => etx_cmd_fifo_toggle,
+                                cmd_fifo_empty   <= !etx_cmd_available,
+                                cmd_fifo_data    <= etx_cmd_data,
+                                cmd_fifo_toggle  => etx_cmd_fifo_toggle,
 
-                             status_fifo_data   => etx_status_fifo_data,
-                             status_fifo_toggle => etx_status_fifo_toggle,
+                                status_fifo_data   => etx_status_fifo_data,
+                                status_fifo_toggle => etx_status_fifo_toggle,
 
-                             mii_enable => etx_mii_enable,
-                             mii_data => etx_mii_data,
-                             mii_crs <= etx_mii_crs,
-                             mii_col <= etx_mii_col );
+                                mii_enable => etx_mii_enable,
+                                mii_data => etx_mii_data,
+                                mii_crs <= etx_mii_crs,
+                                mii_col <= etx_mii_col );
 
             io_sync_request etx_sr_txd( int_clock <- int_clock,
                                         int_reset <= int_reset,
@@ -389,6 +450,59 @@ module io_block( clock int_clock,
                                            arb_io_ack <= uart0_status_ack );
         }
 
+    /*b Sync serial instantiation
+     */
+    sync_serial "Sync serial module and sync interface":
+        {
+            io_sync_serial ss( int_clock <- int_clock,
+                               int_reset <= int_reset,
+
+                               tx_data_fifo_data   <= ss_tx_data_fifo_data,
+                               tx_data_fifo_cmd    => ss_tx_data_fifo_cmd,
+                               tx_data_fifo_toggle => ss_tx_data_fifo_toggle,
+
+                               cmd_fifo_empty   <= !ss_cmd_available,
+                               cmd_fifo_data    <= ss_cmd_data,
+                               cmd_fifo_toggle  => ss_cmd_fifo_toggle,
+
+                               rx_data_fifo_data   => ss_rx_data_fifo_data,
+                               rx_data_fifo_toggle => ss_rx_data_fifo_toggle,
+
+                               status_fifo_data   => ss_status_fifo_data,
+                               status_fifo_toggle => ss_status_fifo_toggle,
+
+                               sscl => sscl,
+                               sscl_oe => sscl_oe,
+                               ssdo => ssdo,
+                               ssdo_oe => ssdo_oe,
+                               ssdi <= ssdi,
+                               sscs => sscs );
+
+            io_sync_request ss_sr_txd( int_clock <- int_clock,
+                                        int_reset <= int_reset,
+                                        io_cmd_toggle <= ss_tx_data_fifo_toggle,
+                                        io_arb_request => ss_txd_req,
+                                        arb_io_ack <= ss_txd_ack );
+
+            io_sync_request ss_sr_cmd( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           io_cmd_toggle <= ss_cmd_fifo_toggle,
+                                           io_arb_request => ss_cmd_req,
+                                           arb_io_ack <= ss_cmd_ack );
+
+            io_sync_request ss_sr_rxd( int_clock <- int_clock,
+                                        int_reset <= int_reset,
+                                        io_cmd_toggle <= ss_rx_data_fifo_toggle,
+                                        io_arb_request => ss_rxd_req,
+                                        arb_io_ack <= ss_rxd_ack );
+
+            io_sync_request ss_sr_status( int_clock <- int_clock,
+                                           int_reset <= int_reset,
+                                           io_cmd_toggle <= ss_status_fifo_toggle,
+                                           io_arb_request => ss_status_req,
+                                           arb_io_ack <= ss_status_ack );
+        }
+
     /*b Status and RxData FIFO ptrs and their arbiter
      */
     status_fifos_and_arbiter "Status, Rx data fifos, and arbiter":
@@ -434,9 +548,15 @@ module io_block( clock int_clock,
             uart0_status_ack = status_ack_bus[2];
             uart0_status_fifo_full = status_fifo_full[2];
 
+            status_req_bus[3] = ss_status_req;
+            ss_status_ack = status_ack_bus[3];
+
             rx_data_req_bus = 0;
             rx_data_req_bus[0] = erx_rxd_req;
             erx_rxd_ack = rx_data_ack_bus[0];
+
+            rx_data_req_bus[1] = ss_rxd_req;
+            ss_rxd_ack = rx_data_ack_bus[1];
 
             io_ingress_fifos ingress_fifos( int_clock <- int_clock,
                                             int_reset <= int_reset,
@@ -511,6 +631,10 @@ module io_block( clock int_clock,
                 {
                     ingress_sram_write = 1;
                     ingress_sram_write_data = erx_data_fifo_data;
+                    if (ingress_fifo_to_access!=0)
+                    {
+                        ingress_sram_write_data = ss_rx_data_fifo_data;
+                    }
                 }
                 case io_sram_data_op_read:
                 {
@@ -545,6 +669,10 @@ module io_block( clock int_clock,
                     case 2:
                     {
                         ingress_data_reg <= uart0_status_fifo_data;
+                    }
+                    case 3:
+                    {
+                        ingress_data_reg <= ss_status_fifo_data;
                     }
                     }
                 }
@@ -657,10 +785,38 @@ module io_block( clock int_clock,
                 }
             uart0_cmd_available = cmd_available_bus[1];
 
+            cmd_req_bus[2] = ss_cmd_req;
+            ss_cmd_ack = 0;
+            if (cmd_valid_bus[2])
+            {
+                cmd_available_bus[2] <= 1;
+                ss_cmd_data <= egress_sram_read_data;
+                ss_cmd_ack = 1;
+            }
+            elsif (ss_cmd_req)
+                {
+                    cmd_available_bus[2] <= 0;
+                }
+            ss_cmd_available = cmd_available_bus[2];
+
+            tx_data_read_being_presented_bus <= tx_data_ack_bus;
+            tx_data_reading_bus <= tx_data_read_being_presented_bus;
+
             tx_data_req_bus = 0;
             tx_data_req_bus[0] = etx_txd_req;
             etx_txd_ack = tx_data_ack_bus[0];
-
+            if (tx_data_reading_bus[0])
+            {
+                etx_data_fifo_data <= egress_sram_read_data;
+            }
+            
+            tx_data_req_bus[1] = ss_txd_req;
+            ss_txd_ack = tx_data_ack_bus[1];
+            if (tx_data_reading_bus[1])
+            {
+                ss_tx_data_fifo_data <= egress_sram_read_data;
+            }
+            
             io_egress_fifos egress_fifos( int_clock <- int_clock,
                                           int_reset <= int_reset,
                                           fifo_op <= egress_fifo_op,
@@ -895,7 +1051,7 @@ module io_block( clock int_clock,
                 }
             }
             sram_read_data_fifo_status <= ingress_fifo_cfg_status;
-            if (postbus_src_read_data_source==postbus_src_read_data_source_egress_fifo_status)
+            if (next_postbus_src_read_data_source==postbus_src_read_data_source_egress_fifo_status)
             {
                 sram_read_data_fifo_status <= egress_fifo_cfg_status;
             }

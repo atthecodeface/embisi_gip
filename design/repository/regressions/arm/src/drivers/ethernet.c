@@ -107,7 +107,7 @@ static void handle_tx_status_fifo( void )
      */
     GIP_READ_AND_CLEAR_SEMAPHORES( status, 1<<31 );
     GIP_POST_TXD_0( (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
-    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc );
+    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xd );
 
     // wait for the data to come back
     while (1)
@@ -124,6 +124,7 @@ static void handle_tx_status_fifo( void )
     if (tx.buffer_in_transit)
     {
         buffer = tx.buffer_in_transit;
+        tx.buffer_in_transit = NULL;
         if (tx.buffers_to_tx)
         {
             t_eth_buffer *buffer;
@@ -173,6 +174,13 @@ static void handle_rx_status_fifo( void )
 
     /*b Break out the status; request data from rx fifo
      */
+    uart_tx_string("rxs ");
+    uart_tx_hex8(status);
+    uart_tx_string(":");
+    uart_tx_hex8(rx.current_data);
+    uart_tx_string(":");
+    uart_tx_hex8(rx.length_received);
+    uart_tx_nl();
     reason = (status>>24)&7;
     block_size = (status>>16)&0xff; // read this (number of bytes+3)/4 words from the data FIFO unless there was overflow!
     size_so_far = (status&0xffff);
@@ -185,11 +193,9 @@ static void handle_rx_status_fifo( void )
     /*b Now figure out what to do with the data while it comes
     // 0 => fcs ok; 1=>fcs bad; 2=> odd nybbles; 3=> complete block; 4=>fifo overrun!; 5=>framing error
     // we get 03400040, 03400080, 00120092 for a 146 byte packet
-if status is end, then mark as not mid packet; if buffer, invoke callback with handle
-if more data than fits in buffer, then discard the data and put buffer back on front of set
      */
     data = NULL; // default is to discard
-    if (size_so_far<=64) // start of packet
+    if (size_so_far<=64) // start of packet (size_so_far is from the status we just read)
     {
         if (rx.current_data) // start of packet with an active packet already - just restart
         {
@@ -202,6 +208,7 @@ if more data than fits in buffer, then discard the data and put buffer back on f
             {
                 data = rx.current_data = rx.buffer_list->data;
                 rx.current_buffer_size = rx.buffer_list->buffer_size;
+                rx.length_received = size_so_far;
             }
             else // start of packet with no buffer allocated and no buffers available - we'll drop it
             {
@@ -263,12 +270,17 @@ if more data than fits in buffer, then discard the data and put buffer back on f
     switch (reason)
     {
     case 0: // FCS ok
+        uart_tx_string("fcs_ok ");
+        uart_tx_hex8(rx.current_data);
+        uart_tx_string(":");
+        uart_tx_hex8(rx.length_received);
+        uart_tx_nl();
         if (rx.current_data) // if we were receiving properly then invoke callback and pop buffer
         {
-            t_eth_buffer *next;
-            next = rx.buffer_list->next;
-            rx.callback( rx.callback_handle, rx.buffer_list, rx.length_received );
-            rx.buffer_list = next;
+            t_eth_buffer *buffer;
+            buffer = rx.buffer_list;
+            rx.buffer_list = rx.buffer_list->next;
+            rx.callback( rx.callback_handle, buffer, rx.length_received );
             rx.current_data = NULL;
         }
         break;
@@ -328,8 +340,24 @@ extern void ethernet_set_rx_callback( t_eth_rx_callback_fn callback, void *handl
  */
 extern void ethernet_add_rx_buffer( t_eth_buffer *buffer )
 {
-    buffer->next = rx.buffer_list;
-    rx.buffer_list = buffer;
+    if (rx.buffer_list) // we may be receiving in to this one!
+    {
+        uart_tx_string("addrxbuf ");
+        uart_tx_hex8(buffer);
+        uart_tx_string(":");
+        uart_tx_hex8(rx.buffer_list);
+        uart_tx_nl();
+        buffer->next = rx.buffer_list->next;
+        rx.buffer_list->next = buffer;
+    }
+    else
+    {
+        uart_tx_string("addrxbuf ");
+        uart_tx_hex8(buffer);
+        uart_tx_nl();
+        buffer->next = NULL;
+        rx.buffer_list = buffer;
+    }
 }
 
 /*f ethernet_poll
@@ -337,29 +365,28 @@ extern void ethernet_add_rx_buffer( t_eth_buffer *buffer )
 extern void ethernet_poll( void )
 {
     unsigned int s;
-    int tx_ne;
     GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<3 );
     if (s&(1<<3))
     { // status ready somewhere; read both FIFO status' for now
+        unsigned int rx_s, tx_s;
         GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (0<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
         GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
         GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (0<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
         GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xd ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
         NOP;NOP;NOP;NOP;NOP;NOP; // cmd and data are RF writes, so delay, and give a chance for the data to get back
         NOP;NOP;NOP;NOP;NOP;NOP; // cmd and data are RF writes, so delay, and give a chance for the data to get back
-        GIP_POST_RXD_0(s); // get status of erx status fifo
-        if ((s&0x80000000)==0) // if not empty
+        GIP_POST_RXD_0(rx_s); // get status of erx status fifo
+        GIP_POST_RXD_0(tx_s);
+        uart_tx_string("statuses ");
+        uart_tx_hex8(rx_s );
+        uart_tx_string(":");
+        uart_tx_hex8(tx_s );
+        uart_tx_nl();
+        if ((rx_s&0x80000000)==0) // if not empty
         {
-            GIP_POST_RXD_0(s);
-            tx_ne = ((s&0x80000000)==0);
             handle_rx_status_fifo();
         }
-        else
-        {
-            GIP_POST_RXD_0(s);
-            tx_ne = ((s&0x80000000)==0);
-        }
-        if (tx_ne)
+        if ((tx_s&0x80000000)==0)
         {
             handle_tx_status_fifo();
         }

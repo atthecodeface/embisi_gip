@@ -174,6 +174,7 @@ static void handle_rx_status_fifo( void )
 
     /*b Break out the status; request data from rx fifo
      */
+#ifdef DEBUG
     uart_tx_string("rxs ");
     uart_tx_hex8(status);
     uart_tx_string(":");
@@ -181,6 +182,7 @@ static void handle_rx_status_fifo( void )
     uart_tx_string(":");
     uart_tx_hex8(rx.length_received);
     uart_tx_nl();
+#endif
     reason = (status>>24)&7;
     block_size = (status>>16)&0xff; // read this (number of bytes+3)/4 words from the data FIFO unless there was overflow!
     size_so_far = (status&0xffff);
@@ -270,11 +272,13 @@ static void handle_rx_status_fifo( void )
     switch (reason)
     {
     case 0: // FCS ok
+#ifdef DEBUG
         uart_tx_string("fcs_ok ");
         uart_tx_hex8(rx.current_data);
         uart_tx_string(":");
         uart_tx_hex8(rx.length_received);
         uart_tx_nl();
+#endif
         if (rx.current_data) // if we were receiving properly then invoke callback and pop buffer
         {
             t_eth_buffer *buffer;
@@ -342,19 +346,23 @@ extern void ethernet_add_rx_buffer( t_eth_buffer *buffer )
 {
     if (rx.buffer_list) // we may be receiving in to this one!
     {
+#ifdef DEBUG
         uart_tx_string("addrxbuf ");
         uart_tx_hex8(buffer);
         uart_tx_string(":");
         uart_tx_hex8(rx.buffer_list);
         uart_tx_nl();
+#endif
         buffer->next = rx.buffer_list->next;
         rx.buffer_list->next = buffer;
     }
     else
     {
+#ifdef DEBUG
         uart_tx_string("addrxbuf ");
         uart_tx_hex8(buffer);
         uart_tx_nl();
+#endif
         buffer->next = NULL;
         rx.buffer_list = buffer;
     }
@@ -377,11 +385,13 @@ extern void ethernet_poll( void )
         NOP;NOP;NOP;NOP;NOP;NOP; // cmd and data are RF writes, so delay, and give a chance for the data to get back
         GIP_POST_RXD_0(rx_s); // get status of erx status fifo
         GIP_POST_RXD_0(tx_s);
+#ifdef DEBUG
         uart_tx_string("statuses ");
         uart_tx_hex8(rx_s );
         uart_tx_string(":");
         uart_tx_hex8(tx_s );
         uart_tx_nl();
+#endif
         if ((rx_s&0x80000000)==0) // if not empty
         {
             handle_rx_status_fifo();
@@ -402,24 +412,24 @@ extern void ethernet_init( void )
     GIP_POSTIF_CFG( 1, 0x00001000 ); // Tx fifo 0 config base 0, end 16, read 0, write 0
 
     // egress fifo sram (2kx32) split as ss txd 32, sscmd 32, etxcmd 32, other 32, etx 1920 (rest)
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 1,    0,   31, 3 );  // ss txd
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 2,   32,   63, 3 );  // ss cmd
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 0,   64,   95, 3 );  // etx cmd
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 1,   96,  127, 3 );  // uart0 cmd
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 3,   96,  127, 3 );  // unused
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 2,   96,  127, 3 );  // unused
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 3,   96,  127, 3 );  // unused
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 0, 1920, 2047, 3 ); // etx data
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 1,    0,   31, 3 );  // ss txd - note status size and base are in entries, not words
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 2, 32/2,   15, 3 );  // ss cmd
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 0, 64/2,   15, 3 );  // etx cmd
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 1, 96/2,   15, 3 );  // uart0 cmd
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 3, 96/2,   15, 3 );  // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 2,   96,   31, 3 );  // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 3,   96,   31, 3 );  // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 0,  128, 1919, 3 ); // etx data
 
     // ingress fifo sram (2kx32) split as ss rxd 32, ss status 32, etx status 32, erx status 32, erx 1920 (rest)
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 1,    0,   31, 3 ); // ss rx data
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 3,   32,   63, 3 ); // ss status
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 1,   64,   95, 3 ); // etx status
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 0,   96,  127, 3 ); // erx status
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 2,   96,  127, 3 ); // unused
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 2,   96,  127, 3 ); // unused
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 3,   96,  127, 3 ); // unused
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 0,  128, 2047, 3 ); // erx data
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 1,    0,   31, 3 ); // ss rx data - note status size and base are in entries, not words
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 3, 32/2,   15, 3 ); // ss status
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 1, 64/2,   15, 3 ); // etx status
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 0, 96/2,   15, 3 ); // erx status
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 2, 96/2,   15, 3 ); // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 2,   96,   31, 3 ); // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 3,   96,   31, 3 ); // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 0,  128, 1919, 3 ); // erx data
 
     // set auto-neg to 10FD only
     // clock MDC 32 times with MDIO high, then send command

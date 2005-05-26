@@ -103,7 +103,7 @@ extern module gip_core_plus( clock int_clock,
 extern module gip_simple_boot_rom( clock rom_clock,
                                    input bit rom_reset,
                                    input bit rom_read,
-                                   input bit[11] rom_address,
+                                   input bit[12] rom_address,
                                    output bit[32] rom_read_data )
 {
     timing to rising clock rom_clock rom_reset, rom_read, rom_address;
@@ -357,11 +357,11 @@ module gip_system( clock drm_clock,
             gip_simple_boot_rom boot_rom( rom_clock <- int_clock,
                                           rom_reset <= int_reset,
                                           rom_read <= rom_next_access && gip_mem_read,
-                                          rom_address <= gip_mem_address[11;2],
+                                          rom_address <= gip_mem_address[12;2],
                                           rom_read_data => rom_read_data );
 
-            memory_s_sp_2048_x_4b8 shared_sram( sram_clock <- int_clock,
-                                                sram_address <= gip_mem_address[11;2],
+            memory_s_sp_4096_x_4b8 shared_sram( sram_clock <- int_clock,
+                                                sram_address <= gip_mem_address[12;2],
                                                 sram_read <= sram_next_access && gip_mem_read,
                                                 sram_write <= sram_next_access && gip_mem_write,
                                                 sram_byte_enables <= gip_mem_write_byte_enables,

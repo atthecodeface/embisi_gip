@@ -5,11 +5,15 @@
 #include "postbus.h"
 #include "../common/wrapper.h"
 #include "../drivers/ethernet.h"
+#include "../drivers/uart.h"
+#include "../drivers/flash.h"
 #include "memory.h"
+#include "cmd.h"
 
 /*a Defines
  */
 #define BUFFER_SIZE (2048)
+#define CSUM32(csum,ptr) {csum+=(ptr[0]>>16)+(ptr[0]&0xffff);ptr++;}
 
 /*a Types
  */
@@ -27,15 +31,174 @@ typedef struct t_eth_data
 static t_eth_buffer buffers[16];
 static t_eth_data eth;
 
+/*a Command functions
+ */
+/*f udp_reply
+ */
+static void udp_reply( t_eth_buffer *buffer, unsigned int byte_length )
+{
+    unsigned int *data;
+    unsigned int udp_src_port;
+    unsigned int udp_byte_length;
+    unsigned int csum, *csum_data;
+    int i;
+
+    udp_byte_length = byte_length+8;
+    data = (unsigned int *)(buffer->data);
+    data[0] = (data[1]<<16) | (data[2]>>16);
+    data[1] = (data[2]<<16) | eth.hwaddress_high16;
+    data[2] = eth.hwaddress_low32;
+    udp_src_port = data[8]&0xffff;
+    data[4] = ((udp_byte_length+20)<<16) | (data[4]&0xffff); // length
+    data[5] = 0x40004011; // reset TTL, fragment, and protocol (UDP)
+    data[8] = (data[7]&0xffff0000) | (data[9]>>16); // new source port, bottom of dest IP
+    data[7] = (data[6]&0xffff) | (eth.ip_address<<16); // top of dest IP, bottom of src IP
+    data[6] = (eth.ip_address>>16); // top of src IP; note hdr csum cleared
+    data[9] = (udp_src_port<<16) | udp_byte_length;
+    data[10] = data[10]&0xffff; // clear UDP csum
+    // now do both csums
+    csum = data[3]&0xffff;
+    csum_data = data+4;
+    CSUM32( csum, csum_data ); // data[4]
+    CSUM32( csum, csum_data ); // data[5]
+    CSUM32( csum, csum_data ); // data[6]
+    CSUM32( csum, csum_data ); // data[7]
+    csum = csum+(data[8]>>16);
+    csum = (csum>>16)+(csum&0xffff);
+    csum = (csum>>16)+(csum&0xffff);
+    data[6] = ((~csum)<<16) | (data[6]&0xffff);
+
+    csum = data[6]&0xffff; // source IP low to start
+    csum += 0x11; // protocol in pseudo header
+    csum += udp_byte_length; // length in pseudo header
+    csum_data = data+7;
+    for (i=0; i<(1+udp_byte_length/4); i++) // do 1+(byte_length/4) words from data[7] - for zero data (byte_length==8) this means data[7] thru data[9] - we still need 2 more bytes!
+    {
+        CSUM32( csum , csum_data );
+    }
+    // byte length=8/12/14 implies 2 more bytes; 9/13/17 implies 3 more bytes, 10 implies 4 more bytes, 11 implies 5 more bytes
+    csum += (csum_data[0]>>16);
+    switch (udp_byte_length&3)
+    {
+    case 0:
+        break;
+    case 1:
+        csum += csum_data[0]&0xff00;
+        break;
+    case 2:
+        csum += csum_data[0]&0xffff;
+        break;
+    case 3:
+        csum += csum_data[0]&0xffff;
+        csum += (csum_data[1]>>16)&0xff00;
+        break;
+    }
+    csum = (csum>>16)+(csum&0xffff);
+    csum = (csum>>16)+(csum&0xffff);
+    csum = ~csum;
+    if (csum==0) csum=0xffff;
+    data[10] = (csum<<16) | data[10];
+
+    buffer->buffer_size = 34+udp_byte_length; // 20 for IP header, 14 for eth header
+    if (buffer->buffer_size<64)
+    {
+        buffer->buffer_size = 64;
+    }
+    ethernet_tx_buffer( buffer );
+}
+
+/*f mon_ethernet_cmd_done
+  we should have a result packet that we can just turn round
+  need to put src eth address as dest
+  need to put our eth address as source
+  need to swap IP addresses
+  need to swap IP ports
+  need to calculate the checksum
+  then send the packet
+ */
+extern void mon_ethernet_cmd_done( void *handle, int space_remaining )
+{
+    t_eth_buffer *buffer;
+    unsigned int byte_length;
+    buffer = (t_eth_buffer *)handle;
+    byte_length = 1200-space_remaining;
+
+    udp_reply( buffer, byte_length);
+}
+
+/*a Memory operations
+ */
+static void mem_obey( t_eth_buffer *buffer, char *data, int pkt_length )
+{
+    unsigned int type;
+    unsigned int address;
+    unsigned int length;
+    int i;
+
+    type = data[0] | (data[1]<<8);
+    address = data[2] | (data[3]<<8) | (data[4]<<16) | (data[5]<<24);
+    length = data[6] | (data[7]<<8) | (data[8]<<16) | (data[9]<<24);
+    switch (type)
+    {
+    case 0: // read memory
+        data[1] = 1;
+        for (i=0; (i<length) && (i<1200); i++)
+        {
+            data[10+i] = ((char *)address)[i];
+        }
+        pkt_length = 10+i;
+        break;
+    case 1: // write and verify memory
+        data[1] = 1;
+        for (i=0; (i<length) && (i<pkt_length-10); i++)
+        {
+            ((volatile char *)address)[i] = data[10+i];
+            data[10+i] = ((volatile char *)address)[i];
+        }
+        pkt_length = 10+i;
+        break;
+    case 8: // read flash
+        data[1] = 1;
+        if (!flash_read_buffer( address, data+10, length>(pkt_length-10)?(pkt_length-10):length )) data[0] = 15;
+        break;
+    case 9: // write and verify flash
+        data[1] = 1;
+        if (!flash_write_buffer( address, data+10, length>(pkt_length-10)?(pkt_length-10):length )) data[0] = 15;
+        if (!flash_read_buffer( address, data+10, length>(pkt_length-10)?(pkt_length-10):length )) data[0] = 15;
+        break;
+    case 10: // erase flash
+        data[1] = 1;
+        if (!flash_erase_block( address )) data[0] = 15;
+        break;
+    case 16: // load registers and run
+    {
+        unsigned int regs[16];
+        data[1] = 1;
+        for (i=0; (i<16) && ((i*4)<pkt_length-10); i++)
+        {
+            regs[i] = data[10+i] | (data[11+i]<<8) | (data[12+i]<<16) | (data[13+i]<<24);
+        }
+        udp_reply( buffer, pkt_length );
+        // wait for a short while then load the registers
+        for (i=1; i<10000; i++) NOP;
+         __asm__ volatile (" mov r0, %0 \n ldmia r0, {r0-pc} \n movnv r0, r0 \n movnv r0, r0 \n movnv r0, r0" : : "r" (regs) );
+        break;
+    }
+    }
+    udp_reply( buffer, pkt_length );
+}
+
 /*a Ethernet handling functions
  */
 /*f tx_callback
  */
 static void tx_callback( void *handle, t_eth_buffer *buffer )
 {
-    uart_tx_string( "txcallback ");
-    uart_tx_hex8(buffer);
+#ifdef DEBUG
+    uart_tx_string( "txcb ");
+    uart_tx_hex8((unsigned int)buffer);
     uart_tx_nl();
+#endif
     buffer->buffer_size = BUFFER_SIZE;
     ethernet_add_rx_buffer( buffer );
 }
@@ -67,9 +230,11 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
     unsigned int *data;
     int accept;
 
+#ifdef DEBUG
     uart_tx_string( "rxcallback ");
-    uart_tx_hex8(buffer);
+    uart_tx_hex8((unsigned int)buffer);
     uart_tx_nl();
+#endif
 
     /*b check for our address or broadcast address;
      */
@@ -167,7 +332,6 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
          ((data[7]&0xffff)==(eth.ip_address>>16)) && // dest IP
          ((data[8]>>16)==(eth.ip_address&0xffff)) )
     {
-        uart_tx_string( "csum?\r\n");
         accept = 0x4500+(data[4]>>16)+(data[4]&0xffff)+(data[5]>>16)+(data[5]&0xffff)+(data[6]>>16)+(data[6]&0xffff)+(data[7]>>16)+(data[7]&0xffff)+(data[8]>>16);
         accept = (accept&0xffff)+(accept>>16);
         accept = (accept&0xffff)+(accept>>16);
@@ -210,13 +374,17 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
         return;
     }
 
-    /*b UDP packet?
+    /*b UDP packet? (RFC768)
       // source port 1234 (0x4d2), dest port 2345 (0x929
     0000  12 34 56 78 9a bc 00 05 5d 49 31 1e 08 00 45 00   .4Vx....]I1...E.
     0010  00 3a 6a 9a 40 00 40 11 f4 10 0a 01 64 01 0a 01   .:j.@.@.....d...
     0020  64 05 04 d2 09 29 00 26 e6 17 54 68 69 73 20 69   d....).&..This i
     0030  73 20 73 6f 6d 65 20 74 65 78 74 20 49 20 61 6d   s some text I am
     0040  20 73 65 6e 64 69 6e 67                            sending
+
+    0000  12 34 56 78 9a bc 00 05 5d 49 31 1e 08 00 45 00   .4Vx....]I1...E.
+    0010  00 1c e8 85 40 00 40 11 76 43 0a 01 64 01 0a 01   ....@.@.vC..d...
+    0020  64 05 04 d2 09 29 00 08 15 db                     d....)....
 
     0: 12345678
     1: 9abc0005
@@ -231,19 +399,76 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
     10: e6175468 CsumData
     11: 69732069 UDP payload...
 
+    9: 09290008
+    10: 15db
+
     04d2   0929  0026    e617
+    04d2   0929  0008    15db
     src    dst   length  csum
      */
+    int udp_byte_length;
+    udp_byte_length = data[9]&0xffff;
     if ( ((data[5]&0xff)==0x11) && // UDP
-         ((data[9]&0xffff)==((data[4]>>16)+20)) ) // lengths match
+         ((udp_byte_length+20)==(data[4]>>16)) ) // lengths match
     {
         unsigned int csum;
-        csum = 0;// source and dest IP, 0x0011 (protocol), (udp length+12) are pseudo-header; then all the data, which (if odd) is right-padded with a zero byte
+        unsigned int *csum_data;
+        int i;
+        // source and dest IP, 0x0011 (protocol), udp length are pseudo-header; then all the data, which (if odd) is right-padded with a zero byte; if csum==0, then send ffff
+        csum = data[6]&0xffff; // source IP low to start
+        csum += 0x11; // protocol in pseudo header
+        csum += udp_byte_length; // length in pseudo header
+        csum_data = data+7;
+        for (i=0; i<(1+udp_byte_length/4); i++) // do 1+(byte_length/4) words from data[7] - for zero data (byte_length==8) this means data[7] thru data[9] - we still need 2 more bytes!
+        {
+            CSUM32( csum , csum_data );
+        }
+        // byte length=8/12/14 implies 2 more bytes; 9/13/17 implies 3 more bytes, 10 implies 4 more bytes, 11 implies 5 more bytes
+        csum += (csum_data[0]>>16);
+        switch (udp_byte_length&3)
+        {
+        case 0:
+            break;
+        case 1:
+            csum += csum_data[0]&0xff00;
+            break;
+        case 2:
+            csum += csum_data[0]&0xffff;
+            break;
+        case 3:
+            csum += csum_data[0]&0xffff;
+            csum += (csum_data[1]>>16)&0xff00;
+            break;
+        }
+        csum = (csum>>16)+(csum&0xffff);
+        csum = (csum>>16)+(csum&0xffff);
+        if (csum==0xffff) // csum okay!
+        {
+            if ((data[9]>>16) == 0x929)
+            {
+                uart_tx_string_nl( "c");
+                cmd_obey( buffer, ((char *)data)+42, udp_byte_length-8, 1200 );
+                return;
+            }
+            if ((data[9]>>16) == 0x92a)
+            {
+                uart_tx_string_nl( "m");
+                mem_obey( buffer, ((char *)data)+42, udp_byte_length-8 );
+                return;
+            }
+            buffer->buffer_size = BUFFER_SIZE;
+            ethernet_add_rx_buffer( buffer );
+            return;
+        }
+        uart_tx_string( "bad udp\r\n");
+        buffer->buffer_size = rxed_byte_length;
+        ethernet_tx_buffer( buffer );
+        return;
     }
 
     /*b Done
      */
-    uart_tx_string( "done\r\n");
+    uart_tx_string_nl( "unknown");
     buffer->buffer_size = BUFFER_SIZE;
     ethernet_add_rx_buffer( buffer );
 }

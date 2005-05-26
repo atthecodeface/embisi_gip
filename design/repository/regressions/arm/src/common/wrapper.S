@@ -47,7 +47,7 @@ wrapper_entry_point:
 //    mov r8, r9
 #endif
     
-#ifndef TEST_MEM_RD    
+#ifdef TEST_MEM_RD    
     mov r8, #0x2100
     orr r8, r8, #0x96
     orr r8, r8, #0x16000000

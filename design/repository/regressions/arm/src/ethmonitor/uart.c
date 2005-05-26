@@ -2,6 +2,8 @@
  */
 #include "../common/wrapper.h"
 #include "../drivers/uart.h"
+#include "cmd.h"
+#include <stdlib.h> // for NULL
 
 /*a Defines
  */
@@ -83,6 +85,7 @@ extern void mon_uart_poll( void )
      */
     if (uart.state==fsm_handle_command)
     {
+        cmd_obey( NULL, uart.buffer, uart.length, -1 );
         uart.state = fsm_pre_prompt;
     }
 }

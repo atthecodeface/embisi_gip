@@ -6,6 +6,7 @@
 #include "ethernet.h"
 #include "uart.h"
 #include "memory.h"
+#include "cmd.h"
 
 /*a Defines
  */
@@ -20,6 +21,8 @@ extern int test_entry_point()
 
     mon_ethernet_init();
     mon_uart_init();
+    extra_init();
+    cmd_init(); // after extra_init()
     while (1)
     {
         mon_ethernet_poll();

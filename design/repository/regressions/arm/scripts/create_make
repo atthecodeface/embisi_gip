@@ -59,6 +59,7 @@ print make  "TEST_BINARIES := \\\n";
 foreach $i (@tests) {
     ($test, $type, $objs) = split(/ /,$i);
     print make  "    bin/$test.$type.mif \\\n";
+    print make  "    bin/$test.$type.coe \\\n";
 }
 print make  " \n";
 
@@ -66,7 +67,7 @@ foreach $asm (@asms) {
     next if ($asm=~/^\s*$/);
     ($dir, $file) = split(/ /,$asm);
     print make "obj/$dir.$file.o: src/$dir/$file.S\n";
-    print make "\t\${ARM_CC} -c src/$dir/$file.S -o obj/$dir.$file.o\n";
+    print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/$dir/$file.S -o obj/$dir.$file.o\n";
     print make "\n";
 }
 
@@ -102,7 +103,10 @@ foreach $i (@tests) {
     print make "\n";
     print make "bin/$test.$type.mif: bin/$test.$type.bin\n";
     print make "\t\${BIN_TO_MIF} -f bin/$test.$type.bin -o bin/$test.$type.mif\n";
-    print make "\t\${MIF_TO_CDL} -f bin/$test.$type.mif -o bin/$test.$type.cdl\n";
+    print make "\t\${MIF_TO_CDL} -a 12 -f bin/$test.$type.mif -o bin/$test.$type.cdl\n";
+    print make "\n";
+    print make "bin/$test.$type.coe: bin/$test.$type.bin\n";
+    print make "\t\${BIN_TO_MIF} -c -f bin/$test.$type.bin -o bin/$test.$type.coe\n";
     print make "\n";
 
 }

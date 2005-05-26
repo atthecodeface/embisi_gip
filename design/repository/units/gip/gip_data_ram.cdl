@@ -63,6 +63,7 @@ module gip_data_ram( clock gip_clock,
     
     /*b SRAM interface
      */
+    comb bit[2] endianned_address;
     clocked bit sram_not_in_use = 0;
     clocked bit sram_read_not_write = 0;
     clocked bit[4] sram_write_byte_enables = 0;
@@ -76,6 +77,14 @@ module gip_data_ram( clock gip_clock,
     sram_interface "SRAM interface":
         {
             sram_not_in_use <= 1;
+            if (0)
+            {
+                endianned_address = alu_mem_address[2;0];
+            }
+            else
+            {
+                endianned_address = ~alu_mem_address[2;0];
+            }
             full_switch (alu_mem_op)
                 {
                 case gip_mem_op_none:
@@ -97,7 +106,7 @@ module gip_data_ram( clock gip_clock,
                     sram_not_in_use <= 0;
                     sram_read_not_write <= 0;
                     sram_write_byte_enables <= 0;
-                    sram_write_byte_enables[alu_mem_address[2;0]] <= 1; // little endian
+                    sram_write_byte_enables[endianned_address] <= 1;
                     sram_write_data[8;0] <= alu_mem_write_data[8;0];
                     sram_write_data[8;8] <= alu_mem_write_data[8;0];
                     sram_write_data[8;16] <= alu_mem_write_data[8;0];
@@ -114,12 +123,12 @@ module gip_data_ram( clock gip_clock,
                     sram_data_op <= sram_data_op_word;
                     if (alu_mem_op==gip_mem_op_load_byte)
                     {
-                        full_switch (alu_mem_address[2;0])
+                        full_switch (endianned_address)
                             {
-                            case 0: {sram_data_op <= sram_data_op_byte_0; } // little endian
-                            case 1: {sram_data_op <= sram_data_op_byte_1; } // little endian
-                            case 2: {sram_data_op <= sram_data_op_byte_2; } // little endian
-                            case 3: {sram_data_op <= sram_data_op_byte_3; } // little endian
+                            case 0: {sram_data_op <= sram_data_op_byte_0; }
+                            case 1: {sram_data_op <= sram_data_op_byte_1; }
+                            case 2: {sram_data_op <= sram_data_op_byte_2; }
+                            case 3: {sram_data_op <= sram_data_op_byte_3; }
                             }
                     }
                 }

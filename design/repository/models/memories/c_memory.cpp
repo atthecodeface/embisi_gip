@@ -150,6 +150,28 @@ static t_sl_error_level memory_ss_dp_2048_x_32_instance_fn( c_engine *engine, vo
     return error_level_okay;
 }
 
+/*f memory_s_sp_4096_x_32_instance_fn
+*/
+static t_sl_error_level memory_s_sp_4096_x_32_instance_fn( c_engine *engine, void *engine_handle )
+{
+    c_memory *mod;
+    mod = new c_memory( engine, engine_handle, 4096, 32, 1, 0, 1, 0, 0); // 4096 entries of 32 bytes without byte enables; 1 shared r/w, 0 r, 0w
+    if (!mod)
+        return error_level_fatal;
+    return error_level_okay;
+}
+
+/*f memory_s_sp_4096_x_4b8_instance_fn
+*/
+static t_sl_error_level memory_s_sp_4096_x_4b8_instance_fn( c_engine *engine, void *engine_handle )
+{
+    c_memory *mod;
+    mod = new c_memory( engine, engine_handle, 4096, 32, 1, 4, 1, 0, 0); // 4096 entries of 32 bytes with 4 byte enables; 1 shared r/w, 0 r, 0w
+    if (!mod)
+        return error_level_fatal;
+    return error_level_okay;
+}
+
 /*f memory_delete_fn - simple callback wrapper for the main method
 */
 static t_sl_error_level memory_delete_fn( void *handle )
@@ -463,6 +485,8 @@ extern void c_memory__init( void )
     se_external_module_register( 1, "memory_s_sp_2048_x_4b8", memory_s_sp_2048_x_4b8_instance_fn );
     se_external_module_register( 1, "memory_s_dp_2048_x_32", memory_s_dp_2048_x_32_instance_fn );
     se_external_module_register( 1, "memory_ss_dp_2048_x_32", memory_ss_dp_2048_x_32_instance_fn );
+    se_external_module_register( 1, "memory_s_sp_4096_x_32", memory_s_sp_4096_x_32_instance_fn );
+    se_external_module_register( 1, "memory_s_sp_4096_x_4b8", memory_s_sp_4096_x_4b8_instance_fn );
 }
 
 /*a Scripting support code

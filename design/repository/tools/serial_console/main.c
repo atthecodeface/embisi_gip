@@ -100,6 +100,7 @@ WINDOW *text_window;
 int mode;
 int kbd_fd, serial_fd;
 static char cmd[256];
+static int target_little_endian;
 
 /*v cmds
  */
@@ -118,6 +119,7 @@ static struct option long_options[] =
 {
      { "filename", 1, NULL, 'f' },
      { "baud", 1, NULL, 'b' },
+     { "bigendian", 0, NULL, 'B' },
      { "verbose", 0, NULL, 'v' },
 };
 
@@ -372,7 +374,7 @@ static void cmd_exec( char *cmd, char *cmd_end )
                     download_error = !flash_download_wait();
                 }
                 break;
-            case ef_cmd_flash_write_string:
+            case ef_cmd_flash_write_string: // copy string to flash, byte 0 going in lowest byte in flash
                 if (flash_address==0xffffffff)
                 {
                     unset_address_error = 1;
@@ -403,7 +405,7 @@ static void cmd_exec( char *cmd, char *cmd_end )
                     }
                 }
                 break;
-            case ef_cmd_flash_write_bytes:
+            case ef_cmd_flash_write_bytes: // copy bytes to flash, byte 0 going in lowest byte in flash
                 if (flash_address==0xffffffff)
                 {
                     unset_address_error = 1;
@@ -424,7 +426,7 @@ static void cmd_exec( char *cmd, char *cmd_end )
                     download_error = !flash_download_wait();
                 }
                 break;
-            case ef_cmd_flash_write_object_string:
+            case ef_cmd_flash_write_object_string: // copy string to flash, byte 0 going in lowest byte in flash
                 if (flash_address==0xffffffff)
                 {
                     unset_address_error = 1;
@@ -435,7 +437,7 @@ static void cmd_exec( char *cmd, char *cmd_end )
                     download_error = !flash_download_wait();
                 }
                 break;
-            case ef_cmd_flash_write_object_regs:
+            case ef_cmd_flash_write_object_regs: // copy regs: target endianness dependent
                 if (flash_address==0xffffffff)
                 {
                     unset_address_error = 1;
@@ -445,16 +447,26 @@ static void cmd_exec( char *cmd, char *cmd_end )
                     unsigned char buffer[256];
                     for (i=0; i<12; i++)
                     {
-                        buffer[i*4+0] = (ef_args[i].integer>> 0)&0xff;
-                        buffer[i*4+1] = (ef_args[i].integer>> 8)&0xff;
-                        buffer[i*4+2] = (ef_args[i].integer>>16)&0xff;
-                        buffer[i*4+3] = (ef_args[i].integer>>24)&0xff;
+                        if (target_little_endian)
+                        {
+                            buffer[i*4+0] = (ef_args[i].integer>> 0)&0xff;
+                            buffer[i*4+1] = (ef_args[i].integer>> 8)&0xff;
+                            buffer[i*4+2] = (ef_args[i].integer>>16)&0xff;
+                            buffer[i*4+3] = (ef_args[i].integer>>24)&0xff;
+                        }
+                        else
+                        {
+                            buffer[i*4+0] = (ef_args[i].integer>>24)&0xff;
+                            buffer[i*4+1] = (ef_args[i].integer>>16)&0xff;
+                            buffer[i*4+2] = (ef_args[i].integer>> 8)&0xff;
+                            buffer[i*4+3] = (ef_args[i].integer>> 0)&0xff;
+                        }
                     }
                     flash_download_command_object( obj_type_regs, buffer, 48 );
                     download_error = !flash_download_wait();
                 }
                 break;
-            case ef_cmd_flash_write_object_mif:
+            case ef_cmd_flash_write_object_mif: // copy words of data from a MIF file: target endianness dependent
                 if (flash_address==0xffffffff)
                 {
                     unset_address_error = 1;
@@ -465,10 +477,23 @@ static void cmd_exec( char *cmd, char *cmd_end )
                     unsigned char buffer[4];
                     if (sl_mif_allocate_and_read_mif_file( error, ef_args[1].p.string, "", ef_args[2].integer, ef_args[3].integer, 32, 0, 1, 0, &(int *)data, NULL, NULL )==error_level_okay)
                     {
-                        buffer[0] = (ef_args[0].integer>> 0)&0xff;
+                        buffer[0] = (ef_args[0].integer>> 0)&0xff; // hmm - the address to put it at, always sent little_endian
                         buffer[1] = (ef_args[0].integer>> 8)&0xff;
                         buffer[2] = (ef_args[0].integer>>16)&0xff;
                         buffer[3] = (ef_args[0].integer>>24)&0xff;
+                        if (!target_little_endian) // endian swap the data
+                        {
+                            int i;
+                            unsigned int d;
+                            for (i=0; i<ef_args[3].integer/4; i++)
+                            {
+                                d = ((unsigned int *)data)[i];
+                                data[i*4+0] = d>>24;
+                                data[i*4+1] = d>>16;
+                                data[i*4+2] = d>>8;
+                                data[i*4+3] = d>>0;
+                            }
+                        }
                         flash_download_command_object( obj_type_data, buffer, 4, data, ef_args[3].integer );
                         download_error = !flash_download_wait();
                     }
@@ -664,6 +689,7 @@ extern int main (int argc, char **argv)
      filename = "/dev/ttyS0";
      verbose = 0;
      baud = 9600;
+     target_little_endian = 1;
      done = 0;
      while (!done)
      {
@@ -677,6 +703,9 @@ extern int main (int argc, char **argv)
                break;
           case 'b':
                sscanf( optarg, "%d", &baud );
+               break;
+          case 'B':
+               target_little_endian = 0;
                break;
           case 'v':
                verbose = 1;

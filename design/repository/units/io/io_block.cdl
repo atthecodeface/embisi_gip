@@ -40,6 +40,16 @@ typedef enum [2]
     postbus_src_read_data_source_egress_sram,
 } t_postbus_src_read_data_source;
 
+/*t t_io_port_config
+ */
+typedef struct
+{
+    bit in_reset; // if 1, inputs are ignored from the port - also this signal goes to the port as a reset signal
+    bit[2] fifo; // fifos to use for this port
+    bit little_endian; // if 1 then network data FIFO data is byte swapped, as it network interfaces are assumed to be byte-wise and use/fill data words in a big endian manner
+    bit[2] config; // config for the interface itself
+} t_io_port_config;
+
 /*a io_block module
  */
 module io_block( clock int_clock,
@@ -168,7 +178,7 @@ module io_block( clock int_clock,
     net bit ssdo;
     net bit ssdo_oe;
     net bit[8] sscs;
-    
+
     /*b Ingress arbiter and controller wiring
      */
     comb bit[4] status_req_bus;
@@ -323,6 +333,10 @@ module io_block( clock int_clock,
 
     comb bit[io_baud_rate_divider_size] cfg_baud_addition_value;
     comb bit[io_baud_rate_divider_size] cfg_baud_subtraction_value;
+
+    /*b Configuration for the possible ports
+     */
+    clocked t_io_port_config[8] io_port_configs = { {in_reset=1, fifo=0, little_endian=1, config=0} };
 
     /*b Analyzer signals
      */

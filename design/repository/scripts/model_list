@@ -24,9 +24,9 @@ cdl test_benches/gip gip_system inc:headers/cdl
 cdl test_benches/gip gip_core_plus inc:headers/cdl
 cdl test_benches/gip apb_devices inc:headers/cdl
 #cdl test_benches/gip pass_rom rmn:cdl_rom=gip_simple_boot_rom
-#cdl test_benches/gip uart_rom rmn:cdl_rom=gip_simple_boot_rom
+cdl test_benches/gip uart_rom rmn:cdl_rom=gip_simple_boot_rom
 #cdl test_benches/gip monitor_rom rmn:cdl_rom=gip_simple_boot_rom
-cdl test_benches/gip ethernet_rom rmn:cdl_rom=gip_simple_boot_rom
+#cdl test_benches/gip ethernet_rom rmn:cdl_rom=gip_simple_boot_rom
 #cdl test_benches/gip scheduler_rom rmn:cdl_rom=gip_simple_boot_rom
 
 cdl units/analyzer    analyzer                    inc:headers/cdl

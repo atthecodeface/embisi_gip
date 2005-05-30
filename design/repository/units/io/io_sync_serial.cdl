@@ -15,6 +15,14 @@ include "io_sync_serial.h"
 
 /*a Types
  */
+/*t t_sync
+ */
+typedef struct
+{
+    bit metastable;
+    bit stable;
+} t_sync;
+
 /*t t_serial_fsm
  */
 typedef fsm {
@@ -153,6 +161,10 @@ SPI modes 2 and 3 (CPOL=1) use the clock inverted compared to SPI modes 0 and 1
     default clock int_clock;
     default reset int_reset;
 
+    /*b Sync for status pins
+     */
+    clocked t_sync sync_cmd_fifo_empty = {metastable=0, stable=0};
+
     /*b State for pins
      */
     clocked bit[2] sscl=0;
@@ -219,6 +231,7 @@ SPI modes 2 and 3 (CPOL=1) use the clock inverted compared to SPI modes 0 and 1
      */
     serial_fsm "Serial FSM":
         {
+            sync_cmd_fifo_empty <= { metastable=cmd_fifo_empty, stable=metastable };
             status_fifo_data = cmd_fifo_data;
             full_switch (serial_fsm_state)
                 {
@@ -228,7 +241,7 @@ SPI modes 2 and 3 (CPOL=1) use the clock inverted compared to SPI modes 0 and 1
                     sscs <= 0;
                     ssdo_oe <= 0;
 
-                    if (!cmd_fifo_empty)
+                    if (!sync_cmd_fifo_empty.stable)
                     {
                         clock_divide <= 16; // We will wait 16 ticks for the data to be valid; this will give a max input clock frequency of ? compared to the internal
                         tx_data_fifo_toggle <= ~tx_data_fifo_toggle; // get first word of data; length must not be zero :-)

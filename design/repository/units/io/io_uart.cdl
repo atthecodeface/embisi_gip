@@ -16,6 +16,14 @@ include "io_uart.h"
 
 /*a Types
  */
+/*t t_sync
+ */
+typedef struct
+{
+    bit metastable;
+    bit stable;
+} t_sync;
+
 /*t t_tx_data_state
  */
 typedef fsm {
@@ -86,6 +94,7 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
 
     /*b Command fsm state
      */
+    clocked t_sync sync_cmd_fifo_empty = {metastable=0, stable=0};
     clocked t_cmd_state cmd_state=cmd_state_idle;
     clocked bit cmd_fifo_toggle = 0;
     clocked bit[2] cmd_count=0;
@@ -413,13 +422,13 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
      */
     cmd_state_fsm "Command handling state machine":
         {
+            sync_cmd_fifo_empty <= { metastable=cmd_fifo_empty, stable=metastable };
             tx_pend_start = 0;
-// 11pm Weds disabling this            tx_pend_start = 1; //GJS
             full_switch (cmd_state)
                 {
                 case cmd_state_idle: // tx_pending must be zero for us to be here
                 {
-                    if (!cmd_fifo_empty)
+                    if (!sync_cmd_fifo_empty.stable)
                     {
                         if (cmd_fifo_data[io_uart_cmd_bit_tx_req])
                         {

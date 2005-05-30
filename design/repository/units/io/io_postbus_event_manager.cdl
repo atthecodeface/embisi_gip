@@ -86,67 +86,81 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
     clocked t_event[number_events] events = { {fifo=3, cmd_status=0, ingress=1, empty_not_watermark=1, level=0, pending=0, valid=0} }; // events to watch for
     clocked t_postbus_cmd[number_events] event_cmds = { {op=post_src_cmd_op_read_data, length=0, header_route_number=0, header_target=0} }; // cmds to perform on those events
 
-    clocked bit[log_number_events] event_in_action = 0;
-    clocked bit event_presented=0;
+    comb bit event_required "Asserted if any event is pending";
+    comb bit[log_number_events] event_taken "Event to be taken in this cycle and put in to action, but only if it is pending";
+    clocked bit[log_number_events] event_in_action = 0 "Number of event currently being handled";
+    clocked bit event_presented=0 "Asserted if we are handling an event, i.e. presenting it to the command interface";
 
     events_to_commands "Handle events to generate commands":
         {
-            if (!event_presented)
+            if (post_src_cmd_ack)
             {
+                event_presented <= 0;
+            }
+            for (i; number_events)
+            {
+                if (events[i].ingress)
+                {
+                    if ( (events[i].cmd_status == ingress_event_from_status) &&
+                         (events[i].fifo == ingress_event_fifo) )
+                    {
+                        if (events[i].empty_not_watermark)
+                        {
+                            if ( (ingress_event_empty.event) &&
+                                 (events[i].level==ingress_event_empty.value) )
+                            {
+                                events[i].pending <= events[i].valid;
+                            }
+                        }
+                        else
+                        {
+                            if ( (ingress_event_watermark.event) &&
+                                 (events[i].level==ingress_event_watermark.value) )
+                            {
+                                events[i].pending <= events[i].valid;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if ( (events[i].cmd_status == egress_event_from_cmd) &&
+                         (events[i].fifo == egress_event_fifo) )
+                    {
+                        if (events[i].empty_not_watermark)
+                        {
+                            if ( (egress_event_empty.event) &&
+                                 (events[i].level==egress_event_empty.value) )
+                            {
+                                events[i].pending <= events[i].valid;
+                            }
+                        }
+                        else
+                        {
+                            if ( (egress_event_watermark.event) &&
+                                 (events[i].level==egress_event_watermark.value) )
+                            {
+                                events[i].pending <= events[i].valid;
+                            }
+                        }
+                    }
+                }
+
+                event_required = 0;
+                event_taken = 0;
                 for (i; number_events)
                 {
-                    if (events[i].ingress)
-                    {
-                        if ( (events[i].cmd_status == ingress_event_from_status) &&
-                             (events[i].fifo == ingress_event_fifo) )
-                        {
-                            if (events[i].empty_not_watermark)
-                            {
-                                if ( (ingress_event_empty.event) &&
-                                     (events[i].level==ingress_event_empty.value) )
-                                {
-                                    events[i].pending <= events[i].valid;
-                                }
-                            }
-                            else
-                            {
-                                if ( (ingress_event_watermark.event) &&
-                                     (events[i].level==ingress_event_watermark.value) )
-                                {
-                                    events[i].pending <= events[i].valid;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if ( (events[i].cmd_status == egress_event_from_cmd) &&
-                             (events[i].fifo == egress_event_fifo) )
-                        {
-                            if (events[i].empty_not_watermark)
-                            {
-                                if ( (egress_event_empty.event) &&
-                                     (events[i].level==egress_event_empty.value) )
-                                {
-                                    events[i].pending <= events[i].valid;
-                                }
-                            }
-                            else
-                            {
-                                if ( (egress_event_watermark.event) &&
-                                     (events[i].level==egress_event_watermark.value) )
-                                {
-                                    events[i].pending <= events[i].valid;
-                                }
-                            }
-                        }
-                    }
-
                     if (events[i].pending)
                     {
-                        event_in_action <= i;
-                        event_presented <= 1;
+                        event_taken = i;
+                        event_required = 1;
                     }
+                }
+                if (!event_presented && event_required)
+                {
+                    events[event_taken].pending <= 0;
+                    event_presented <= 1;
+                    event_in_action <= event_taken;
                 }
             }
 
@@ -160,11 +174,6 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
             post_src_cmd_hdr_details[postbus_command_route_size;postbus_command_route_start-1] = header_routes[0].route;//event_cmds[event_in_action].header_route_number
             post_src_cmd_hdr_details[postbus_command_target_size;postbus_command_target_start-1] = event_cmds[event_in_action].header_target;
 
-            if (post_src_cmd_ack)
-            {
-                events[event_in_action].pending <= 0;
-                event_presented <= 0;
-            }
 //        }
 //    
 //    handle_target "Handle target interface to write event and command file":
@@ -202,7 +211,8 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                 }
                 else
                 {
-                    if (!events[0].pending)
+                    if ( !events[0].pending &&
+                         !(event_presented && (event_in_action==0)) )
                     {
                         target_ack <= 1;
                         events[0].fifo <= target_write_address[2;0];

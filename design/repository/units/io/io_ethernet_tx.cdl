@@ -197,6 +197,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
 
     /*b State for I/O fifo interfaces
      */
+    clocked t_sync sync_cmd_fifo_empty = {regs=0, value=0};
     clocked t_io_tx_data_fifo_cmd         data_fifo_cmd = io_tx_data_fifo_cmd_read_fifo;
     clocked bit                           data_fifo_toggle = 0;
     comb t_data_fifo_op                   data_fifo_op;
@@ -714,6 +715,8 @@ For backoff we need a random number up to 10 bits long, with a long-term average
      */
     packet_fsm "Packet FSM state machine":
         {
+            sync_cmd_fifo_empty <= { regs=cmd_fifo_empty, value=regs };
+
             next_packet_fsm_state = packet_fsm_state;
             next_packet_fsm_counter = packet_fsm_counter+1;
             cmd_fifo_read = 0;
@@ -726,7 +729,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                 case packet_fsm_idle:
                 {
                     next_packet_fsm_counter = 0;
-                    if (!cmd_fifo_empty)
+                    if (!sync_cmd_fifo_empty.value)
                     {
                         next_packet_fsm_state = packet_fsm_reading_command;
                         retry_counter <= 0;

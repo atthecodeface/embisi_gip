@@ -8,6 +8,8 @@
 /*a Defines
  */
 #define DELAY(a) {int i;for (i=0; i<a; i++);}
+#define DEBUG
+
 
 /*a Types
  */
@@ -50,6 +52,13 @@ static void ethernet_tx_start( t_eth_buffer *buffer )
     unsigned int s;
     tx.buffer_in_transit = buffer;
 
+#ifdef DEBUG
+    uart_tx_string("-");
+//    uart_tx_hex2(buffer);
+//    uart_tx_string(":");
+//    uart_tx_hex2(buffer->buffer_size);
+    uart_tx_nl();
+#endif
     GIP_READ_AND_SET_SEMAPHORES( s, 1<<31 );
     for (i=j=0; i<(buffer->buffer_size+3)/4; i++) // i counts in words
     {
@@ -121,6 +130,12 @@ static void handle_tx_status_fifo( void )
 
     /*b A buffer should have been in transit - grab it, start another tx if required, then call the callback
      */
+#ifdef DEBUG
+    uart_tx_string("!");
+//    uart_tx_hex8(tx.buffer_in_transit);
+//    uart_tx_hex8(status);
+//    uart_tx_nl();
+#endif
     if (tx.buffer_in_transit)
     {
         buffer = tx.buffer_in_transit;
@@ -175,6 +190,9 @@ static void handle_rx_status_fifo( void )
     /*b Break out the status; request data from rx fifo
      */
 #ifdef DEBUG
+//    uart_tx_string("*");
+#endif
+#ifdef VDEBUG
     uart_tx_string("rxs ");
     uart_tx_hex8(status);
     uart_tx_string(":");
@@ -272,7 +290,7 @@ static void handle_rx_status_fifo( void )
     switch (reason)
     {
     case 0: // FCS ok
-#ifdef DEBUG
+#ifdef VDEBUG
         uart_tx_string("fcs_ok ");
         uart_tx_hex8(rx.current_data);
         uart_tx_string(":");
@@ -305,6 +323,10 @@ static void handle_rx_status_fifo( void )
  */
 extern void ethernet_tx_buffer( t_eth_buffer *buffer )
 {
+#ifdef DEBUG
+    uart_tx_string("+");
+//    uart_tx_hex2(buffer);
+#endif
     if (tx.buffer_in_transit)
     {
         if (tx.buffers_to_tx)
@@ -314,8 +336,8 @@ extern void ethernet_tx_buffer( t_eth_buffer *buffer )
         else
         {
             tx.buffers_to_tx = buffer;
-            tx.buffers_to_tx_tail = buffer;
         }
+        tx.buffers_to_tx_tail = buffer;
         buffer->next = NULL;
     }
     else
@@ -346,7 +368,7 @@ extern void ethernet_add_rx_buffer( t_eth_buffer *buffer )
 {
     if (rx.buffer_list) // we may be receiving in to this one!
     {
-#ifdef DEBUG
+#ifdef VDEBUG
         uart_tx_string("addrxbuf ");
         uart_tx_hex8(buffer);
         uart_tx_string(":");
@@ -358,7 +380,7 @@ extern void ethernet_add_rx_buffer( t_eth_buffer *buffer )
     }
     else
     {
-#ifdef DEBUG
+#ifdef VDEBUG
         uart_tx_string("addrxbuf ");
         uart_tx_hex8(buffer);
         uart_tx_nl();
@@ -373,19 +395,23 @@ extern void ethernet_add_rx_buffer( t_eth_buffer *buffer )
 extern void ethernet_poll( void )
 {
     unsigned int s;
-    GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<3 );
+    GIP_READ_AND_CLEAR_SEMAPHORES( s, (1<<3) | (1<<31) );
     if (s&(1<<3))
     { // status ready somewhere; read both FIFO status' for now
         unsigned int rx_s, tx_s;
         GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (0<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
         GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
-        GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (0<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
+        GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
         GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xd ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
-        NOP;NOP;NOP;NOP;NOP;NOP; // cmd and data are RF writes, so delay, and give a chance for the data to get back
-        NOP;NOP;NOP;NOP;NOP;NOP; // cmd and data are RF writes, so delay, and give a chance for the data to get back
+        while (1)
+        {
+            unsigned int s;
+            GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<31 );
+            if ((s>>31)&1) break;
+        }
         GIP_POST_RXD_0(rx_s); // get status of erx status fifo
         GIP_POST_RXD_0(tx_s);
-#ifdef DEBUG
+#ifdef VDEBUG
         uart_tx_string("statuses ");
         uart_tx_hex8(rx_s );
         uart_tx_string(":");

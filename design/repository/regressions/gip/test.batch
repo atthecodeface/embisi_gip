@@ -254,7 +254,8 @@ return
 
 #b gip_system_0
 gip_system_0:
-set run_length 160000
+#set run_length 160000
+set run_length 400000
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
 set_string vcd_filename "gip_system_0"

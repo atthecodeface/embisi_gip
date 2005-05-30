@@ -176,7 +176,7 @@ static void mem_obey( t_eth_buffer *buffer, char *data, int pkt_length )
         data[1] = 1;
         for (i=0; (i<16) && ((i*4)<pkt_length-10); i++)
         {
-            regs[i] = data[10+i] | (data[11+i]<<8) | (data[12+i]<<16) | (data[13+i]<<24);
+            regs[i] = data[10+i*4] | (data[11+i*4]<<8) | (data[12+i*4]<<16) | (data[13+i*4]<<24);
         }
         udp_reply( buffer, pkt_length );
         // wait for a short while then load the registers
@@ -460,7 +460,8 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
             ethernet_add_rx_buffer( buffer );
             return;
         }
-        uart_tx_string( "bad udp\r\n");
+        uart_tx_string( "badudp ");
+        uart_tx_hex8( csum );
         buffer->buffer_size = rxed_byte_length;
         ethernet_tx_buffer( buffer );
         return;

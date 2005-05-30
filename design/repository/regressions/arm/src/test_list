@@ -32,10 +32,11 @@ cc ethmonitor cmd_memory
 cc ethmonitor cmd_postbus
 cc ethmonitor cmd_extbus
 cc ethmonitor cmd_flash
+cc ethmonitor cmd_test
 cc ethmonitor cmd
 
 test rom  scheduler scheduler:scheduler common:support common:wrapper
-test rom  ethernet ethernet:ethernet drivers:ethernet common:support common:wrapper
+test rom  ethernet ethernet:ethernet drivers:ethernet drivers:uart common:support common:wrapper
 test rom  simple simple:simple common:support common:wrapper
 test rom  pass pass:pass common:wrapper common:support
 test rom  factorial factorial:factorial common:wrapper common:support
@@ -45,6 +46,8 @@ test rom  uart uart:uart common:wrapper common:support
 test rom  monitor monitor:monitor monitor:no_cmds monitor:flash monitor:uart common:wrapper common:support
 test dram monitor_full monitor:monitor monitor:all_cmds monitor:memory monitor:flash monitor:uart common:wrapper_download common:support_download
 test dram monitor_extra monitor:monitor monitor:bonus_cmds monitor:memory monitor:ethernet monitor:flash monitor:uart common:wrapper_download common:support_download
-test dram ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd common:wrapper_download common:support_download
-test rom ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd common:wrapper common:support
+test dram ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:cmd common:wrapper_download common:support_download
+test rom ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd ethmonitor:cmd_test common:wrapper common:support
 
+test dram  factorial factorial:factorial common:wrapper_download common:support_download
+test dram  alu alu:alu alu:alu_call common:wrapper_download common:support_download

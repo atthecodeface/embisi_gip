@@ -120,6 +120,21 @@ extern void uart_tx_hex8( unsigned int a )
     }
 }
 
+/*f uart_tx_hex2
+ */
+extern void uart_tx_hex2( unsigned int a )
+{
+    int c;
+    int i;
+    for (i=0; i<2; i++)
+    {
+        c = (a>>4)&0xf;
+        c = hex(c);
+        uart_tx(c);
+        a <<= 4;
+    }
+}
+
 /*a External init and polling functions
  */
 /*f uart_init

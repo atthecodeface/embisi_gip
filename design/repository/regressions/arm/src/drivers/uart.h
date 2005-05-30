@@ -12,6 +12,7 @@ extern void uart_tx_nl( void );
 extern void uart_tx_string( const char *string );
 extern void uart_tx_string_nl( const char *string );
 extern void uart_tx_hex8( unsigned int a );
+extern void uart_tx_hex2( unsigned int a );
 #else
 #include <stdlib.h>
 #include <stdio.h>

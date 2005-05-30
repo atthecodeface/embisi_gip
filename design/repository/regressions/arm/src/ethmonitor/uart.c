@@ -85,8 +85,8 @@ extern void mon_uart_poll( void )
      */
     if (uart.state==fsm_handle_command)
     {
-        cmd_obey( NULL, uart.buffer, uart.length, -1 );
         uart.state = fsm_pre_prompt;
+        cmd_obey( NULL, uart.buffer, uart.length, -1 );
     }
 }
 

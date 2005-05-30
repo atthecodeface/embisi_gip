@@ -147,7 +147,7 @@ static int command_io_fifo_put_data( void *handle, int argc, unsigned int *args 
     {
         GIP_POST_TXD_0( args[i] );
     }
-    GIP_POST_TXC_0_IO_FIFO_DATA( 0, argc-2, 0, i, 0, 0 ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
+    GIP_POST_TXC_0_IO_FIFO_DATA( 0, argc-2, 0, args[0], 0, 0 ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
 
     return 0;
 }

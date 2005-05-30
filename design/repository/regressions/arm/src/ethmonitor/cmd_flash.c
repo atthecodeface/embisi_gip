@@ -7,7 +7,7 @@
 /*a Defines
  */
 
-/*f Command functions
+/*a Command functions
  */
 /*f command_flash_erase
  */

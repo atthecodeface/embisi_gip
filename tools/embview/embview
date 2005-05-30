@@ -1,0 +1,390 @@
+#!/usr/bin/python2
+
+#a Imports
+from Tkinter import *
+from tkFileDialog import *
+from tkMessageBox import *
+import re
+import socket
+import select
+import struct
+import string
+import time
+
+#a c_grid_canvas
+class c_grid_canvas( Canvas ):
+    #f __init__
+    def __init__( self, puzzle_grid, master=None, width=200, height=200, click_callback=None ):
+        Canvas.__init__( self, master=master, width=width, height=height )
+        self.click_callback = click_callback
+        def btn1_square_press_binding( event, self=self ):
+            self.square_press_binding( event, 1 )
+        def btn3_square_press_binding( event, self=self ):
+            self.square_press_binding( event, 2 )
+        self.tag_bind( "square", "<Button-1>", btn1_square_press_binding )
+        self.tag_bind( "square", "<Button-3>", btn3_square_press_binding )
+        self.puzzle_grid = puzzle_grid
+    #f clean
+    def clean( self ):
+        self.delete("all")
+    #f square_press_binding
+    def square_press_binding( self, event, reason ):
+        if (self.click_callback):
+            tags = self.itemcget("current", "tags")
+            decode = re.search( "xy_(\S+)_(\S+)", tags)
+            if (decode):
+                self.click_callback( int(decode.group(1)), int(decode.group(2)), reason )
+    #f set_size
+    def set_size( self ):
+        self.nc = self.puzzle_grid.puzzle_op_int( 0, 0, 0 )
+        self.nr = self.puzzle_grid.puzzle_op_int( 1, 0, 0 )
+        self.puzzle_grid.set_grid_display_area( 0, 0, int(self.winfo_width()), int(self.winfo_height()))
+        self.grid_info = [ self.puzzle_grid.get_info_int(0,0,0), self.puzzle_grid.get_info_int(1,0,0) ]
+    #f draw_grid
+    def draw_grid( self ):
+        dy = 1
+        w = self.grid_info[0] * self.nc + 2
+        h = self.grid_info[1] * self.nr + 2
+        for y in range (0, self.nr+1):
+            if ((y%5)==0):
+                self.create_line( [1, dy, w, dy], tags="grid", width=0, fill="grey5" )
+            else:
+                self.create_line( [1, dy, w, dy], tags="grid", width=0, fill="grey75" )
+            dy += self.grid_info[1]
+        dx = 1
+        for x in range (0, self.nc+1):
+            if ((x%5)==0):
+                self.create_line( [dx, 1, dx, h], tags="grid", width=0, fill="grey5" )
+            else:
+                self.create_line( [dx, 1, dx, h], tags="grid", width=0, fill="grey75" )
+            dx += self.grid_info[0]
+    #f fill_grid
+    def fill_grid( self ):
+        #b Draw grid contents
+        for y in range(0, self.nr):
+            grid_values = self.puzzle_grid.get_grid_values( 0, y, self.nc )
+            for x in range(0, self.nc):
+                self.fill_square( x, y, grid_values[x] )
+    #f refill_square
+    def refill_square( self, x, y ):
+        self.delete("xy_"+str(x)+"_"+str(y))
+        self.fill_square( x, y, self.puzzle_grid.get_grid_value( x, y ) )
+    #f fill_square
+    def fill_square( self, x, y, c ):
+        rect_top    = self.grid_info[1]*y+2
+        rect_bottom = self.grid_info[1]*(y+1)+1
+        rect_left   = self.grid_info[0]*x+2
+        rect_right  = self.grid_info[0]*(x+1)+1
+        if (c==0):
+            self.create_rectangle( [rect_left, rect_top, rect_right, rect_bottom], tags="square"+" "+"xy_"+str(x)+"_"+str(y), width=0, outline="", fill="white" )
+        elif (c==1):
+            self.create_rectangle( [rect_left, rect_top, rect_right, rect_bottom], tags="square"+" "+"xy_"+str(x)+"_"+str(y), width=0, outline="", fill="white" )
+            self.create_line( [rect_left+1, rect_top+1, rect_right-1, rect_bottom-1], tags="square"+" "+"xy_"+str(x)+"_"+str(y), width=0, fill="black" )
+        elif (c==2):
+            self.create_rectangle( [rect_left, rect_top, rect_right, rect_bottom], tags="square"+" "+"xy_"+str(x)+"_"+str(y), width=0, outline="", fill="black" )
+        else:
+            self.create_rectangle( [rect_left, rect_top, rect_right, rect_bottom], tags="square"+" "+"xy_"+str(x)+"_"+str(y), width=0, outline="", fill="red" )
+
+#a c_memory_view class
+unique = 0
+class c_memory_view(Frame):
+    #f __init__
+    def __init__(self, master=None, mem=None ):
+        global unique
+        Frame.__init__(self, master)
+        self.address = 0
+        self.nlines = 32
+        self.words_per_line = 8
+        self.mem = mem
+        self.name = "cmv%d" % unique
+        unique = unique+1
+        def local_address_set( self=self ):
+            addr = self.getvar( self.name+".address" )
+            addr = "00000000" + addr
+            addr = addr[len(addr)-8:]
+            try:
+                self.address = (string.atoi(addr[0:4],16)<<16) | (string.atoi(addr[4:8],16))
+            except:
+                self.address = 0
+            self.populate()
+        def local_address_set_boot( self=self ):
+            self.address = 0;
+            self.populate()
+        def local_address_set_sram( self=self ):
+            self.address = 0x10000;
+            self.populate()
+        def local_address_set_dram( self=self ):
+            self.address = 0x80000000;
+            self.populate()
+        self.address_line = Frame( master=self )
+        self.address_line_address = Entry( master=self.address_line, textvariable=self.name+".address", width=8 )
+        self.address_line_set = Button( master=self.address_line, text="Set", command=local_address_set )
+        self.address_line_boot = Button( master=self.address_line, text="Boot", command=local_address_set_boot )
+        self.address_line_sram = Button( master=self.address_line, text="Sram", command=local_address_set_sram )
+        self.address_line_dram = Button( master=self.address_line, text="Dram", command=local_address_set_dram )
+        self.address_line_address.grid(row=1,column=1,sticky="nw")
+        self.address_line_set.grid(row=1,column=2,sticky="nw")
+        self.address_line_boot.grid(row=1,column=3,sticky="nw")
+        self.address_line_sram.grid(row=1,column=4,sticky="nw")
+        self.address_line_dram.grid(row=1,column=5,sticky="nw")
+        self.address_line.grid(row=1,column=1,sticky="nw")
+        self.address_line_set.grid(row=1,column=2,sticky="nw")
+        self.body = Frame( master=self )
+        def local_up_much( self=self ):
+            self.address = self.address-0x1000;
+            self.populate()
+        def local_up_some( self=self ):
+            self.address = self.address-0x100;
+            self.populate()
+        def local_up_little( self=self ):
+            self.address = self.address-0x100;
+            self.populate()
+        def local_down_much( self=self ):
+            self.address = self.address+0x1000;
+            self.populate()
+        def local_down_some( self=self ):
+            self.address = self.address+0x100;
+            self.populate()
+        def local_down_little( self=self ):
+            self.address = self.address+0x100;
+            self.populate()
+        self.arrows = Frame( master=self.body )
+        self.arrows.up_much = Button( master=self.arrows, text="^^^", command=local_up_much )
+        self.arrows.up_some = Button( master=self.arrows, text="^^", command=local_up_some )
+        self.arrows.up_little = Button( master=self.arrows, text="^", command=local_up_little )
+        self.arrows.down_little = Button( master=self.arrows, text="V", command=local_down_little )
+        self.arrows.down_some = Button( master=self.arrows, text="VV", command=local_down_some )
+        self.arrows.down_much = Button( master=self.arrows, text="VVV", command=local_down_much )
+        self.arrows.up_much.grid(row=1,column=1,sticky="nsew");
+        self.arrows.up_some.grid(row=2,column=1,sticky="nsew");
+        self.arrows.up_little.grid(row=3,column=1,sticky="nsew");
+        self.arrows.down_much.grid(row=4,column=1,sticky="nsew");
+        self.arrows.down_some.grid(row=5,column=1,sticky="nsew");
+        self.arrows.down_little.grid(row=6,column=1,sticky="nsew");
+        self.arrows.grid(row=1,column=2,sticky="nsew")
+        self.textarea = Text( master=self.body, width=self.words_per_line*9+12, height=self.nlines )
+        self.textarea.grid(row=1,column=1,sticky="nw")
+        self.body.grid(row=2,column=1,sticky="nesw")
+        self.populate()
+    #f populate
+    def populate( self ):
+        self.setvar( name=self.name+".address", value="%08x"%(self.address) );
+        self.textarea.configure( state="normal")
+        self.textarea.delete( index1="0.0", index2="end")
+        okay = 1
+        for i in range(self.nlines):
+            if (okay):
+                data = self.mem.mem_read( self.address+i*self.words_per_line*4, self.words_per_line*4 )
+                if (data):
+                    text = ""
+                    byte = 0
+                    for d in data[10:]:
+                        text = text + ("%02x" % (ord(d)))
+                        if ((byte&3)==3):
+                            text=text+" "
+                        byte = byte+1
+                    self.textarea.insert( index="end", chars="%08x : %s\n" % (self.address+i*self.words_per_line*4, text ))
+                else:
+                    okay = 0
+        self.textarea.configure( state="disabled")
+
+#a c_gipdebug_cmd_client
+class c_gipdebug_cmd_client:
+    #f __init__
+    def __init__( self, server_ip, server_port ):
+        self.server_ip = server_ip
+        self.server_port = server_port
+        self.skt = socket.socket( socket.AF_INET, socket.SOCK_DGRAM );
+        self.skt.connect( ( server_ip, server_port ) );
+    #f cmd
+    def cmd( self, cmd_str ):
+        self.skt.send( cmd_str + "\n" );
+        sel = select.select( [self.skt.fileno()], [], [], 1 );
+        if (sel[0] == [self.skt.fileno()]):
+            return self.skt.recv( 1300 );
+
+#a c_gipdebug_mem_client
+class c_gipdebug_mem_client:
+    #f __init__
+    def __init__( self, server_ip, server_port ):
+        self.server_ip = server_ip
+        self.server_port = server_port
+        self.skt = socket.socket( socket.AF_INET, socket.SOCK_DGRAM );
+        self.skt.connect( ( server_ip, server_port ) );
+    #f send_cmd
+    def send_cmd( self, type, address, length, data ):
+        buffer = struct.pack( "<hll", type, address, length ) + data;
+        self.skt.send( buffer );
+        sel = select.select( [self.skt.fileno()], [], [], 1 );
+        if (sel[0] == [self.skt.fileno()]):
+            return self.skt.recv( 1300 );
+    #f mem_read
+    def mem_read( self, address, length ):
+        return self.send_cmd( 0, address, length, "" ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
+    #f mem_write
+    def mem_write( self, address, data ):
+        return self.send_cmd( 1, address, len(data), data ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
+    #f flash_read
+    def flash_read( self, address, length ):
+        return self.send_cmd( 8, address, length, "" ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
+    #f flash_write
+    def flash_write( self, address, data ):
+        return self.send_cmd( 9, address, len(data), data ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
+    #f flash_erase
+    def flash_erase( self, address ):
+        return self.send_cmd( 10, address, 0, "" ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
+    #f load_regs
+    def load_regs( self, regs=[] ):
+        data = struct.pack( "<llllllllllllllll", 0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0 );
+        for r in regs:
+            data = data[0:r[0]*4] + struct.pack("<l", r[1]) + data[r[0]*4+4:]
+        return self.send_cmd( 16, 0, 0, data ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
+    #f format_msg
+    def format_msg( self, buffer ):
+        if (buffer==None):
+            return None
+        result = "%04x %08x %08x\n" % struct.unpack("<hll", buffer[0:10])
+        for d in buffer[10:]:
+            result = result + ("%02x " % (ord(d)))
+        return result
+
+#a c_embview_ui
+class c_embview_ui:
+    #f __init__
+    def __init__( self, root=None, ip_address = "10.1.100.5" ):
+        #b Grab the root Tk window if necessary
+        if (root == None):
+            root = Tk()
+        self.root = root
+        self.body = Frame( master=self.root )
+        def local_ip_set( self=self ):
+            self.ip_address = self.body.getvar( name="ip_address" )
+            self.cmd = c_gipdebug_cmd_client( self.ip_address, 2345 )
+            self.mem = c_gipdebug_mem_client( self.ip_address, 2346 )
+            try:
+                if (self.mem.mem_read( 0, 0 )):
+                    self.body.setvar( name="connected", value="Yes" )
+                else:
+                    self.body.setvar( name="connected", value="No" )
+            except:
+                self.body.setvar( name="connected", value="No" )
+        self.body_ip_label   = Label( master=self.body, text="IP address")
+        self.body_ip_address = Entry( master=self.body, textvariable="ip_address")
+        self.body_ip_do      = Button( master=self.body, text="Connect", command=local_ip_set )
+        self.body_ip_okay    = Label( master=self.body, textvariable="connected", width=3 )
+        self.body.setvar( name="ip_address", value=ip_address)
+        self.body.setvar( name="connected", value="No" )
+        self.body_ip_label.grid( row=1, column=1, sticky="nsew" )
+        self.body_ip_address.grid( row=1, column=2, sticky="nsew" )
+        self.body_ip_do.grid( row=1, column=3, sticky="nsew" )
+        self.body_ip_okay.grid( row=1, column=4, sticky="nsew" )
+        def local_file_boot_mif_current( self=self ):
+            self.boot_mif( self.mem, self.mif_filename, 0x80000000, 0x80000000 )
+        def local_file_boot_mif_set_linux( self=self ):
+            #self.mif_filename = "/home/localgjs/tnbt_cvs_trees/software/os/linux/combined.mif"
+            #self.body.setvar( name="mif_filename", value=self.mif_filename )
+            self.boot_mif( self.mem, "/home/localgjs/tnbt_cvs_trees/software/os/linux/combined.mif", 0x80020000, 0x80028000, 3 )
+        def local_file_run_linux( self=self ):
+            self.mem.load_regs([(15,0x80028000)])
+        self.body_mif_filename      = Label( master=self.body, textvariable="mif_filename" )
+        self.body_mif_filename_linux = Button( master=self.body, text="Linux", command=local_file_boot_mif_set_linux )
+        self.body_mif_filename_run_linux = Button( master=self.body, text="RunLin", command=local_file_run_linux )
+        self.body_mif_filename_boot = Button( master=self.body, text="Boot", command=local_file_boot_mif_current )
+        self.body_mif_filename.grid( row=2, columnspan=3, column=1 )
+        self.body_mif_filename_linux.grid( row=2, column=5 )
+        self.body_mif_filename_run_linux.grid( row=2, column=6 )
+        self.body_mif_filename_boot.grid( row=2, column=4 )
+        self.mif_filename = "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/ethmonitor.dram.mif"
+        self.body.setvar( name="mif_filename", value=self.mif_filename )
+        self.body.pack(expand=1,fill="both")
+        local_ip_set()
+        
+        #b Create menus
+        self.main_menu = Menu( self.root )
+        self.file_menu = Menu( self.main_menu )
+        self.root.configure( menu=self.main_menu )
+    
+        self.main_menu.add_cascade( label="File", menu=self.file_menu )
+    
+        def local_file_boot_mif( self=self ):
+            self.file_boot_mif()
+        def local_file_new_memory_view( self=self ):
+            self.file_new_memory_view()
+        def local_file_exit( self=self ):
+            self.file_exit()
+        self.file_menu.add_command( label="New memory view", command=local_file_new_memory_view )
+        self.file_menu.add_command( label="Boot MIF", command=local_file_boot_mif )
+        self.file_menu.add_command( label="Quit", command=local_file_exit )
+        self.file_new_memory_view()
+    #f file_new_memory_view
+    def file_new_memory_view( self ):
+        self.win = Toplevel( master=self.root )
+        self.view = c_memory_view( master=self.win, mem=self.mem )
+        self.view.pack()
+    #f boot_mif
+    def boot_mif( self, mem, mif_filename, base_address, start_address, delay=0 ):
+        mif = open(mif_filename);
+        done = 0
+        addressed_line_re = re.compile("\\s*(\\S+)\\s*:\\s*(\\S+)\\s*")
+        data_line_re = re.compile("\\s*(\\S+)\\s*")
+        buffer = ""
+        while (not done):
+            line = mif.readline();
+            if (line!=""):
+                match = addressed_line_re.match(line)
+                if (match):
+                    address = match.group(1)
+                    data = match.group(2)
+                else:
+                    match = data_line_re.match(line)
+                    if (match):
+                        data = match.group(1)
+                if match:
+                    data = (string.atoi(data[0:4],16)<<16) | (string.atoi(data[4:8],16))
+                    buffer = buffer + struct.pack(">l", data )
+            else:
+                done=1
+            if ((done) or (len(buffer)>=1024)):
+                if (mem.mem_write(base_address, buffer)):
+                    base_address = base_address + len(buffer)
+                    buffer = ""
+                else:
+                    print "Failed to write memory address ", "%08x"%(base_address)
+                    return "Failed to write memory"
+        if (delay>0):
+            time.sleep(delay)
+        print mem.format_msg(mem.load_regs([(15,start_address)]))
+        return "Okay"
+    #f file_boot_mif
+    def file_boot_mif( self ):
+        self.mif_filename = askopenfilename(filetypes=[("MIF","*.mif")])
+        self.body.setvar( name="mif_filename", value=self.mif_filename )
+        print self.boot_mif( self.mem, self.mif_filename, 0x80000000, 0x80000000 )
+    #f file_exit
+    def file_exit(self):
+        self.root.destroy()
+    #f main_loop
+    def main_loop(self):
+        self.body.mainloop()
+
+pui = c_embview_ui( root=None )
+pui.main_loop()
+
+#print cmd.cmd("fb")
+#print cmd.cmd("mr 0 40")
+#print cmd.cmd("fr 80000 40 ")
+#print cmd.cmd("fr 100000 40 ")
+
+#print mem.format_msg(mem.mem_read(0x80000000, 16 ))
+#print mem.format_msg(mem.mem_read(0x80010000, 16 )) # ooops.. DRAM mem start is here - let's avoid this
+#print mem.format_msg(mem.mem_read(0x80020000, 16 ))
+#print mem.format_msg(mem.mem_write(0x80000000, "Now!" ))
+
+#print mem.format_msg(mem.mem_write(0x80000000, struct.pack(">l", 0xeafffffe ))) # a: b a
+#print mem.format_msg(mem.mem_write(0x80000000, struct.pack(">l", 0xe3a0f000 ))) # a: mov pc, #0
+#print mem.format_msg(mem.mem_write(0x80000000, struct.pack(">lllll", 0xe3a01028, 0xe3811c05, 0xe3a00480, 0xe2800020, 0xe1a0f001))) # a: mov r1, #0x28; orr r1, r1, #0x0500; mov r0, #0x80000000; add r0, r0, #20; mov pc, r1
+#print mem.format_msg(mem.mem_write(0x80000020, "My message\n\0" ))
+#print mem.format_msg(mem.load_regs([(15,0x80000000)]))
+
+#print boot_mif( mem, "ethmonitor.dram.mif", 0x80000000, 0x80000000 );
+#print boot_mif( mem, "factorial.dram.mif", 0x80000000, 0x80000000 );

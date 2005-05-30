@@ -500,7 +500,7 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
             for (j=0; (j<sub_argc) && (num_sources<MAX_SOURCES); j++)
             {
                 fprintf(stderr,"Source %s\n",sub_argv[j]);
-                sources[num_sources].interval = 60;
+                sources[num_sources].interval = 200;
                 sources[num_sources].data_stream = sl_data_stream_create( sub_argv[j] );
                 if (sources[num_sources].data_stream)
                 {
@@ -671,7 +671,7 @@ t_sl_error_level c_mii_testbench::reset_active_high_int_reset( void )
 
     for (i=0; i<MAX_SOURCES; i++)
     {
-        posedge_int_clock_state.src_source_state[i].counter = 0;
+        posedge_int_clock_state.src_source_state[i].counter = 30;
         posedge_int_clock_state.src_source_state[i].pending = 0;
     }
 
@@ -942,7 +942,7 @@ t_sl_error_level c_mii_testbench::preclock_posedge_int_clock( void )
         {
             next_posedge_int_clock_state.src_source_state[i].counter = posedge_int_clock_state.src_source_state[i].counter+1;
 //            fprintf(stderr,"Checking source %d.%d.%d\n",i,posedge_int_clock_state.src_source_state[i].counter,sources[i].interval );
-            if ( (!posedge_int_clock_state.src_source_state[i].pending) && (posedge_int_clock_state.src_source_state[i].counter==sources[i].interval) )
+            if ( (!posedge_int_clock_state.src_source_state[i].pending) && (posedge_int_clock_state.src_source_state[i].counter>=sources[i].interval) )
             {
                 next_posedge_int_clock_state.src_source_state[i].pending = 1;
                 next_posedge_int_clock_state.src_source_state[i].counter = 0;

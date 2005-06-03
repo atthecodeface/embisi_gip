@@ -47,6 +47,8 @@ module gip_core( clock gip_clock,
                  input bit mem_read_data_valid,
                  input bit[32] mem_read_data,
 
+                 input bit[8] local_events_in,
+
                  output t_postbus_type postbus_tx_type,
                  output t_postbus_data postbus_tx_data,
                  input t_postbus_ack postbus_tx_ack,
@@ -413,6 +415,7 @@ module gip_core( clock gip_clock,
                                  sched_thread_data_flag_dependencies <= sched_thread_data_flag_dependencies,
                                  sched_thread_data_pc <= sched_thread_data_pc,
 
+                                 local_events_in <= local_events_in,
                                  postbus_semaphore_to_set <= postbus_semaphore_to_set,
 
                                  special_repeat_count => special_repeat_count,

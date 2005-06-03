@@ -4,6 +4,7 @@
 #include "cmd_postbus.h"
 #include "cmd_extbus.h"
 #include "cmd_flash.h"
+#include "cmd_leds.h"
 #include "cmd_test.h"
 
 #include <stdio.h>
@@ -11,6 +12,7 @@ static t_command_chain monitor_cmds_memory_chain;
 static t_command_chain monitor_cmds_postbus_chain;
 static t_command_chain monitor_cmds_extbus_chain;
 static t_command_chain monitor_cmds_flash_chain;
+static t_command_chain monitor_cmds_leds_chain;
 static t_command_chain monitor_cmds_test_chain;
 extern void chain_extra_cmds( t_command_chain *chain )
 {
@@ -33,6 +35,11 @@ extern void chain_extra_cmds( t_command_chain *chain )
     monitor_cmds_flash_chain.next = NULL;
     monitor_cmds_flash_chain.cmds = &monitor_cmds_flash[0];
     chain = &monitor_cmds_flash_chain;
+
+    chain->next = &monitor_cmds_leds_chain;
+    monitor_cmds_leds_chain.next = NULL;
+    monitor_cmds_leds_chain.cmds = &monitor_cmds_leds[0];
+    chain = &monitor_cmds_leds_chain;
 
     chain->next = &monitor_cmds_test_chain;
     monitor_cmds_test_chain.next = NULL;

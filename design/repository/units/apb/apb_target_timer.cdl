@@ -1,0 +1,195 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+
+/*a Constants
+ */
+
+/*a Types
+ */
+/*t t_timer
+ */
+typedef struct
+{
+    bit [31]comparator;
+    bit equalled;
+} t_timer;
+
+/*a Module
+ */
+module apb_target_timer( clock apb_clock "Internal system clock",
+                         input bit int_reset "Internal reset",
+
+                         input bit[3] apb_paddr,
+                         input bit apb_penable,
+                         input bit apb_pselect,
+                         input bit[32] apb_pwdata,
+                         input bit apb_prnw,
+                         output bit[32] apb_prdata,
+                         output bit apb_pwait,
+
+                         output bit[3]timer_equalled
+    )
+"
+Simple timer with an APB interface.
+
+It is designed so that the APB can be turned off and a minimal amount of gates are switching here
+
+It supports three comparators each with a 'timer equalled' bit
+
+It operates its timer counter as an incrementing counter only. When it is equal to a comparator then the corresponding 'timer equalled' bit is set.
+
+Writing a timer comparator clears its 'equalled' bit.
+
+We actually divide the main clock by 4, and compare one comparator in each clock tick. When enabled all each comparator is tested in turn with the timer value, one per clock.
+
+The APB interface reads/writes when the divide-by-clock (called stage) equals the address being read or written.
+
+Comparators are numbered 1 through 3; stage 0 is used to access the global state of the timer.
+
+There is an additional global disabled that is reset to 1; this stops all comparisons with the timers, and reduces power consumption
+"
+{
+    /*b Clock and reset
+     */
+    default clock apb_clock;
+    default reset int_reset;
+
+    clocked bit[2] stage = 0;
+    clocked bit[31] timer_value = 0;
+    clocked t_timer[3] timers = { {comparator=0, equalled=0} };
+    clocked bit disabled=1;
+    comb bit[31] read_data "Mux of timer comparators and timer_value, dependent on disabled and stage";
+    comb bit read_data_match "Asserted if read_data matches the timer_value";
+
+    comb bit[2] access "If disabled then only the timer is accessed";
+    clocked bit apb_pwait=0;
+    clocked bit[32] apb_prdata=0 "Output data register; increases gate count, but decreases power as then we do not drive the databus out with continuously changing values";
+    clocked bit did_read=0 "Asserted if a read request has been serviced and the data stored in the output";
+    comb bit do_read "Asserted if we are doing a read";
+    comb bit do_write "Asserted if we are doing the write";
+
+    /*b Handle wait
+     */
+    handle_apb_wait "Handle APB wait: on reads, wait until one cycle after we clocked the read data; on writes, wait until we stored the write data":
+        {
+            if (apb_pselect && !apb_penable)
+            {
+                apb_pwait <= 1;
+            }
+            if (did_read || do_write)
+            {
+                apb_pwait <= 0;
+            }
+        }
+
+    /*b Decode APB
+     */
+    apb_decode "Decode APB strobes":
+        {
+            do_read = 0;
+            do_write = 0;
+            if ((apb_pselect) && (apb_paddr[2;0]==stage))
+            {
+                do_read = apb_prnw;
+                do_write = !apb_prnw;
+            }
+            if (!apb_pwait)
+            {
+                did_read <= 0;
+            }
+            if (do_read)
+            {
+                apb_prdata <= 0;
+                apb_prdata[31;0] <= read_data;
+                apb_prdata[31] <= disabled;
+                did_read <= 1;
+            }
+        }
+
+    /*b Handle writes and reads (which clear the equalled bit)
+     */
+    apb_reads_and_writes "Handle APB reads and writes":
+        {
+            if (do_read)
+            {
+                if (!disabled) 
+                {
+                    part_switch (stage)
+                    {
+                    case 1: { timers[0].equalled <= 0; }
+                    case 2: { timers[1].equalled <= 0; }
+                    case 3: { timers[2].equalled <= 0; }
+                    }
+                }
+            }
+            if (!disabled)
+            {
+                if (read_data_match)
+                {
+                    part_switch (stage)
+                    {
+                    case 1: { timers[0].equalled <= 1; }
+                    case 2: { timers[1].equalled <= 1; }
+                    case 3: { timers[2].equalled <= 1; }
+                    }
+                }
+            }
+            if (do_write)
+            {
+                if (stage==0)
+                {
+                    disabled <= apb_pwdata[31];
+                }
+                if (!disabled) 
+                {
+                    part_switch (stage)
+                    {
+                    case 1: { timers[0].equalled <= 0; timers[0].comparator <= apb_pwdata[31;0]; }
+                    case 2: { timers[1].equalled <= 0; timers[1].comparator <= apb_pwdata[31;0]; }
+                    case 3: { timers[2].equalled <= 0; timers[2].comparator <= apb_pwdata[31;0]; }
+                    }
+                }
+            }
+        }
+
+    /*b Handle the timer, mux and comparator
+     */
+    timer_and_mux "Handle the timer, mux and comparator":
+        {
+            stage <= stage+1;
+            if (stage==3)
+            {
+                timer_value <= timer_value+1;
+            }
+            read_data = timer_value;
+            if (disabled)
+            {
+                read_data = timer_value; // This may be more power than necessary - could choose timers[2].comparator as that is stable; but does that help?
+            }
+            else
+            {
+                part_switch (stage)
+                    {
+                    case 1: { read_data = timers[0].comparator; }
+                    case 2: { read_data = timers[1].comparator; }
+                    case 3: { read_data = timers[2].comparator; }
+                    }
+            }
+            read_data_match = (read_data==timer_value);
+        }
+
+    /*b Status out
+     */
+    status "Wire up the status out":
+        {
+            timer_equalled[0] = timers[0].equalled;
+            timer_equalled[1] = timers[1].equalled;
+            timer_equalled[2] = timers[2].equalled;
+        }
+
+    /*b Done
+     */
+}

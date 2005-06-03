@@ -26,8 +26,8 @@ extern module apb_devices( clock int_clock,
                            output bit[32] apb_prdata,
                            output bit apb_pwait,
 
-                           input bit[8] switches,
-                           output bit[8] leds,
+//                           input bit[8] switches,
+//                           output bit[8] leds,
                            output bit txd,
                            input bit rxd,
 
@@ -37,18 +37,33 @@ extern module apb_devices( clock int_clock,
                            output bit[24]ext_bus_address,
                            output bit ext_bus_write_data_enable,
                            output bit[32]ext_bus_write_data,
-                           input bit[32]ext_bus_read_data )
+                           input bit[32]ext_bus_read_data,
+
+                           input bit[4]gpio_input,
+                           output bit[16]gpio_output,
+                           output bit[16]gpio_output_enable,
+                           output bit gpio_input_event,
+
+                           output bit[3] timer_equalled
+    )
 {
     timing to rising clock int_clock int_reset;
 
     timing to rising clock int_clock apb_pselect, apb_penable, apb_prnw, apb_paddr, apb_pwdata;
     timing from rising clock int_clock apb_prdata, apb_pwait;
 
-    timing to rising clock int_clock switches, rxd;
-    timing from rising clock int_clock leds, txd;
+    timing to rising clock int_clock rxd;
+    timing from rising clock int_clock txd;
+//    timing to rising clock int_clock switches;
+//    timing from rising clock int_clock leds;
 
     timing from rising clock int_clock ext_bus_ce, ext_bus_oe, ext_bus_we, ext_bus_address, ext_bus_write_data_enable, ext_bus_write_data;
     timing to rising clock int_clock ext_bus_read_data;
+
+    timing to rising clock int_clock gpio_input;
+    timing from rising clock int_clock gpio_output, gpio_output_enable, gpio_input_event;
+
+    timing from rising clock int_clock timer_equalled;
 
 }
 
@@ -74,6 +89,8 @@ extern module gip_core_plus( clock int_clock,
                              input bit[32] apb_prdata,
                              input bit apb_pwait,
 
+                             input bit[8] local_events_in,
+
                              output t_postbus_type postbus_tx_type,
                              output t_postbus_data postbus_tx_data,
                              input t_postbus_ack postbus_tx_ack,
@@ -90,6 +107,8 @@ extern module gip_core_plus( clock int_clock,
 
     timing from rising clock int_clock apb_pselect, apb_penable, apb_prnw, apb_paddr, apb_pwdata;
     timing to rising clock int_clock apb_prdata, apb_pwait;
+
+    timing to rising clock int_clock local_events_in;
 
     timing from rising clock int_clock postbus_tx_type, postbus_tx_data;
     timing to rising clock int_clock postbus_tx_ack;
@@ -228,7 +247,6 @@ module gip_system( clock drm_clock,
 
     comb bit int_reset;
 
-    net bit[8] leds;
     net bit txd;
 
     net bit[4]ext_bus_ce;
@@ -299,11 +317,18 @@ module gip_system( clock drm_clock,
     net bit uart0_rxd_fc;
     comb bit uart0_rxd;
 
+    net bit[16] gpio_output;
+    net bit[16] gpio_output_enable;
+    net bit gpio_input_event;
+    net bit[3] timer_equalled;
+
     net bit[2] sscl;
     net bit[2] sscl_oe;
     net bit ssdo;
     net bit ssdo_oe;
     net bit[8] sscs;
+
+    comb bit[8] local_events_in;
 
     comb bit[32] analyzer_mux_control;
     net bit[32] iob_analyzer_signals;
@@ -312,6 +337,10 @@ module gip_system( clock drm_clock,
      */
     gip_core "GIP core instance":
         {
+            local_events_in = 0;
+            local_events_in[3;0] = timer_equalled;
+            local_events_in[3] = gpio_input_event;
+            leds = gpio_output[8;0];
             gip_core_plus gip( int_clock <- int_clock,
                                int_reset <= int_reset,
 
@@ -331,6 +360,8 @@ module gip_system( clock drm_clock,
                                apb_prnw => apb_prnw,
                                apb_prdata <= apb_prdata,
                                apb_pwait <= apb_pwait,
+
+                               local_events_in <= local_events_in,
 
                                postbus_tx_type => postbus_tx_type,
                                postbus_tx_data => postbus_tx_data,
@@ -427,8 +458,8 @@ module gip_system( clock drm_clock,
                              apb_prdata => apb_prdata,
                              apb_pwait => apb_pwait,
 
-                             switches <= switches,
-                             leds => leds,
+//                             switches <= switches,
+//                             leds => leds,
                              txd => txd,
                              rxd <= rxd,
 
@@ -438,7 +469,14 @@ module gip_system( clock drm_clock,
                              ext_bus_address => ext_bus_address,
                              ext_bus_write_data_enable => ext_bus_write_data_enable,
                              ext_bus_write_data => ext_bus_write_data,
-                             ext_bus_read_data <= ext_bus_read_data );
+                             ext_bus_read_data <= ext_bus_read_data,
+                             gpio_input <= switches[4;0],
+                             gpio_output => gpio_output,
+                             gpio_output_enable => gpio_output_enable,
+                             gpio_input_event => gpio_input_event,
+
+                             timer_equalled => timer_equalled
+                );
         }
 
     /*b Postbus instances

@@ -57,7 +57,7 @@ static void ethernet_tx_start( t_eth_buffer *buffer )
 //    uart_tx_hex2(buffer);
 //    uart_tx_string(":");
 //    uart_tx_hex2(buffer->buffer_size);
-    uart_tx_nl();
+//    uart_tx_nl();
 #endif
     GIP_READ_AND_SET_SEMAPHORES( s, 1<<31 );
     for (i=j=0; i<(buffer->buffer_size+3)/4; i++) // i counts in words

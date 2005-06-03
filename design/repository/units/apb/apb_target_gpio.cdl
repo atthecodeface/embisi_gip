@@ -1,0 +1,179 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "apb_target_gpio.h"
+
+/*a Types
+ */
+/*t t_gpio_output
+ */
+typedef struct
+{
+    bit value;
+    bit enable;
+} t_gpio_output;
+
+/*t t_gpio_input_type
+ */
+typedef enum [3]
+{
+    gpio_input_type_none,
+    gpio_input_type_low,
+    gpio_input_type_high,
+    gpio_input_type_rising,
+    gpio_input_type_falling,
+    gpio_input_type_any_edge
+} t_gpio_input_type;
+
+/*t t_gpio_input
+ */
+typedef struct
+{
+    t_gpio_input_type type;
+    bit sync_value;
+    bit last_sync_value;
+    bit value; // not updated if a read is in progress and not finishing (pselect && !penable) so the read data is held constant for two cycles
+    bit event; // asserted if the type of event has occurred between value and last_sync_value: not updated during reads either
+} t_gpio_input;
+
+/*a Module
+ */
+module apb_target_gpio( clock apb_clock "Internal system clock",
+                        input bit int_reset "Internal reset",
+
+                        input bit[3] apb_paddr,
+                        input bit apb_penable,
+                        input bit apb_pselect,
+                        input bit[32] apb_pwdata,
+                        input bit apb_prnw,
+                        output bit[32] apb_prdata,
+
+                        output bit[16]gpio_output,
+                        output bit[16]gpio_output_enable,
+                        input bit[4]gpio_input,
+                        output bit gpio_input_event
+    )
+"
+Simple APB interface to a GPIO system.
+
+16 outputs, each with separate enables which reset to off
+
+4 inputs, each of which is synced and then edge detected (or other configured event). We do not support atomic read-and-clear of events; so race conditions exist, but this is meant for low speed I/O.
+
+"
+{
+    /*b Clock and reset
+     */
+    default clock apb_clock;
+    default reset int_reset;
+
+    clocked t_gpio_input[4] inputs = { {type=gpio_input_type_none, sync_value=0, last_sync_value=0, value=0, event=0} };
+    clocked t_gpio_output[16] outputs = { {enable=0, value=0} };
+
+    /*b Outputs
+     */
+    handle_outputs "GPIO outputs":
+        {
+            if (apb_pselect && apb_penable && !apb_prnw && (apb_paddr[2;0]==apb_gpio_output_reg))
+            {
+                for (i; 16)
+                {
+                    outputs[i] <= {enable=apb_pwdata[i*2+1], value=apb_pwdata[i*2]};
+                }
+            }
+            for (i; 16)
+            {
+                gpio_output[i] = outputs[i].value;
+                gpio_output_enable[i] = outputs[i].enable;
+            }
+        }
+
+    /*b Inputs
+     */
+    handle_inputs "GPIO inputs":
+        {
+            for (i; 4)
+            {
+                if (apb_pselect && apb_penable && !apb_prnw && (apb_paddr[2;0]==apb_gpio_input_reg))
+                {
+                    if (apb_pwdata[i*8+3]) // write type
+                    {
+                        inputs[i].type <= apb_pwdata[3;i*8];
+                    }
+                    if (apb_pwdata[i*8+4]) // clear event
+                    {
+                        inputs[i].event <= 0;
+                    }
+                }
+                inputs[i].sync_value <= gpio_input[i];
+                inputs[i].last_sync_value <= inputs[i].sync_value;
+                if (!(apb_pselect && !apb_penable && apb_prnw)) // only update the value and event if we are not reading; this means the read data will be stable
+                {
+                    inputs[i].value <= inputs[i].last_sync_value;
+                    part_switch (inputs[i].type)
+                        {
+                        case gpio_input_type_low: { inputs[i].event <= !inputs[i].value; }
+                        case gpio_input_type_high: { inputs[i].event <= inputs[i].value; }
+                        case gpio_input_type_rising: { inputs[i].event <= inputs[i].event | (inputs[i].value && !inputs[i].last_sync_value); }
+                        case gpio_input_type_falling: { inputs[i].event <= inputs[i].event | (!inputs[i].value && inputs[i].last_sync_value); }
+                        case gpio_input_type_any_edge: { inputs[i].event <= inputs[i].event | (inputs[i].value ^ inputs[i].last_sync_value); }
+                        }
+                }
+            }
+        }
+
+    /*b Handle APB reads - note the input and output config/state do not change during pselect&&!penable&&prnw, so our output data will be stable too
+     */
+    handle_apb_reads "Handle APB reads":
+        {
+            apb_prdata = 0;
+            if (apb_pselect && apb_prnw)
+            {
+                part_switch (apb_paddr[2;0])
+                    {
+                    case apb_gpio_input_status:
+                    {
+                        for (i; 4)
+                        {
+                            apb_prdata[i+16]=inputs[i].event;
+                            apb_prdata[i]=inputs[i].value;
+                        }
+                    }
+                    case apb_gpio_input_reg:
+                    {
+                        for (i; 4)
+                        {
+                            apb_prdata[3;i*8]=inputs[i].type;
+                        }
+                    }
+                    case apb_gpio_output_reg:
+                    {
+                        for (i; 16)
+                        {
+                            apb_prdata[i*2+1]=outputs[i].enable;
+                            apb_prdata[i*2]=outputs[i].value;
+                        }
+                    }
+                    }
+            }
+        }
+
+    /*b Status out
+     */
+    status_out "Status out":
+        {
+            gpio_input_event = 0;
+            for (i; 4)
+            {
+                if (inputs[i].event)
+                {
+                    gpio_input_event = 1;
+                }
+            }
+        }
+
+    /*b Done
+     */
+}

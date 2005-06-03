@@ -452,7 +452,7 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
             }
             if ((data[9]>>16) == 0x92a)
             {
-                uart_tx_string_nl( "m");
+                uart_tx_string( "m");
                 mem_obey( buffer, ((char *)data)+42, udp_byte_length-8 );
                 return;
             }
@@ -461,7 +461,17 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
             return;
         }
         uart_tx_string( "badudp ");
+        uart_tx_hex8( udp_byte_length );
+        uart_tx_string( " : ");
         uart_tx_hex8( csum );
+        uart_tx_nl();
+        for (i=0; i<rxed_byte_length; i+=4)
+        {
+            int j;
+            uart_tx_hex8( data[i/4] );
+            uart_tx(' ');
+            for (j=0; j<10000; j++) NOP;
+        }
         buffer->buffer_size = rxed_byte_length;
         ethernet_tx_buffer( buffer );
         return;

@@ -133,6 +133,8 @@ module gip_core_plus( clock int_clock,
                       input bit[32] apb_prdata,
                       input bit apb_pwait,
 
+                      input bit[8] local_events_in,
+
                       output t_postbus_type postbus_tx_type,
                       output t_postbus_data postbus_tx_data,
                       input t_postbus_ack postbus_tx_ack,
@@ -228,6 +230,8 @@ module gip_core_plus( clock int_clock,
                           mem_alu_busy <= mem_alu_busy,
                           mem_read_data <= mem_read_data,
                           mem_read_data_valid <= mem_read_data_valid,
+
+                          local_events_in <= local_events_in,
 
                           postbus_rx_type <= postbus_rx_type,
                           postbus_rx_data <= postbus_rx_data,

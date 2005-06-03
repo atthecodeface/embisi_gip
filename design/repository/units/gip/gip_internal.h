@@ -500,6 +500,7 @@ extern module gip_special( clock gip_clock,
                            input bit[4] sched_thread_data_flag_dependencies,
                            input bit[32] sched_thread_data_pc,
 
+                           input bit[8] local_events_in,
                            input bit[5] postbus_semaphore_to_set "Semaphore to set due to postbus receive/transmit - none if zero",
 
                            output bit[8] special_repeat_count,
@@ -529,7 +530,7 @@ extern module gip_special( clock gip_clock,
 
     timing to rising clock gip_clock sched_state_thread, sched_thread_data_config, sched_thread_data_flag_dependencies, sched_thread_data_pc;
 
-    timing to rising clock gip_clock postbus_semaphore_to_set;
+    timing to rising clock gip_clock local_events_in, postbus_semaphore_to_set;
 
     timing from rising clock gip_clock special_repeat_count, special_alu_mode, special_cp_trail_2;
     timing from rising clock gip_clock special_semaphores, special_cooperative, special_round_robin;

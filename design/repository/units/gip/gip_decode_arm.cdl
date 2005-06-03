@@ -1011,7 +1011,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_rm = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_shf};
                                 inst.rm_is_imm = 0;
                                 inst.valid = 1;
-                                next_cycle_of_opcode = 1;
+                                next_cycle_of_opcode = 2;
                                 pc_op = gip_pc_op_hold;
                             }
                             default:

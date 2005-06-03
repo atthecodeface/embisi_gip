@@ -51,6 +51,8 @@ cdl units/gip         gip_periph_apb              inc:units/gip inc:headers/cdl
 cdl units/gip         gip_prefetch                inc:units/gip inc:headers/cdl
 cdl units/gip         gip_data_ram                inc:units/gip inc:headers/cdl
 
+cdl units/apb         apb_target_timer            inc:headers/cdl inc:units/apb
+cdl units/apb         apb_target_gpio             inc:headers/cdl inc:units/apb
 cdl units/apb         apb_target_ext_bus_master   inc:headers/cdl inc:units/apb
 cdl units/apb         apb_target_uart             inc:headers/cdl inc:units/apb
 cdl units/apb         apb_uart_sync_fifo          inc:headers/cdl inc:units/apb

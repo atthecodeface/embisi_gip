@@ -2,6 +2,16 @@
  */
 include "gip.h"
 
+/*a Types
+ */
+/*t t_local_event_cfg
+ */
+typedef struct
+{
+    bit enable;
+    bit[3] thread;
+} t_local_event_cfg;
+
 /*a Module
  */
 module gip_special( clock gip_clock,
@@ -20,6 +30,7 @@ module gip_special( clock gip_clock,
                     input bit[4] sched_thread_data_flag_dependencies,
                     input bit[32] sched_thread_data_pc,
 
+                    input bit[8] local_events_in,
                     input bit[5] postbus_semaphore_to_set "Semaphore to set due to postbus receive/transmit - none if zero",
 
                     output bit[8] special_repeat_count,
@@ -58,7 +69,6 @@ module gip_special( clock gip_clock,
     clocked bit[4] special_thread_data_config = 0;
     clocked bit[4] special_thread_data_flag_dependencies = 0;
     clocked bit[8] special_repeat_count=0; // repeat count
-    clocked bit[5] arm_trap_semaphore = 0;
 
     clocked bit[32] preempted_pc_l=0;
     clocked bit[32] preempted_pc_m=0;
@@ -68,6 +78,42 @@ module gip_special( clock gip_clock,
     /*b Combinatorials
      */
     comb bit[32]new_semaphores;
+    comb bit local_set_semaphore;
+    comb bit[5] local_semaphore_to_set;
+    clocked bit[8] local_events = 0;
+    comb bit[8] local_events_one_hot;
+    clocked t_local_event_cfg[8] local_events_cfg = { {enable=0, thread=0} };
+
+    /*b Local events to create semaphores
+     */
+    local_events "Handle local events setting a semaphore":
+        {
+            local_events_one_hot = 0;
+            for (i; 8)
+            {
+                if (local_events[i])
+                {
+                    local_events_one_hot=0;
+                    local_events_one_hot[i]=1;
+                }
+            }
+            local_set_semaphore = 0;
+            local_semaphore_to_set = 0;
+            for (i; 8)
+            {
+                if (local_events_one_hot[i])
+                {
+                    local_events[i] <= 0;
+                    local_set_semaphore = 1;
+                    local_semaphore_to_set[2;0] = local_semaphore_to_set[2;0] | i;
+                    local_semaphore_to_set[3;2] = local_semaphore_to_set[3;2] | local_events_cfg[i].thread;
+                }
+                if (local_events==0)
+                {
+                    local_events[i] <= local_events_in[i] & local_events_cfg[i].enable;
+                }
+            }
+        }
 
     /*b NYI
      */
@@ -89,6 +135,14 @@ module gip_special( clock gip_clock,
                 case gip_special_reg_semaphores_clear:
                 {
                     read_data = special_semaphores;
+                }
+                case gip_special_reg_local_events:
+                {
+                    for (i; 8)
+                    {
+                        read_data[3;i*4] = local_events_cfg[i].thread;
+                        read_data[3+i*4] = local_events_cfg[i].enable;
+                    }
                 }
                 case gip_special_reg_thread:
                 {
@@ -147,12 +201,18 @@ module gip_special( clock gip_clock,
                     special_cooperative <= write_data[0];
                     special_round_robin <= write_data[1];
                     thread_0_privilege <= write_data[2];
-                    arm_trap_semaphore <= write_data[5;16];
                 }
                 case gip_special_reg_semaphores_set:
                 case gip_special_reg_semaphores_clear:
                 {
                     special_semaphores_mask <= write_data;
+                }
+                case gip_special_reg_local_events:
+                {
+                    for (i; 8)
+                    {
+                        local_events_cfg[i] <= { enable=write_data[i*4+3], thread=write_data[3;i*4]};
+                    }
                 }
                 case gip_special_reg_thread:
                 {
@@ -228,6 +288,10 @@ module gip_special( clock gip_clock,
         if (postbus_semaphore_to_set)
         {
             new_semaphores[postbus_semaphore_to_set] = 1;
+        }
+        if (local_set_semaphore)
+        {
+            new_semaphores[local_semaphore_to_set] = 1;
         }
 
         /*b Set semaphores

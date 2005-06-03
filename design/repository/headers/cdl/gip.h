@@ -14,7 +14,8 @@ typedef enum [5]
 {
     gip_special_reg_semaphores_clear = 0, // read returns semaphores, and clears bits in mask, clears mask; write writes mask
     gip_special_reg_semaphores_set   = 1, // read returns semaphores, and sets bits in mask, clears mask; write writes mask
-    gip_special_reg_gip_config = 3, // scheduler mode, ARM trap semaphore, privelege state of thread 0
+    gip_special_reg_local_events   = 2, // read/write, configures which semaphores are set when local events fire
+    gip_special_reg_gip_config = 3, // scheduler mode, privelege state of thread 0
     gip_special_reg_thread = 4, // thread to write with 'selected' thread; may be read
     gip_special_reg_thread_pc = 5, // thread restart address, bottom bit indicates current thread or selected thread; on reads actually you get the selected thread, but only if no scheduling is going on
     gip_special_reg_thread_data = 6, // thread restart semaphore mask, decoder type, pipeline config (trail, sticky), ALU mode (for native) - restart data; on reads actually you get the selected thread, but only if no scheduling is going on
@@ -252,6 +253,8 @@ extern module gip_core( clock gip_clock,
                         input bit mem_read_data_valid,
                         input bit[32] mem_read_data,
 
+                        input bit[8] local_events_in,
+
                         output t_postbus_type postbus_tx_type,
                         output t_postbus_data postbus_tx_data,
                         input t_postbus_ack postbus_tx_ack,
@@ -271,6 +274,8 @@ extern module gip_core( clock gip_clock,
 
     timing comb input mem_alu_busy;
     timing comb output fetch_op, prefetch_op;
+
+    timing to rising clock gip_clock local_events_in;
 
     timing from rising clock gip_clock postbus_tx_type, postbus_tx_data;
     timing to rising clock gip_clock postbus_tx_ack;

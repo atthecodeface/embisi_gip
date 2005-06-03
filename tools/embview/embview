@@ -280,19 +280,23 @@ class c_embview_ui:
         self.body_ip_okay.grid( row=1, column=4, sticky="nsew" )
         def local_file_boot_mif_current( self=self ):
             self.boot_mif( self.mem, self.mif_filename, 0x80000000, 0x80000000 )
+        def local_file_boot_mif_eth( self=self ):
+            self.boot_mif( self.mem, "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/ethmonitor.dram.mif", 0x80000000, 0x80000000 )
         def local_file_boot_mif_set_linux( self=self ):
             #self.mif_filename = "/home/localgjs/tnbt_cvs_trees/software/os/linux/combined.mif"
             #self.body.setvar( name="mif_filename", value=self.mif_filename )
-            self.boot_mif( self.mem, "/home/localgjs/tnbt_cvs_trees/software/os/linux/combined.mif", 0x80020000, 0x80028000, 3 )
+            self.boot_mif( self.mem, "/home/localgjs/tnbt_cvs_trees/software/os/linux/combined.mif", 0x80200000, 0x80208000, 3 )
         def local_file_run_linux( self=self ):
             self.mem.load_regs([(15,0x80028000)])
         self.body_mif_filename      = Label( master=self.body, textvariable="mif_filename" )
         self.body_mif_filename_linux = Button( master=self.body, text="Linux", command=local_file_boot_mif_set_linux )
         self.body_mif_filename_run_linux = Button( master=self.body, text="RunLin", command=local_file_run_linux )
+        self.body_mif_filename_boot_eth = Button( master=self.body, text="Boot", command=local_file_boot_mif_eth )
         self.body_mif_filename_boot = Button( master=self.body, text="Boot", command=local_file_boot_mif_current )
         self.body_mif_filename.grid( row=2, columnspan=3, column=1 )
         self.body_mif_filename_linux.grid( row=2, column=5 )
         self.body_mif_filename_run_linux.grid( row=2, column=6 )
+        self.body_mif_filename_boot_eth.grid( row=2, column=7 )
         self.body_mif_filename_boot.grid( row=2, column=4 )
         self.mif_filename = "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/ethmonitor.dram.mif"
         self.body.setvar( name="mif_filename", value=self.mif_filename )

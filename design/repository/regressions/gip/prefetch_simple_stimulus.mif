@@ -1,0 +1,140 @@
+# Prefetch stimulus and check file
+# format:
+#  000sfFPS prefaddr     00000DAV fetch_pc fetcdata
+# fetch_ops: 0->this, 1->last, 2->seq, 3->hold
+# prefetch_ops: 0->none, 1->new, 2->hold, 3->seq
+
+# this_none
+00010001 0   002 0 0
+# this_none
+00010001 0   002 0 0
+# this_none
+00010001 0   002 0 0
+
+# this_new 100
+00010011 100    000 0 0
+# last_seq
+00010131 0      111 00000100 aa0100aa
+# 3 seq_seq
+00010231 0      111 00000102 aa0100aa
+00010231 0      111 00000104 bb0104bb
+00010231 0      111 00000106 bb0104bb
+# 2 hold_seq
+00010331 0      111 00000106 bb0104bb
+00010331 0      111 00000106 bb0104bb
+# seq_seq
+00010231 0      111 00000108 cc0108cc
+# 2 hold_seq
+00010331 0      111 00000108 cc0108cc
+00010331 0      111 00000108 cc0108cc
+# seq_seq
+00010231 0      111 0000010a cc0108cc
+
+# seq_new 202
+00010211 202    111 0000010c dd010cdd
+# hold_seq
+00010331 0      111 0000010c dd010cdd
+# last_seq
+00010131 0      111 00000202 aa0200aa
+# hold_seq
+00010331 0      111 00000202 aa0200aa
+
+# this_new 302
+00010011 302    000 0 0
+# hold_seq
+00010331 0      010 00000302 deadbeef
+# last_seq
+00010131 0      111 00000302 aa0300aa
+# seq_seq
+00010231 0      111 00000304 bb0304bb
+# 10 seq_hold
+00010221 0      111 00000306 bb0304bb
+00010221 0      010 00000308 deadbeef
+00010221 0      111 00000308 cc0308cc
+00010221 0      111 0000030a cc0308cc
+00010221 0      010 0000030c deadbeef
+00010221 0      111 0000030c dd030cdd
+00010221 0      111 0000030e dd030cdd
+00010221 0      010 00000310 deadbeef
+00010221 0      111 00000310 ee0310ee
+00010221 0      111 00000312 ee0310ee
+# 2 seq_seq
+00010231 0      010 00000314 deadbeef
+00010231 0      111 00000314 ff0314ff
+# 3 hold_hold
+00010321 0      111 00000314 ff0314ff
+00010321 0      111 00000314 ff0314ff
+00010321 0      111 00000314 ff0314ff
+# 2 hold_seq
+00010331 0      111 00000314 ff0314ff
+00010331 0      111 00000314 ff0314ff
+# 4 seq_hold
+00010221 0      111 00000316 ff0314ff
+00010221 0      010 00000318 deadbeef
+00010221 0      111 00000318 aa0318aa
+00010221 0      111 0000031a aa0318aa
+# 3 seq_seq
+00010231 0      010 0000031c deadbeef
+00010231 0      111 0000031c bb031cbb
+# 2 seq_hold
+00010221 0      111 0000031e bb031cbb
+00010221 0      010 00000320 deadbeef
+
+# seq_new 400
+00010211 400    111 00000320 cc0320cc
+# seq_seq - this is dubious; assume the fetch of 'seq' is a 'last' - it cannot be related to before the 'new' - but it could be if the data were not valid. Hmmm.
+00010231 0      111 00000400 aa0400aa
+# last_seq - now we have 'seq=>last' followed by 'last'...
+00010131 0      010 00000400 aa0400aa
+# 6 seq_seq
+00010231 0      111 00000400 aa0400aa
+00010231 0      111 00000402 aa0400aa
+00010231 0      111 00000404 bb0404bb
+00010231 0      111 00000406 bb0404bb
+00010231 0      111 00000408 cc0408cc
+00010231 0      111 0000040a cc0408cc
+# 7 seq_hold
+00010221 0      111 0000040c dd040cdd
+00010221 0      111 0000040e dd040cdd
+00010221 0      010 00000410 deadbeef
+00010221 0      111 00000410 ee0410ee
+00010221 0      111 00000412 ee0410ee
+00010221 0      010 00000414 deadbeef
+00010221 0      111 00000414 ff0414ff
+
+# seq_new 502
+00010211 502    111 00000416 ff0414ff
+# seq_hold - this is dubious again; the last seq returned valid data, so this 'seq' must be interpreted as a 'last'
+00010221 0      111 00000502 aa0500aa
+# last_hold
+00010121 0      010 00000502 deadbeef
+# 4 seq_hold
+00010221 0      111 00000502 aa0500aa
+00010221 0      010 00000504 4
+00010221 0      111 00000504 bb0504bb
+00010221 0      111 00000506 bb0504bb
+
+# seq_new 602
+00010211 602    010 00000508 deadbeef
+# seq_hold
+00010221 0      111 00000508 cc0508cc
+# last_hold
+00010121 0      111 00000602 aa0600aa
+# 10 seq_hold
+00010221 0      010 00000604 deadbeef
+00010221 0      111 00000604 bb0604bb
+00010221 0      111 00000606 bb0604bb
+00010221 0      010 00000608 deadbeef
+00010221 0      111 00000608 cc0608cc
+00010221 0      111 0000060a cc0608cc
+00010221 0      010 0000060c deadbeef
+00010221 0      111 0000060c dd060cdd
+00010221 0      111 0000060e dd060cdd
+00010221 0      010 00000610 deadbeef
+
+# this_none
+00010001 0   002 0 0
+
+#b Done!!!
+
+ffffffff ffffffff ffffffff ffffffff ffffffff

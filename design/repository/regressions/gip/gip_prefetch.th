@@ -3,8 +3,42 @@
 #  This file 'rom.th' copyright Gavin J Stark 2003, 2004
 #  
 
+#a Documentation
+# we take a stimulus file and generate input to the fetch module
+# output from the fetch module is compared against that in the stimulus file
+# we can drive
+#  fetch_16 fetch_op fetch_flush prefetch_op sram_granted
+#  prefetch_address
+# we can compare
+#  fetch_pc
+#  fetch_data
+#  fetch_data_valid
+# The stimulus file has the following format
+#  000sfFPS prefaddr     00000DAV fetch_pc fetcdata
+#    s->fetch_16
+#    f->fetch_flush
+#    F->fetch_op
+#    P->prefetch_op
+#    S->sram_granted
+#
+#    D->check data matches
+#    A->check address matches
+#    V->0=>check valid==0, 1=>check valid=1, else ignore valid
+
 #a Main
-int address
+int stadd
+int x
+int in_ops
+int in_addr
+int out_mask
+int out_addr
+int out_data
+int last_out_mask
+int last_out_addr
+int last_out_data
+memory stimulus 1024 32
+mem_load stimulus env_string("stimulus_mif") 0
+set out_mask 2
 
 #b Header
 printf "Simple GIP prefetch test"
@@ -15,6 +49,8 @@ reset "test_reset" 1
 wait 10
 
 # Drive this/none
+drive fetch_16 0
+drive fetch_flush 1
 drive fetch_op 0
 drive prefetch_op 0
 drive prefetch_address 0
@@ -24,6 +60,85 @@ wait 1
 reset "test_reset" 0
 
 wait 5
+
+while 1
+
+#b Read the inputs to drive in the next cycle and the outputs to check then
+mem_read in_ops stimulus stadd
+add stadd stadd 1
+mem_read in_addr stimulus stadd
+add stadd stadd 1
+mem_read out_mask stimulus stadd
+add stadd stadd 1
+mem_read out_addr stimulus stadd
+add stadd stadd 1
+mem_read out_data stimulus stadd
+add stadd stadd 1
+
+#b Check the last
+and x last_out_mask 0x3
+div last_out_mask last_out_mask 16
+beq x 2 valid_okay
+beq x input("fetch_data_valid") valid_okay
+printf "%d0%:Prefetch data valid mismatch got %d1% wanted %d2%" global_cycle() input("fetch_data_valid") x
+valid_okay:
+
+and x last_out_mask 0x1
+div last_out_mask last_out_mask 16
+beq x 0 addr_okay
+beq last_out_addr input("fetch_pc") addr_okay
+printf "%d0%:Prefetch pc mismatch got %x1% wanted %x2%" global_cycle() input("fetch_pc") last_out_addr
+addr_okay:
+
+and x last_out_mask 0x1
+div last_out_mask last_out_mask 16
+beq x 0 data_okay
+beq last_out_data input("fetch_data") data_okay
+printf "%d0%:Prefetch data mismatch got %x1% wanted %x2%" global_cycle() input("fetch_data") last_out_data
+data_okay:
+
+set last_out_mask out_mask
+set last_out_addr out_addr
+set last_out_data out_data
+
+#b Drive outputs
+and x in_ops 0x1
+div in_ops in_ops 16
+drive "sram_granted" x
+
+and x in_ops 0x3
+div in_ops in_ops 16
+drive "prefetch_op" x
+
+and x in_ops 0x3
+div in_ops in_ops 16
+drive "fetch_op" x
+
+and x in_ops 0x1
+div in_ops in_ops 16
+drive "fetch_flush" x
+
+and x in_ops 0x1
+div in_ops in_ops 16
+drive "fetch_16" x
+
+drive "prefetch_address" in_addr
+
+#b Check for done
+beq in_addr 0xffffffff test_complete
+
+#b Clock it
+wait 1
+
+#b Loop
+endwhile
+
+#b End
+test_complete:
+goto test_pass
+
+#a OLD from here
+
 
 gosub this_none
 wait 3

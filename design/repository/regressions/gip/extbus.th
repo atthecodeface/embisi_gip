@@ -1,0 +1,95 @@
+#a Copyright
+#  
+#  This file 'rom.th' copyright Gavin J Stark 2003, 2004
+#  
+
+spawn leds_thread leds 10
+
+#a Extbus thread
+int address
+int data
+loop:
+wait 1
+beq input("ext_bus_ce") 8 debug_ce
+goto loop
+
+
+debug_ce:
+beq input("ext_bus_ce") 0 loop
+beq input("ext_bus_we") 1 debug_ce_we
+beq input("ext_bus_oe") 1 debug_ce_oe
+wait 1
+goto debug_ce
+
+debug_ce_we:
+beq input("ext_bus_ce") 0 debug_do_write
+beq input("ext_bus_we") 0 debug_do_write
+wait 1
+goto debug_ce_we
+
+debug_do_write:
+set address input("ext_bus_address")
+set data input("ext_bus_write_data")
+gosub debug_write
+goto loop
+
+debug_ce_oe:
+set address input("ext_bus_address")
+gosub debug_read
+reset "ext_bus_read_data" data
+debug_ce_oe_loop:
+beq input("ext_bus_ce") 0 loop
+beq input("ext_bus_oe") 0 debug_ce
+wait 1
+goto debug_ce_oe_loop
+
+end
+
+debug_write:
+beq address 0 debug_write_pass
+beq address 1 debug_write_fail
+beq address 2 debug_write_display
+debug_write_done:
+return
+
+debug_write_pass:
+goto test_pass
+debug_write_fail:
+goto test_fail
+debug_write_display:
+printf "%d0%:Ext bus display %x1%" global_cycle() data
+goto debug_write_done
+
+debug_read:
+set data 0
+printf "%d0%:Ext bus read" global_cycle()
+return
+
+
+test_pass:
+pass 0 "Test succeeded"
+
+end
+
+test_fail:
+printf "Test failed %d0% %d1%" global_cycle() data
+fail global_cycle() "**************************************************************************** Test failed"
+end
+
+#a LEDS thread
+int old_value
+leds:
+
+while 1
+wait_until_change leds
+set old_value input("leds")
+wait 1
+printf "%d0%:Extbus leds change from %x1% to %x2%" global_cycle() old_value input("leds")
+endwhile
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

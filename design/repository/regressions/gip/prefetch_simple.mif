@@ -1,0 +1,113 @@
+# Prefetch stimulus and check file
+# format:
+#  000sfFPS prefaddr     00000DAV fetch_pc fetcdata
+# fetch_ops: 0->this, 1->last, 2->seq, 3->hold
+# prefetch_ops: 0->none, 1->new, 2->hold, 3->seq
+
+# this_none
+00010001 0   002 0 0
+# this_none
+00010001 0   002 0 0
+# this_none
+00010001 0   002 0 0
+
+# this_new 100
+00010011 100    000 0 0
+# last_seq
+00010131 0      111 00000100 0
+# 3 seq_seq
+00010231 0      111 00000102 0
+00010231 0      111 00000104 0
+00010231 0      111 00000106 0
+# 2 hold_seq
+00010331 0      111 00000106 0
+00010331 0      111 00000106 0
+# seq_seq
+00010231 0      111 00000108 0
+# 2 hold_seq
+00010331 0      111 00000108 0
+00010331 0      111 00000108 0
+# seq_seq
+00010231 0      111 0000010a 0
+
+# seq_new 202
+# hold_seq
+# last_seq
+# hold_seq
+
+# this_new 302
+# hold_seq
+# last_seq
+# seq_seq
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_seq
+# seq_seq
+# hold_hold
+# hold_hold
+# hold_hold
+# hold_seq
+# hold_seq
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_seq
+# seq_seq
+# seq_seq
+# seq_hold
+# seq_hold
+
+# seq_new 400
+# seq_seq
+# last_seq
+# seq_seq
+# seq_seq
+# seq_seq
+# seq_seq
+# seq_seq
+# seq_seq
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+
+# seq_new 502
+# seq_hold
+# last_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+
+# seq_new 602
+# seq_hold
+# last_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+# seq_hold
+
+# this_none
+00010001 0   002 0 0
+
+#b Done!!!
+
+ffffffff ffffffff ffffffff ffffffff ffffffff

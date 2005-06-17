@@ -12,11 +12,17 @@ string vcd_filename
 set vcd_create 1
 
 #a Main
-#gosub gip_prefetch_tests
+beq env_int("prefetch_tests") 0 skip_prefetch_tests
+gosub gip_prefetch_tests
+skip_prefetch_tests:
+
 #gosub gip_tests
 #gosub gip_simple_tests
 #gosub gip_ddr_tests
+beq env_int("system_tests") 0 skip_system_tests
 gosub gip_system_tests
+skip_system_tests:
+
 end
 
 #a Gip prefetch tests
@@ -25,8 +31,10 @@ gip_prefetch_tests:
 
 #b gip_prefetch_0
 set run_length 40000
-set_string vcd_filename "gip_prefetch_0"s
+set_string vcd_filename "gip_prefetch_0"
 setenv "memory_log_size" 16
+setenv "stimulus_mif" "prefetch_simple_stimulus.mif"
+setenv "instruction_ram" "prefetch_simple_sram.mif"
 gosub gip_prefetch_test
 
 #b Done
@@ -247,17 +255,39 @@ gip_system_tests:
 setenv "verbose_level" 1
 
 set vcd_create 1
-gosub gip_system_0
+gosub gip_system_scheduler
+#gosub gip_system_0
 #gosub gip_system_1
 
 return
 
-#b gip_system_0
-gip_system_0:
-#set run_length 160000
-set run_length 400000
+#a GIP system scheduler tests
+gip_system_scheduler:
+    gosub gip_system_scheduler_0
+#    gosub gip_system_scheduler_1
+return
+
+#b gip_system_scheduler_0
+# This test runs the scheduler and tests different round robin, cooperative and preemptive modes - it is not exhastive as to preempting different instruction types, though
+gip_system_scheduler_0:
+set run_length 600000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/scheduler_modes.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 0
+gosub gip_system_test
+return
+
+#a GIP system ethernet tests
+#b gip_system_ethernet_0
+gip_system_ethernet_0:
+#set run_length 400000
+set run_length 32000
+set vcd_create 1
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
+setenv "ddr_mif" "../arm/bin/ethernet.regression.dmif"
 set_string vcd_filename "gip_system_0"
 gosub gip_system_test
 return
@@ -267,6 +297,7 @@ gip_system_1:
 set run_length 40000
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
+setenv "ddr_mif" "../arm/bin/ethernet.regression.dmif"
 set_string vcd_filename "gip_system_0"
 gosub gip_system_test
 return

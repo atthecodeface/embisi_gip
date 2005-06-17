@@ -22,7 +22,7 @@ option_int rx_baud_subtract 7
 module uart_testbench "uart_testbench"
 
 #b Add DDR model
-option_string "filename" "ddr.mif"
+option_string "filename" env_string("ddr_mif")
 module ddr_16m_x_32 "ddr"
 
 #b Add test harness
@@ -30,7 +30,14 @@ option_string "clock" "ddr_clock"
 option_string "inputs" "dq_oe_ctl dq_oe_ddr"
 option_string "outputs" "test_reset cke_last_of_logic logic_ck"
 option_string "filename" "gip_ddr.th"
-module se_test_harness "th"
+module se_test_harness "ddrth"
+
+#b Ext bus test harness
+option_string "clock" "extbus_clock"
+option_string "inputs" "ext_bus_ce[4] ext_bus_oe ext_bus_we ext_bus_address[24] ext_bus_write_data_enable ext_bus_write_data[32] leds[8]"
+option_string "outputs" "ext_bus_read_data[32]"
+option_string "filename" "extbus.th"
+module se_test_harness "extbusth"
 
 #b Add DDR pin logic
 option_string "clock" "ddr_clock"
@@ -50,8 +57,9 @@ clock ddr_clock 0 4 4
 clock logic_clock 0 48 48
 clock eth_clock 0 200 200
 
-drive th.ddr_clock ddr_clock
+drive ddrth.ddr_clock ddr_clock
 drive ddr_pins.ddr_clock ddr_x4_clock
+drive extbusth.extbus_clock logic_clock
 drive gip_simple.int_clock logic_clock
 drive gip_simple.drm_clock ddr_clock
 drive gip_simple.eth_mii_tx_clock eth_clock
@@ -64,7 +72,6 @@ wire system_reset
 wire leds[8]
 wire txd rxd switches[8]
 wire cke_last_of_logic
-wire low_bus[32]
 wire next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4]
 wire dqm[4] dq_to_ddr[32] dqs_to_ddr[4] dq_oe_ctl
 wire        dq_to_ctl[32] dqs_to_ctl[4] dq_oe_ddr
@@ -73,6 +80,10 @@ wire cke a[13] ba[2] we_n cas_n ras_n select_n[2]
 wire select_0
 wire high
 extract select_0 select_n 0 1
+
+wire ext_bus_ce[4] ext_bus_oe ext_bus_we ext_bus_address[24]
+wire ext_bus_read_data[32] ext_bus_write_data[32] ext_bus_write_data_enable
+
 wire eth_mii_rx_dv eth_mii_rx_d[4] eth_mii_rx_er
 wire eth_mii_tx_en eth_mii_tx_d[4]
 
@@ -86,11 +97,21 @@ assign eth_mii_crs 0
 wire ssdo
 wire ssdi[2]
 
-#b Wire up test harness
-drive system_reset        th.test_reset 
-drive cke_last_of_logic th.cke_last_of_logic
-drive th.dq_oe_ctl dq_oe_ctl
-drive th.dq_oe_ddr dq_oe_ddr
+#b Wire up DDR test harness
+drive system_reset        ddrth.test_reset 
+drive cke_last_of_logic ddrth.cke_last_of_logic
+drive ddrth.dq_oe_ctl dq_oe_ctl
+drive ddrth.dq_oe_ddr dq_oe_ddr
+
+#b Wire up extbus test harness
+drive ext_bus_read_data extbusth.ext_bus_read_data
+drive extbusth.ext_bus_ce ext_bus_ce
+drive extbusth.ext_bus_oe ext_bus_oe
+drive extbusth.ext_bus_we ext_bus_we
+drive extbusth.ext_bus_write_data_enable ext_bus_write_data_enable
+drive extbusth.ext_bus_write_data ext_bus_write_data
+drive extbusth.ext_bus_address ext_bus_address
+drive extbusth.leds leds
 
 #b Wire up GIP simple
 drive gip_simple.cke_last_of_logic cke_last_of_logic
@@ -100,8 +121,14 @@ drive gip_simple.system_reset system_reset
 drive gip_simple.rxd rxd
 drive txd gip_simple.txd
 drive leds gip_simple.leds
-drive gip_simple.ext_bus_read_data low_bus
-assign low_bus 0
+
+drive gip_simple.ext_bus_read_data ext_bus_read_data
+drive ext_bus_ce gip_simple.ext_bus_ce
+drive ext_bus_oe gip_simple.ext_bus_oe
+drive ext_bus_we gip_simple.ext_bus_we
+drive ext_bus_write_data_enable gip_simple.ext_bus_write_data_enable
+drive ext_bus_write_data gip_simple.ext_bus_write_data
+drive ext_bus_address gip_simple.ext_bus_address
 
 drive gip_simple.input_dq_high  dq_to_ctl_high
 drive gip_simple.input_dq_low   dq_to_ctl_low

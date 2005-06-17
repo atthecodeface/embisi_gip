@@ -3,9 +3,11 @@
 
 /*a Defines
  */
-#define GIP_SET_THREAD(thread,pc,data) { unsigned int s_pc=((unsigned int)(pc))|1, s_data=((unsigned int)(data))|0x100; __asm__ volatile (".word 0xec00c84e \n mov r0, %0 \n .word 0xec00c85e \n mov r0, %1 \n .word 0xec00c86e \n mov r0, %2 " : : "r" (thread), "r" (s_pc), "r" (s_data) ); }
-#define GIP_DESCHEDULE() {__asm__ volatile (".word 0xec007401" );}
 #define NOP { __asm__ volatile(" movnv r0, r0"); }
+#define GIP_SET_THREAD(thread,pc,data) { unsigned int s_pc=((unsigned int)(pc))|1, s_data=((unsigned int)(data))|0x100; __asm__ volatile (".word 0xec00c84e \n mov r0, %0 \n .word 0xec00c85e \n mov r0, %1 \n .word 0xec00c86e \n mov r0, %2 " : : "r" (thread), "r" (s_pc), "r" (s_data) ); }
+#define GIP_DESCHEDULE() {__asm__ volatile (".word 0xec007305" ); NOP; } // this needs to deschedule atomically else preempt can occur before it executes, so atomic
+#define GIP_BLOCK_ALL() {__asm__ volatile (".word 0xec007281" );}
+#define GIP_ATOMIC(n) {__asm__ volatile (".word 0xec007201+((" ##n## ")<<1)" );} // this makes the next 'n' valid instructions atomic with this one - preempt will not occur
 #define NOP_WRINT { NOP; NOP; NOP; }
 static void nop_many( void ) { NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;   NOP; NOP; NOP; NOP; }
 #define NOP_WREXT { nop_many(); }
@@ -15,6 +17,9 @@ static void nop_many( void ) { NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP
 #define FLASH_ADDRESS_WRITE(v) { __asm__ volatile (" .word 0xec00c4ae \n mov r8, %0" : : "r" (v) ); NOP_WRINT; }
 #define FLASH_DATA_READ(v) { __asm__ volatile (" .word 0xec00ce04 \n mov %0, r9" : "=r" (v) ); }
 #define FLASH_DATA_WRITE( v ) { __asm__ volatile (" .word 0xec00c49e \n mov r8, %0" : : "r" (v) ); NOP_WREXT; }
+#define GIP_EXTBUS_CONFIG_WRITE(v) { __asm__ volatile (" .word 0xec00c48e \n mov r8, %0" : : "r" (v) ); }
+#define GIP_EXTBUS_ADDRESS_WRITE(v) { __asm__ volatile (" .word 0xec00c4ae \n mov r8, %0" : : "r" (v) ); }
+#define GIP_EXTBUS_DATA_WRITE(v) { __asm__ volatile (" .word 0xec00c49e \n mov r8, %0" : : "r" (v) ); }
 #define GIP_POST_TXD_0( data ) { __asm__ volatile ( " .word 0xec00c60e \n mov r0, %0 \n" : : "r" (data) ); }
 #define GIP_POST_TXC_0( cmd ) { __asm__ volatile ( " .word 0xec00c6ce \n mov r0, %0 \n" : : "r" (cmd) ); }
 #define GIP_POST_TXC_0_IO_CMD(route,len,sem,cmd) { GIP_POST_TXC_0( ((route)<<postbus_command_route_start) | ((len)<<postbus_command_source_gip_tx_length_start) | ((sem)<<postbus_command_source_gip_tx_signal_start) | ((cmd)<<postbus_command_target_io_dest_start) | (0<<postbus_command_target_io_dest_type_start) ); }
@@ -28,8 +33,8 @@ static void nop_many( void ) { NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP
 }
 #define GIP_POSTIF_CFG(r,v) { __asm__ volatile ( " .word 0xec00c7ee+" #r "<<4 \n mov r0, %0 \n" : : "r" (v) ); }
 
-#define GIP_READ_AND_CLEAR_SEMAPHORES( s, m ) { __asm__ volatile ( " .word 0xec00c80e \n mov r0, %0 \n" : : "r" (m) ); NOP; NOP; __asm__ volatile ( " .word 0xec00de08 \n mov %0, r0 \n" : "=r" (s) ); NOP;  }
-#define GIP_READ_AND_SET_SEMAPHORES( s, m )   { __asm__ volatile ( " .word 0xec00c80e \n mov r0, %0 \n" : : "r" (m) ); NOP; NOP; __asm__ volatile ( " .word 0xec00de08 \n mov %0, r1 \n" : "=r" (s) ); NOP; }
+#define GIP_READ_AND_CLEAR_SEMAPHORES( s, m ) { __asm__ volatile ( " .word 0xec007209 ; .word 0xec00c80e ; mov r0, %0 ; .word 0xec007283 " : : "r" (m) ); __asm__ volatile ( " .word 0xec00de08 ; mov %0, r0 ; .word 0xec007281 " : "=r" (s) ); }
+#define GIP_READ_AND_SET_SEMAPHORES( s, m ) { __asm__ volatile ( " .word 0xec007209 ; .word 0xec00c80e ; mov r0, %0 ; .word 0xec007283 " : : "r" (m) ); __asm__ volatile ( " .word 0xec00de08 ; mov %0, r1 ; .word 0xec007281 " : "=r" (s) ); }
 // read gip_postbus(3) reg 12 (rx status 0)
 #define GIP_POST_STATUS_0(s) { __asm__ volatile ( " .word 0xec00de06 \n mov %0, r12 \n" : "=r" (s) ); }
 #define GIP_POST_RXD_0(s) { __asm__ volatile ( " .word 0xec00de06 \n mov %0, r0 \n" : "=r" (s) ); }

@@ -233,6 +233,7 @@ extern module gip_core( clock gip_clock,
                         input bit[32] fetch_pc,
                         output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
                         output bit[32] prefetch_address,
+                        output bit fetch_flush,
 
                         output bit rfr_periph_read,
                         output bit[5] rfr_periph_read_address,
@@ -268,6 +269,7 @@ extern module gip_core( clock gip_clock,
     timing from rising clock gip_clock fetch_16, fetch_op;
     timing to rising clock gip_clock fetch_data, fetch_data_valid, fetch_pc;
     timing from rising clock gip_clock prefetch_op, prefetch_address;
+    timing from rising clock gip_clock fetch_flush;
 
     timing from rising clock gip_clock alu_mem_op, alu_mem_address, alu_mem_write_data, alu_mem_burst;
     timing to rising clock gip_clock mem_alu_busy, mem_read_data_valid, mem_read_data;

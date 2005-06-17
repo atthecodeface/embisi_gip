@@ -47,6 +47,7 @@ module gip_decode( clock gip_clock,
                    input bit[32] fetch_pc,
                    output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
                    output bit[32] prefetch_address,
+                   output bit force_fetch_flush,
 
                    output t_gip_instruction_rf dec_inst,
                    input bit rfr_accepting_dec_instruction,
@@ -93,6 +94,7 @@ module gip_decode( clock gip_clock,
     clocked bit valid_prefetch_returned = 0;
     clocked bit pc_valid = 0;
     clocked bit[32] pc = 0;
+    comb bit write_pc_from_fetch;
 
     /*b Decode state machine and current thread information
      */
@@ -117,7 +119,7 @@ module gip_decode( clock gip_clock,
 //    clocked bit follow_delay_pc = 0;
 //    clocked bit[32] delay_pc=0;
 
-    /*b Extended instruction data
+    /*b Extended instruction data and atomicity
      */
     clocked bit extended=0;
     clocked bit[28] extended_immediate=0;
@@ -125,6 +127,9 @@ module gip_decode( clock gip_clock,
     clocked t_gip_ins_r extended_rn={type=0,r=0};
     clocked t_gip_ins_r extended_rm={type=0,r=0};
     clocked t_gip_ext_cmd extended_cmd={extended=0};
+    clocked bit[6] atomic=0;
+    comb bit[6] next_atomic;
+    comb bit[6] atomic_dec;
 
     /*b ARM registers
      */
@@ -144,6 +149,7 @@ module gip_decode( clock gip_clock,
     net t_gip_ins_r native_dec_next_extended_rn;
     net t_gip_ins_r native_dec_next_extended_rm;
     net t_gip_ext_cmd native_dec_next_extended_cmd;
+    net bit[6] native_dec_next_atomic;
 
     net bit native_dec_next_in_immediate_conditional_shadow;
 
@@ -163,7 +169,6 @@ module gip_decode( clock gip_clock,
     comb bit[32] next_pc;
     comb t_gip_pc_op next_pc_op;
     comb bit force_write_pc;
-    comb bit force_fetch_flush;
 
     /*b Instruction blocking and branching
      */
@@ -260,18 +265,17 @@ module gip_decode( clock gip_clock,
             {
                 valid_prefetch_issued <= 0;
                 valid_prefetch_returned <= 0;
-                prefetch_op = gip_prefetch_op_none;
-                fetch_op = gip_fetch_op_this_prefetch; // dont want this to depend on flush; flush can be a bit late in the cycle
+//                prefetch_op = gip_prefetch_op_none; now done in the prefetch
+//                fetch_op = gip_fetch_op_this_prefetch; now done in the prefetch // dont want this to depend on flush; flush can be a bit late in the cycle; so we ignore the data valid if flushing
             }
             if (gip_reset)
             {
                 prefetch_op = gip_prefetch_op_none;
             }
-
-            if (!(fetched_opcode_valid && instruction_blocked))
+            if (write_pc_from_fetch && !(fetched_opcode_valid && instruction_blocked)) // basically - are we taking the fetched data? if this is not the case we ought to be presenting fetch_op of hold; we certainly need to hold the instruction for decode
             {
                 fetched_opcode <= fetch_data;
-                fetched_opcode_valid <= fetch_data_valid;
+                fetched_opcode_valid <= fetch_data_valid && !(gip_pipeline_flush | force_fetch_flush); // gjs june 1st 2005 added - shouldn't help us, but it is the correct place to have it
                 pc <= fetch_pc;
             }
             if (force_write_pc)
@@ -344,6 +348,8 @@ module gip_decode( clock gip_clock,
                                       next_extended_rm => native_dec_next_extended_rm,
                                       next_extended_cmd => native_dec_next_extended_cmd,
 
+                                      next_atomic => native_dec_next_atomic,
+
                                       in_conditional_shadow <= in_conditional_shadow,
                                       in_immediate_conditional_shadow <= in_immediate_conditional_shadow,
                                       next_in_immediate_conditional_shadow => native_dec_next_in_immediate_conditional_shadow );
@@ -357,12 +363,21 @@ module gip_decode( clock gip_clock,
             next_pc_valid = 0;
             next_pc = 0;
             next_pc_op = gip_pc_op_hold;
+            next_atomic = 0;
             acknowledge_scheduler <= 0;
             preempt_in_progress <= 0;
             deschedule = 0;
             instruction_blocked = 0;
+            write_pc_from_fetch = 0;
             force_write_pc = 0;
             force_fetch_flush = 0;
+
+            atomic <= next_atomic;
+            atomic_dec = atomic;
+            if (atomic!=0)
+            {
+                atomic_dec = atomic-1;
+            }
 
             dec_inst = native_dec_inst;
             dec_inst.pc = pc+8;
@@ -383,6 +398,7 @@ module gip_decode( clock gip_clock,
                 extended_rn.type <= gip_ins_r_type_no_override;
                 extended_rm.type <= gip_ins_r_type_no_override;
                 dec_inst.valid = 0;
+                next_atomic = 0;
                 if (sched_thread_to_start_valid)
                 {
                     if (sched_thread_to_start_resuming)
@@ -453,6 +469,7 @@ module gip_decode( clock gip_clock,
             case gip_decode_state_resume_native:
             case gip_decode_state_resume_emulate:
             {
+                next_atomic = 0;
                 // need to issue a mov pc, preempt_pc_level
                 dec_inst.gip_ins_class = gip_ins_class_arith;
                 dec_inst.gip_ins_subclass = gip_ins_subclass_arith_write_flags;
@@ -492,15 +509,22 @@ module gip_decode( clock gip_clock,
                 {
                     dec_inst.gip_ins_cc = gip_ins_cc_cp;
                 }
+                write_pc_from_fetch = 1;
 
                 /*b Select native instruction as our decode
                  */
                 if (!fetched_opcode_valid)
                 {
                     dec_inst.valid = 0;
+                    next_atomic = atomic;
                 }
                 else
                 {
+                    next_atomic = atomic_dec;
+                    if (native_dec_next_atomic!=0)
+                    {
+                        next_atomic = native_dec_next_atomic;
+                    }
                     if (native_dec_extending)
                     {
                         dec_inst.valid = 0;
@@ -541,6 +565,8 @@ module gip_decode( clock gip_clock,
                 }
                 if (gip_pipeline_flush)
                 {
+                    next_atomic = 0;
+
                     pc_valid <= 0;
                     acc_valid <= 0;
 
@@ -558,6 +584,7 @@ module gip_decode( clock gip_clock,
                 {
                     op_state <= gip_decode_state_idle;
                     deschedule = 1;
+                    next_atomic = 0;
                 }
                 instruction_blocked = dec_inst.valid && !rfr_accepting_dec_instruction;
                 /*b All done
@@ -567,6 +594,8 @@ module gip_decode( clock gip_clock,
              */
             case gip_decode_state_emulate:
             {
+                next_atomic = atomic;
+                write_pc_from_fetch = 1;
                 /*b Select native instruction as our decode if opcode is correct, else ARM decode
                  */
                 dec_inst = arm_dec_inst;
@@ -579,9 +608,15 @@ module gip_decode( clock gip_clock,
                 if (!fetched_opcode_valid)
                 {
                     dec_inst.valid = 0;
+                    next_atomic = atomic;
                 }
                 else
                 {
+                    next_atomic = atomic_dec;
+                    if (arm_use_native_decode && (native_dec_next_atomic!=0))
+                    {
+                        next_atomic = native_dec_next_atomic;
+                    }
                     if (arm_use_native_decode && native_dec_extending)
                     {
                         dec_inst.valid = 0;
@@ -608,10 +643,18 @@ module gip_decode( clock gip_clock,
                 if (gip_pipeline_rfw_write_pc)
                 {
                     next_pc = gip_pipeline_rfw_data;
-                    next_pc_valid = 1;
+                    next_pc_valid = 1; // should we kill this if preempting?
                 }
                 preempt_blocked = 0;//  in atomic window || setting atomic window || in zol
+                if ((next_atomic!=0) || (atomic!=0))
+                {
+                    preempt_blocked = 1;
+                }
                 if (arm_use_native_decode && native_dec_extending)
+                {
+                    preempt_blocked = 1;
+                }
+                if (!arm_use_native_decode && (arm_dec_next_cycle_of_opcode!=0))
                 {
                     preempt_blocked = 1;
                 }
@@ -625,6 +668,7 @@ module gip_decode( clock gip_clock,
                 }
                 if (gip_pipeline_flush)
                 {
+                    next_atomic = 0;
                     preempt_blocked = 0;
                     pc_valid <= 0;
                     acc_valid <= 0;
@@ -650,20 +694,22 @@ module gip_decode( clock gip_clock,
                         //allow this instruction to be executed;
                         op_state <= gip_decode_state_preempt_start;
                         preempt_in_progress <= 1;
-                        next_pc_op = gip_pc_op_hold; // don't fetch anything; but what if we are already prefetching at this moment! we need to flush the prefetch here
-                        force_fetch_flush = 1;
+                        // dont effect the next_pc_op - its part of this instruction! but do stop fetch from returning valid data... or starting any dramatic fetch. next_pc_op = gip_pc_op_hold; // don't fetch anything; but what if we are already prefetching at this moment! we need to flush the prefetch here
+                        force_fetch_flush = 1; // this should invalidate any next_pc_valid
                     }
                 instruction_blocked = dec_inst.valid && !rfr_accepting_dec_instruction;
                 /*b All done
                  */
             }
-            /*b Preempt start - insert a preemption instruction
+            /*b Preempt start - insert a preemption instruction; if flush is asserted during this cycle, then we are not effected; as our instruction has 'd' set
              */
             case gip_decode_state_preempt_start:
             {
+                next_atomic = 0;
+                write_pc_from_fetch = 0;
                 preempt_in_progress <= 1;
                 next_pc_op = gip_pc_op_hold;
-                // Insert a tagged block all instruction, which writes out the flags to special; on resume, we can read from special to the flags as the destination
+                // Insert a tagged block all instruction, which writes out the flags to special; on resume, we can read from special to the flags as the destination. Note 'd' is set so it will not be flushed.
                 if (rfr_accepting_dec_instruction)
                 {
                     op_state <= gip_decode_state_preempt_wait;
@@ -682,7 +728,7 @@ module gip_decode( clock gip_clock,
                 dec_inst.p_or_offset_is_shift = 0;
                 dec_inst.k = 0;
                 dec_inst.f = 0;
-                dec_inst.d = 0;
+                dec_inst.d = 1;
                 dec_inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_block_all};
                 if (decoding_thread_level==0)
                 {
@@ -695,10 +741,12 @@ module gip_decode( clock gip_clock,
                 dec_inst.tag = 1;
                 dec_inst.valid = 1;
             }
-            /*b Preempt wait - wait for an executing tagged instruction (that will be our preempt)
+            /*b Preempt wait - wait for an executing tagged instruction (that will be our preempt); if flush occurs (flushing our tagged instruction!) we are okay: our instructions are not flushed as they have 'd' set.
              */
             case gip_decode_state_preempt_wait:
             {
+                next_atomic = 0;
+                write_pc_from_fetch = 0;
                 preempt_in_progress <= 1;
                 next_pc_op = gip_pc_op_hold;
                 //then ignore all executing and flushes until you get an executing tagged instruction (the only other tagged instructions are deschedules and they should be atomic);
@@ -716,7 +764,7 @@ module gip_decode( clock gip_clock,
                 dec_inst.p_or_offset_is_shift = 0;
                 dec_inst.k = 0;
                 dec_inst.f = 0;
-                dec_inst.d = 0;
+                dec_inst.d = 1;
                 dec_inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
                 if (decoding_thread_level==0)
                 {

@@ -21,6 +21,8 @@ extern module gip_decode_native( input bit[16] opcode,
                                  output t_gip_ins_r next_extended_rm,
                                  output t_gip_ext_cmd next_extended_cmd,
 
+                                 output bit[6] next_atomic,
+
                                  input bit in_conditional_shadow,
                                  input bit in_immediate_conditional_shadow,
                                  output bit next_in_immediate_conditional_shadow
@@ -33,6 +35,7 @@ extern module gip_decode_native( input bit[16] opcode,
 
     timing comb input extended, extended_immediate, extended_rd, extended_rn, extended_rm, extended_cmd;
     timing comb output next_extended_immediate, next_extended_rd, next_extended_rn, next_extended_rm, next_extended_cmd;
+    timing comb output next_atomic;
 
     timing comb input in_conditional_shadow, in_immediate_conditional_shadow;
     timing comb output next_in_immediate_conditional_shadow;

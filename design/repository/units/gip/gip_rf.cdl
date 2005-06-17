@@ -448,7 +448,7 @@ module gip_rf( clock gip_clock,
             if (rfr_accepting_dec_instruction)
             {
                 rfr_inst_in <= dec_inst;
-                if (gip_pipeline_flush)
+                if (gip_pipeline_flush && !dec_inst.d)
                 {
                     rfr_inst_in.valid <= 0;
                 }

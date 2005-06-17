@@ -85,7 +85,7 @@ module gip_scheduler( clock gip_clock,
     /*b State in the scheduler guaranteed by the design
      */
     clocked t_gip_sched_thread[8] thread_data={{restart_pc=0, flag_dependencies=1, register_map=0, config=1, running=0}}; // 'Register file' of thread data for all eight threads
-    clocked bit[3] thread=0; // Actual thread number that is currently running
+    clocked bit[3] thread=0 "Actual thread number that is currently running; 1+last running thread if none running";
     clocked bit running=0; // 1 if a thread is running, 0 otherwise
     clocked bit[3] preempted_medium_thread=0; // 0 if none, else number
     clocked bit preempted_low_thread=0; // 0 if not, else 1
@@ -153,6 +153,10 @@ module gip_scheduler( clock gip_clock,
                     priority_thread = i;
                     priority_schedulable = 1;
                 }
+            }
+            if (special_cooperative && running) // only indicate schedulable if we are prempting or if we are cooperative and not running!
+            {
+                priority_schedulable = 0;
             }
 
             /*b Determine round-robin thread to start next
@@ -259,10 +263,15 @@ module gip_scheduler( clock gip_clock,
                 running <= 1;
                 thread_to_start_valid <= 0;
             }
+            elsif (!running)
+                {
+                    thread <= round_robin_thread;
+                }
             if (dec_deschedule)
             {
                 thread_data[ thread ].running <= 0;
                 running <= 0;
+                thread <= round_robin_thread;
             }
             if (next_thread_to_start_valid && !thread_to_start_valid)
             {

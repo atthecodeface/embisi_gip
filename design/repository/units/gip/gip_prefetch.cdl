@@ -31,14 +31,15 @@ typedef enum [3]
 module gip_prefetch( clock gip_clock,
                      input bit gip_reset,
 
-                     input bit fetch_16,
+                     input bit fetch_16 "Indicates if sequential accesses should be by half-word, not full-word",
 
-                     input t_gip_fetch_op fetch_op,
-                     output bit fetch_data_valid,
-                     output t_gip_word fetch_data,
-                     output bit[32]fetch_pc,
-                     input t_gip_prefetch_op prefetch_op,
-                     input bit[32] prefetch_address,
+                     input t_gip_fetch_op fetch_op "Indicates the data required combinatorially in this cycle",
+                     output bit fetch_data_valid "Asserted if the currently requested fetch_op is being serviced in this cycle combinatorially",
+                     output t_gip_word fetch_data "Driven with the data for the fetch_op presented in this cycle, if marked as valid; else garbage",
+                     output bit[32]fetch_pc "Driven with the PC appropriate to the fetch being requested; always valid even if the data_valid is deasserted or flushed",
+                     input t_gip_prefetch_op prefetch_op "Indication of the next fetch that will be required; also, if a nonsequential fetch is required then fetch_op must be 'this' and prefetch is 'new'",
+                     input bit[32] prefetch_address "Address for a new fetch",
+                     input bit fetch_flush "Asserted, late in the cycle, if the current fetch being requested will be discarded and subsequent holds should be marked as invalid, not valid; also the prefetch result should be regarded as if a prefetch_op of none was being requested",
 
                      input bit sram_granted,
                      output bit sram_read,
@@ -175,10 +176,15 @@ module gip_prefetch( clock gip_clock,
                 case gip_fetch_op_this_prefetch:
                 {
                     fetch_data_valid = 0;
+                    fetch_pc = prefetch_address;
                 }
                 }
             hold_data <= fetch_data;
             hold_data_valid <= fetch_data_valid;
+            if (fetch_flush)
+            {
+                hold_data_valid <= 0;
+            }
             hold_pc <= fetch_pc;
             assert( ((data_from_buffer&data_from_sram)==0), "Incorrectly returning data from SRAM read bus and buffer; only one should contain data at any one time" );
         }
@@ -327,13 +333,17 @@ module gip_prefetch( clock gip_clock,
                     new_address_will_be_pending = 0;
                 }
             }
+            if (fetch_flush) // if we flush it is like doing a prefetch of none; we can clear any pending address
+            {
+                new_address_will_be_pending = 0;
+            }
             new_address_pending <= new_address_will_be_pending;
             if (prefetch_op == gip_prefetch_op_new_address)
             {
                 last_new_address <= prefetch_address;
             }
 
-            /*b address
+            /*b address - note after a flush the address is invalid by definition, so we can ignore flush here
              */
             if ( (sram_fetch == sram_fetch_new) ||
                  (sram_fetch == sram_fetch_last_new) )  // Note we are not returning this data in this cycle for sure! So if we do, we will have a cycle to increment the address with the next clause
@@ -370,6 +380,11 @@ module gip_prefetch( clock gip_clock,
                  ( (sram_fetch == sram_fetch_new) || (sram_fetch == sram_fetch_last_new) ) )
             {
                 sram_bus_has_new <= 1;
+            }
+            if (fetch_flush)
+            {
+                sram_bus_has_new <= 0;
+                sram_bus_instructions <= 0;
             }
 
             /*b buffer, buffer_instructions, buffer_has_new
@@ -410,6 +425,10 @@ module gip_prefetch( clock gip_clock,
             else
             {
                 buffer_has_new <= buffer_has_new | sram_bus_has_new;
+            }
+            if (fetch_flush)
+            {
+                buffer_has_new <= 0;
             }
             if (sram_bus_instructions)
             {

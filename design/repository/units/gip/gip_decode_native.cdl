@@ -31,6 +31,8 @@ module gip_decode_native( input bit[16] opcode,
                           output t_gip_ins_r next_extended_rm,
                           output t_gip_ext_cmd next_extended_cmd,
 
+                          output bit[6] next_atomic,
+
                           input bit in_conditional_shadow,
                           input bit in_immediate_conditional_shadow,
                           output bit next_in_immediate_conditional_shadow
@@ -167,6 +169,7 @@ module gip_decode_native( input bit[16] opcode,
             next_extended_cmd = {extended=0, cc=gip_ins_cc_always, sign_or_stack=0, acc=0, op=0, burst=0};
             extending = 0;
             next_in_immediate_conditional_shadow = 0;
+            next_atomic = 0;
 
             inst.gip_ins_class = gip_ins_class_logic;
             inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
@@ -987,7 +990,7 @@ module gip_decode_native( input bit[16] opcode,
                                 inst.valid = 1;
                                 pc_op = gip_pc_op_sequential;
                             }
-                            case 1: // block
+                            case 1: // block/atomic/deschedule
                             {
                                 inst.gip_ins_class = gip_ins_class_logic;
                                 inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
@@ -995,17 +998,28 @@ module gip_decode_native( input bit[16] opcode,
                                 inst.s_or_stack = 0;
                                 inst.p_or_offset_is_shift = 0;
                                 inst.f = 0;
-                                inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_block_all};
+                                if (opcode[7])
+                                {
+                                    inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_block_all};
+                                }
+                                else
+                                {
+                                    inst.gip_ins_rn.type=gip_ins_r_type_none;
+                                }
+                                inst.gip_ins_rm.type=gip_ins_r_type_none;
                                 inst.gip_ins_rd.type=gip_ins_r_type_none;
+                                if (opcode[8])
+                                {
+                                    inst.tag = 1;
+                                    inst.f = 1;
+                                }
                                 inst.valid = 1;
                                 pc_op = gip_pc_op_sequential;
+                                next_atomic = opcode[6;1];
                             }
-                            case 2: // deschedule
+                            case 2:
                             {
-                                inst.f = 1;
-                                inst.tag = 1;
-                                inst.valid = 1;
-                                pc_op = gip_pc_op_sequential;
+                                inst.valid = 0;
                             }
                             case 3:
                             {

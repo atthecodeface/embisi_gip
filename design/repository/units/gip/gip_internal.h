@@ -436,6 +436,7 @@ extern module gip_decode( clock gip_clock,
                           input bit[32] fetch_pc,
                           output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
                           output bit[32] prefetch_address,
+                          output bit force_fetch_flush,
 
                           output t_gip_instruction_rf dec_inst,
                           input bit rfr_accepting_dec_instruction,
@@ -468,6 +469,7 @@ extern module gip_decode( clock gip_clock,
     timing from rising clock gip_clock fetch_op;
     timing to rising clock gip_clock fetch_data, fetch_data_valid;
     timing from rising clock gip_clock prefetch_op, prefetch_address;
+    timing from rising clock gip_clock force_fetch_flush;
 
     timing to rising clock gip_clock rfr_accepting_dec_instruction;
     timing comb input rfr_accepting_dec_instruction, gip_pipeline_flush, gip_pipeline_tag;

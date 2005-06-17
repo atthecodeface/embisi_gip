@@ -27,6 +27,7 @@ module gip_core( clock gip_clock,
                  input bit[32] fetch_pc,
                  output t_gip_prefetch_op prefetch_op, // Late in the cycle; can be used to start an SRAM cycle in the clock edge for fetch data in next cycle (if next cycle fetch requests it)
                  output bit[32] prefetch_address,
+                 output bit fetch_flush,
 
                  output bit rfr_periph_read,
                  output bit[5] rfr_periph_read_address,
@@ -70,6 +71,7 @@ module gip_core( clock gip_clock,
     net t_gip_fetch_op fetch_op;
     net t_gip_prefetch_op prefetch_op;
     net bit[32] prefetch_address;
+    net bit force_fetch_flush;
 
     net t_postbus_type postbus_tx_type;
     net t_postbus_data postbus_tx_data;
@@ -336,6 +338,7 @@ module gip_core( clock gip_clock,
                                      thread_data_config => sched_thread_data_config,
                                      thread_data_flag_dependencies => sched_thread_data_flag_dependencies );
 
+            fetch_flush = force_fetch_flush | gip_pipeline_flush;
             gip_decode decode( gip_clock <- gip_clock,
                                gip_reset <= gip_reset,
 
@@ -346,6 +349,7 @@ module gip_core( clock gip_clock,
                                fetch_pc <= fetch_pc,
                                prefetch_op => prefetch_op,
                                prefetch_address => prefetch_address,
+                               force_fetch_flush => force_fetch_flush,
 
                                dec_inst => dec_inst,
                                rfr_accepting_dec_instruction <= rfr_accepting_dec_instruction,

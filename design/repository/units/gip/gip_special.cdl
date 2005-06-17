@@ -163,7 +163,7 @@ module gip_special( clock gip_clock,
                 }
                 case gip_special_reg_preempted_pc_m:
                 {
-                    read_data = preempted_pc_l;
+                    read_data = preempted_pc_m;
                 }
                 case gip_special_reg_preempted_flags_l:
                 {

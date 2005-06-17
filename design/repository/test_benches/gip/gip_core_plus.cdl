@@ -17,28 +17,30 @@ include "memories.h"
 /*m gip_prefetch
  */
 extern module gip_prefetch( clock gip_clock,
-                     input bit gip_reset,
+                            input bit gip_reset,
 
-                     input bit fetch_16,
+                            input bit fetch_16,
 
-                     input t_gip_fetch_op fetch_op,
-                     output bit fetch_data_valid,
-                     output t_gip_word fetch_data,
-                     output bit[32]fetch_pc,
-                     input t_gip_prefetch_op prefetch_op,
-                     input bit[32] prefetch_address,
+                            input t_gip_fetch_op fetch_op,
+                            output bit fetch_data_valid,
+                            output t_gip_word fetch_data,
+                            output bit[32]fetch_pc,
+                            input t_gip_prefetch_op prefetch_op,
+                            input bit[32] prefetch_address,
+                            input bit fetch_flush,
 
-                     input bit sram_granted,
-                     output bit sram_read,
-                     output bit[32] sram_read_address,
-                     input bit[32] sram_read_data
+                            input bit sram_granted,
+                            output bit sram_read,
+                            output bit[32] sram_read_address,
+                            input bit[32] sram_read_data
     )
 {
-    timing comb input fetch_op, fetch_16, sram_read_data;
+    timing comb input fetch_op, fetch_16, sram_read_data, prefetch_address;
     timing comb output fetch_data_valid, fetch_data, fetch_pc;
     timing to rising clock gip_clock fetch_op;
     timing from rising clock gip_clock fetch_data, fetch_data_valid;
     timing to rising clock gip_clock prefetch_op, prefetch_address;
+    timing to rising clock gip_clock fetch_flush;
 
     timing to rising clock gip_clock sram_granted, sram_read_data;
     timing from rising clock gip_clock sram_read, sram_read_address;
@@ -172,6 +174,7 @@ module gip_core_plus( clock int_clock,
     net bit[32] fetch_pc;
     net t_gip_prefetch_op prefetch_op;
     net bit[32] prefetch_address;
+    net bit fetch_flush;
 
     net bit periph_read;
     net bit[5] periph_read_address;
@@ -212,6 +215,7 @@ module gip_core_plus( clock int_clock,
                           fetch_data_valid <= fetch_data_valid,
                           prefetch_op => prefetch_op,
                           prefetch_address => prefetch_address,
+                          fetch_flush => fetch_flush,
 
                           rfr_periph_read => periph_read,
                           rfr_periph_read_address => periph_read_address,
@@ -259,6 +263,7 @@ module gip_core_plus( clock int_clock,
                                    fetch_data_valid => fetch_data_valid,
                                    prefetch_op <= prefetch_op,
                                    prefetch_address <= prefetch_address,
+                                   fetch_flush <= fetch_flush,
 
                                    sram_granted <= mem_not_in_use_by_data && !gip_mem_wait,
                                    sram_read => isram_read,

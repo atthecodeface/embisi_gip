@@ -1,5 +1,8 @@
 #!/usr/bin/perl
 
+#$tests = "--define prefetch_tests=1 ";
+$tests .= "--define system_tests=1 ";
+
 $tnbt_cvs_root = $ENV{"TNBT_CVS_ROOT"};
 $cwd = `pwd`;
 chomp($cwd);
@@ -12,6 +15,7 @@ chdir("$tnbt_cvs_root/hardware/design/repository/regressions/gip");
 $sim = "$tnbt_cvs_root/hardware/design/build/simulation/linux/sim";
 #$sim = $sim." --sl_debug_level 1 ";
 #$sim = "valgrind --num-callers=8 ".$sim;
+$sim = $sim." ".$tests;
 print "$sim  --define run_dir=$cwd test.batch\n";
 system("$sim  --define run_dir=$cwd test.batch");
 

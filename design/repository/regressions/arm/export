@@ -1,4 +1,5 @@
 #!/bin/csh -f
+cp bin/run_dram.rom.cdl ../../test_benches/gip/run_dram_rom.cdl
 cp bin/pass.rom.cdl ../../test_benches/gip/pass_rom.cdl
 cp bin/uart.rom.cdl ../../test_benches/gip/uart_rom.cdl
 cp bin/monitor.rom.cdl ../../test_benches/gip/monitor_rom.cdl

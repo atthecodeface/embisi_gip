@@ -55,13 +55,13 @@ static void timer_1_entry( void )
         unsigned int t, s;
         // read timer value
         GIP_TIMER_READ_0( t );
-        // clear semaphore
-        GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<(TIMER_1_THREAD*4+0) );
         // set timer to new value (old+x)
         t += timer_1_delay;
         GIP_TIMER_WRITE( 1, t );
         // get led 0 ; this section should be atomic, but its only an LED!
         GIP_LED_OUTPUT_CFG_READ( s );
+        // clear semaphore - cannot do it before, else the timer will still be driving the semaphore; of course if we are interrupted, we could be too late here.
+        GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<(TIMER_1_THREAD*4+0) );
         // toggle bit 0 value
         s ^= 1;
         // write ld 0
@@ -74,6 +74,10 @@ static void timer_1_entry( void )
     // deschedule
     GIP_DESCHEDULE();
     NOP;NOP;NOP;
+}
+static void freeze( void )
+{
+    while (1);
 }
 extern int test_entry_point()
 {
@@ -88,6 +92,7 @@ extern int test_entry_point()
         GIP_TIMER_ENABLE();
         GIP_SET_LOCAL_EVENTS_CFG((8 + TIMER_1_THREAD)<<(0*4)); // timer 1 is event 0; attach to our thread and enable
         GIP_READ_AND_SET_SEMAPHORES( s, 1<<(TIMER_1_THREAD*4+0) );
+        __asm__ volatile (" ldr     r0, [pc, #28] \n bl freeze \n  mov     r0, #0 " );
     }
     if (0)
     {

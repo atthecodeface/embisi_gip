@@ -1,7 +1,10 @@
+asm run_dram run_dram
 asm common wrapper
 asm common support
 asm common wrapper_download
 asm common support_download
+asm common wrapper_regression
+asm common support_regression
 asm simple simple
 asm pass pass
 cc factorial factorial
@@ -18,7 +21,8 @@ cc monitor bonus_cmds
 cc monitor memory
 cc monitor ethernet
 cc ethernet ethernet
-cc scheduler scheduler
+cc scheduler sched_modes
+cc scheduler sched_preempts
 cc drivers ethernet
 cc drivers uart
 cc drivers flash
@@ -36,14 +40,9 @@ cc ethmonitor cmd_test
 cc ethmonitor cmd_leds
 cc ethmonitor cmd
 
-test rom  scheduler scheduler:scheduler common:support common:wrapper
+test rom  run_dram run_dram:run_dram common:wrapper common:support
 test rom  ethernet ethernet:ethernet drivers:ethernet drivers:uart common:support common:wrapper
 test rom  simple simple:simple common:support common:wrapper
-test rom  pass pass:pass common:wrapper common:support
-test rom  factorial factorial:factorial common:wrapper common:support
-test rom  alu alu:alu alu:alu_call common:wrapper common:support
-test rom  memory memory:memory common:wrapper common:support
-test rom  uart uart:uart common:wrapper common:support
 test rom  monitor monitor:monitor monitor:no_cmds monitor:flash monitor:uart common:wrapper common:support
 test dram monitor_full monitor:monitor monitor:all_cmds monitor:memory monitor:flash monitor:uart common:wrapper_download common:support_download
 test dram monitor_extra monitor:monitor monitor:bonus_cmds monitor:memory monitor:ethernet monitor:flash monitor:uart common:wrapper_download common:support_download
@@ -52,3 +51,11 @@ test rom ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash
 
 test dram  factorial factorial:factorial common:wrapper_download common:support_download
 test dram  alu alu:alu alu:alu_call common:wrapper_download common:support_download
+
+test regression  ethernet ethernet:ethernet drivers:ethernet drivers:uart common:support_regression common:wrapper_regression
+test regression  scheduler_modes scheduler:sched_modes  common:support_regression common:wrapper_regression
+test regression  pass pass:pass common:wrapper_regression common:support_regression
+test regression  factorial factorial:factorial common:wrapper_regression common:support_regression
+test regression  alu alu:alu alu:alu_call common:wrapper_regression common:support_regression
+test regression  memory memory:memory common:wrapper_regression common:support_regression
+test regression  uart uart:uart common:wrapper_regression common:support_regression

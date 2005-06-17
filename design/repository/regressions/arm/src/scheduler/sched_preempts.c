@@ -1,10 +1,6 @@
 /*a Documentation
-  This test runs 8 threads, using thread 0 as the base test thread
-  It actually consists of a number of tests internally, each of which...
-    starts up a set of threads
-    a thread runs by engaging an LED, setting some new semaphores, then updating a checksum, then descheduling
-  The test runs in a specific scheduling mode
-  Depending on the order of threads and what semaphores they set internally, different checksums are produced
+  This test exercises preemption of medium and low priority threads running code that has no atomic sections
+  The tests are designed to fully exercise preemption occurring at arbitrary point
  */
 
 /*a Includes
@@ -86,6 +82,18 @@ static void thread_0_reentry( void )
  */
 static void next_test( void )
 {
+    // set thread 0 to run a task to completion
+    // set thread 3 to run a task to completion
+    // set thread 7 to run a task to completion
+    // set the registers up ready
+    // set the three timers
+    // deschedule
+    // we wil reschedule at thread_0_reentry when task 0 runs to completion
+    // that needs to test the other threads for completion: if they are not complete, it should deschedule and then it will reenter an can retest
+
+    GIP_SET_THREAD(0,thread_0_reentry,0x11); // set thread 1 startup to be ARM, on semaphore 0 set, and the entry point
+
+
     unsigned int s;
     test_stage++;
     if (tests[test_stage].config==0)
@@ -132,6 +140,7 @@ static void test_internal( void )
 }
 
 /*f test_entry_point
+  This function preserves all the entry registers in a static location so we can exit cleanly
  */
 static int return_regs[15];
 extern int test_entry_point( void )
@@ -142,6 +151,7 @@ extern int test_entry_point( void )
 }
 
 /*f test_return
+  This function recovers the preserved entry registers from a static location and exits with a return code
  */
 static int test_return( int result )
 {

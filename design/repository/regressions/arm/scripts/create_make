@@ -58,6 +58,7 @@ open( make, ">$makefile" );
 print make  "TEST_BINARIES := \\\n";
 foreach $i (@tests) {
     ($test, $type, $objs) = split(/ /,$i);
+    print make  "    bin/$test.$type.dmif \\\n";
     print make  "    bin/$test.$type.mif \\\n";
     print make  "    bin/$test.$type.coe \\\n";
 }
@@ -104,6 +105,9 @@ foreach $i (@tests) {
     print make "bin/$test.$type.mif: bin/$test.$type.bin\n";
     print make "\t\${BIN_TO_MIF} -f bin/$test.$type.bin -o bin/$test.$type.mif\n";
     print make "\t\${MIF_TO_CDL} -a 12 -f bin/$test.$type.mif -o bin/$test.$type.cdl\n";
+    print make "\n";
+    print make "bin/$test.$type.dmif: bin/$test.$type.bin\n";
+    print make "\t\${BIN_TO_MIF} -f bin/$test.$type.bin -d -o bin/$test.$type.dmif\n";
     print make "\n";
     print make "bin/$test.$type.coe: bin/$test.$type.bin\n";
     print make "\t\${BIN_TO_MIF} -c -f bin/$test.$type.bin -o bin/$test.$type.coe\n";

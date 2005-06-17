@@ -163,7 +163,7 @@ SPI modes 2 and 3 (CPOL=1) use the clock inverted compared to SPI modes 0 and 1
 
     /*b Sync for status pins
      */
-    clocked t_sync sync_cmd_fifo_empty = {metastable=0, stable=0};
+    clocked t_sync sync_cmd_fifo_empty = {metastable=1, stable=1};
 
     /*b State for pins
      */

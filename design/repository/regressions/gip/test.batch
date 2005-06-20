@@ -4,6 +4,7 @@
 #  
 
 #a Variables
+int vcd_skip_length
 int run_length
 int vcd_create
 string vcd_full_filename
@@ -16,12 +17,17 @@ beq env_int("prefetch_tests") 0 skip_prefetch_tests
 gosub gip_prefetch_tests
 skip_prefetch_tests:
 
-#gosub gip_tests
-#gosub gip_simple_tests
-#gosub gip_ddr_tests
-beq env_int("system_tests") 0 skip_system_tests
-gosub gip_system_tests
-skip_system_tests:
+beq env_int("system_scheduler_tests") 0 skip_system_scheduler_tests
+gosub gip_system_scheduler
+skip_system_scheduler_tests:
+
+beq env_int("system_ethernet_tests") 0 skip_system_ethernet_tests
+gosub gip_system_ethernet
+skip_system_ethernet_tests:
+
+beq env_int("system_alu_tests") 0 skip_system_alu_tests
+gosub gip_system_alu
+skip_system_alu_tests:
 
 end
 
@@ -30,6 +36,7 @@ end
 gip_prefetch_tests:
 
 #b gip_prefetch_0
+set vcd_skip_length 0
 set run_length 40000
 set_string vcd_filename "gip_prefetch_0"
 setenv "memory_log_size" 16
@@ -40,29 +47,7 @@ gosub gip_prefetch_test
 #b Done
 return
 
-#a Gip prefetch subroutines
-#f gip_prefetch_test
-gip_prefetch_test:
-
-read_hw_file gip_prefetch.hwex
-
-beq vcd_create 0 gip_prefetch_test_no_vcd    
-sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
-vcd_file_open "allsignals" vcd_full_filename
-vcd_file_add "allsignals" "gip_prefetch" "instruction_sram"
-vcd_file_enable "allsignals"
-reset
-step run_length
-vcd_file_close "allsignals"
-return
-
-gip_prefetch_test_no_vcd:
-reset
-step run_length
-return
-
-
-#a Gip tests
+#a Gip tests - GIP without all the extra system infrastructure - kinda passe, but could be made to run
 #f gip_tests
 gip_tests:
 
@@ -87,6 +72,7 @@ return
 
 #b gip_0
 gip_0:
+set vcd_skip_length 0
 set run_length 400
 set_string vcd_filename "gip_0"
 setenv "memory_log_size" 16
@@ -98,6 +84,7 @@ return
 
 #b gip_1
 gip_1:
+set vcd_skip_length 0
 #set run_length 40000000
 set run_length 400
 set_string vcd_filename "gip_1"
@@ -110,6 +97,7 @@ return
 
 #b gip_uart
 gip_uart:
+set vcd_skip_length 0
 #set run_length 40000000
 set run_length 10000
 set_string vcd_filename "gip_uart"
@@ -122,6 +110,7 @@ return
 
 #b gip_memory
 gip_memory:
+set vcd_skip_length 0
 #set run_length 40000000
 set run_length 10000
 set_string vcd_filename "gip_memory"
@@ -134,6 +123,7 @@ return
 
 #b gip_factorial
 gip_factorial:
+set vcd_skip_length 0
 set run_length 10000
 set_string vcd_filename "gip_factorial"
 setenv "memory_log_size" 16
@@ -145,6 +135,7 @@ return
 
 #b gip_arm_alu
 gip_arm_alu:
+set vcd_skip_length 0
 set run_length 80000
 set_string vcd_filename "gip_arm_alu"
 setenv "memory_log_size" 16
@@ -156,6 +147,7 @@ return
 
 #b gip_linux
 gip_linux:
+set vcd_skip_length 0
 set run_length 200000
 set_string vcd_filename "gip_linux"
 # 16 MB of RAM!
@@ -168,108 +160,40 @@ setenv "post_rom_mif" "data/none.mif"
 gosub gip_test
 return
 
-#a Gip subroutines
-#f gip_test
-gip_test:
-
-read_hw_file gip.hwex
-
-beq vcd_create 0 gip_test_no_vcd
-sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
-vcd_file_open "allsignals" vcd_full_filename
-vcd_file_add "allsignals" "gipc"
-vcd_file_add "allsignals" "gip_prefetch" "gip_data_ram" "shared_sram"
-vcd_file_add "allsignals" "gipc.decode" "gipc.decode.native""gipc.decode.arm" "gipc.rf" "gipc.alu" "gipc.alu.shift_op"
-vcd_file_add "allsignals" "gip_periph_apb" "apb_target_uart" "io_uart"
-vcd_file_enable "allsignals"
-reset
-step run_length
-vcd_file_close "allsignals"
-return
-
-gip_test_no_vcd:
-reset
-step run_length
-return
-
-
-#b Done
-return
-
-#a Gip ddr tests
-#f gip_ddr_tests
-gip_ddr_tests:
-
+#a GIP system ALU tests
+#f gip_system_alu
+gip_system_alu:
 setenv "verbose_level" 1
 
-set vcd_create 1
-gosub gip_ddr_0
-
+    gosub gip_system_alu_0
 return
 
-#b gip_ddr_0
-gip_ddr_0:
-set run_length 12000000
-setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
-set_string vcd_filename "gip_ddr_0"
-gosub gip_ddr_test
-return
-
-#a Gip ddr subroutines
-#f gip_ddr_test
-gip_ddr_test:
-
-read_hw_file gip_ddr.hwex
-
-beq vcd_create 0 gip_ddr_test_no_vcd
-sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
-vcd_file_open "allsignals" vcd_full_filename
-vcd_file_add "allsignals" "gip_simple"
-vcd_file_add "allsignals" "ddr"
-#cvcd_file_add "allsignals" "gip_ddr.gip"
-#vcd_file_add "allsignals" "gip_ddr.prefetch" "gip_ddr.data_ram" "gip_ddr.boot_rom" "gip_ddr.shared_sram"
-#vcd_file_add "allsignals" "gip_ddr.gip.decode" "gip_ddr.gip.decode.native" "gip_ddr.gip.decode.arm" "gip_ddr.gip.rf" "gip_ddr.gip.alu" "gip_ddr.gip.alu.shift_op"
-#vcd_file_add "allsignals" "gip_ddr.gip_apb"
-#vcd_file_add "allsignals" "gip_ddr.uart_apb" "gip_ddr.uart_apb.status_fifo"  "gip_ddr.uart_apb.cmd_fifo" "gip_ddr.uart_io"
-#vcd_file_add "allsignals" "gip_ddr.ext_bus_apb"
-vcd_file_add "allsignals" "rxd" "txd"
-vcd_file_enable "allsignals"
-reset
-step run_length
-vcd_file_close "allsignals"
-return
-
-gip_ddr_test_no_vcd:
-reset
-step run_length
-return
-
-
-#b Done
-return
-
-#a Gip system tests
-#f gip_system_tests
-gip_system_tests:
-
-setenv "verbose_level" 1
-
-set vcd_create 1
-gosub gip_system_scheduler
-#gosub gip_system_0
-#gosub gip_system_1
-
+#b gip_system_alu_0
+# This test runs the linux div64 function
+gip_system_alu_0:
+set vcd_skip_length 0
+set run_length 100000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/test_div64.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 0
+gosub gip_system_test
 return
 
 #a GIP system scheduler tests
+#f gip_system_scheduler
 gip_system_scheduler:
+setenv "verbose_level" 1
+
     gosub gip_system_scheduler_0
-#    gosub gip_system_scheduler_1
+    gosub gip_system_scheduler_1
 return
 
 #b gip_system_scheduler_0
 # This test runs the scheduler and tests different round robin, cooperative and preemptive modes - it is not exhastive as to preempting different instruction types, though
 gip_system_scheduler_0:
+set vcd_skip_length 0
 set run_length 600000
 setenv "mii_rx_sources" ""
 setenv "uart_exec_file" "src/end.ef"
@@ -279,9 +203,32 @@ set vcd_create 0
 gosub gip_system_test
 return
 
+#b gip_system_scheduler_1
+# This test runs the scheduler and tests different instruction preemptions
+gip_system_scheduler_1:
+# we run at about 1M cycles in 30s
+set vcd_create 0
+set vcd_skip_length 85000
+set run_length 1100000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/scheduler_preempt.regression.dmif"
+set_string vcd_filename "gip_system_0"
+gosub gip_system_test
+return
+
 #a GIP system ethernet tests
+#f gip_system_ethernet:
+gip_system_ethernet:
+setenv "verbose_level" 1
+
+    gosub gip_system_ethernet_reset
+    gosub gip_system_scheduler_1
+return
+
 #b gip_system_ethernet_0
 gip_system_ethernet_0:
+set vcd_skip_length 0
 #set run_length 400000
 set run_length 32000
 set vcd_create 1
@@ -294,7 +241,9 @@ return
 
 #b gip_system_1
 gip_system_1:
+set vcd_skip_length 0
 set run_length 40000
+set vcd_create 1
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
 setenv "ddr_mif" "../arm/bin/ethernet.regression.dmif"
@@ -302,7 +251,42 @@ set_string vcd_filename "gip_system_0"
 gosub gip_system_test
 return
 
-#a Gip system subroutines
+#b gip_system_ethernet_reset
+gip_system_ethernet_reset:
+set vcd_skip_length 180000
+set run_length 280000
+set vcd_create 0
+setenv "mii_rx_sources" "( ) ( ( c 144 0x1234 0x55555555 0 10000 0 ) )"
+setenv "uart_exec_file" "src/end.ef"
+# We need this to wait >1250 cycles (>120,000ns) before checking it has run twice; the eth packet takes about that to get in
+setenv "ddr_mif" "../arm/bin/inc_wait_test.regression.dmif"
+set_string vcd_filename "gip_system_0"
+gosub gip_system_test
+return
+
+#a Hardware variations
+#f gip_prefetch_test
+gip_prefetch_test:
+
+read_hw_file gip_prefetch.hwex
+
+beq vcd_create 0 gip_prefetch_test_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "gip_prefetch" "instruction_sram"
+reset
+step vcd_skip_length
+vcd_file_enable "allsignals"
+sub run_length run_length vcd_skip_length
+step run_length
+vcd_file_close "allsignals"
+return
+
+gip_prefetch_test_no_vcd:
+reset
+step run_length
+return
+
 #f gip_system_test
 gip_system_test:
 
@@ -334,8 +318,10 @@ vcd_file_add "allsignals" "mii"
 #vcd_file_add "allsignals" "gip_system.uart_apb" "gip_system.uart_apb.status_fifo"  "gip_system.uart_apb.cmd_fifo" "gip_system.uart_io"
 #vcd_file_add "allsignals" "gip_system.ext_bus_apb"
 vcd_file_add "allsignals" "rxd" "txd"
-vcd_file_enable "allsignals"
 reset
+step vcd_skip_length
+vcd_file_enable "allsignals"
+sub run_length run_length vcd_skip_length
 step run_length
 vcd_file_close "allsignals"
 return
@@ -349,57 +335,29 @@ return
 #b Done
 return
 
-#a Gip simple tests
-#f gip_simple_tests
-gip_simple_tests:
+#f gip_test
+gip_test:
 
-setenv "verbose_level" 1
+read_hw_file gip.hwex
 
-set vcd_create 1
-gosub gip_simple_0
-
-return
-
-#b gip_simple_0
-gip_simple_0:
-set run_length 500000
-set run_length 5000
-set run_length 250000
-setenv "uart_exec_file" "src/gip_simple_uart_0.ef"
-set_string vcd_filename "gip_simple_0"
-gosub gip_simple_test
-return
-
-#a Gip simple subroutines
-#f gip_simple_test
-gip_simple_test:
-
-read_hw_file gip_simple.hwex
-
-beq vcd_create 0 gip_simple_test_no_vcd
+beq vcd_create 0 gip_test_no_vcd
 sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
 vcd_file_open "allsignals" vcd_full_filename
-vcd_file_add "allsignals" "gip_simple"
-#vcd_file_add "allsignals" "gip_simple.gip"
-#vcd_file_add "allsignals" "gip_simple.prefetch" "gip_simple.data_ram" "gip_simple.boot_rom" "gip_simple.shared_sram"
-#vcd_file_add "allsignals" "gip_simple.gip.decode" "gip_simple.gip.decode.native" "gip_simple.gip.decode.arm" "gip_simple.gip.rf" "gip_simple.gip.alu" "gip_simple.gip.alu.shift_op"
-#vcd_file_add "allsignals" "gip_simple.gip_apb"
-#vcd_file_add "allsignals" "gip_simple.uart_apb" "gip_simple.uart_apb.status_fifo"  "gip_simple.uart_apb.cmd_fifo" "gip_simple.uart_io"
-vcd_file_add "allsignals" "gip_simple.ext_bus_apb"
-vcd_file_add "allsignals" "rxd" "txd"
-vcd_file_enable "allsignals"
+vcd_file_add "allsignals" "gipc"
+vcd_file_add "allsignals" "gip_prefetch" "gip_data_ram" "shared_sram"
+vcd_file_add "allsignals" "gipc.decode" "gipc.decode.native""gipc.decode.arm" "gipc.rf" "gipc.alu" "gipc.alu.shift_op"
+vcd_file_add "allsignals" "gip_periph_apb" "apb_target_uart" "io_uart"
 reset
+step vcd_skip_length
+vcd_file_enable "allsignals"
+sub run_length run_length vcd_skip_length
 step run_length
 vcd_file_close "allsignals"
 return
 
-gip_simple_test_no_vcd:
+gip_test_no_vcd:
 reset
 step run_length
-return
-
-
-#b Done
 return
 
 #a Editor preferences and notes

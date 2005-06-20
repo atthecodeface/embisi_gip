@@ -1,7 +1,9 @@
 #!/usr/bin/perl
 
 #$tests = "--define prefetch_tests=1 ";
-$tests .= "--define system_tests=1 ";
+#$tests .= "--define system_scheduler_tests=1 ";
+#$tests .= "--define system_ethernet_tests=1 ";
+$tests .= "--define system_alu_tests=1 ";
 
 $tnbt_cvs_root = $ENV{"TNBT_CVS_ROOT"};
 $cwd = `pwd`;

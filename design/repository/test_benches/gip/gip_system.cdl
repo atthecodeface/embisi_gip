@@ -187,6 +187,7 @@ extern module ddr_dram_as_sram( clock drm_clock,
 module gip_system( clock drm_clock,
                    clock int_clock,
                    input bit system_reset,
+                   output bit reset_out,
 
                    input bit[8] switches,
                    output bit[8] leds,
@@ -333,6 +334,25 @@ module gip_system( clock drm_clock,
     comb bit[32] analyzer_mux_control;
     net bit[32] iob_analyzer_signals;
 
+    /*b Reset detect from ethernet
+     */
+    clocked clock eth_mii_rx_clock reset system_reset bit[8] eth_reset_count=0;
+    reset_from_eth "Generate reset from incoming ethernet packet":
+        {
+            if (eth_mii_rx_dv && (eth_mii_rx_d==5))
+            {
+                if (eth_reset_count!=-1)
+                {
+                    eth_reset_count <= eth_reset_count+1;
+                }
+            }
+            else
+            {
+                eth_reset_count <= 0;
+            }
+            reset_out = system_reset || (eth_reset_count==-1);
+        }
+
     /*b GIP core
      */
     gip_core "GIP core instance":
@@ -376,7 +396,7 @@ module gip_system( clock drm_clock,
      */
     memory_subsystem "Memory subsystem":
         {
-            int_reset = system_reset || !ddr_ready;
+            int_reset = reset_out || !ddr_ready;
 
             rom_next_access = !gip_mem_address[16] && !gip_mem_address[31];
             sram_next_access = gip_mem_address[16] && !gip_mem_address[31];
@@ -402,7 +422,7 @@ module gip_system( clock drm_clock,
             ddr_dram_as_sram main_ram( drm_clock <- drm_clock,
                                        slow_clock <- int_clock,
 
-                                       drm_ctl_reset <= system_reset,
+                                       drm_ctl_reset <= reset_out,
                                        init_done => ddr_ready,
                                        
                                        sram_priority <= gip_mem_priority,

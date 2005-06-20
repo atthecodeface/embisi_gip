@@ -212,6 +212,7 @@ module gip_alu( clock gip_clock,
                         shf_value_in = shf;
                         shf_amount_in = 2;
                     }
+                    case gip_ins_subclass_arith_write_flags:  {gip_arith_op = gip_arith_op_write_flags;}
                     }
             }
             case gip_ins_class_logic:
@@ -230,6 +231,7 @@ module gip_alu( clock gip_clock,
                     case gip_ins_subclass_logic_xorfirst:  {gip_logic_op = gip_logic_op_xor_first;}
                     case gip_ins_subclass_logic_bitreverse:  {gip_logic_op = gip_logic_op_bit_reverse;}
                     case gip_ins_subclass_logic_bytereverse:  {gip_logic_op = gip_logic_op_byte_reverse;}
+                    case gip_ins_subclass_logic_read_flags:  {gip_logic_op = gip_logic_op_read_flags;}
                     }
             }
             case gip_ins_class_shift:

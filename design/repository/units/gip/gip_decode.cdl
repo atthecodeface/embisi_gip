@@ -475,7 +475,7 @@ module gip_decode( clock gip_clock,
                 dec_inst.gip_ins_subclass = gip_ins_subclass_arith_write_flags;
                 dec_inst.gip_ins_cc = gip_ins_cc_always;
                 dec_inst.a = 0;
-                dec_inst.s_or_stack = 0;
+                dec_inst.s_or_stack = 1; // set the flags if you write them!
                 dec_inst.p_or_offset_is_shift = 0;
                 dec_inst.k = 0;
                 dec_inst.f = 0;
@@ -612,11 +612,7 @@ module gip_decode( clock gip_clock,
                 }
                 else
                 {
-                    next_atomic = atomic_dec;
-                    if (arm_use_native_decode && (native_dec_next_atomic!=0))
-                    {
-                        next_atomic = native_dec_next_atomic;
-                    }
+                    next_atomic = atomic;
                     if (arm_use_native_decode && native_dec_extending)
                     {
                         dec_inst.valid = 0;
@@ -629,15 +625,25 @@ module gip_decode( clock gip_clock,
                     }
                     elsif (rfr_accepting_dec_instruction)
                     {
+                        if (arm_dec_next_cycle_of_opcode==0)
+                        {
+                            next_atomic = atomic_dec;
+
+                            extended_immediate <= 0;
+                            extended_cmd.extended <= 0;
+                            extended_rd.type <= gip_ins_r_type_no_override;
+                            extended_rn.type <= gip_ins_r_type_no_override;
+                            extended_rm.type <= gip_ins_r_type_no_override;
+                        }
+
                         next_pc_op = arm_dec_pc_op;
                         cycle_of_opcode <= arm_dec_next_cycle_of_opcode;
                         stored_reg_set <= next_stored_reg_set;
 
-                        extended_immediate <= 0;
-                        extended_cmd.extended <= 0;
-                        extended_rd.type <= gip_ins_r_type_no_override;
-                        extended_rn.type <= gip_ins_r_type_no_override;
-                        extended_rm.type <= gip_ins_r_type_no_override;
+                    }
+                    if (arm_use_native_decode && (native_dec_next_atomic!=0))
+                    {
+                        next_atomic = native_dec_next_atomic;
                     }
                 }
                 if (gip_pipeline_rfw_write_pc)

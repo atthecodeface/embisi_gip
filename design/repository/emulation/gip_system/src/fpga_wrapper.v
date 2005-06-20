@@ -517,14 +517,18 @@ wire [1:0]sscl_oe;
 wire ssdo, ssdo_oe;
 wire [1:0]ssdi;
 wire [7:0]sscs;
+wire system_reset_out;
 assign gmii_mdc = sscl[0];
 assign gmii_mdio = ssdo_oe ? ssdo : 1'bz; //'
 assign ssdi[0] = gmii_mdio;
 assign ssdi[1] = 0;
-assign gbe_rst_n = !system_reset;
+assign gbe_rst_n = !system_reset_out;
 assign analyzer_clock = int_logic_slow_clock_buffered;
 gip_system body( .drm_clock(int_drm_clock_buffered),
                  .int_clock(int_logic_slow_clock_buffered),
+
+                 .system_reset( system_reset ),
+                 .reset_out( system_reset_out ),
 
                  .eth_mii_rx_clock(gmii_rx_clk), // gmii_rx_clk pin 57 av data38 pin 6   data_av38
                  .eth_mii_tx_clock(gmii_tx_clk), // gmii_tx_clk pin 60 av data46 pin 12  data_av46
@@ -545,8 +549,6 @@ gip_system body( .drm_clock(int_drm_clock_buffered),
                  .ssdo_oe(ssdo_oe), // 1 pin - to gmii_mdio oe pin 80 av data33 pin 2      data_av33
                  .ssdi(ssdi), // 2 pins - pin 0 from gmii_mdio pin 80 av data33 pin 2      data_av33
                  .sscs(sscs), // 8 pins - unused
-
-                 .system_reset( system_reset ),
 
                  .switches(switches),
                  .rxd(rxd),

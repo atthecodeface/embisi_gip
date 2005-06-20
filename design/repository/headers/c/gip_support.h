@@ -47,6 +47,7 @@ static void nop_many( void ) { NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP
 #define GIP_TIMER_READ_2(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r10 \n " : "=r" (s) ); }
 #define GIP_TIMER_READ_3(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r11 \n " : "=r" (s) ); }
 #define GIP_TIMER_ENABLE() {__asm__ volatile ( " .word 0xec00c58e \n mov r0, #0<<31 \n" ); NOP; NOP; }
+#define GIP_TIMER_DISABLE() {__asm__ volatile ( " .word 0xec00c58e \n mov r0, #1<<31 \n" ); NOP; NOP; }
 #define GIP_SET_LOCAL_EVENTS_CFG(s) {__asm__ volatile ( " .word 0xec00c82e \n mov r0, %0 \n" : : "r" (s) ); NOP; NOP; }
 #define GIP_LED_INPUT_STATUS(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r0 \n " : "=r" (s) ); }
 #define GIP_LED_INPUT_CFG_READ(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r1 \n " : "=r" (s) ); }

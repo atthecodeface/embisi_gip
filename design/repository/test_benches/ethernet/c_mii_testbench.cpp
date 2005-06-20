@@ -109,6 +109,7 @@ typedef struct t_source
 {
     t_sl_data_stream *data_stream;
     int interval;
+    int delay;
 } t_source;
 
 /*t t_sink
@@ -473,6 +474,7 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
     for (i=0; i<MAX_SOURCES; i++)
     {
         sources[i].interval = 100;
+        sources[i].delay = 0x7fffffff;
         sources[i].data_stream = NULL;
     }
 
@@ -482,7 +484,6 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
     argc = sl_str_split( option_string, &string_copy, sizeof(argv), argv, 0, 0, 1 ); // Split into strings, with potential lists
     for (i=0; (i<argc) && (num_sources<MAX_SOURCES); i++)
     {
-        fprintf(stderr,"Sources %s\n",argv[i]);
         if (argv[i][0]!='(') continue;
         sub_argc = sl_str_split( argv[i]+1, &sub_string_copy, sizeof(sub_argv), sub_argv, 0, 0, 1 ); // Split into strings, with potential lists
         switch (i)
@@ -499,11 +500,17 @@ c_mii_testbench::c_mii_testbench( class c_engine *eng, void *eng_handle )
         case 1: // argv[1] is sources list
             for (j=0; (j<sub_argc) && (num_sources<MAX_SOURCES); j++)
             {
-                fprintf(stderr,"Source %s\n",sub_argv[j]);
+                //fprintf(stderr,"Source %s\n",sub_argv[j]);
                 sources[num_sources].interval = 200;
+                sources[num_sources].delay = 170;
                 sources[num_sources].data_stream = sl_data_stream_create( sub_argv[j] );
                 if (sources[num_sources].data_stream)
                 {
+                    unsigned int *args;
+                    int k;
+                    k = sl_data_stream_args(sources[num_sources].data_stream, &args);
+                    if (k>0) sources[num_sources].interval = args[0];
+                    if (k>1) sources[num_sources].delay = args[1];
                     num_sources++;
                 }
             }
@@ -671,7 +678,7 @@ t_sl_error_level c_mii_testbench::reset_active_high_int_reset( void )
 
     for (i=0; i<MAX_SOURCES; i++)
     {
-        posedge_int_clock_state.src_source_state[i].counter = 30;
+        posedge_int_clock_state.src_source_state[i].counter = sources[i].interval - sources[i].delay;
         posedge_int_clock_state.src_source_state[i].pending = 0;
     }
 
@@ -720,7 +727,7 @@ t_sl_error_level c_mii_testbench::evaluate_combinatorials( void )
         case src_fsm_data:
             combinatorials.rx_mii_dv = 1;
             combinatorials.rx_mii_err = 0;
-            combinatorials.rx_mii_data = src_packet.data[posedge_int_clock_state.src_nybble_count/2]>>((posedge_int_clock_state.src_nybble_count%2)*4);
+            combinatorials.rx_mii_data = (src_packet.data[posedge_int_clock_state.src_nybble_count/2]>>((posedge_int_clock_state.src_nybble_count%2)*4))&0xf;
             break;
         case src_fsm_error:
             combinatorials.rx_mii_dv = 1;

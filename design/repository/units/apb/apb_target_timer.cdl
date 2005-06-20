@@ -142,6 +142,9 @@ There is an additional global disabled that is reset to 1; this stops all compar
                 if (stage==0)
                 {
                     disabled <= apb_pwdata[31];
+                    timers[0].equalled <= 0;
+                    timers[1].equalled <= 0;
+                    timers[2].equalled <= 0;
                 }
                 if (!disabled) 
                 {

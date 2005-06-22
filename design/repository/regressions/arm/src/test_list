@@ -40,6 +40,10 @@ cc drivers ethernet
 cc drivers uart
 cc drivers flash
 
+cc microkernel init
+asm microkernel microkernel_thread
+cc microkernel test_1
+
 cc ethmonitor framework
 cc ethmonitor ethernet
 cc ethmonitor uart
@@ -76,3 +80,5 @@ test regression  memory memory:memory common:wrapper_regression common:support_r
 test regression  uart uart:uart common:wrapper_regression common:support_regression
 test regression inc_wait_test simple:inc_wait_test common:wrapper_regression common:support_regression
 test regression test_div64 alu:test_div64 alu:div64 common:wrapper_regression common:support_regression
+
+test regression microkernel_test_1 microkernel:test_1 microkernel:init microkernel:microkernel_thread common:wrapper_regression common:support_regression

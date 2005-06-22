@@ -57,6 +57,7 @@ static int do_test( unsigned long long x, unsigned int base )
 extern int test_entry_point()
 {
     int failures;
+
     GIP_EXTBUS_CONFIG_WRITE( 0x111 );
     NOP;NOP;NOP;NOP;
     GIP_EXTBUS_ADDRESS_WRITE( 0xc0000002 ); // Debug display address

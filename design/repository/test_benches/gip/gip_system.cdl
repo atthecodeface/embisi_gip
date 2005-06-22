@@ -335,22 +335,27 @@ module gip_system( clock drm_clock,
     net bit[32] iob_analyzer_signals;
 
     /*b Reset detect from ethernet
+      Note that the MII_RX clock stops when our reset goes off, so our reset should come from 
      */
     clocked clock eth_mii_rx_clock reset system_reset bit[8] eth_reset_count=0;
+    clocked clock int_clock reset system_reset bit[3] eth_reset_shf=0;
+    clocked clock int_clock reset system_reset bit eth_reset=0;
     reset_from_eth "Generate reset from incoming ethernet packet":
         {
             if (eth_mii_rx_dv && (eth_mii_rx_d==5))
             {
-                if (eth_reset_count!=-1)
-                {
-                    eth_reset_count <= eth_reset_count+1;
-                }
+                eth_reset_count <= eth_reset_count+1;
             }
             else
             {
                 eth_reset_count <= 0;
             }
-            reset_out = system_reset || (eth_reset_count==-1);
+
+            eth_reset_shf[0] <= (eth_reset_count[4;4]==15);
+            eth_reset_shf[2;1] <= eth_reset_shf[2;0];
+
+            eth_reset <= (eth_reset_shf[2;1]==2b01); // rising edge of eth_reset_shf synchronizer
+            reset_out = system_reset || eth_reset;
         }
 
     /*b GIP core

@@ -29,6 +29,10 @@ beq env_int("system_alu_tests") 0 skip_system_alu_tests
 gosub gip_system_alu
 skip_system_alu_tests:
 
+beq env_int("system_microkernel_tests") 0 skip_system_microkernel_tests
+gosub gip_system_microkernel
+skip_system_microkernel_tests:
+
 end
 
 #a Gip prefetch tests
@@ -176,6 +180,27 @@ set run_length 100000
 setenv "mii_rx_sources" ""
 setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/test_div64.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 1
+gosub gip_system_test
+return
+
+#a GIP system microkernel tests
+#f gip_system_microkernel
+gip_system_microkernel:
+setenv "verbose_level" 1
+
+    gosub gip_system_microkernel_0
+return
+
+#b gip_system_microkernel_0
+# This test runs the linux div64 function
+gip_system_microkernel_0:
+set vcd_skip_length 0
+set run_length 430000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/microkernel_test_1.regression.dmif"
 set_string vcd_filename "gip_system_0"
 set vcd_create 0
 gosub gip_system_test

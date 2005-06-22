@@ -317,7 +317,7 @@ module gip_decode_arm( input bit[32] opcode,
             arm_mapped_rd.r = 0;
             arm_mapped_rd.r[4;0] = alu_rd;
             if (alu_rd==15) { arm_mapped_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; rd_is_pc = 1;}
-            if (extended_rd.type!=gip_ins_r_type_no_override) { arm_mapped_rd = extended_rd; }
+            if (extended_rd.type!=gip_ins_r_type_no_override) { arm_mapped_rd = extended_rd; rd_is_pc = 0; }
 
             /*b Map rn to instruction rn; acc if that is 15; but if extended, to full given extension
              */
@@ -325,7 +325,11 @@ module gip_decode_arm( input bit[32] opcode,
             arm_mapped_rn.r = 0;
             arm_mapped_rn.r[4;0] = alu_rn;
             if (alu_rn==15) { arm_mapped_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc}; } // differs from native - should native match?
-            if (extended_rn.type!=gip_ins_r_type_no_override) { arm_mapped_rn = extended_rn; }
+            if (extended_rn.type!=gip_ins_r_type_no_override) {
+                arm_mapped_rn.type = extended_rn.type;
+                arm_mapped_rn.r[4] = extended_rn.r[4];
+                arm_mapped_rn.r[4;0] = alu_rn;
+            }
 
             /*b Map rm to instruction rm; pc if that is 15; but if extended, to full given extension
              */

@@ -123,7 +123,11 @@ module gip_decode_native( input bit[16] opcode,
             native_mapped_rn.r = 0;
             native_mapped_rn.r[4;0] = rd;
             if (rd==15) { native_mapped_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc}; }
-            if (extended_rn.type!=gip_ins_r_type_no_override) { native_mapped_rn = extended_rn; }
+            if (extended_rn.type!=gip_ins_r_type_no_override) {
+                native_mapped_rn.type = extended_rn.type;
+                native_mapped_rn.r[4] = extended_rn.r[4];
+                native_mapped_rn.r[4;0] = rd;
+            }
 
             /*b Map rm to instruction rm; pc if that is 15; but if extended, to full given extension
              */
@@ -167,6 +171,25 @@ module gip_decode_native( input bit[16] opcode,
             next_extended_rm = {type=gip_ins_r_type_no_override, r=0};
             next_extended_rn = {type=gip_ins_r_type_no_override, r=0};
             next_extended_cmd = {extended=0, cc=gip_ins_cc_always, sign_or_stack=0, acc=0, op=0, burst=0};
+            if (extended)
+            {
+                part_switch (ins_class)
+                    {
+                    case gip_native_ins_class_extimm_0:
+                    case gip_native_ins_class_extimm_1:
+                    case gip_native_ins_class_extimm_2:
+                    case gip_native_ins_class_extimm_3:
+                    case gip_native_ins_class_extcmd:
+                    case gip_native_ins_class_extrdrm:
+                    case gip_native_ins_class_extrnrm:
+                    {
+                        next_extended_rd = extended_rd;
+                        next_extended_rm = extended_rm;
+                        next_extended_rn = extended_rn;
+                        next_extended_cmd = extended_cmd;
+                    }
+                    }
+            }
             extending = 0;
             next_in_immediate_conditional_shadow = 0;
             next_atomic = 0;
@@ -464,6 +487,16 @@ module gip_decode_native( input bit[16] opcode,
                             {
                                 inst.gip_ins_class = gip_ins_class_arith;
                                 inst.gip_ins_subclass = gip_ins_subclass_arith_rsc;
+                            }
+                            case gip_native_ins_subclass_alu_readflags:
+                            {
+                                inst.gip_ins_class = gip_ins_class_logic;
+                                inst.gip_ins_subclass = gip_ins_subclass_logic_read_flags;
+                            }
+                            case gip_native_ins_subclass_alu_writeflags:
+                            {
+                                inst.gip_ins_class = gip_ins_class_arith;
+                                inst.gip_ins_subclass = gip_ins_subclass_arith_write_flags;
                             }
                             }
                         }

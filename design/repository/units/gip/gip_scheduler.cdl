@@ -304,7 +304,10 @@ module gip_scheduler( clock gip_clock,
             if (special_thread_data_write_pc)
             {
                 thread_data[ special_write_thread ].restart_pc <= special_thread_data_pc;
-                thread_data[ special_write_thread ].running <= 0;
+                if (thread!=special_write_thread) // mark the thread as not running if changing the non-running thread's pc
+                {
+                    thread_data[ special_write_thread ].running <= 0;
+                }
             }
             if (special_thread_data_write_config)
             {

@@ -393,6 +393,7 @@ module gip_decode( clock gip_clock,
                 in_conditional_shadow <= 0;
                 in_immediate_conditional_shadow <= 0;
                 extended_immediate <= 0;
+                extended <= 0;
                 extended_cmd.extended <= 0;
                 extended_rd.type <= gip_ins_r_type_no_override;
                 extended_rn.type <= gip_ins_r_type_no_override;
@@ -528,6 +529,7 @@ module gip_decode( clock gip_clock,
                     if (native_dec_extending)
                     {
                         dec_inst.valid = 0;
+                        extended <= 1;
                         extended_immediate <= native_dec_next_extended_immediate;
                         extended_cmd <= native_dec_next_extended_cmd;
                         extended_rd <= native_dec_next_extended_rd;
@@ -551,6 +553,7 @@ module gip_decode( clock gip_clock,
                                 in_conditional_shadow <= 1;
                             }
 
+                            extended <= 0;
                             extended_immediate <= 0;
                             extended_cmd.extended <= 0;
                             extended_rd.type <= gip_ins_r_type_no_override;
@@ -570,6 +573,7 @@ module gip_decode( clock gip_clock,
                     pc_valid <= 0;
                     acc_valid <= 0;
 
+                    extended <= 0;
                     extended_immediate <= 0;
                     extended_cmd.extended <= 0;
                     extended_rd.type <= gip_ins_r_type_no_override;
@@ -616,6 +620,7 @@ module gip_decode( clock gip_clock,
                     if (arm_use_native_decode && native_dec_extending)
                     {
                         dec_inst.valid = 0;
+                        extended <= 1;
                         extended_immediate <= native_dec_next_extended_immediate;
                         extended_cmd <= native_dec_next_extended_cmd;
                         extended_rd <= native_dec_next_extended_rd;
@@ -629,6 +634,7 @@ module gip_decode( clock gip_clock,
                         {
                             next_atomic = atomic_dec;
 
+                            extended <= 0;
                             extended_immediate <= 0;
                             extended_cmd.extended <= 0;
                             extended_rd.type <= gip_ins_r_type_no_override;
@@ -680,6 +686,7 @@ module gip_decode( clock gip_clock,
                     acc_valid <= 0;
                     cycle_of_opcode <= 0;
 
+                    extended <= 0;
                     extended_immediate <= 0;
                     extended_cmd.extended <= 0;
                     extended_rd.type <= gip_ins_r_type_no_override;

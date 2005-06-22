@@ -106,7 +106,7 @@ typedef enum [5]
     gip_native_ins_subclass_alu_sub=6,
     gip_native_ins_subclass_alu_adc=7,
 
-    gip_native_ins_subclass_alu_xorfirst=8,
+    gip_native_ins_subclass_alu_xorfirst=8, // common to all modes
     gip_native_ins_subclass_alu_rsb=9,
 
     gip_native_ins_subclass_alu_bic=10, // bit mode
@@ -116,22 +116,17 @@ typedef enum [5]
     gip_native_ins_subclass_alu_bitreverse=14,
     gip_native_ins_subclass_alu_bytereverse=15,
 
-    gip_native_ins_subclass_alu_init=10,
+    gip_native_ins_subclass_alu_init=10, // math mode
     gip_native_ins_subclass_alu_mla=11,
     gip_native_ins_subclass_alu_mlb=12,
     gip_native_ins_subclass_alu_sbc=13,
-    gip_native_ins_subclass_alu_dva=14, // here on down not possible without extension
+    gip_native_ins_subclass_alu_dva=14,
     gip_native_ins_subclass_alu_dvb=15,
 
-    gip_native_ins_subclass_alu_andxor=16,
-    gip_native_ins_subclass_alu_rsc=17,
-
-    gip_native_ins_subclass_alu_dis_bic_init=10,
-    gip_native_ins_subclass_alu_dis_orn_mla=11,
-    gip_native_ins_subclass_alu_dis_andcnt_mlb=12,
-    gip_native_ins_subclass_alu_dis_xorlast_sbc=13,
-    gip_native_ins_subclass_alu_dis_bitreverse_dva=14,
-    gip_native_ins_subclass_alu_dis_bytereverse_dvb=15,
+    gip_native_ins_subclass_alu_andxor=11, // gp mode uses xorfirst (8), rsb (9), bic (10), andxor (11), rsc (12), readflags (14), writeflags (15)
+    gip_native_ins_subclass_alu_rsc=12,
+    gip_native_ins_subclass_alu_readflags = 14,
+    gip_native_ins_subclass_alu_writeflags = 15,
 
     gip_native_ins_subclass_cond_eq=0, // bits 8-11 of 0-11, maps to ALU op sub, cond eq/z set
     gip_native_ins_subclass_cond_ne=1, // bits 8-11 of 0-11, maps to ALU op sub, cond ne/z clr

@@ -286,6 +286,7 @@ module gip_decode_native( input bit[16] opcode,
                     next_extended_cmd.acc = acc;
                     next_extended_cmd.op = op;
                     next_extended_cmd.burst = burst;
+                    extending = 1;
                 }
                 /*b ALU (reg and imm)
                  */

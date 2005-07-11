@@ -6,6 +6,7 @@
 
 /*a Defines
  */
+#define __init          __attribute__ ((__section__ (".init.text")))
 
 /*a Types
  */
@@ -24,9 +25,7 @@ typedef struct t_data_type
 
 /*a Global data storage
  */
-unsigned int microkernel_thread_register_store[16];
-unsigned int microkernel_thread_vectors[32];
-unsigned int microkernel_thread_interrupted_data[17]; // r0 to r14, flags and pc
+unsigned int microkernel_thread_vectors[33]; // 0-31 are interrupt vectors, 32 is SWI vector
 
 /*a External functions
  */
@@ -46,12 +45,8 @@ unsigned int microkernel_thread_interrupted_data[17]; // r0 to r14, flags and pc
   Returns
 
  */
-static void loop_forever( void ) { while (1); }
-extern void microkernel_int_register( int vector, microkernel_int_fn fn )
-{
-    microkernel_thread_vectors[vector&0x1f] = (unsigned int)fn;
-}
-extern void microkernel_init( void )
+extern void mkt_unknown_trap( void );
+extern void __init microkernel_init( void )
 {
     int i;
     unsigned int s;
@@ -65,12 +60,17 @@ extern void microkernel_init( void )
     GIP_ATOMIC_MAX_BLOCK();
     GIP_SET_SCHED_CFG( 0x40000 );
     GIP_ATOMIC_MAX_BLOCK();
-    GIP_CLEAR_SEMAPHORES_ATOMIC(0xfffffff0); // do not clear thread 0's semaphores - we need them for the emulation thread
+    GIP_CLEAR_SEMAPHORES_ATOMIC(0xf<<(4*MICROKERNEL_THREAD)); // clear microkernels semaphores
     GIP_SET_THREAD( MICROKERNEL_THREAD, microkernel_thread_start, MICROKERNEL_THREAD_INIT_FLAGS); // microkernel thread kicks off on any of its semaphores in ARM mode
     GIP_READ_AND_SET_SEMAPHORES( s, 2<<(4*MICROKERNEL_THREAD) );
     GIP_BLOCK_ALL(); // ends the atomic section and blocks until the semaphores are written
 
     for (i=0; i<32; i++)
-        microkernel_thread_vectors[i] = (unsigned int *)(loop_forever);
+        microkernel_thread_vectors[i] = (unsigned int *)(mkt_unknown_trap);
 
+}
+
+extern void microkernel_int_register( int vector, microkernel_int_fn fn )
+{
+    microkernel_thread_vectors[vector&0x1f] = (unsigned int)fn;
 }

@@ -1,10 +1,11 @@
 /*a Includes
  */
 #include "cmd.h"
+#include "gip_support.h"
 
 /*a Defines
  */
-#define DELAY(a) {int i;for (i=0; i<a; i++);}
+#define DELAY(a) {int i;for (i=0; i<a; i++) __asm__ volatile("mov r0, r0");}
 
 /*a Types
  */
@@ -75,6 +76,7 @@ static const t_data_type data_type[] =
 /*f command_mem_rep_read
   .. <address> <count> [<delay>]
  */
+#if 0
 static int command_mem_rep_read( void *handle, int argc, unsigned int *args )
 {
     volatile unsigned int *ptr;
@@ -95,10 +97,12 @@ static int command_mem_rep_read( void *handle, int argc, unsigned int *args )
 
     return 0;
 }
+#endif
 
 /*f command_mem_rep_write
   .. <address> <data> <count> [<delay>]
  */
+#if 0
 static int command_mem_rep_write( void *handle, int argc, unsigned int *args )
 {
     volatile unsigned int *ptr;
@@ -120,10 +124,12 @@ static int command_mem_rep_write( void *handle, int argc, unsigned int *args )
 
     return 0;
 }
+#endif
 
 /*f command_mem_fill
   .. <address> <size> <type>
  */
+#if 0
 static int command_mem_fill( void *handle, int argc, unsigned int *args )
 {
     unsigned int *ptr;
@@ -143,10 +149,12 @@ static int command_mem_fill( void *handle, int argc, unsigned int *args )
 
     return 0;
 }
+#endif
 
 /*f command_mem_verify
   .. <address> <size> <type>
  */
+#if 0
 static int command_mem_verify( void *handle, int argc, unsigned int *args )
 {
     volatile unsigned int *ptr;
@@ -180,6 +188,7 @@ static int command_mem_verify( void *handle, int argc, unsigned int *args )
 
     return 0;
 }
+#endif
 
 /*f command_mem_read_location
  */
@@ -207,7 +216,7 @@ static int command_mem_read_location( void *handle, int argc, unsigned int *args
             {
                 cmd_result_nl( handle );
             }
-            cmd_result_hex8( handle, ptr+i*sizeof(int) );
+            cmd_result_hex8( handle, (int)(ptr+i*sizeof(int)) );
             cmd_result_string( handle, ":" );
         }
         else
@@ -240,6 +249,115 @@ static int command_mem_write_location( void *handle, int argc, unsigned int *arg
     return 0;
 }
 
+/*f command_mem_push_phase
+  .. <amount> <dirn>
+ */
+static int command_mem_push_phase( void *handle, int argc, unsigned int *args )
+{
+    int i, j;
+    int dirn;
+    if (argc<2) return 1;
+    dirn = (args[1]!=0);
+    GIP_LED_OUTPUT_CFG_WRITE(0);
+    for (i=0; i<args[0]; i++)
+    {
+        if (dirn)
+        {
+            GIP_LED_OUTPUT_CFG_WRITE(0xf000); // set bit 7 to direction (1 is inc), bit 6 to make it go; then clear bit 6
+        }
+        else
+        {
+            GIP_LED_OUTPUT_CFG_WRITE(0x3000); // set bit 7 to direction (1 is inc), bit 6 to make it go; then clear bit 6
+        }
+        GIP_BLOCK_ALL();
+        GIP_LED_OUTPUT_CFG_WRITE(0); // Clear psen
+        GIP_BLOCK_ALL();
+        DELAY(10000);
+    }
+    return 0;
+}
+
+/*f command_mem_rep_test
+  .. <address> [<length>] [<count>] [<delay>]
+  mmrt 80000000 20 100 0 1
+  mmrt 80000000 20 10000
+  mmrt 80000000 1000 60
+ */
+static int command_mem_rep_test( void *handle, int argc, unsigned int *args )
+{
+    int i, j, k;
+    volatile unsigned int *ptr;
+    int length, count, delay, stop_on_error;
+    unsigned int value, read, diff;
+    int errors;
+    int errored_bits[32];
+
+    static unsigned int test_values[] = {0, 0xffffffff, 0x55555555, 0x00000001, 0xfffffffe, 0x11111111, 0xf, 0xff };
+
+    if (argc<1)
+        return 1;
+
+    length = 32;
+    if (argc>1) length=args[1];
+    count = 32;
+    if (argc>2) count=args[2];
+    delay = 0;
+    if (argc>3) delay=args[3];
+    stop_on_error = 0;
+    if (argc>4) stop_on_error=args[4];
+    ptr = (unsigned int *)args[0];
+
+    for (i=0; i<32; i++) errored_bits[i] = 0;
+    errors = 0;
+
+    for (i=0; (i<count) && !(stop_on_error && errors); i++)
+    {
+        value = test_values[i&7];
+        for (j=0; j<length; j++)
+        {
+            ptr[j] = value;
+            value = ((value&0x80000000)?1:0) | (value<<1);
+        }
+        value = test_values[i&7];
+        for (j=0; j<length; j++)
+        {
+            read = ptr[j];
+            diff = read ^ value;
+            if (diff)
+            {
+                for (k=0; k<32; k++, diff>>=1)
+                {
+                    if (diff&1) errored_bits[k]++;
+                }
+                errors++;
+            }
+            value = ((value&0x80000000)?1:0) | (value<<1);
+        }
+        DELAY(delay);
+    }
+
+    if (errors)
+    {
+        cmd_result_string( handle, "!!ERRORS:" );
+        cmd_result_hex8( handle, errors );
+        cmd_result_nl( handle );
+        for (i=0; i<32; i++)
+        {
+            cmd_result_hex2( handle, i );
+            cmd_result_string( handle, ":" );
+            cmd_result_hex8( handle, errored_bits[i] );
+            cmd_result_nl( handle );
+        }
+    }
+    else
+    {
+        cmd_result_string( handle, "No errors" );
+        cmd_result_nl( handle );
+    }
+
+    return 0;
+}
+
 /*a External variables
  */
 /*v monitor_memory_chain
@@ -249,10 +367,14 @@ const t_command monitor_cmds_memory[] =
 {
     {"mr", command_mem_read_location},
     {"mw", command_mem_write_location},
+#if 0
     {"mmrr", command_mem_rep_read},
     {"mmrw", command_mem_rep_write},
     {"mmf", command_mem_fill},
     {"mmv", command_mem_verify},
+#endif
+    {"mmrt", command_mem_rep_test},
+    {"mmpp", command_mem_push_phase},
     {(const char *)0, (t_command_fn *)0},
 };
 

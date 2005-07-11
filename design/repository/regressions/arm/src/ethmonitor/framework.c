@@ -22,7 +22,7 @@ extern int test_entry_point()
     mon_ethernet_init();
     mon_uart_init();
     extra_init();
-    cmd_init(); // after extra_init()
+    cmd_init(mon_ethernet_cmd_done); // after extra_init()
     while (1)
     {
         mon_ethernet_poll();

@@ -4,6 +4,10 @@
  */
 typedef int t_command_fn( void *handle, int argc, unsigned int *args );
 
+/*t t_command_done_fn
+ */
+typedef void t_command_done_fn( void *, int );
+
 /*t t_command
  */
 typedef struct
@@ -28,7 +32,7 @@ extern void cmd_result_hex2( void *handle, unsigned int v );
 extern void cmd_result_string_nl( void *handle, const char *string );
 extern void cmd_result_nl( void *handle );
 extern void cmd_obey( void *handle, char *buffer, int length, int max_result_length );
-extern void cmd_init( void );
+extern void cmd_init( t_command_done_fn cmd_done );
 
 /*a Functions defined in other source
  */

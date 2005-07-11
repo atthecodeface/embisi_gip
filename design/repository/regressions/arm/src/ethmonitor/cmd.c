@@ -26,6 +26,7 @@ static const t_command base_cmds[] =
 {
     {(const char *)0, (t_command_fn *)0},
 };
+t_command_done_fn *cmd_done;
 
 static t_command_chain cmd_chain;
 
@@ -121,20 +122,21 @@ extern void cmd_result_nl( void *handle )
 
 static void cmd_result_done( void *handle )
 {
-    if (handle)
+    if (handle && cmd_done)
     {
         t_cmd_result *result = (t_cmd_result *)handle;
         if (result->space_remaining==0)
             result->data--;
         result->data[0] = 0;
-        mon_ethernet_cmd_done(result->handle, result->space_remaining);
+        cmd_done(result->handle, result->space_remaining);
     }
 }
 
 /*a Init and obey functions
  */
-extern void cmd_init( void )
+extern void cmd_init( t_command_done_fn cmd_done_fn )
 {
+    cmd_done = cmd_done_fn;
     cmd_chain.cmds = base_cmds;
     cmd_chain.next = (t_command_chain *)0;
     chain_extra_cmds( &cmd_chain );

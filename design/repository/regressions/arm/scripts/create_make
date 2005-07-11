@@ -68,7 +68,7 @@ foreach $asm (@asms) {
     next if ($asm=~/^\s*$/);
     ($dir, $file) = split(/ /,$asm);
     print make "obj/$dir.$file.o: src/$dir/$file.S\n";
-    print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/$dir/$file.S -o obj/$dir.$file.o\n";
+    print make "\t\${ARM_CC} \${ARM_AS_FLAGS} -c src/$dir/$file.S -o obj/$dir.$file.o\n";
     print make "\n";
 }
 

@@ -69,6 +69,7 @@ extern int test_entry_point()
     int i;
     int test, result;
     int failure;
+    test_regs_stable();
 
     failure = 0;
     for (i=0; test_vectors[i].fact_fn; i++)

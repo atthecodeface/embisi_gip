@@ -34,7 +34,12 @@ static void timer_operation( void )
     MK_INT_CLR(0);
     led_cfg ^= 0x5555;
     GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
-    MK_RETURN_FROM_INT_TO_SYS();
+    MK_RETURN_TO_STACK_FRAME();
+}
+static void timer_operation_wrapper( void )
+{
+    __asm__ volatile ( "bl timer_operation" );
+    MK_RETURN_TO_STACK_FRAME();
 }
 
 /*f timer_int_start
@@ -44,7 +49,7 @@ static void timer_int_start ( void )
     unsigned int s;
 
     led_cfg = 0xaaaa;
-    microkernel_int_register( 0, timer_operation );
+    microkernel_int_register( 0, timer_operation_wrapper );
     MK_INT_DIS();
     GIP_TIMER_DISABLE();
     GIP_ATOMIC_MAX_BLOCK();

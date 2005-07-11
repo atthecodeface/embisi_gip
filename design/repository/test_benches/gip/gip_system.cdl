@@ -552,7 +552,22 @@ module gip_system( clock drm_clock,
                           analyzer_signals => iob_analyzer_signals );
 
             analyzer_mux_control = 0;
+            analyzer_mux_control[3;0] = switches[3;4];
             analyzer_signals = iob_analyzer_signals;
+            part_switch (analyzer_mux_control)
+                {
+                case 0:
+                {
+                    analyzer_signals = gip_mem_address;
+                    analyzer_signals[31] = gip_mem_read;
+                    analyzer_signals[30] = gip_mem_write;
+                    analyzer_signals[4;26] = gip_mem_write_byte_enables;
+                }
+                case 1:
+                {
+                    analyzer_signals = gip_mem_write_data;
+                }
+                }
             uart0_rxd = 1;
             uart0_txd_fc = 1;
         }

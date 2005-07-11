@@ -190,12 +190,12 @@ return
 gip_system_microkernel:
 setenv "verbose_level" 1
 
-    gosub gip_system_microkernel_0
+#    gosub gip_system_microkernel_1
+    gosub gip_system_microkernel_2
 return
 
-#b gip_system_microkernel_0
-# This test runs the linux div64 function
-gip_system_microkernel_0:
+#b gip_system_microkernel_1
+gip_system_microkernel_1:
 set vcd_skip_length 0
 set run_length 430000
 setenv "mii_rx_sources" ""
@@ -203,6 +203,19 @@ setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/microkernel_test_1.regression.dmif"
 set_string vcd_filename "gip_system_0"
 set vcd_create 0
+gosub gip_system_test
+return
+
+#b gip_system_microkernel_2
+gip_system_microkernel_2:
+set vcd_skip_length 0
+set run_length 200000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/microkernel_test_2.regression.dmif"
+setenv "ddr_mif" "../arm/bin/factorial.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 1
 gosub gip_system_test
 return
 

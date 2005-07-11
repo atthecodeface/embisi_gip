@@ -36,7 +36,8 @@ typedef fsm
     ddr_dram_read_cas_wait_1 "DDR read, waiting the CAS latency (1)";
     ddr_dram_read_cas_wait_2 "DDR read, waiting the CAS latency (2)";
     ddr_dram_read_cas_wait_3 "DDR read, waiting the CAS latency (3)";
-    ddr_dram_read_data_on_bus "DDR read, data will be on the external bus and registered in our input flops during this phase: buffer it";
+    ddr_dram_read_data_on_bus "DDR read, data will be on the external bus and registered in our input flops during this phase, and at the end of the clock it is stored in interl registers on our clock edge";
+    ddr_dram_read_data_in_reg "DDR read, data will be in the internal register after the pad registers: buffer it";
     ddr_dram_write_start "DDR write, address buffered, NOP on bus, passing address to output registers";
     ddr_dram_write_active "DDR write, active command on bus; we must wait a cycle before the write command";
     ddr_dram_write_wait "DDR write, waiting after the active command to present a write";
@@ -104,6 +105,7 @@ module ddr_dram_as_sram( clock drm_clock,
 
     /*b SRAM read data out, and low priority wait
      */
+    clocked bit[32] input_dq_buffer=0; // captures the input_dq_high data, and these registers are placed very close to the pads
     clocked bit sram_low_priority_wait=0; // this is asserted if a refresh is pending
     clocked bit[32] sram_read_data=0;
 
@@ -457,6 +459,7 @@ module ddr_dram_as_sram( clock drm_clock,
      */
     ddr_dram_fsm "DDR DRAM state machine":
         {
+            input_dq_buffer <= input_dq_high;
             ddr_refresh_issued = 0;
             ddr_transaction = ddr_transaction_nop;
             full_switch (ddr_dram_state)
@@ -530,10 +533,14 @@ module ddr_dram_as_sram( clock drm_clock,
                 {
                     ddr_dram_state <= ddr_dram_read_data_on_bus;
                 }
-                case ddr_dram_read_data_on_bus: // at the start of this cycle the second data word is being put out, and it should be captured in the 'input_dq_high' register; we use that as it has plenty of delay to our clock
+                case ddr_dram_read_data_on_bus: // at the start of this cycle the second data word is being put out, and it should be captured in the 'input_dq_high' register; then captured in an internal register at the end
+                {
+                    ddr_dram_state <= ddr_dram_read_data_in_reg;
+                }
+                case ddr_dram_read_data_in_reg: // at the start of this cycle the data should be stable in our internal register
                 {
                     ddr_dram_state <= ddr_dram_idle;
-                    sram_read_data <= input_dq_high;
+                    sram_read_data <= input_dq_buffer;
                 }
                 case ddr_dram_write_start:
                 {

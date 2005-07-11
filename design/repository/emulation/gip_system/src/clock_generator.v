@@ -1,119 +1,15 @@
 //a Documentation
-// One approach (once we have an 83MHz clock) is to...
-// 1...
-// Drive this 83MHz clock out to the DRAM
-// Feed this back in as our clock; note that this means the clock will not be running until the xilinx is configured
-// The DRAM generates data locked to this clock; its read data and strobes are valid 0.75ns after the edge it gets until 0.75 before the next edge
-// From this fed back clock we can generate an internal clock
-// This internal clock can be used at 90 and !90 to latch the incoming data.
-// Note that inputs have a sampling error of 0.55ns, we have clock tree skew of 0.15ns, and package skew of 0.15ns. This gives us an input uncertainty of 0.85ns.
-// So this works great for inputs
-// For outputs, though, we have the clock-to-q delay; we may not meet this with the fedback clock
-// 2...
-// Drive this 83MHz clock out to the DRAM
-// Use this 83MHz clock rising edge to clock out commands
-// register data out on this clock to (we are SDR for dq and dqm out)
-// register data strobes on this edge
-// fire the actual data strobes out delayed by 1/4 clock and 3/4 clock (90 and !90 clocks)
-// But for inputs...
-// our clock-to-out is 1.74ns-0.36ns (for LVDS) max; this means that the DRAM should be driving data valid after...
-// max clk_skew + 1.38ns + pkg_skew + Tac after clock edge
-// max clk_skew + 0.00ns + pkg_skew + Tac before next clock edge
-// we have a setup of 1.06ns and a hold requirement of -0.45ns for inputs, with 0.48ns max delay for SSTL-II
-// so worst case time from our clock to data being registered would be (with 0 margin) 0.15+1.38+0.15+0.75+1.06 = 3.49ns
-// This would imply a 14ns clock period...
-// This does not work.
-// 3...
-// Drive this 83MHz clock out to the DRAM
-// Use this 83MHz clock rising edge to clock out commands
-// register data out on this clock to (we are SDR for dq and dqm out)
-// register falling data strobe on this edge
-// use this edge for data strobe high out, and the registered for data strobe low out
-// this then is int_output_drm_clock, and int_logic_drm_clock_buffered
-// But for inputs...
-// feed back the 83MHz, and use a DCM to generate 90 degree phase clocks
-// use the 90 and !90 to clock the input data
-// Now we have a timing of...
-// worst case setup:
-//   quarter clock period
-//      MINUS
-//   LVDS input pad delay min
-//   DCM clock error (internal clock could be slightly early; jitter plus phase offset = 150ps+50ps)
-//   max clk skew (skew to input flops)
-//   max pkg skew (skew of data pins)
-//   Tac (valid)
-// which is TCK/4 -  ( 0ns + 0.2ns + 0.15ns + 0.15ns + 0.75ns ) ) > 1.06ns, our required setup
-// which is Tck/4 > 1.06ns + 1.25ns, or 2.31ns
-// worst case hold
-//   quarter clock period (the data changes after a half clock period, and we clock it on the previous quater clock)
-//      MINUS
-//   LVDS input pad delay max
-//   DCM clock error (internal clock could be slightly early; jitter plus phase offset = 150ps+50ps)
-//   max clk skew (skew to input flops)
-//   max pkg skew (skew of data pins)
-//   Tac (valid)
-// which is TCK/4 -  ( (0.88ns+0.69ns) + 0.2ns + 0.15ns + 0.15ns + 0.75ns ) ) > -0.45ns, our required hold
-// which is Tck/4 > -0.45ns + 1.57ns + 1.25ns, or 2.37ns
-// This works, and lets us run the interface up to 100MHz without special phase aligning to account for clock-to-out issues
-// this clock is then int_input_drm_clock_90
-//
-// Well, Xilinx messed that one up
-// Driving the clock out invokes extra wiring so that the clock out has +3ns of extra delay over clocks to pads. Weird.
-//
-// 4...
-// Get the 83MHz starting clock
-// Double this clock and buffer it for registers for the outputs
-// Also generate a 90 degree phase shifted, so that at the clock out pins we can regenerate the buffered version
-// Note that a 90 degree phase shifted clock is LOW when the nonshifted clock rises, so use !90_buffered to regenerate
-// register commands out on the buffered clock
-// register data out on the buffered clock to (we are SDR for dq and dqm out)
-// register falling data strobe on this edge
-// use this edge for data strobe high out, and the registered for data strobe low out
-// this then is int_output_drm_clock, and int_logic_drm_clock_buffered
-// But for inputs...
-// feed back the 83MHz, and use a DCM to generate 90 degree phase clocks
-// use the 90 and !90 to clock the input data
-// Now we have a timing of...
-// worst case setup:
-//   quarter clock period
-//      MINUS
-//   LVDS input pad delay min
-//   DCM clock error (internal clock could be slightly early; jitter plus phase offset = 150ps+50ps)
-//   max clk skew (skew to input flops)
-//   max pkg skew (skew of data pins)
-//   Tac (valid)
-// which is TCK/4 -  ( 0ns + 0.2ns + 0.15ns + 0.15ns + 0.75ns ) ) > 1.06ns, our required setup
-// which is Tck/4 > 1.06ns + 1.25ns, or 2.31ns
-// worst case hold
-//   quarter clock period (the data changes after a half clock period, and we clock it on the previous quater clock)
-//      MINUS
-//   LVDS input pad delay max
-//   DCM clock error (internal clock could be slightly early; jitter plus phase offset = 150ps+50ps)
-//   max clk skew (skew to input flops)
-//   max pkg skew (skew of data pins)
-//   Tac (valid)
-// which is TCK/4 -  ( (0.88ns+0.69ns) + 0.2ns + 0.15ns + 0.15ns + 0.75ns ) ) > -0.45ns, our required hold
-// which is Tck/4 > -0.45ns + 1.57ns + 1.25ns, or 2.37ns
-// This works, and lets us run the interface up to 100MHz without special phase aligning to account for clock-to-out issues
-// this clock is then int_input_drm_clock_90
-// provided the clock to output does get worse than 90 degrees of phase...
-// The actual timings turn out to be...
-//  from clock out of DCM through GBUF to flop clock for 166MHz, 1.4ns + 1.9ns (1.4 for to GBUF and intrinsic delay, 1.9 for global clock tree)
-//  from clock out of DCM through GBUF to flop clock for 83MHz, 1.4ns + 1.9ns (1.4 for to GBUF and intrinsic delay, 1.9 for global clock tree)
-//  clock to pad for LVDS 1.7ns
-//  so we have an issue with hold times for command; we can trust for a while...
-//  we need 0.5ns setup and hold of dq/dqm to dqs; we meet that by design
-//  dqs has no particular setup to the clock
-//  control signals, though, have a 0.9ns hold requirement; we are giving them about 0.5ns at the largest.
-//  now we have an 8-part DIMM module, so clock goes to 4 chips, but control signals to 8; this is an extra 8-12pF for signals, should give us 0.5ns with 50ohms
-// our feedback clock needs a high slew rate driver to get the timing down from 11ns to 7ns (main clock in to pad); in this case it is about 0.5ns slower than the LVDS clock.
-// hope board integrity is okay for that signal
-
-
-//
 // The structure of the DCMs is...
-// DCM 1: take 125MHz, generate 250MHz and 125MHz in sync, with gbufs on both, feeding back the 125MHz so it is locked
-// DCM 2: take 125MHz, generate a phase shifted version for clocking the input data from the DRAM
+// DCM 1: take 125MHz, generate 250MHz and 125MHz in sync, with gbufs on both, feeding back the 125MHz so it is locked - this is our internal DRAM logic clock (with the 2x so we can regenerate the internal clock on pins out)
+// DCM 2: take 125MHz, generate a phase shifted version for clocking the input data from the DRAM - we have a big read data window (a whole clock) so hitting this should be easy
+//
+// clock out is 2.15-2.17ns int_double_drm_clock_buffered to out (ddr_clocks.twr)
+// control signals 1.8-1.95ns after int_drm_clock_90_buffered, or 3.8-3.95ns after int_drm_clock_buffered
+// data signals are 1.85ns after int_drm_clock_buffered rising/falling
+// strobe signals are ?
+//
+// DRAM pumps out data and strobes 
+//
 // We also divide by 12 to get our internal clock frequency
 
 //a clock_generator module
@@ -131,6 +27,9 @@ module clock_generator(
 
     int_logic_slow_clock_buffered,
     cke_next_will_be_last_of_logic,
+
+    ps,
+    ps_done,
 
     info
 );
@@ -152,9 +51,18 @@ module clock_generator(
 
     output [3:0] info;
 
+    input [1:0] ps;
+    output ps_done;
+
 //b Wires
     wire [1:0]dcm_locked;
     assign info = {2'b0, dcm_locked[1:0]}; //'
+
+wire derived_ps_inc_dec;
+reg derived_ps_en;
+reg sync_ps;
+reg last_ps;
+reg result_psdone;
 
 //b DCM 1
 //
@@ -165,6 +73,7 @@ module clock_generator(
 // I think this is bank 7 on left at top, bank 6 on left at bottom
 // The best place would then be DCM_X0Y0, the bottom left DCM; although all the gbufs are central, so X2Y0 is better
 DCM clk_phases_gen(       .CLKIN (sys_drm_clock_in),
+                          .RST(system_reset_in),
                           .CLKFB (int_drm_clock_buffered), // our reference signal, 4ns high, 4ns low
                           .CLK0 (int_drm_clock), // -4 to -2ns before int_drm_clock_buffered (dependent on gbuf delay; likely around 2.8ns)
                           .CLK180 (int_drm_clock_90), // -2ns to +0ns around int_drm_clock_buffered (+2ns from clk0)
@@ -207,10 +116,16 @@ always @(posedge int_double_drm_clock_buffered) begin int_drm_clock_phase <= !in
 // This should be placed near its input
 // we skew by 1/3 of a clock for now; not too important why yet till we get to reads
 DCM dram_input_pin_gen(       .CLKIN (sys_drm_clock_in),
+                              .RST(system_reset_in),
                               .CLK0 (int_input_drm_clock),
                               .CLKFB (int_input_drm_clock_buffered),
+                              .PSCLK(sys_drm_clock_in),
+                              .PSEN(derived_ps_en),
+                              .PSINCDEC(derived_ps_inc_dec),
+                              .PSDONE(psdone),
                               .LOCKED (dcm_locked[1] )
                     );
+// the LOCs are also in fpga_wrapper.ucf
 // synthesis attribute LOC of dram_input_pin_gen is "DCM_X3Y0";
 
 // synthesis attribute CLK_FEEDBACK of dram_input_pin_gen is "1X"; 
@@ -218,18 +133,38 @@ DCM dram_input_pin_gen(       .CLKIN (sys_drm_clock_in),
 // synthesis attribute CLKFX_MULTIPLY of dram_input_pin_gen is 2;
 // synthesis attribute CLKFX_DIVIDE of dram_input_pin_gen is 1;
 // synthesis attribute CLKIN_DIVIDE_BY_2 of dram_input_pin_gen is 0;
-// synthesis attribute CLKOUT_PHASE_SHIFT of dram_input_pin_gen is "FIXED"; 
+// synthesis attribute CLKOUT_PHASE_SHIFT of dram_input_pin_gen is "VARIABLE"; 
 // synthesis attribute DESKEW_ADJUST of dram_input_pin_gen is "SYSTEM_SYNCHRONOUS";
 // synthesis attribute DFS_FREQUENCY_MODE of dram_input_pin_gen is "LOW"; 
 // synthesis attribute DLL_FREQUENCY_MODE of dram_input_pin_gen is "LOW"; 
 // synthesis attribute DSS_MODE of dram_input_pin_gen is "NONE"; 
-// synthesis attribute DUTY_CYCLE_CORRECTION of dram_input_pin_gen is "FALSE";
-// synthesis attribute PHASE_SHIFT of dram_input_pin_gen is 80;
+// synthesis attribute DUTY_CYCLE_CORRECTION of dram_input_pin_gen is "TRUE";
+// was 80 and working, but with no PSEN input; 120 seems to work as well, and so does 190.
+// but all work as badly with the second DRAM module. Waaah.
+// synthesis attribute PHASE_SHIFT of dram_input_pin_gen is 0;
 // synthesis attribute STARTUP_WAIT of dram_input_pin_gen is 1;
 
 BUFG drm_input_clock_buffer( .I(int_input_drm_clock), .O(int_input_drm_clock_buffered) );
 
 //synthesis attribute clock_signal of int_input_drm_clock_buffered is yes;
+
+always @(posedge sys_drm_clock_in)
+begin
+    derived_ps_en <= 0;
+    if (sync_ps && !last_ps)
+    begin
+        derived_ps_en <= 1;
+        result_psdone <= 0;
+    end
+    if (psdone)
+    begin
+        result_psdone <= 1;
+    end
+    sync_ps <= ps[0];
+    last_ps <= sync_ps;
+end
+assign derived_ps_inc_dec = ps[1];
+assign ps_done = result_psdone;
 
 //b Clock divider
 //

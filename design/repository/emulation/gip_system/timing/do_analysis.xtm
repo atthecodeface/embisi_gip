@@ -8,16 +8,6 @@ ResetAllPathFilters
 DefineEndpoints FromNone
 DefineEndpoints ToNone
 Period 8.000 sys_drm_clock_in
-Period 60.000 ckgen_divided_clock
-Period 60.000 int_logic_slow_clock_buffered
-ExcludeNets body_ddr_ready
-MaxPathsPerTimingConstraint 10
-AnalyzeUserTimingConstraints save all_clock_periods.twr
-
-ResetAllPathFilters
-DefineEndpoints FromNone
-DefineEndpoints ToNone
-Period 8.000 sys_drm_clock_in
 ExcludeNets body_ddr_ready
 SelectFailingTimingConstraint False
 IncludeNoTimingConstraint False
@@ -66,7 +56,7 @@ ResetAllPathFilters
 DefineEndpoints FromNone
 DefineEndpoints ToNone
 DefineEndpoints FromFFs
-DefineEndpoints ToPads ddr_dram_a<0> ddr_dram_a<1> ddr_dram_a<2> ddr_dram_a<3> ddr_dram_a<4> ddr_dram_a<5> ddr_dram_a<6> ddr_dram_a<7> ddr_dram_a<8> ddr_dram_a<9> ddr_dram_a<10> ddr_dram_a<11> ddr_dram_a<12> ddr_dram_ba<0> ddr_dram_ba<1>
+DefineEndpoints ToPads ddr_dram_a<0> ddr_dram_a<1> ddr_dram_a<2> ddr_dram_a<3> ddr_dram_a<4> ddr_dram_a<5> ddr_dram_a<6> ddr_dram_a<7> ddr_dram_a<8> ddr_dram_a<9> ddr_dram_a<10> ddr_dram_a<11> ddr_dram_a<12> ddr_dram_ba<0> ddr_dram_ba<1> ddr_dram_ras_n ddr_dram_cas_n ddr_dram_we_n ddr_dram_s_n<0> ddr_dram_s_n<1>
 SelectFailingTimingConstraint False
 IncludeNoTimingConstraint False
 MaxPathsPerTimingConstraint 50
@@ -76,8 +66,60 @@ ResetAllPathFilters
 DefineEndpoints FromNone
 DefineEndpoints ToNone
 DefineEndpoints FromFFs
-DefineEndpoints ToPads ddr_dram_dq<0> ddr_dram_dq<1> ddr_dram_dq<2> ddr_dram_dq<3> ddr_dram_dq<4> ddr_dram_dq<5> ddr_dram_dq<6> ddr_dram_dq<7> ddr_dram_dq<8> ddr_dram_dq<9> ddr_dram_dq<10> ddr_dram_dq<11> ddr_dram_dq<12>
+DefineEndpoints ToPads ddr_dram_dq<0> ddr_dram_dq<1> ddr_dram_dq<2> ddr_dram_dq<3> ddr_dram_dq<4> ddr_dram_dq<5> ddr_dram_dq<6> ddr_dram_dq<7> ddr_dram_dq<8> ddr_dram_dq<9> ddr_dram_dq<10> ddr_dram_dq<11> ddr_dram_dq<12> ddr_dram_dq<13> ddr_dram_dq<14> ddr_dram_dq<15> ddr_dram_dq<16> ddr_dram_dq<17> ddr_dram_dq<18> ddr_dram_dq<19> ddr_dram_dq<20> ddr_dram_dq<21> ddr_dram_dq<22> ddr_dram_dq<23> ddr_dram_dq<24> ddr_dram_dq<25> ddr_dram_dq<26> ddr_dram_dq<27> ddr_dram_dq<28> ddr_dram_dq<29> ddr_dram_dq<30> ddr_dram_dq<31>
 SelectFailingTimingConstraint False
 IncludeNoTimingConstraint False
 MaxPathsPerTimingConstraint 50
 AnalyzeCustom save ddr_dq.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromFFs
+DefineEndpoints ToPads ddr_dram_dqs<0> ddr_dram_dqs<1> ddr_dram_dqs<2> ddr_dram_dqs<3> ddr_dram_dqs<4> ddr_dram_dqs<5> ddr_dram_dqs<6> ddr_dram_dqs<7>
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_dqs.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromFFs
+DefineEndpoints ToPads ddr_dram_dqm<0> ddr_dram_dqm<1> ddr_dram_dqm<2> ddr_dram_dqm<3>
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_dqm.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromFFs
+DefineEndpoints ToFFs dqs_0/FDDRCPE1/FF0 dqs_1/FDDRCPE1/FF0 dqs_2/FDDRCPE1/FF0 dqs_3/FDDRCPE1/FF0 dqs_4/FDDRCPE1/FF0 dqs_5/FDDRCPE1/FF0 dqs_6/FDDRCPE1/FF0 dqs_7/FDDRCPE1/FF0
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_dqs_flops.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromFFs
+DefineEndpoints ToFFs body_main_ram/ddr_dram_state_FFd1 body_main_ram/ddr_dram_state_FFd2 body_main_ram/ddr_dram_state_FFd3 body_main_ram/ddr_dram_state_FFd4 body_main_ram/ddr_dram_state_FFd5 body_main_ram/ddr_dram_state_FFd6 body_main_ram/ddr_dram_state_FFd7 body_main_ram/ddr_dram_state_FFd8 body_main_ram/ddr_dram_state_FFd9 body_main_ram/ddr_dram_state_FFd10 body_main_ram/ddr_dram_state_FFd11 body_main_ram/ddr_dram_state_FFd12
+Period 8.0 sys_drm_clock_in
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_dram_state.twr
+
+ResetAllPathFilters
+DefineEndpoints FromNone
+DefineEndpoints ToNone
+DefineEndpoints FromFFs
+DefineEndpoints ToFFs body_main_ram/buffered_enables_0 body_main_ram/buffered_enables_1 body_main_ram/buffered_enables_2 body_main_ram/buffered_enables_3
+Period 8.0 sys_drm_clock_in
+SelectFailingTimingConstraint False
+IncludeNoTimingConstraint False
+MaxPathsPerTimingConstraint 50
+AnalyzeCustom save ddr_buffer_enables.twr

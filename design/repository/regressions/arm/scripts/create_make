@@ -22,19 +22,19 @@ while (<desc>)
     $line = $_;
     next if $line =~/^\s*#/;
     next if $line =~/^\s*;/;
-    if ($line =~ /asm\s+(\S*)\s+(.*)/) {
+    if ($line =~ /^asm\s+(\S*)\s+(.*)/) {
         $dir = $1;
         $file = $2;
         $asms[$#asms] = "$dir $file";
         $#asms++;
     }
-    if ($line =~ /cc\s+(\S*)\s+(.*)/) {
+    if ($line =~ /^cc\s+(\S*)\s+(.*)/) {
         $dir = $1;
         $file = $2;
         $ccs[$#ccs] = "$dir $file";
         $#ccs++;
     }
-    if ($line =~ /test\s+(\S*)\s+(\S*)\s+(.*)/) {
+    if ($line =~ /^test\s+(\S*)\s+(\S*)\s+(.*)/) {
         $type = $1;
         $test = $2;
         $options = $3;

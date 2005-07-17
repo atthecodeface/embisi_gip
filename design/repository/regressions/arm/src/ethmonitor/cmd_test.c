@@ -196,7 +196,7 @@ static int command_leds_read_write( void *handle, int argc, unsigned int *args )
 static void timer_int( void )
 {
     __asm__ volatile ( " .word 0xec00c1f5 ; mov r0, r8 " );  // r31 <= periph[24] (timer value)
-    __asm__ volatile ( " .word 0xec00c59e ; .word 0xec00d1fe ; add r0, r15, #0x80000 " ); // periph[25] = timer value+0x80, and clears passed // 0x40 is too tight
+    __asm__ volatile ( " .word 0xec00c59e ; .word 0xec00d1fe ; add r0, r15, #0x30000 " ); // periph[25] = timer value+0x80, and clears passed // 0x40 is too tight
     __asm__ volatile ( " .word 0xec00c80e ; mov r0, #0x1<<28 " ); // write to spec0 (sems to clr)
     __asm__ volatile ( " .word 0xec007281 ; .word 0xec00c1f8 ; mov r0, r0 " ); // r31 <= spec0 (read and clear semaphores)
     __asm__ volatile ( " .word 0xec00c80e ; mov r0, #0x4<<4 " ); // write to spec0 (sems to set)
@@ -211,9 +211,8 @@ static int led_cfg;
 static void timer_operation( void )
 {
     MK_INT_CLR(0);
-    led_cfg ^= 0x5555;
+    led_cfg ^= 0x0500;
     GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
-    MK_RETURN_TO_STACK_FRAME();
 }
 static void timer_operation_wrapper( void )
 {
@@ -227,7 +226,6 @@ static void timer_int_start ( void )
 {
     unsigned int s;
 
-    led_cfg = 0xaaaa; GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
     led_cfg = 0x03; GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
 	MK_TRAP2( MK_TRAP_SET_IRQ_HANDLER, 0, (unsigned int)timer_operation_wrapper );
     led_cfg |= 0x0c; GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
@@ -244,14 +242,22 @@ static void timer_int_start ( void )
     led_cfg |= 0xc0; GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
 }
 
-/*f command_microkernel_init
+/*f command_leds_flash
  */
-static int command_microkernel_init( void *handle, int argc, unsigned int *args )
+static int command_leds_flash( void *handle, int argc, unsigned int *args )
 {
-//    microkernel_init();
-//    timer_int_start();
-//    led_cfg |= 0x300; GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
-    test_regs_stable();
+    timer_int_start();
+    led_cfg |= 0x300; GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
+    return 0;
+}
+
+/*f command_test_regs
+  syntax: <test> - test is top bit set for system mode, clear for user mode, and bottom bits 0->regs, 1->regs with ints, 2->sp with ints, 3->flags with ints
+ */
+static int command_test_regs( void *handle, int argc, unsigned int *args )
+{
+    if (argc<1) return 1;
+    test_regs_stable(0, args[0]);
     return 0;
 }
 
@@ -267,7 +273,8 @@ const t_command monitor_cmds_test[] =
     {"tmen", command_timer_enable},
     {"tmld", command_timer_leds},
     {"ldrw", command_leds_read_write},
-    {"mkin", command_microkernel_init},
+    {"ldfl", command_leds_flash},
+    {"tstr", command_test_regs},
     {(const char *)0, (t_command_fn *)0},
 };
 

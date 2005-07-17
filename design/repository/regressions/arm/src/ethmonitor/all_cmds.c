@@ -6,6 +6,7 @@
 #include "cmd_flash.h"
 #include "cmd_leds.h"
 #include "cmd_test.h"
+#include "cmd_gipeth.h"
 
 #include <stdio.h>
 static t_command_chain monitor_cmds_memory_chain;
@@ -14,6 +15,7 @@ static t_command_chain monitor_cmds_extbus_chain;
 static t_command_chain monitor_cmds_flash_chain;
 static t_command_chain monitor_cmds_leds_chain;
 static t_command_chain monitor_cmds_test_chain;
+static t_command_chain monitor_cmds_gipeth_chain;
 extern void chain_extra_cmds( t_command_chain *chain )
 {
     chain->next = &monitor_cmds_memory_chain;
@@ -45,6 +47,11 @@ extern void chain_extra_cmds( t_command_chain *chain )
     monitor_cmds_test_chain.next = NULL;
     monitor_cmds_test_chain.cmds = &monitor_cmds_test[0];
     chain = &monitor_cmds_test_chain;
+
+    chain->next = &monitor_cmds_gipeth_chain;
+    monitor_cmds_gipeth_chain.next = NULL;
+    monitor_cmds_gipeth_chain.cmds = &monitor_cmds_gipeth[0];
+    chain = &monitor_cmds_gipeth_chain;
 
 }
 extern void extra_init( void )

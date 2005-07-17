@@ -14,7 +14,13 @@
 #define Trap_SetSwiHandler (1024+5)
 
 #define STACK_FRAME_SIZE (17*4)
-    
+
+#if 0
+#define DEBUG(a) gip_utximm a
+#else
+#define DEBUG(a) 
+#endif
+        
     // This microkernel thread uses its semaphore 0 as its ARM trap semaphore, semaphore 1 as interrupts enable, sempahore 2 as hardware interrupt
     // It also uses r15/r16 for trap handling, r17 for hardware interrupt status, and r18 for the system stack pointer
     
@@ -74,9 +80,13 @@
 microkernel_thread_start:
     // preserve r0
     stmfd sp!, {r0}
-    
+
+    mov r0, #0x11000
     gip_extrd 0x13
-    mov r3, #0
+    mov r3, r0
+
+    gip_extrd 0x14
+    mov r4, #0
 
     // clear the semaphores that effect us - this clears interrupt enable and hw interrupt (as well as trap)
     gip_read_and_clear_semaphores (0xf << (MICROKERNEL_THREAD*4)), r0
@@ -112,7 +122,7 @@ microkernel_thread_start:
     // Macro called to preserve r8 from any user entry point - we need to put it on the system stack (which should be unchanged from last return to user mode)
     .macro user_preserve_r8
     gip_extrn 18
-    str r8, [r2, #-4] // put r8 on to next system stack entry - we cannot be preempted by any users of the stack, so we need not change r18
+    str r8, [r2, #-4] // put r8 on to next system stack entry - we cannot be preempted by any users of the stack, so we need not change r18 - indeed, doing so would mess up stack frame building
     .endm
 
     // Macro called to recover r8 from an exit where no stack frames were used
@@ -143,7 +153,14 @@ microkernel_thread_start:
     gip_restart_at mkt_user_mode
     .endm
 
-    
+    .macro circular_buffer reg, tmp
+    gip_extrm 0x13
+    mov \tmp, r3 // \tmp = r19
+    str \reg, [\tmp], #4
+    bic \tmp, \tmp, #0x200
+    gip_extrd 0x13
+    mov r3, \tmp // r19 = \tmp
+    .endm
         
     
     
@@ -152,7 +169,11 @@ microkernel_thread_start:
     // This can be entered when the trap semaphore goes off OR when a hardware interrupt occurs
     // If the trap semaphore has occurred then it MUST be handled first - the emulated code will have descheduled
 mkt_basic_system_mode:
+    DEBUG('S')
     system_preserve_r8
+    gip_gpio_instat r8
+    tst r8, #1
+    bne mkt_unknown_trap
     gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8
     tst r8, #TRAP_SEM_IN_READ
     beq mkt_basic_system_mode_interrupt
@@ -164,6 +185,7 @@ mkt_basic_system_mode_trap: // trap semaphore fired when in system mode - r8 = s
     tst r0, #0x400 // test trap number in r16
     beq mkt_basic_system_mode_trap_swi // if a SWI, enter that handler
     // fall through
+    DEBUG('T')
 mkt_basic_system_mode_trap_mk:  // microkernel trap occurred - handle appropriately - r8 = semaphores, [r13, #-4] = original r8
     gip_extrn 16
     ands r8, r0, #0xff // r8 = r16 & 0xff
@@ -175,12 +197,7 @@ mkt_basic_system_mode_trap_return: // microkernel trap to return to given frame 
     //  if flags indicates user, then enable interrupts (set semaphore), recover sp from stack, put r13 after stack pop in to r18, and restart at user
     //  if flags indicates system, then enable or disable interrupts based on flags, set r13 valid after stack pop, and restart at system
 
-    // for debug, count interrupt depth
-    gip_extrn 0x13
-    cmp r3, #0
-    gip_extrn 0x13
-    gip_extrd 0x13
-    subgt r3, r3, #1
+    DEBUG('r')
    
     // disable interrupts
     gip_read_and_clear_semaphores INTEN_SEM_IN_READ, r0 // we can trash any registers here, we will get them from the stack frame
@@ -199,6 +216,18 @@ mkt_basic_system_mode_trap_return_ints_disabled: // semaphores correct, r1=flags
 mkt_basic_system_mode_trap_return_user_mode:    
     gip_extrd 18
     add r2, r13, #STACK_FRAME_SIZE // r18 = system stack pointer, after we pop off our frame - only needed for user mode, as otherwise r13 is valid
+    ldr r0, [r13, #15*4]
+    circular_buffer r0, r8
+    circular_buffer r13, r8
+    gip_extrm 20
+    mov r0, r4
+    cmp r0, #0
+    beq 0f
+    subs r0, r0, #1
+    bleq mkt_unknown_trap
+    gip_extrd 20
+    mov r0, r0
+0:      
     restart_at_user
 mkt_basic_system_mode_trap_return_exit:     
     // stop mkt from scheduling
@@ -224,12 +253,12 @@ emt_return_to_frame:
     gip_extrd 0x86
     ldr r0, emt_frame_restart_flags  // spec6 = flags
     // set the flags from r1     writeflags r16
-    // WORKAROUND FOR EXTCMD NOT WORKING:   set us as gp mode (special_alu_mode bottom 2 bits set, which means same for repeat count)
+//    // WORKAROUND FOR EXTCMD NOT WORKING:   set us as gp mode (special_alu_mode bottom 2 bits set, which means same for repeat count)
        gip_mov_full_imm 0x88, #3
        gip_atomic_block 31
        gip_atomic_block 31 // have to block twice as it blocks at rf stage, and we want the decode to be blocked
     .word 0xec00cc0e // extrdrm rd=none
-//    .word 0xec00ee30 // extcmd 0110ccccsaoobbbb - c condition, s sign, a acc, o op (3 for gp mode), b burst
+//    .word 0xec00ee30 // extcmd 1110ccccsaoobbbb - c condition, s sign, a acc, o op (3 for gp mode), b burst
     .word 0xec000f01 // alureg op15 rd=none, rm=1 - ttttooooddddmmmm type=0, op=0xf, d=0, m=1
        gip_mov_full_imm 0x88, #0
        gip_atomic_block 31
@@ -267,6 +296,7 @@ mkt_basic_system_mode_trap_set_swi_handler:
 
     // System mode (or user mode), interrupts possibly enabled or disabled, microkernel trap performed - r15 = pc to return to, other registers for return
 mkt_basic_system_mode_trap_done_return_to_caller:    
+    DEBUG('R')
     // r15 = pc to return to, other registers were all set
     // we need to point emulation thread at r15, and it can then run
     restart_at_basic_system
@@ -280,6 +310,7 @@ mkt_basic_system_mode_trap_done_return_to_caller:
 
     // System mode, interrupts possibly enabled or disabled, build stack frame using r13 and call SWI handler - [r13, #-4] = original r8
 mkt_basic_system_mode_trap_swi:
+    DEBUG('W')
     ldr r8, [r13, #-4]
     str r13, [r13, #-STACK_FRAME_SIZE+13*4] // preserve r13 on the stack frame
     sub r13, r13, #STACK_FRAME_SIZE // r13 <= r13-stack_frame_size (after all, we are now in system mode(!))
@@ -316,6 +347,7 @@ mkt_basic_system_mode_interrupt:
     gip_extrm 0x11
     movs r8, r1 // r8 <= r17, interrupt sources
     beq mkt_basic_system_mode_interrupt_no_interrupts
+    DEBUG('I')
 
     // interrupts enabled, interrupt to service - create stack frame
     ldr r8, [r13, #-4]
@@ -332,22 +364,18 @@ mkt_basic_system_mode_interrupt:
 
     // Change the emulated thread's PC to be the interrupt vector
     ldr r8, = microkernel_thread_vectors
-    ldr r8, [r8] // ignore which status bit for now - only use vector 0
+    gip_extrn 0x11
+    tst r1, #2 // 
+    ldreq r8, [r8] // ignore which status bit for now - only use vector 0
+    ldrne r8, [r8, #4] // ignore which status bit for now - only use vector 0
+
     gip_atomic 2
     gip_mov_full_imm 0x84, #EMULATION_THREAD // spec4 <= EMULATION_THREAD
     gip_extrd 0x85
     orr r0, r8, #1 // set restart address for emulated thread, spec5 <= pc | 1
 
-    // for debug, count interrupt depth
-    gip_extrn 0x13       
-    gip_extrd 0x13
-    add r3, r3, #1
-    gip_extrn 0x13
-    cmp r3, #1
-    blgt mkt_unknown_trap
-    
     // change to interrupt disabled mode - clear INTEN semaphore, set restart to be mkt_int_dis_system_mode dependent on trap and inten
-    gip_read_and_clear_semaphores INTEN_SEM_IN_READ, r8
+    gip_read_and_clear_semaphores (HWINT_SEM_IN_READ | INTEN_SEM_IN_READ), r8
     restart_at_int_dis_system
 
     // deschedule, blocking first for cleanliness
@@ -356,6 +384,7 @@ mkt_basic_system_mode_interrupt:
     
     // System mode, not a trap, no interrupt sources claim to be pending, so we can clear the hardware interrupt, check sources again (in case one came in since between reading the hwint bit and clearing it)
 mkt_basic_system_mode_interrupt_no_interrupts:
+    DEBUG('N')
     gip_read_and_clear_semaphores (HWINT_SEM_IN_READ | TRAP_SEM_IN_READ), r8
     gip_atomic_block 1
     gip_extrm 0x11
@@ -371,6 +400,7 @@ mkt_basic_system_mode_interrupt_no_interrupts:
     
     // System mode, not a trap, probably hw interrupt, but interrupts are now disabled - set scheduling dependency to be trap semaphore and inten semaphore, set restart at ints disabled mode, then recover r8 and continue emulation thread
 mkt_basic_system_mode_interrupt_interrupts_disabled:
+    DEBUG('D')
     restart_at_int_dis_system
     system_recover_r8
     // deschedule, blocking first for cleanliness
@@ -383,7 +413,13 @@ mkt_basic_system_mode_interrupt_interrupts_disabled:
     
     // System mode interrupts disabled, either a trap or interrupts have been reenabled - if its a trap, emulation thread is descheduled: if interrupts are reenabled then emulation thread must have been preempted
 mkt_int_dis_system_mode:
+    DEBUG('s')
     system_preserve_r8
+
+    gip_gpio_instat r8
+    tst r8, #1
+    bne mkt_unknown_trap
+
     gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8
     tst r8, #TRAP_SEM_IN_READ
     bne mkt_basic_system_mode_trap // for now we go back to the system mode handler, as it copes with interrupts enabled or disabled
@@ -400,17 +436,24 @@ mkt_int_dis_system_mode_interrupts_enabled:
     // This can be entered when the trap semaphore goes off OR when a hardware interrupt occurs
     // If the trap semaphore has occurred then it MUST be handled first - the emulated code will have descheduled
 mkt_user_mode:
+    DEBUG('U')
     user_preserve_r8
+
+    gip_gpio_instat r8
+    tst r8, #1
+    bne mkt_unknown_trap
+
     gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8
     tst r8, #TRAP_SEM_IN_READ
     beq mkt_user_mode_interrupt
 
 mkt_user_mode_trap: // trap semaphore fired when in user mode (*must be SWI*) - r8 = semaphores, [r18,#-4] = original r8
+    DEBUG('T')
     gip_extrn 18
     str r13, [r2, #-STACK_FRAME_SIZE+13*4] // preserve r13 (user) on the stack frame
     gip_extrn 18
     sub r13, r2, #STACK_FRAME_SIZE // r13 (system) <= r18-stack_frame_size (after all, we are now in system mode(!))
-    ldr r8, [r13, #STACK_FRAME_SIZE-4] // recover r8 from system stack
+    user_recover_r8
     stmia r13, {r0-r12} // preserve r0-r12
     str r14, [r13, #14*4] // preserve r14
     gip_extrd 15 // rd is used to store data in stores, so extend that to r15
@@ -443,16 +486,17 @@ mkt_user_mode_interrupt:
     movs r8, r1 // r8 <= r17, interrupt sources
     beq mkt_user_mode_interrupt_no_interrupts
 
+    DEBUG('I')
     // interrupts enabled, interrupt to service - create stack frame
     gip_extrn 18
     str r13, [r2, #-STACK_FRAME_SIZE+13*4] // preserve r13 on the stack frame
     gip_extrn 18
     sub r13, r2, #STACK_FRAME_SIZE // r13 <= r18-stack_frame_size (after all, we are now in system mode(!))
-    ldr r8, [r13, #STACK_FRAME_SIZE-4] // recover r8 from system stack
+    user_recover_r8
     stmia r13, {r0-r12} // preserve r0-r12
     str r14, [r13, #14*4] // preserve r14
     gip_extrd 0x8c // rd is used to store data in stores, so extend that to spec12 (preempted pc l)
-    str r12, [r0, #15*4]
+    str r12, [r13, #15*4]
 
     gip_extrn 0x8e // spec14 (preempted flags l)
     orr r8, r14, #3<<30 // user mode, interrupts enabled
@@ -460,22 +504,17 @@ mkt_user_mode_interrupt:
 
     // Change the emulated thread's PC to be the interrupt vector
     ldr r8, = microkernel_thread_vectors
-    ldr r8, [r8] // ignore which status bit for now - only use vector 0
+    gip_extrn 0x11
+    tst r1, #2 // 
+    ldreq r8, [r8] // ignore which status bit for now - only use vector 0
+    ldrne r8, [r8, #4] // ignore which status bit for now - only use vector 0
     gip_atomic 2
     gip_mov_full_imm 0x84, #EMULATION_THREAD // spec4 <= EMULATION_THREAD
     gip_extrd 0x85
     orr r0, r8, #1 // set restart address for emulated thread, spec5 <= pc | 1
 
-    // for debug, count interrupt depth
-    gip_extrn 0x13       
-    gip_extrd 0x13
-    add r3, r3, #1
-    gip_extrn 0x13
-    cmp r3, #1
-    blgt mkt_unknown_trap
-    
     // change to interrupt disabled mode - clear INTEN semaphore, set restart to be mkt_int_dis_system_mode dependent on trap and inten
-    gip_read_and_clear_semaphores INTEN_SEM_IN_READ, r8
+    gip_read_and_clear_semaphores (HWINT_SEM_IN_READ | INTEN_SEM_IN_READ), r8
     restart_at_int_dis_system
 
     // deschedule, blocking first for cleanliness
@@ -484,6 +523,7 @@ mkt_user_mode_interrupt:
     
     // User mode, not a trap, no interrupt sources claim to be pending, so we can clear the hardware interrupt, check sources again (in case one came in since between reading the hwint bit and clearing it)
 mkt_user_mode_interrupt_no_interrupts:
+    DEBUG('N')
     gip_read_and_clear_semaphores (HWINT_SEM_IN_READ | TRAP_SEM_IN_READ), r8
     gip_atomic_block 1
     gip_extrm 0x11
@@ -506,6 +546,7 @@ mkt_user_mode_interrupt_no_interrupts:
    // fatal unknown trap - reboot!
 mkt_unknown_trap:
     mov r0, #0x11000
+    add r0, r0, #0x200
     stmia r0, {r0-r14}
     gip_extrd 15
     str r0, [r0, #15*4]
@@ -517,6 +558,30 @@ mkt_unknown_trap:
     str r0, [r0, #18*4]
     gip_extrd 19
     str r0, [r0, #19*4]
+    gip_extrd 20
+    str r0, [r0, #20*4]
+    gip_extrd 21
+    str r0, [r0, #11*4]
+    gip_extrd 22
+    str r0, [r0, #22*4]
+    gip_extrd 23
+    str r0, [r0, #23*4]
+    gip_extrd 24
+    str r0, [r0, #24*4]
+    gip_extrd 25
+    str r0, [r0, #25*4]
+    gip_extrd 26
+    str r0, [r0, #26*4]
+    gip_extrd 27
+    str r0, [r0, #27*4]
+    gip_extrd 28
+    str r0, [r0, #28*4]
+    gip_extrd 29
+    str r0, [r0, #29*4]
+    gip_extrd 30
+    str r0, [r0, #30*4]
+    gip_extrd 31
+    str r0, [r0, #31*4]
     gip_utximm 'M'
     gip_utximm 'K'
     gip_utximm 'T'
@@ -526,4 +591,7 @@ mkt_unknown_trap:
     gip_utximm 'K'
     gip_utximm '\n'
 
-    mov pc, #0
+    .word 0xec00c58e // disable the timer
+     mov r0, #1<<31 
+
+     mov pc, #0

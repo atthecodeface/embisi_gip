@@ -85,3 +85,21 @@
     .word 0xec00c40e
     mov \tmp, \tmp
     .endm
+
+    .macro gip_gpio_instat reg                               
+    .word 0xec00ce05
+    mov \reg, r0
+    .endm
+
+    .macro gip_trap trap_num, tmp
+    gip_atomic 31
+    gip_mov_full_imm 0x80, #0x10 // spec0 <= 0x10:  GIP_SET_SEMAPHORES_ATOMIC(1<<(4*MICROKERNEL_THREAD))
+    gip_atomic_block 31
+    gip_extrm 0x80
+    mov \tmp, r1 // tmp = spec1 :  read and set semaphores
+    mov \tmp, #0x400
+    .word 0xec00c10e // r16 <= 1024+trap
+    orr \tmp, \tmp, #trap_num
+    .word 0xec007385 // deschedule, blocking first to ensure semaphores are done
+    mov r0, r0
+   .endm

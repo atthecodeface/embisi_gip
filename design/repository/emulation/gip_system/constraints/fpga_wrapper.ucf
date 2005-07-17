@@ -111,6 +111,8 @@ NET "ddr_dram_dq<29>" LOC = "M31"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dq<30>" LOC = "M32"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dq<31>" LOC = "N29"  | IOSTANDARD = "SSTL2_II";
 
+NET "ddr_dram_dq<63>" LOC = "AL32"  | IOSTANDARD = "SSTL2_II";
+
 #oldavnet NET "ddr_dram_dqm<0>" LOC = "K28"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_dqm<0>" LOC = "M28"  | IOSTANDARD = "SSTL2_I";
 #oldavnet NET "ddr_dram_dqm<1>" LOC = "M28"  | IOSTANDARD = "SSTL2_I";
@@ -142,39 +144,60 @@ NET "ddr_dram_dqs<7>" LOC = "AH29" | IOSTANDARD = "SSTL2_II";
 
 
 #b Ethernet
-# gbe_rst# pin 33 av data60 pin 92 AF14
-# gmii_rx_clk pin 57 av data38 pin 6   data_av38  AF18
-# gmii_tx_clk pin 60 av data46 pin 12  data_av46  AJ19
-# gmii_crs pin 40 av data35 pin 73     data_av35  AM17
-# gmii_col pin 39 av data34 pin 3      data_av34  AF20
-# gmii_rx_er pin 41 av data37 pin 5    data_av37  AE18
-# gmii_rxd[3:0] pins 51, 52, 55, 56 av data42 data44 data45 data47 pins 9 80 11 82 data_av42/44/45/47  AE17/AF15/AM28/AE15
-# gmii_rx_dv pin 44 av data39 pin 76   data_av39  AM16
-# gmii_mdio pin 80 av data33 pin 2     data_av33  AE19
-# gmii_tx_er pin 61 av data48 pin 83   data_av48  AK14
-# gmii_txd[3:0] pin 71 72 75 76 av data55 data54 data58 data57 pins 88 18 21 20 data_av55/54/58/57   AM12/AM20/AM19/AL19
-# gmii_tx_en pin 62 av data49 pin 14    data_av49  AK22
-# gmii_mdio pin 80 av data33 pin 2     data_av33  AE19
-# gmii_mdc pin 81 av data32 pin 72     data_av32  AL17
-NET "gbe_rst_n"   LOC = "AF14" | IOSTANDARD = "LVTTL";
-NET "gmii_rx_clk" LOC = "AF18" | IOSTANDARD = "LVTTL";
-NET "gmii_tx_clk" LOC = "AJ19" | IOSTANDARD = "LVTTL";
-NET "gmii_crs"    LOC = "AM17" | IOSTANDARD = "LVTTL";
-NET "gmii_col"    LOC = "AF20" | IOSTANDARD = "LVTTL";
-NET "gmii_rx_er"  LOC = "AE18" | IOSTANDARD = "LVTTL";
-NET "gmii_rxd<0>" LOC = "AE15" | IOSTANDARD = "LVTTL";
-NET "gmii_rxd<1>" LOC = "AM28" | IOSTANDARD = "LVTTL";
-NET "gmii_rxd<2>" LOC = "AF15" | IOSTANDARD = "LVTTL";
-NET "gmii_rxd<3>" LOC = "AE17" | IOSTANDARD = "LVTTL";
-NET "gmii_rx_dv"  LOC = "AM16" | IOSTANDARD = "LVTTL";
-NET "gmii_tx_er"  LOC = "AK14" | IOSTANDARD = "LVTTL";
-NET "gmii_txd<0>" LOC = "AL19" | IOSTANDARD = "LVTTL";
-NET "gmii_txd<1>" LOC = "AM19" | IOSTANDARD = "LVTTL";
-NET "gmii_txd<2>" LOC = "AM20" | IOSTANDARD = "LVTTL";
-NET "gmii_txd<3>" LOC = "AM12" | IOSTANDARD = "LVTTL";
-NET "gmii_tx_en"  LOC = "AK22" | IOSTANDARD = "LVTTL";
-NET "gmii_mdio"   LOC = "AE19" | IOSTANDARD = "LVTTL";
-NET "gmii_mdc"    LOC = "AL17" | IOSTANDARD = "LVTTL";
+# on the cmm board...
+## gbe_rst# pin 33 av data60 pin 92 AF14
+## gmii_rx_clk pin 57 av data38 pin 6   data_av38  AF18
+## gmii_tx_clk pin 60 av data46 pin 12  data_av46  AJ19
+## gmii_crs pin 40 av data35 pin 73     data_av35  AM17
+## gmii_col pin 39 av data34 pin 3      data_av34  AF20
+## gmii_rx_er pin 41 av data37 pin 5    data_av37  AE18
+## gmii_rxd[3:0] pins 51, 52, 55, 56 av data42 data44 data45 data47 pins 9 80 11 82 data_av42/44/45/47  AE17/AF15/AM28/AE15
+## gmii_rx_dv pin 44 av data39 pin 76   data_av39  AM16
+## gmii_mdio pin 80 av data33 pin 2     data_av33  AE19
+## gmii_tx_er pin 61 av data48 pin 83   data_av48  AK14
+## gmii_txd[3:0] pin 71 72 75 76 av data55 data54 data58 data57 pins 88 18 21 20 data_av55/54/58/57   AM12/AM20/AM19/AL19
+## gmii_tx_en pin 62 av data49 pin 14    data_av49  AK22
+## gmii_mdio pin 80 av data33 pin 2     data_av33  AE19
+## gmii_mdc pin 81 av data32 pin 72     data_av32  AL17
+#NET "gbe_rst_n"   LOC = "AF14" | IOSTANDARD = "LVTTL";
+#NET "gmii_rx_clk" LOC = "AF18" | IOSTANDARD = "LVTTL";
+#NET "gmii_tx_clk" LOC = "AJ19" | IOSTANDARD = "LVTTL";
+#NET "gmii_crs"    LOC = "AM17" | IOSTANDARD = "LVTTL";
+#NET "gmii_col"    LOC = "AF20" | IOSTANDARD = "LVTTL";
+#NET "gmii_rx_er"  LOC = "AE18" | IOSTANDARD = "LVTTL";
+#NET "gmii_rxd<0>" LOC = "AE15" | IOSTANDARD = "LVTTL";
+#NET "gmii_rxd<1>" LOC = "AM28" | IOSTANDARD = "LVTTL";
+#NET "gmii_rxd<2>" LOC = "AF15" | IOSTANDARD = "LVTTL";
+#NET "gmii_rxd<3>" LOC = "AE17" | IOSTANDARD = "LVTTL";
+#NET "gmii_rx_dv"  LOC = "AM16" | IOSTANDARD = "LVTTL";
+#NET "gmii_tx_er"  LOC = "AK14" | IOSTANDARD = "LVTTL";
+#NET "gmii_txd<0>" LOC = "AL19" | IOSTANDARD = "LVTTL";
+#NET "gmii_txd<1>" LOC = "AM19" | IOSTANDARD = "LVTTL";
+#NET "gmii_txd<2>" LOC = "AM20" | IOSTANDARD = "LVTTL";
+#NET "gmii_txd<3>" LOC = "AM12" | IOSTANDARD = "LVTTL";
+#NET "gmii_tx_en"  LOC = "AK22" | IOSTANDARD = "LVTTL";
+#NET "gmii_mdio"   LOC = "AE19" | IOSTANDARD = "LVTTL";
+#NET "gmii_mdc"    LOC = "AL17" | IOSTANDARD = "LVTTL";
+
+NET "eth_rst_n"  LOC = "E21" | IOSTANDARD = "LVTTL";
+NET "mii_rx_clk" LOC = "J18" | IOSTANDARD = "LVTTL";
+NET "mii_tx_clk" LOC = "K18" | IOSTANDARD = "LVTTL";
+NET "mii_crs"    LOC = "G22" | IOSTANDARD = "LVTTL";
+NET "mii_col"    LOC = "G23" | IOSTANDARD = "LVTTL";
+NET "mii_rx_er"  LOC = "K20" | IOSTANDARD = "LVTTL";
+NET "mii_rxd<0>" LOC = "C22" | IOSTANDARD = "LVTTL";
+NET "mii_rxd<1>" LOC = "C23" | IOSTANDARD = "LVTTL";
+NET "mii_rxd<2>" LOC = "H21" | IOSTANDARD = "LVTTL";
+NET "mii_rxd<3>" LOC = "H20" | IOSTANDARD = "LVTTL";
+NET "mii_rx_dv"  LOC = "K21" | IOSTANDARD = "LVTTL";
+NET "mii_tx_er"  LOC = "F23" | IOSTANDARD = "LVTTL";
+NET "mii_txd<0>" LOC = "D22" | IOSTANDARD = "LVTTL";
+NET "mii_txd<1>" LOC = "D23" | IOSTANDARD = "LVTTL";
+NET "mii_txd<2>" LOC = "J22" | IOSTANDARD = "LVTTL";
+NET "mii_txd<3>" LOC = "J21" | IOSTANDARD = "LVTTL";
+NET "mii_tx_en"  LOC = "F24" | IOSTANDARD = "LVTTL";
+NET "mii_mdio"   LOC = "E22" | IOSTANDARD = "LVTTL";
+NET "mii_mdc"    LOC = "F22" | IOSTANDARD = "LVTTL";
 
 #b UART
 NET "rxd"         LOC = "M9"   | IOSTANDARD = "LVTTL";
@@ -195,9 +218,9 @@ NET "switches<0>" LOC = "AL3"   | IOSTANDARD = "LVTTL";
 NET "switches<1>" LOC = "AK3"   | IOSTANDARD = "LVTTL";
 NET "switches<2>" LOC = "AJ5"   | IOSTANDARD = "LVTTL";
 #NET "switches<3>" LOC = "AH6"   | IOSTANDARD = "LVTTL";
-NET "switches<4>" LOC = "AG7"   | IOSTANDARD = "LVTTL";
-NET "switches<5>" LOC = "AF7"   | IOSTANDARD = "LVTTL";
-NET "switches<6>" LOC = "AF11"  | IOSTANDARD = "LVTTL";
+#NET "switches<4>" LOC = "AG7"   | IOSTANDARD = "LVTTL";
+#NET "switches<5>" LOC = "AF7"   | IOSTANDARD = "LVTTL";
+#NET "switches<6>" LOC = "AF11"  | IOSTANDARD = "LVTTL";
 NET "switches<7>" LOC = "AE11"  | IOSTANDARD = "LVTTL";
 
 #b Expansion bus (addr_av, data_av, and various ce's: flash_ce<3..0> is N10 M10 K6 E4, from page 3/14; flash_we/ce/oe is J6 H7 K4 from pg 3/7/14; flash_rst is L10 from pg 3)
@@ -267,42 +290,42 @@ NET "eb_data<29>" LOC = "AM7"  | IOSTANDARD = "LVTTL";
 NET "eb_data<30>" LOC = "AL6"  | IOSTANDARD = "LVTTL";
 NET "eb_data<31>" LOC = "AM6"  | IOSTANDARD = "LVTTL";
 
-    #b Logic analyzer
-    # on JP16, data on pins 1 thru 32, clock on 50 (GEN_IO1_0 thru 31 and 49)
-NET "analyzer_clock" LOC = "D29"  | IOSTANDARD = "LVTTL";
+#b Logic analyzer
+# on JP16, data on pins 1 thru 32, clock on 50 (GEN_IO1_0 thru 31 and 49)
+#oldavnet NET "analyzer_clock" LOC = "D29"  | IOSTANDARD = "LVTTL";
 
-NET "analyzer_signals<0>"  LOC = "D18"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<1>"  LOC = "H18"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<2>"  LOC = "K20"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<3>"  LOC = "F18"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<4>"  LOC = "F19"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<5>"  LOC = "C18"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<6>"  LOC = "J21"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<7>"  LOC = "H19"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<8>"  LOC = "H20"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<9>"  LOC = "K21"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<10>" LOC = "K22"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<11>" LOC = "J22"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<12>" LOC = "H22"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<13>" LOC = "H21"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<14>" LOC = "G22"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<15>" LOC = "E21"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<16>" LOC = "E22"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<17>" LOC = "F22"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<18>" LOC = "C22"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<19>" LOC = "D22"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<20>" LOC = "J23"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<21>" LOC = "F23"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<22>" LOC = "D23"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<23>" LOC = "C23"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<24>" LOC = "G23"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<25>" LOC = "H23"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<26>" LOC = "C24"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<27>" LOC = "K23"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<28>" LOC = "D24"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<29>" LOC = "G24"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<30>" LOC = "F24"  | IOSTANDARD = "LVTTL";
-NET "analyzer_signals<31>" LOC = "J24"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<0>"  LOC = "D18"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<1>"  LOC = "H18"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<2>"  LOC = "K20"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<3>"  LOC = "F18"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<4>"  LOC = "F19"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<5>"  LOC = "C18"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<6>"  LOC = "J21"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<7>"  LOC = "H19"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<8>"  LOC = "H20"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<9>"  LOC = "K21"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<10>" LOC = "K22"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<11>" LOC = "J22"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<12>" LOC = "H22"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<13>" LOC = "H21"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<14>" LOC = "G22"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<15>" LOC = "E21"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<16>" LOC = "E22"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<17>" LOC = "F22"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<18>" LOC = "C22"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<19>" LOC = "D22"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<20>" LOC = "J23"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<21>" LOC = "F23"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<22>" LOC = "D23"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<23>" LOC = "C23"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<24>" LOC = "G23"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<25>" LOC = "H23"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<26>" LOC = "C24"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<27>" LOC = "K23"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<28>" LOC = "D24"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<29>" LOC = "G24"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<30>" LOC = "F24"  | IOSTANDARD = "LVTTL";
+#oldavnet NET "analyzer_signals<31>" LOC = "J24"  | IOSTANDARD = "LVTTL";
 
 NET "leds_dual<0>" LOC = "D27"  | IOSTANDARD = "LVTTL";
 NET "leds_dual<1>" LOC = "F27"  | IOSTANDARD = "LVTTL";
@@ -321,14 +344,6 @@ INST "ckgen_drm_double_clock_buffer" LOC = "BUFGMUX6P" ;
 INST "ckgen_dram_input_pin_gen"      LOC = "DCM_X3Y0" ;
 INST "ckgen_clk_phases_gen"          LOC = "DCM_X2Y0" ;
 INST "ckgen_slow_logic_clock_buffer" LOC = "BUFGMUX3S" ;
-
-#INST "int_drm_clock_phase_4" LOC = "SLICE_X0Y73" ;
-#INST "int_drm_clock_phase_3" LOC = "SLICE_X0Y27" ;
-#INST "int_drm_clock_phase_2" LOC = "SLICE_X20Y10" ;
-#INST "int_drm_clock_phase_1" LOC = "SLICE_X40Y0" ;
-
-#INST "ddr_dram_clk_0_1" LOC = "SLICE_X0Y75" ;
-#INST "ddr_dram_clk_1_1" LOC = "SLICE_X0Y60" ;
 
 INST "drm_hold_we_n"    LOC = "SLICE_X0Y41" ;
 
@@ -356,7 +371,6 @@ INST "drm_hold_a_1"     LOC = "SLICE_X0Y59" ;
 INST "drm_hold_a_0"     LOC = "SLICE_X0Y72" ;
 
 
-#INST "ckgen_int_drm_clock_phase" LOC = "SLICE_X68Y0" ;
 INST "ckgen_divided_clock" LOC = "SLICE_X70Y0" ;
 INST "ckgen_clock_divider_3" LOC = "SLICE_X74Y0" ;
 INST "ckgen_clock_divider_2" LOC = "SLICE_X74Y0" ;

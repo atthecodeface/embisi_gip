@@ -172,7 +172,7 @@ mkt_basic_system_mode:
     DEBUG('S')
     system_preserve_r8
     gip_gpio_instat r8
-    tst r8, #1
+    tst r8, #2
     bne mkt_unknown_trap
     gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8
     tst r8, #TRAP_SEM_IN_READ
@@ -417,7 +417,7 @@ mkt_int_dis_system_mode:
     system_preserve_r8
 
     gip_gpio_instat r8
-    tst r8, #1
+    tst r8, #2
     bne mkt_unknown_trap
 
     gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8
@@ -440,7 +440,7 @@ mkt_user_mode:
     user_preserve_r8
 
     gip_gpio_instat r8
-    tst r8, #1
+    tst r8, #2
     bne mkt_unknown_trap
 
     gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8

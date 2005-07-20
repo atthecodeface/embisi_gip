@@ -48,6 +48,7 @@ module gip_alu( clock gip_clock,
                 output t_gip_word alu_shifter_result,
 
                 output t_gip_mem_op alu_mem_op,
+                output t_gip_mem_options alu_mem_options,
                 output t_gip_ins_r alu_mem_rd,
                 output t_gip_word alu_mem_address,
                 output t_gip_word alu_mem_write_data,
@@ -611,6 +612,16 @@ module gip_alu( clock gip_clock,
             alu_accepting_rfr_instruction_always = 0;
             alu_accepting_rfr_instruction_if_rfw_does = 0;
             alu_accepting_rfr_instruction_if_mem_does = 0;
+            alu_mem_options = gip_mem_options_none;
+            if ( alu_inst.s_or_stack ) // indicates stack for memory operations
+            {
+                alu_mem_options = alu_mem_options | gip_mem_options_stack;
+            }
+            if (alu_inst.p_or_offset_is_shift ) // indicates signed for memory load operations
+            {
+                alu_mem_options = alu_mem_options | gip_mem_options_signed; // signed bit should be ignored for stores
+            }
+            alu_mem_options = alu_mem_options | gip_mem_options_bigendian;
             if (condition_passed) // This is zero if instruction is not valid, so no writeback from invalid instructions!
             {
                 part_switch (alu_inst.gip_ins_class)

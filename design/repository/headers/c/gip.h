@@ -230,3 +230,13 @@ typedef enum
     gip_mem_op_load_byte
 } t_gip_mem_op;
 
+/*t t_gip_mem_options
+ */
+typedef enum
+{
+    gip_mem_options_none = 0,
+    gip_mem_options_signed = 1,
+    gip_mem_options_stack = 2,
+    gip_mem_options_bigendian = 4
+} t_gip_mem_options;
+

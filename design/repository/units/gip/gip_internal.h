@@ -373,6 +373,7 @@ extern module gip_alu( clock gip_clock,
                        output t_gip_word alu_shifter_result,
 
                        output t_gip_mem_op alu_mem_op,
+                       output t_gip_mem_options alu_mem_options,
                        output t_gip_ins_r alu_mem_rd,
                        output t_gip_word alu_mem_address,
                        output t_gip_word alu_mem_write_data,
@@ -396,7 +397,7 @@ extern module gip_alu( clock gip_clock,
 
     timing from rising clock gip_clock alu_rd, alu_use_shifter, alu_arith_logic_result, alu_shifter_result;
 
-    timing from rising clock gip_clock alu_mem_op, alu_mem_rd, alu_mem_address, alu_mem_write_data, alu_mem_burst;
+    timing from rising clock gip_clock alu_mem_op, alu_mem_options, alu_mem_rd, alu_mem_address, alu_mem_write_data, alu_mem_burst;
 
     timing to rising clock gip_clock special_cp_trail_2;
 

@@ -62,6 +62,11 @@ module gip_decode_arm( input bit[32] opcode,
     comb bit ld_st_byte;
     comb bit ld_st_wb;
     comb bit[12] ld_st_offset;
+    comb bit ld_st_extended;
+    comb bit ld_st_ext_imm;
+    comb bit ld_st_ext_half;
+    comb bit ld_st_ext_signed;
+    comb bit[8] ld_st_ext_offset;
 
     comb bit[16] ldm_stm_reg_set;
     comb bit[5] ldm_stm_num_regs;
@@ -169,6 +174,11 @@ module gip_decode_arm( input bit[32] opcode,
             ld_st_byte = opcode[22]; // psr in ldm/stm
             ld_st_wb = opcode[21]; // also in ldm/stm
             ld_st_offset = opcode[12;0];
+            ld_st_ext_imm = opcode[22];
+            ld_st_ext_signed = opcode[6];
+            ld_st_ext_half = opcode[5];
+            ld_st_ext_offset[4;4] = opcode[4;8];
+            ld_st_ext_offset[4;0] = opcode[4;0];
 
             /*b LDM/STM
              */
@@ -363,14 +373,29 @@ module gip_decode_arm( input bit[32] opcode,
     decode_instruction_class "Decode instruction class":
         {
             ins_class = arm_ins_class_none;
+            ld_st_extended = 0; // 1 if it is the armv4 load/store
             full_switch (opcode[3;25])
                 {
-                case 0:
+                case 0: // alu reg, reg, reg, shf reg/#n - requires bit 7.4 to be 00, 10 or 01 - 11 is for mul, swp, half-word memory and signed loads
                 {
-                    if ( (opcode[3;22]==0) &&
-                         (opcode[4;4]==9) )
+                    ld_st_extended = 1;
+                    if ((opcode[7]) && (opcode[4]))
                     {
-                        ins_class = arm_ins_class_mul;
+                        if (opcode[2;5]==0) // mul, swp or bx, but we do not support swp or bx
+                        {
+                            ins_class = arm_ins_class_mul;
+                        }
+                        else
+                        {
+                            if (opcode[20])
+                            {
+                                ins_class = arm_ins_class_load;
+                            }
+                            else
+                            {
+                                ins_class = arm_ins_class_store;
+                            }
+                        }
                     }
                     else
                     {
@@ -386,7 +411,7 @@ module gip_decode_arm( input bit[32] opcode,
                 {
                     if (opcode[20])
                     {
-                        ins_class = arm_ins_class_load; // note also that [25] must not be 1 at the same time as a [4] being one - this is a shift by register, which is not permitted, and may be decoded as something else?
+                        ins_class = arm_ins_class_load; // note also that [25] must not be 1 at the same time as [4] being one - this is a shift by register, which is not permitted, and may be decoded as something else?
                     }
                     else
                     {
@@ -598,13 +623,27 @@ module gip_decode_arm( input bit[32] opcode,
     load_store_decode "ARM Load/store decode":
         {
             ld_st_gip_ins_subclass_not_pre_not_post = 0;
-            if (ld_st_byte)
+            if (ld_st_extended)
             {
-                ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_byte;
+                if (ld_st_ext_half)
+                {
+                    ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_half;
+                }
+                else
+                {
+                    ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_byte;
+                }
             }
             else
             {
-                ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_word;
+                if (ld_st_byte)
+                {
+                    ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_byte;
+                }
+                else
+                {
+                    ld_st_gip_ins_subclass_not_pre_not_post = ld_st_gip_ins_subclass_not_pre_not_post | gip_ins_subclass_memory_word;
+                }
             }
             if (ld_st_up)
             {
@@ -789,7 +828,8 @@ module gip_decode_arm( input bit[32] opcode,
                 {
                     /*b Handle immediate or reg without shift - 3 cases: preindexed without writeback (maps to ILDR), preindex with writeback (maps to IADD/SUB and ILDR), or postindexed (maps to ILDR, MOV)
                      */
-                    if (ld_st_imm || alu_lsl_by_imm_0) // offset with immediate or unshifted register
+                    if ( (!ld_st_extended && (ld_st_imm || alu_lsl_by_imm_0)) ||  // offset with immediate or unshifted register
+                         (ld_st_extended) )                                       // ldr(sh|sb|h)
                     {
                         /*b Preindexed, no writeback
                          */
@@ -799,21 +839,24 @@ module gip_decode_arm( input bit[32] opcode,
                             inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                             inst.a = 1;
                             inst.s_or_stack = (alu_rn==13);
-                            inst.p_or_offset_is_shift = 0;
+                            inst.p_or_offset_is_shift = (ld_st_extended && ld_st_ext_signed); // unsigned unless extended
 
                             inst.gip_ins_rm = arm_mapped_rm;
                             inst.gip_ins_rd = arm_mapped_rd;
                             inst.gip_ins_rn = arm_mapped_rn;
-                            if (ld_st_imm)
+                            inst.rm_is_imm = 0;
+                            if (ld_st_extended && ld_st_ext_imm)
                             {
                                 inst.rm_is_imm = 1;
                                 inst.immediate = 0;
-                                inst.immediate[12;0] = ld_st_offset;
+                                inst.immediate[8;0] = ld_st_ext_offset;
                             }
-                            else
-                            {
-                                inst.rm_is_imm = 0;
-                            }
+                            elsif (!ld_st_extended && ld_st_imm)
+                                {
+                                    inst.rm_is_imm = 1;
+                                    inst.immediate = 0;
+                                    inst.immediate[12;0] = ld_st_offset;
+                                }
 
                             inst.f = rd_is_pc;
 
@@ -836,16 +879,19 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.p_or_offset_is_shift = 0;
                                 inst.gip_ins_rd = arm_mapped_rn; // writeback address register
                                 inst.gip_ins_rn = arm_mapped_rn;
-                                if (ld_st_imm)
+                                inst.rm_is_imm = 0;
+                                if (ld_st_extended && ld_st_ext_imm)
                                 {
                                     inst.rm_is_imm = 1;
                                     inst.immediate = 0;
-                                    inst.immediate[12;0] = ld_st_offset;
+                                    inst.immediate[8;0] = ld_st_ext_offset;
                                 }
-                                else
-                                {
-                                    inst.rm_is_imm = 0;
-                                }
+                                elsif (!ld_st_extended && ld_st_imm)
+                                    {
+                                        inst.rm_is_imm = 1;
+                                        inst.immediate = 0;
+                                        inst.immediate[12;0] = ld_st_offset;
+                                    }
                                 inst.valid = 1;
                                 next_cycle_of_opcode = 1;
                                 pc_op = gip_pc_op_hold;
@@ -857,6 +903,7 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_cc = gip_ins_cc_cp;
                                 inst.a = 0;
                                 inst.s_or_stack = (alu_rn==13);
+                                inst.p_or_offset_is_shift = (ld_st_extended && ld_st_ext_signed); // unsigned unless extended
                                 inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_acc};
                                 inst.gip_ins_rd = arm_mapped_rd;
                                 inst.rm_is_imm = 1;
@@ -882,21 +929,24 @@ module gip_decode_arm( input bit[32] opcode,
                                 inst.gip_ins_subclass = ld_st_gip_ins_subclass;
                                 inst.a = 1;
                                 inst.s_or_stack = (alu_rn==13);
-                                inst.p_or_offset_is_shift = 0;
+                                inst.p_or_offset_is_shift = (ld_st_extended && ld_st_ext_signed); // unsigned unless extended
 
                                 inst.gip_ins_rm = arm_mapped_rm;
                                 inst.gip_ins_rd = arm_mapped_rd;
                                 inst.gip_ins_rn = arm_mapped_rn;
-                                if (ld_st_imm)
+                                inst.rm_is_imm = 0;
+                                if (ld_st_extended && ld_st_ext_imm)
                                 {
                                     inst.rm_is_imm = 1;
                                     inst.immediate = 0;
-                                    inst.immediate[12;0] = ld_st_offset;
+                                    inst.immediate[8;0] = ld_st_ext_offset;
                                 }
-                                else
-                                {
-                                    inst.rm_is_imm = 0;
-                                }
+                                elsif (!ld_st_extended && ld_st_imm)
+                                    {
+                                        inst.rm_is_imm = 1;
+                                        inst.immediate = 0;
+                                        inst.immediate[12;0] = ld_st_offset;
+                                    }
                                 inst.valid = 1;
                                 next_cycle_of_opcode = 1;
                                 pc_op = gip_pc_op_hold;
@@ -922,7 +972,7 @@ module gip_decode_arm( input bit[32] opcode,
                             }
                         }
                     }
-                    /*b Register with shift
+                    /*b Register with shift - cannot be an extended load
                      */
                     else // reg with shift
                     {
@@ -1110,9 +1160,10 @@ module gip_decode_arm( input bit[32] opcode,
                  */
                 case arm_ins_class_store:
                 {
-                    /*b Immediate offset of zero
+                    /*b Immediate offset of zero, unextended or extended
                      */
-                    if ( ld_st_imm && (ld_st_offset==0) ) // no offset (hence no writeback, none needed); ISTR[CC] #0 (Rn) <- Rd
+                    if ( ( !ld_st_extended && ld_st_imm && (ld_st_offset==0) ) || // no offset (hence no writeback, none needed); ISTR[CC] #0 (Rn) <- Rd
+                         ( ld_st_extended && ld_st_ext_imm && (ld_st_ext_offset==0) ) )
                     {
                         inst.gip_ins_class = gip_ins_class_store;
                         inst.gip_ins_subclass = ld_st_gip_ins_subclass_post; // Guaranteed postindex, so we don't care what the offset is
@@ -1134,7 +1185,8 @@ module gip_decode_arm( input bit[32] opcode,
                         {
                             /*b preindexed immediate or rm no shift: IADD[CC]AC/ISUB[CC]AC Rn, #imm/Rm; ISTRCPA[S] #0, (ACC, +/-SHF) <- Rd [-> Rn]
                              */
-                            if ( ld_st_imm || alu_lsl_by_imm_0 )
+                            if ( ( !ld_st_extended && (ld_st_imm || alu_lsl_by_imm_0) ) ||
+                                 ( ld_st_extended ) )
                             {
                                 full_switch (cycle_of_opcode)
                                     {
@@ -1147,16 +1199,20 @@ module gip_decode_arm( input bit[32] opcode,
                                         inst.p_or_offset_is_shift = 0;
                                         inst.gip_ins_rd = {type=gip_ins_r_type_none};
                                         inst.gip_ins_rn = arm_mapped_rn;
-                                        if (ld_st_imm)
+                                        inst.rm_is_imm = 0;
+                                        if (ld_st_extended && ld_st_ext_imm)
                                         {
                                             inst.rm_is_imm = 1;
                                             inst.immediate = 0;
-                                            inst.immediate[12;0] = ld_st_offset;
+                                            inst.immediate[8;0] = ld_st_ext_offset;
                                         }
-                                        else
-                                        {
-                                            inst.rm_is_imm = 0;
-                                        }
+                                        elsif (!ld_st_extended && ld_st_imm)
+                                            {
+                                                inst.rm_is_imm = 1;
+                                                inst.immediate = 0;
+                                                inst.immediate[12;0] = ld_st_offset;
+                                            }
+
                                         inst.valid = 1;
                                         next_cycle_of_opcode = 1;
                                         pc_op = gip_pc_op_hold;
@@ -1245,7 +1301,8 @@ module gip_decode_arm( input bit[32] opcode,
                     {
                         /*b Postindexed immediate or reg without shift;  ISTR[CC][S] #0 (Rn) <-Rd; IADDCPA/ISUBCPA Rn, #Imm/Rm -> Rn
                          */
-                        if ( ld_st_imm || alu_lsl_by_imm_0 )
+                        if ( ( !ld_st_extended && (ld_st_imm || alu_lsl_by_imm_0) ) ||
+                             ( ld_st_extended ) )
                         {
                             full_switch (cycle_of_opcode)
                                 {
@@ -1275,17 +1332,19 @@ module gip_decode_arm( input bit[32] opcode,
                                     inst.p_or_offset_is_shift = 0;
                                     inst.gip_ins_rd = arm_mapped_rn;
                                     inst.gip_ins_rn = arm_mapped_rn;
-                                    if (ld_st_imm)
+                                    inst.rm_is_imm = 0;
+                                    if (ld_st_extended && ld_st_ext_imm)
                                     {
                                         inst.rm_is_imm = 1;
                                         inst.immediate = 0;
-                                        inst.immediate[12;0] = ld_st_offset;
+                                        inst.immediate[8;0] = ld_st_ext_offset;
                                     }
-                                    else
-                                    {
-                                        inst.rm_is_imm = 0;
-                                    }
-
+                                    elsif (!ld_st_extended && ld_st_imm)
+                                        {
+                                            inst.rm_is_imm = 1;
+                                            inst.immediate = 0;
+                                            inst.immediate[12;0] = ld_st_offset;
+                                        }
                                     inst.valid = 1;
 
                                     next_cycle_of_opcode = 0;

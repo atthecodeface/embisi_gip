@@ -9,6 +9,8 @@ include "gip.h"
 typedef enum [3]
 {
     sram_data_op_word,
+    sram_data_op_half_0,
+    sram_data_op_half_1,
     sram_data_op_byte_0,
     sram_data_op_byte_1,
     sram_data_op_byte_2,
@@ -20,13 +22,14 @@ typedef enum [3]
 module gip_data_ram( clock gip_clock,
                      input bit gip_reset,
 
-                        input t_gip_mem_op alu_mem_op,
-                        input t_gip_word alu_mem_address,
-                        input t_gip_word alu_mem_write_data,
-                        input bit[4] alu_mem_burst,
+                     input t_gip_mem_op alu_mem_op,
+                     input t_gip_mem_options alu_mem_options,
+                     input t_gip_word alu_mem_address,
+                     input t_gip_word alu_mem_write_data,
+                     input bit[4] alu_mem_burst,
 
-                        output bit mem_alu_busy,
-                        output bit mem_read_data_valid,
+                     output bit mem_alu_busy,
+                     output bit mem_read_data_valid,
                      output bit[32] mem_read_data,
 
                      output bit sram_not_in_use,
@@ -70,20 +73,27 @@ module gip_data_ram( clock gip_clock,
     clocked bit[32] sram_address = 0;
     clocked bit[32] sram_write_data = 0;
     clocked t_sram_data_op sram_data_op = sram_data_op_word;
+    clocked bit sram_data_op_signed = 0;
     clocked t_sram_data_op last_sram_data_op = sram_data_op_word;
+    clocked bit last_sram_data_op_signed = 0;
 
     /*b SRAM interface code
      */
     sram_interface "SRAM interface":
         {
             sram_not_in_use <= 1;
-            if (0)
+            if (alu_mem_options && gip_mem_options_bigendian)
             {
-                endianned_address = alu_mem_address[2;0];
+                endianned_address = ~alu_mem_address[2;0];
             }
             else
             {
-                endianned_address = ~alu_mem_address[2;0];
+                endianned_address = alu_mem_address[2;0];
+            }
+            sram_data_op_signed <= 0;
+            if (alu_mem_options & gip_mem_options_signed)
+            {
+                sram_data_op_signed <= 1;
             }
             full_switch (alu_mem_op)
                 {
@@ -101,6 +111,22 @@ module gip_data_ram( clock gip_clock,
                     sram_write_data <= alu_mem_write_data;
                     sram_address <= alu_mem_address;
                 }
+                case gip_mem_op_store_half:
+                {
+                    sram_not_in_use <= 0;
+                    sram_read_not_write <= 0;
+                    if (endianned_address[1]==0) // note bit 0 is invalid as this is a half-word op, and particularly big-endian inverts bit 0
+                    {
+                        sram_write_byte_enables <= 3;
+                    }
+                    else
+                    {
+                        sram_write_byte_enables <= 12;
+                    }
+                    sram_write_data[16;0] <= alu_mem_write_data[16;0];
+                    sram_write_data[16;16] <= alu_mem_write_data[16;0];
+                    sram_address <= alu_mem_address;
+                }
                 case gip_mem_op_store_byte:
                 {
                     sram_not_in_use <= 0;
@@ -114,6 +140,7 @@ module gip_data_ram( clock gip_clock,
                     sram_address <= alu_mem_address;
                 }
                 case gip_mem_op_load_word:
+                case gip_mem_op_load_half:
                 case gip_mem_op_load_byte:
                 {
                     sram_not_in_use <= 0;
@@ -121,6 +148,16 @@ module gip_data_ram( clock gip_clock,
                     sram_write_byte_enables <= 0;
                     sram_address <= alu_mem_address;
                     sram_data_op <= sram_data_op_word;
+                    if (alu_mem_op==gip_mem_op_load_half)
+                    {
+                        part_switch (endianned_address)
+                            {
+                            case 0: {sram_data_op <= sram_data_op_half_0; } // note 0 and 1 are both kinda valid - if bigendian, endianned_address bit 0 is inversion of input address
+                            case 1: {sram_data_op <= sram_data_op_half_0; }
+                            case 2: {sram_data_op <= sram_data_op_half_1; } // note 2 and 3 are both kinda valid - if bigendian, endianned_address bit 0 is inversion of input address
+                            case 3: {sram_data_op <= sram_data_op_half_1; }
+                            }
+                    }
                     if (alu_mem_op==gip_mem_op_load_byte)
                     {
                         full_switch (endianned_address)
@@ -146,24 +183,57 @@ module gip_data_ram( clock gip_clock,
                 {
                     mem_read_data = sram_read_data;
                 }
+                case sram_data_op_half_0:
+                {
+                    if ((last_sram_data_op_signed) & sram_read_data[15])
+                    {
+                        mem_read_data[16;16] = -1;
+                    }
+                    mem_read_data[16;0] = sram_read_data[16;0];
+                }
+                case sram_data_op_half_1:
+                {
+                    if ((last_sram_data_op_signed) & sram_read_data[31])
+                    {
+                        mem_read_data[16;16] = -1;
+                    }
+                    mem_read_data[16;0] = sram_read_data[16;16];
+                }
                 case sram_data_op_byte_0:
                 {
+                    if ((last_sram_data_op_signed) & sram_read_data[7])
+                    {
+                        mem_read_data[24;8] = -1;
+                    }
                     mem_read_data[8;0] = sram_read_data[8;0];
                 }
                 case sram_data_op_byte_1:
                 {
+                    if ((last_sram_data_op_signed) & sram_read_data[15])
+                    {
+                        mem_read_data[24;8] = -1;
+                    }
                     mem_read_data[8;0] = sram_read_data[8;8];
                 }
                 case sram_data_op_byte_2:
                 {
+                    if ((last_sram_data_op_signed) & sram_read_data[13])
+                    {
+                        mem_read_data[24;8] = -1;
+                    }
                     mem_read_data[8;0] = sram_read_data[8;16];
                 }
                 case sram_data_op_byte_3:
                 {
+                    if ((last_sram_data_op_signed) & sram_read_data[31])
+                    {
+                        mem_read_data[24;8] = -1;
+                    }
                     mem_read_data[8;0] = sram_read_data[8;24];
                 }
                 }
             last_sram_data_op <= sram_data_op;
+            last_sram_data_op_signed <= sram_data_op_signed;
             mem_read_data_valid <= sram_read_not_write;
             mem_alu_busy <= 0;
         }

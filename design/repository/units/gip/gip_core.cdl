@@ -40,6 +40,7 @@ module gip_core( clock gip_clock,
                  output bit gip_pipeline_flush,
 
                  output t_gip_mem_op alu_mem_op,
+                 output t_gip_mem_options alu_mem_options,
                  output t_gip_word alu_mem_address,
                  output t_gip_word alu_mem_write_data,
                  output bit[4] alu_mem_burst,
@@ -126,6 +127,7 @@ module gip_core( clock gip_clock,
     net bit alu_accepting_rfr_instruction_if_rfw_does;
 
     net t_gip_mem_op alu_mem_op;
+    net t_gip_mem_options alu_mem_options;
     net t_gip_ins_r alu_mem_rd;
     net t_gip_word alu_mem_address;
     net t_gip_word alu_mem_write_data;
@@ -281,6 +283,7 @@ module gip_core( clock gip_clock,
                          alu_shifter_result => alu_rfw_shifter_result,
 
                          alu_mem_op => alu_mem_op,
+                         alu_mem_options => alu_mem_options,
                          alu_mem_rd => alu_mem_rd,
                          alu_mem_address => alu_mem_address,
                          alu_mem_write_data => alu_mem_write_data,

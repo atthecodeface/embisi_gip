@@ -53,6 +53,7 @@ extern module gip_data_ram( clock gip_clock,
                      input bit gip_reset,
 
                      input t_gip_mem_op alu_mem_op,
+                     input t_gip_mem_options alu_mem_options,
                      input t_gip_word alu_mem_address,
                      input t_gip_word alu_mem_write_data,
                      input bit[4] alu_mem_burst,
@@ -68,7 +69,7 @@ extern module gip_data_ram( clock gip_clock,
                      output bit[32] sram_write_data,
                      input bit[32] sram_read_data )
 {
-    timing to rising clock gip_clock gip_reset, alu_mem_op, alu_mem_address, alu_mem_write_data, alu_mem_burst;
+    timing to rising clock gip_clock gip_reset, alu_mem_op, alu_mem_options, alu_mem_address, alu_mem_write_data, alu_mem_burst;
     timing comb input sram_read_data;
     timing from rising clock gip_clock mem_alu_busy, mem_read_data_valid, mem_read_data;
     timing from rising clock gip_clock sram_not_in_use, sram_read_not_write, sram_write_byte_enables, sram_write_data, sram_address;
@@ -187,6 +188,7 @@ module gip_core_plus( clock int_clock,
     net bit gipc_pipeline_flush;
 
     net t_gip_mem_op alu_mem_op;
+    net t_gip_mem_options alu_mem_options;
     net t_gip_word alu_mem_address;
     net t_gip_word alu_mem_write_data;
     net bit[4] alu_mem_burst;
@@ -228,6 +230,7 @@ module gip_core_plus( clock int_clock,
                           rfw_periph_write_data => periph_write_data,
 
                           alu_mem_op => alu_mem_op,
+                          alu_mem_options => alu_mem_options,
                           alu_mem_address => alu_mem_address,
                           alu_mem_write_data => alu_mem_write_data,
                           alu_mem_burst => alu_mem_burst,
@@ -274,6 +277,7 @@ module gip_core_plus( clock int_clock,
                                    gip_reset <= int_reset, 
 
                                    alu_mem_op <= alu_mem_op,
+                                   alu_mem_options <= alu_mem_options,
                                    alu_mem_address <= alu_mem_address,
                                    alu_mem_write_data <= alu_mem_write_data,
                                    alu_mem_burst <= alu_mem_burst,

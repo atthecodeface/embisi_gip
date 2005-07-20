@@ -214,6 +214,17 @@ typedef enum [3]
     gip_mem_op_load_byte
 } t_gip_mem_op;
 
+
+/*t t_gip_mem_options
+ */
+typedef enum[3]
+{
+    gip_mem_options_none = 0,
+    gip_mem_options_signed = 1,
+    gip_mem_options_stack = 2,
+    gip_mem_options_bigendian = 4
+} t_gip_mem_options;
+
 /*a Core module
  */
 /*m Module
@@ -241,6 +252,7 @@ extern module gip_core( clock gip_clock,
                         output bit gip_pipeline_flush,
 
                         output t_gip_mem_op alu_mem_op,
+                        output t_gip_mem_options alu_mem_options,
                         output t_gip_word alu_mem_address,
                         output t_gip_word alu_mem_write_data,
                         output bit[4] alu_mem_burst,

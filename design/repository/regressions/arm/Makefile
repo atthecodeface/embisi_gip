@@ -8,8 +8,8 @@ ARM_PREFIX := /usr/local/cross_arm/bin/arm-linux-
 ARM_CC := ${ARM_PREFIX}gcc -fno-inline-functions
 ARM_LD := ${ARM_PREFIX}ld -EB
 ARM_STRIP := ${ARM_PREFIX}strip
-ARM_CC_FLAGS := -Wall -I../../headers/c -fomit-frame-pointer -O4 -mapcs-32 -march=armv2 -mbig-endian
-ARM_AS_FLAGS := -Wall -I../../headers/asm -fomit-frame-pointer -O4 -mapcs-32 -march=armv2 -mbig-endian
+ARM_CC_FLAGS := -Wall -I../../headers/c -fomit-frame-pointer -O4 -mapcs-32 -march=armv4 -mbig-endian
+ARM_AS_FLAGS := -Wall -I../../headers/asm -fomit-frame-pointer -O4 -mapcs-32 -march=armv4 -mbig-endian
 BIN_TO_MIF := ${TNBT_CVS_ROOT}/common/bin/bin_to_mif -s
 MIF_TO_CDL := ${TNBT_CVS_ROOT}/common/bin/mif_to_cdl
 # ARM_CC_FLAGS := 

@@ -19,6 +19,7 @@ typedef struct t_uart_data
 
 enum
 {
+    fsm_pre_first_prompt,
     fsm_pre_prompt,
     fsm_get_characters,
     fsm_handle_command
@@ -35,18 +36,24 @@ static t_uart_data uart;
 extern void mon_uart_init( void )
 {
     uart_init();
-    uart.state = fsm_pre_prompt;
+    uart.state = fsm_pre_first_prompt;
 }
 
-/*f mon_uart_poll
+/* mon_uart_poll
  */
 extern void mon_uart_poll( void )
 {
     /*b Display the prompt if necessary
      */
+    if (uart.state == fsm_pre_first_prompt)
+    {
+        uart_tx_string( "\r\nMonitor (" __DATE__ " " __TIME__ ")\n");
+        uart.state = fsm_pre_prompt;
+        uart.length = 0;
+    }
     if (uart.state == fsm_pre_prompt)
     {
-        uart_tx_string( "\r\nOK > ");
+        uart_tx_string( "\r\n> ");
         uart.state = fsm_get_characters;
         uart.length = 0;
     }

@@ -83,6 +83,7 @@ test dram drivertest drivers:flash drivers:uart drivers:gipeth drivers:gipeth_as
 
 test dram  factorial factorial:factorial ethmonitor:regs common:wrapper_download common:support_download
 test dram  alu alu:alu alu:alu_call common:wrapper_download common:support_download
+test dram  memory memory:memory common:wrapper_download common:support_download
 
 test regression  ethernet ethernet:ethernet drivers:ethernet drivers:uart common:support_regression common:wrapper_regression
 test regression  scheduler_modes scheduler:sched_modes  common:support_regression common:wrapper_regression

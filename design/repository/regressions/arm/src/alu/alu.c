@@ -4,6 +4,32 @@
 #include <stdio.h>
 #include "../common/wrapper.h"
 
+/*a Tests to do - 4M cycles covers them all
+ Base of 50k cycles
+  LOGIC      7*20k  = 140k
+  LOGIC_ADD  8*35k  = 280k
+  RRXS       4*20k  = 80k
+  RORS       22*20k = 440k
+  LSRS       22*20k = 440k
+  ASRS       22*20k = 440k
+  LSLS       46*20k = 920k
+  SHIFT      14*25k = 350k
+  ADD        4*20k  = 80k
+  ADDS       9*20k  = 180k
+  CMP        9*20k  = 180k
+ */
+#define TEST_LOGIC
+#define TEST_LOGIC_ADD
+#define TEST_RRXS
+#define TEST_RORS
+#define TEST_LSRS
+#define TEST_ASRS
+#define TEST_LSLS
+#define TEST_SHIFT
+#define TEST_ADD
+#define TEST_ADDS
+#define TEST_CMP
+
 /*a Defines
  */
 #define joined(a) a
@@ -204,28 +230,35 @@ static const t_test_vector test_vectors[] =
 {
 
     //Z  N  C  V            A           B  fn       Z  N  C  V      Result  Message with A, B, Result as arguments
-    { 0, 0, 0, 0,  0x00000000, 0x00000000, logic,   1, 0, 0, 0, 0x00000000, "Logic %08x %08x result %08x\n" },
-    { 1, 0, 1, 0,  0x00000000, 0x11111111, logic,   0, 0, 1, 0, 0x11111111, "Logic %08x %08x result %08x\n" },
-    { 1, 0, 0, 1,  0x11111111, 0x11111111, logic,   1, 0, 0, 1, 0x11111111, "Logic %08x %08x result %08x\n" },
-    { 0, 1, 1, 0,  0x00000000, 0x5a5a5a5a, logic,   0, 0, 1, 0, 0x5a5a5a5a, "Logic %08x %08x result %08x\n" },
-    { 1, 0, 0, 0,  0xaaaaaaaa, 0x55555555, logic,   0, 1, 0, 0, 0x55555555, "Logic %08x %08x result %08x\n" },
-    { 0, 0, 0, 0,  0x11111111, 0x00000000, logic,   0, 0, 0, 0, 0x00000000, "Logic %08x %08x result %08x\n" },
-    { 1, 0, 1, 1,  0x12481248, 0xffffffff, logic,   0, 1, 1, 1, 0xffffffff, "Logic %08x %08x result %08x\n" },
+#ifdef TEST_LOGIC 
+   { 0, 0, 0, 0,  0x00000000, 0x00000000, logic,   1, 0, 0, 0, 0x00000000, "Logic %08x %08x result %08x\n" }, // 33k cycles to here, 160k cycles just for tests
+   { 1, 0, 1, 0,  0x00000000, 0x11111111, logic,   0, 0, 1, 0, 0x11111111, "Logic %08x %08x result %08x\n" },
+   { 1, 0, 0, 1,  0x11111111, 0x11111111, logic,   1, 0, 0, 1, 0x11111111, "Logic %08x %08x result %08x\n" },
+   { 0, 1, 1, 0,  0x00000000, 0x5a5a5a5a, logic,   0, 0, 1, 0, 0x5a5a5a5a, "Logic %08x %08x result %08x\n" },
+   { 1, 0, 0, 0,  0xaaaaaaaa, 0x55555555, logic,   0, 1, 0, 0, 0x55555555, "Logic %08x %08x result %08x\n" },
+   { 0, 0, 0, 0,  0x11111111, 0x00000000, logic,   0, 0, 0, 0, 0x00000000, "Logic %08x %08x result %08x\n" },
+   { 1, 0, 1, 1,  0x12481248, 0xffffffff, logic,   0, 1, 1, 1, 0xffffffff, "Logic %08x %08x result %08x\n" }, // 174k cycles to here => 20k cycles for each of these tests
+#endif
 
-    { 0, 0, 0, 0,  0x00000000, 0x00000000, logic_add, 0, 0, 0, 0, 0x00000000, "Logic_add %08x %08x result %08x\n" },
+#ifdef TEST_LOGIC_ADD
+    { 0, 0, 0, 0,  0x00000000, 0x00000000, logic_add, 0, 0, 0, 0, 0x00000000, "Logic_add %08x %08x result %08x\n" }, // 35k cycles per, 250k cycles just for tests
     { 1, 0, 1, 0,  0x00000000, 0x11111111, logic_add, 1, 0, 1, 0, 0x11111111, "Logic_add %08x %08x result %08x\n" },
     { 1, 0, 0, 1,  0x11111111, 0x11111111, logic_add, 1, 0, 0, 1, 0x11111111, "Logic_add %08x %08x result %08x\n" },
     { 0, 1, 1, 0,  0x00000000, 0x5a5a5a5a, logic_add, 0, 1, 1, 0, 0x5a5a5a5a, "Logic_add %08x %08x result %08x\n" },
     { 1, 0, 0, 0,  0xaaaaaaaa, 0x55555555, logic_add, 1, 0, 0, 0, 0x55555555, "Logic_add %08x %08x result %08x\n" },
     { 0, 0, 0, 0,  0x11111111, 0x00000000, logic_add, 0, 0, 0, 0, 0x00000000, "Logic_add %08x %08x result %08x\n" },
     { 1, 0, 1, 1,  0x12481248, 0xffffffff, logic_add, 1, 0, 1, 1, 0xffffffff, "Logic_add %08x %08x result %08x\n" },
+#endif
 
-    { 0, 0, 1, 0,  0x55555555, 0x00000020, rrxs_inst,   0, 1, 1, 0, 0xaaaaaaaa, "RRX inst %08x (by %d) (with sign) result %08x\n" },
+#ifdef TEST_RRXS
+   { 0, 0, 1, 0,  0x55555555, 0x00000020, rrxs_inst,   0, 1, 1, 0, 0xaaaaaaaa, "RRX inst %08x (by %d) (with sign) result %08x\n" }, // 20k per
     { 0, 0, 0, 0,  0x55555555, 0x00000001, rrxs_inst,   0, 0, 1, 0, 0x2aaaaaaa, "RRX inst %08x (by %d) (with sign) result %08x\n" },
     { 0, 0, 1, 0,  0xaaaaaaaa, 0x00000020, rrxs_inst,   0, 1, 0, 0, 0xd5555555, "RRX inst %08x (by %d) (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xaaaaaaaa, 0x00000001, rrxs_inst,   0, 0, 0, 0, 0x55555555, "RRX inst %08x (by %d) (with sign) result %08x\n" },
+#endif
 
-    { 0, 0, 0, 0,  0x00000000, 0x00000020, rors_inst,   1, 0, 0, 0, 0x00000000, "ROR inst %08x by %d (with sign) result %08x\n" },
+#ifdef TEST_RORS
+   { 0, 0, 0, 0,  0x00000000, 0x00000020, rors_inst,   1, 0, 0, 0, 0x00000000, "ROR inst %08x by %d (with sign) result %08x\n" }, // 18k per
     { 0, 0, 0, 0,  0x00000000, 0x00000001, rors_inst,   1, 0, 0, 0, 0x00000000, "ROR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000002, rors_inst,   1, 0, 0, 0, 0x00000000, "ROR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xffffffff, 0x00000020, rors_inst,   0, 1, 1, 0, 0xffffffff, "ROR inst %08x by %d (with sign) result %08x\n" },
@@ -247,7 +280,9 @@ static const t_test_vector test_vectors[] =
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x0000000c, rors_inst,   0, 0, 0, 0, 0x2c3f0e1d, "ROR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x00000008, rors_inst,   0, 1, 1, 0, 0xc3f0e1d2, "ROR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x00000004, rors_inst,   0, 0, 0, 0, 0x3f0e1d2c, "ROR inst %08x by %d (with sign) result %08x\n" },
+#endif
 
+#ifdef TEST_LSRS
     { 0, 0, 0, 0,  0x00000000, 0x00000020, lsrs_inst,   1, 0, 0, 0, 0x00000000, "LSR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000001, lsrs_inst,   1, 0, 0, 0, 0x00000000, "LSR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000002, lsrs_inst,   1, 0, 0, 0, 0x00000000, "LSR inst %08x by %d (with sign) result %08x\n" },
@@ -270,7 +305,9 @@ static const t_test_vector test_vectors[] =
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x0000000c, lsrs_inst,   0, 0, 0, 0, 0x000f0e1d, "LSR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x00000008, lsrs_inst,   0, 0, 1, 0, 0x00f0e1d2, "LSR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x00000004, lsrs_inst,   0, 0, 0, 0, 0x0f0e1d2c, "LSR inst %08x by %d (with sign) result %08x\n" },
+#endif
 
+#ifdef TEST_ASRS
     { 0, 0, 0, 0,  0x00000000, 0x00000020, asrs_inst,   1, 0, 0, 0, 0x00000000, "ASR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000001, asrs_inst,   1, 0, 0, 0, 0x00000000, "ASR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000002, asrs_inst,   1, 0, 0, 0, 0x00000000, "ASR inst %08x by %d (with sign) result %08x\n" },
@@ -293,7 +330,9 @@ static const t_test_vector test_vectors[] =
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x0000000c, asrs_inst,   0, 1, 0, 0, 0xffff0e1d, "ASR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x00000008, asrs_inst,   0, 1, 1, 0, 0xfff0e1d2, "ASR inst %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0xf0e1d2c3, 0x00000004, asrs_inst,   0, 1, 0, 0, 0xff0e1d2c, "ASR inst %08x by %d (with sign) result %08x\n" },
+#endif
 
+#ifdef TEST_SHIFT
     { 0, 0, 0, 0,  0x00000000, 0x00000020, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000001, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000002, shift,   1, 0, 0, 0, 0x00000000, "ROR %08x by %d (with sign) result %08x\n" },
@@ -308,7 +347,9 @@ static const t_test_vector test_vectors[] =
     { 0, 0, 0, 0,  0x12345678, 0x0000000c, shift,   0, 0, 0, 0, 0x67812345, "ROR %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x12345678, 0x00000008, shift,   0, 0, 0, 0, 0x78123456, "ROR %08x by %d (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x12345678, 0x00000004, shift,   0, 1, 1, 0, 0x81234567, "ROR %08x by %d (with sign) result %08x\n" },
+#endif
 
+#ifdef TEST_LSLS
     { 0, 0, 0, 0,  0x00000000, 0x00000000, lsls,    1, 0, 0, 0, 0x00000000, "LSL %08x by %02x (with sign) result %08x\n" },
     { 0, 0, 1, 0,  0x00000000, 0x00000000, lsls,    1, 0, 1, 0, 0x00000000, "LSL %08x by %02x (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x00000000, 0x00000001, lsls,    1, 0, 0, 0, 0x00000000, "LSL %08x by %02x (with sign) result %08x\n" },
@@ -355,12 +396,16 @@ static const t_test_vector test_vectors[] =
     { 0, 0, 1, 0,  0x12345678, 0x0000001f, lsls,    1, 0, 0, 0, 0x00000000, "LSL %08x by %02x (with sign) result %08x\n" },
     { 0, 0, 0, 0,  0x12345678, 0x00000020, lsls,    1, 0, 0, 0, 0x00000000, "LSL %08x by %02x (with sign) result %08x\n" },
     { 0, 0, 1, 0,  0x12345678, 0x00000020, lsls,    1, 0, 0, 0, 0x00000000, "LSL %08x by %02x (with sign) result %08x\n" },
+#endif
 
+#ifdef TEST_ADD
     { 0, 0, 0, 0,  0x00000000, 0x00000000, add_inst,     0, 0, 0, 0, 0x00000000, "Add %08x %08x result %08x\n" },
     { 0, 1, 1, 1,  0x00000000, 0x00000000, add_inst,     0, 1, 1, 1, 0x00000000, "Add %08x %08x result %08x\n" },
     { 0, 0, 0, 0,  0x11111111, 0xffffffff, add_inst,     0, 0, 0, 0, 0x11111110, "Add %08x %08x result %08x\n" },
     { 0, 1, 1, 1,  0x11111111, 0xffffffff, add_inst,     0, 1, 1, 1, 0x11111110, "Add %08x %08x result %08x\n" },
+#endif
 
+#ifdef TEST_ADDS
     { 0, 0, 0, 0,  0x00000000, 0x00000000, adds_inst,    1, 0, 0, 0, 0x00000000, "Adds %08x %08x result %08x\n" },
     { 0, 1, 1, 1,  0x00000000, 0x00000000, adds_inst,    1, 0, 0, 0, 0x00000000, "Adds %08x %08x result %08x\n" },
     { 0, 0, 0, 0,  0x11111111, 0xffffffff, adds_inst,    0, 0, 1, 0, 0x11111110, "Adds %08x %08x result %08x\n" },
@@ -370,7 +415,9 @@ static const t_test_vector test_vectors[] =
     { 0, 1, 1, 1,  0xc0000000, 0xc0000000, adds_inst,    0, 1, 1, 0, 0x80000000, "Adds %08x %08x result %08x\n" },
     { 0, 1, 1, 1,  0xc0000000, 0xc0000001, adds_inst,    0, 1, 1, 0, 0x80000001, "Adds %08x %08x result %08x\n" },
     { 0, 1, 1, 1,  0xc0000000, 0xbfffffff, adds_inst,    0, 0, 1, 1, 0x7fffffff, "Adds %08x %08x result %08x\n" },
+#endif
 
+#ifdef TEST_CMP
     { 0, 0, 0, 0,  0x00000000, 0x00000000, cmp_inst,     1, 0, 1, 0, 0x00000000, "Cmp %08x %08x result %08x\n" },
     { 0, 1, 1, 1,  0x00000000, 0x00000000, cmp_inst,     1, 0, 1, 0, 0x00000000, "Cmp %08x %08x result %08x\n" },
     { 0, 0, 0, 0,  0x11111111, 0xffffffff, cmp_inst,     0, 0, 0, 0, 0x11111111, "Cmp %08x %08x result %08x\n" },
@@ -380,6 +427,7 @@ static const t_test_vector test_vectors[] =
     { 0, 1, 1, 1,  0xc0000000, 0xc0000000, cmp_inst,     1, 0, 1, 0, 0xc0000000, "Cmp %08x %08x result %08x\n" },
     { 0, 1, 1, 1,  0xc0000000, 0xc0000001, cmp_inst,     0, 1, 0, 0, 0xc0000000, "Cmp %08x %08x result %08x\n" },
     { 0, 1, 1, 1,  0xc0000000, 0xbfffffff, cmp_inst,     0, 0, 1, 0, 0xc0000000, "Cmp %08x %08x result %08x\n" },
+#endif
 
     { 0, 0, 0, 0,  0x00000000, 0x00000000, NULL,    0, 0, 0, 0, 0x00000000, "ZZZ" },
 };

@@ -17,6 +17,12 @@ dprintf:
 // r0 -> string
 // r1, r2, r3 = args
 dprintf_loop:       
+    mov r4, #0
+0:  
+    add r4, r4, #1
+    cmp r4, #8192
+    bne 0b
+
     ldrb r4, [r0], #1
     cmp r4, #0
     beq dprintf_done

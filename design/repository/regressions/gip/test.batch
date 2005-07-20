@@ -29,6 +29,10 @@ beq env_int("system_alu_tests") 0 skip_system_alu_tests
 gosub gip_system_alu
 skip_system_alu_tests:
 
+beq env_int("system_memory_tests") 0 skip_system_memory_tests
+gosub gip_system_memory
+skip_system_memory_tests:
+
 beq env_int("system_microkernel_tests") 0 skip_system_microkernel_tests
 gosub gip_system_microkernel
 skip_system_microkernel_tests:
@@ -173,13 +177,46 @@ setenv "verbose_level" 1
 return
 
 #b gip_system_alu_0
-# This test runs the linux div64 function
+# This test runs the full ALU regression tests which exercise most ALU operations with most flags and most shifter operations
 gip_system_alu_0:
+set vcd_skip_length 0
+set run_length 4000000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/alu.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 0
+gosub gip_system_test
+return
+
+#b gip_system_alu_1
+# This test runs the linux div64 function
+gip_system_alu_1:
 set vcd_skip_length 0
 set run_length 100000
 setenv "mii_rx_sources" ""
 setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/test_div64.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 1
+gosub gip_system_test
+return
+
+#a GIP system memory tests
+#f gip_system_memory
+gip_system_memory:
+setenv "verbose_level" 1
+
+    gosub gip_system_memory_0
+return
+
+#b gip_system_memory_0
+gip_system_memory_0:
+set vcd_skip_length 0
+set run_length 600000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/memory.regression.dmif"
 set_string vcd_filename "gip_system_0"
 set vcd_create 1
 gosub gip_system_test

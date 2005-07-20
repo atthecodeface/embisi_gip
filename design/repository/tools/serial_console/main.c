@@ -85,6 +85,7 @@ static void command_mode_enter( void );
 static void cmd_help( char *cmd, char *cmd_end );
 static void cmd_flash_write( char *cmd, char *cmd_end );
 static void cmd_exec( char *cmd, char *cmd_end );
+static void cmd_rep( char *cmd, char *cmd_end );
 
 /*a Global variables
  */
@@ -110,6 +111,7 @@ static t_command cmds[] =
     {"help", cmd_help},
     {"fw", cmd_flash_write},
     {"exec", cmd_exec},
+    {"rep", cmd_rep},
     {NULL, NULL}
 };
 
@@ -241,7 +243,7 @@ static int ef_fn_eval_flash_address( void *handle, t_sl_exec_file_data *file_dat
 
 /*f flash_download_command_object
  */
-static void flash_download_command_object( t_obj_type type, unsigned char *buffer, int length, unsigned char *buffer_2, int length_2 )
+static int flash_download_command_object( t_obj_type type, unsigned char *buffer, int length, unsigned char *buffer_2, int length_2 )
 {
     unsigned char write_buffer[64+16]; // Must be bigger than 64, but less than 128- a bit for expansion later
     int i, j;
@@ -312,13 +314,15 @@ static void flash_download_command_object( t_obj_type type, unsigned char *buffe
             i++;
         }
         flash_download_command( 'w', write_buffer, j );
+        if (!flash_download_wait()) return 0;
         flash_address += j-4;
         hdr_reqd = 0;
     }
+    return 1;
 }
-static void flash_download_command_object( t_obj_type type, unsigned char *buffer, int length )
+static int flash_download_command_object( t_obj_type type, unsigned char *buffer, int length )
 {
-    flash_download_command_object( type, buffer, length, NULL, 0 );
+    return flash_download_command_object( type, buffer, length, NULL, 0 );
 }
 
 
@@ -433,8 +437,7 @@ static void cmd_exec( char *cmd, char *cmd_end )
                 }
                 else
                 {
-                    flash_download_command_object( obj_type_description, (unsigned char *)ef_args[0].p.string, strlen(ef_args[0].p.string)+1 );
-                    download_error = !flash_download_wait();
+                    download_error = !flash_download_command_object( obj_type_description, (unsigned char *)ef_args[0].p.string, strlen(ef_args[0].p.string)+1 );
                 }
                 break;
             case ef_cmd_flash_write_object_regs: // copy regs: target endianness dependent
@@ -462,8 +465,7 @@ static void cmd_exec( char *cmd, char *cmd_end )
                             buffer[i*4+3] = (ef_args[i].integer>> 0)&0xff;
                         }
                     }
-                    flash_download_command_object( obj_type_regs, buffer, 48 );
-                    download_error = !flash_download_wait();
+                    download_error = !flash_download_command_object( obj_type_regs, buffer, 48 );
                 }
                 break;
             case ef_cmd_flash_write_object_mif: // copy words of data from a MIF file: target endianness dependent
@@ -509,8 +511,7 @@ static void cmd_exec( char *cmd, char *cmd_end )
                     unsigned char buffer[4];
                     buffer[0] = 0;
                     buffer[1] = 0;
-                    flash_download_command_object( obj_type_end, buffer, 2 );
-                    download_error = !flash_download_wait();
+                    download_error = !flash_download_command_object( obj_type_end, buffer, 2 );
                 }
                 break;
             }
@@ -549,6 +550,60 @@ static void cmd_exec( char *cmd, char *cmd_end )
         sl_exec_file_free( exec_file );
     }
     delete error;
+}
+
+/*f cmd_rep
+ */
+static void cmd_rep( char *cmd, char *cmd_end )
+{
+    char *token;
+    int count;
+    int error;
+
+    token = sl_token_next( 1, cmd, cmd_end );
+    cmd = cmd+strlen(cmd);
+    
+    error = 1;
+    if (token)
+    {
+        error = !sl_integer_from_token( token, (int *)&count );
+    }
+
+    token = token+strlen(token)+1;
+    if ((!error) && (token<cmd_end))
+    {
+        int i, j;
+        for (i=0; i<count; i++)
+        {
+            for (j=0; token[j]; j++)
+            {
+                serial_putchar(token[j]);
+            }
+            serial_putchar('\n');
+            while (1)
+            {
+                char buffer[4];
+                j = poll_fd(serial_fd, 1, 0, 0, 0);
+                if (j==2)
+                {
+                    read( serial_fd, buffer, 1 );
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        return;
+    }
+    if (error)
+    {
+        waddstr( command_window, "Syntax: " );
+        waddstr( command_window, cmd );
+        waddstr( command_window,  " <byte address> <data bytes>+\n" );
+        wrefresh( command_window );
+    }
+
 }
 
 /*a Command window functions

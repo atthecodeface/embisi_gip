@@ -129,7 +129,7 @@ DCM dram_input_pin_gen(       .CLKIN (sys_drm_clock_in),
 // synthesis attribute LOC of dram_input_pin_gen is "DCM_X3Y0";
 
 // synthesis attribute CLK_FEEDBACK of dram_input_pin_gen is "1X"; 
-// synthesis attribute CLKIN_PERIOD of dram_input_pin_gen is "8 ns";
+// synthesis attribute CLKIN_PERIOD of dram_input_pin_gen is 8;
 // synthesis attribute CLKFX_MULTIPLY of dram_input_pin_gen is 2;
 // synthesis attribute CLKFX_DIVIDE of dram_input_pin_gen is 1;
 // synthesis attribute CLKIN_DIVIDE_BY_2 of dram_input_pin_gen is 0;

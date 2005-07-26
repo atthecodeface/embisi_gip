@@ -35,8 +35,8 @@ module gip_alu( clock gip_clock,
 
                 output t_gip_instruction_rf alu_inst,
 
-                input bit rfw_accepting_alu_rd,
-                input bit mem_alu_busy,
+                input bit rfw_accepting_alu_rd, // do not use this - it is handled in gip_core to product alu_accepting_rfr_instruction
+                input bit mem_alu_busy, // do not use this - it is handled in gip_core to produce alu_accepting_rfr_instruction
                 input bit alu_accepting_rfr_instruction,
                 output bit alu_accepting_rfr_instruction_always,
                 output bit alu_accepting_rfr_instruction_if_mem_does,
@@ -52,7 +52,7 @@ module gip_alu( clock gip_clock,
                 output t_gip_ins_r alu_mem_rd,
                 output t_gip_word alu_mem_address,
                 output t_gip_word alu_mem_write_data,
-                output bit[4] alu_mem_burst,
+                output bit[4] alu_mem_burst, // this should be driven by alu_inst.k?
 
                 input bit special_cp_trail_2,
 

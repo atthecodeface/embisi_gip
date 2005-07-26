@@ -21,11 +21,13 @@ The GIP ALU and shifter are responsible for implementing all of the
 data operations of the GIP. 
 </p>
 
-<p>The unit takes an operation and two 32-bit registered data items 
+<p>
+
+The unit takes an operation and two 32-bit registered data items 
 as its inputs, and it maintains two 32-bit internal stores; one is an accumulator, and 
-the other is a shifter result. Also five flags are maintained;
-a carry flag, a zero flag, a negative flag, an overflow flag, and a shifter
-flag.
+the other is a shifter result. Also seven flags are maintained:
+a carry flag, a zero flag, a negative flag, an overflow flag, a shifter
+flag, a 'condition passed' flag, and an 'old condition passed' flag.
 
 </p>
 

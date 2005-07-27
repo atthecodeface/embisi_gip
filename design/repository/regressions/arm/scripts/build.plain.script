@@ -1,0 +1,11 @@
+ENTRY(stext)
+SECTIONS
+{
+       . = 0;
+        _stext = .;
+       .text : { *(.text) }
+       .rodata : { *(.rodata) }
+       .rodata.str1.4 : { *(.rodata.str1.4) }
+       .data : { *(.data) }
+       .bss : { *(.bss) }
+}

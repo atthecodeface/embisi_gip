@@ -60,7 +60,7 @@ ENTRY(gipeth_hw_thread)
     /*b Read and clear semaphores 23-26 - don't clear 27 unless we add to the tx data fifo, as otherwise it is invalid
     */
     mov r12, #0
-    gip_read_and_clear_semaphores 0x0f<<23, r13
+    gip_read_and_clear_semaphores 0xf, 23, 13
     tst r13, #1<<24
     blne gipeth_hw_thread_handle_rx
     tst r13, #1<<25
@@ -82,14 +82,10 @@ ENTRY(gipeth_hw_thread)
     */
     tst r12, #1
     beq 0f
-    
-    gip_extrd 0x80
-    mov r0, #0x4<<(4*1) // write to spec0 (sems to set) */
-    gip_extrd 0x11
-    gip_extrn 0x11
+
+    gip_extrdrn 0x11, 0x11
     orr r1, r1, #2 // take some time setting our interrupt bit (r17 bit 2) */
-    gip_extrm 0x81
-    mov r1, r1 // r0 <= spec1 (read and set semaphores) */
+    gip_set_semaphores 4, 4
 
 0:
 
@@ -146,9 +142,8 @@ txs_status     .req r3
     ldr r0, read_tx_status_cmd
 
  gip_utximm 'W'    
-0:  
-    gip_extrn 0x81
-    tst r1, #(1<<23)
+0:
+    gip_test_semaphores 1, 23
     beq 0b
     
  gip_utximm 'G'    
@@ -157,7 +152,7 @@ txs_status     .req r3
     gip_extrm 0x60 // postbus rx d 0
     mov txs_status, r0 // status
 
-    gip_read_and_clear_semaphores 1<<23, txs_temp
+    gip_clear_semaphores 1, 23
 
     mov pc, lr
 
@@ -275,14 +270,13 @@ txd_sent_data_word:
 
 txd_start_burst:  
     gip_utximm 'B'    
-    gip_read_and_clear_semaphores (1<<27), txd_temp2
+    gip_clear_semaphores 1, 27
     gip_extrd 0x6c    // extrd postbus tx c 0
     ldr r0, write_tx_data_8_cmd
 4:  
-    gip_extrn 0x81
-    tst r1, #(1<<23)
+    gip_test_semaphores 1, 23
     beq 4b
-    gip_read_and_clear_semaphores (1<<23), txd_temp2
+    gip_clear_semaphores 1, 23
     mov txd_temp2, #8
     b txd_sent_data_word
 
@@ -290,16 +284,15 @@ txd_sent_burst:
     rsbs txd_temp2, txd_temp2, #7 // txd_temp2 = (8-number of words pushed)-1
     blt txd_no_final_partial_burst
     gip_utximm 'P'    
-    gip_read_and_clear_semaphores (1<<27), txd_temp
+    gip_clear_semaphores 1, 27
     ldr txd_temp, write_tx_data_n_cmd
     gip_extrd 0x6c    // extrd postbus tx c 0
     orr r0, txd_temp, txd_temp2, lsl #postbus_command_source_gip_tx_length_start
 
 4:  
-    gip_extrn 0x81
-    tst r1, #(1<<23)
+    gip_test_semaphores 1, 23
     beq 4b
-    gip_read_and_clear_semaphores 1<<23, txd_temp2
+    gip_clear_semaphores 1, 23
     
 txd_no_final_partial_burst: 
 
@@ -320,10 +313,9 @@ txd_no_final_partial_burst:
     ldr r0, write_tx_cmd_cmd
 
 4:  
-    gip_extrn 0x81
-    tst r1, #(1<<23)
+    gip_test_semaphores 1, 23
     beq 4b
-    gip_read_and_clear_semaphores 1<<23, txd_temp2
+    gip_clear_semaphores 1, 23
 
 not_first_burst_of_packet:
 
@@ -413,8 +405,7 @@ rx_length               .req r10 // note these 3 must be in order
     ldmia rx_temp, {rx_next_buffer_to_reuse, rx_buffer_in_hand, rx_length}
 
 0:
-    gip_extrn 0x81
-    tst r1, #(1<<23)
+    gip_test_semaphores 1, 23
     beq 0b
     
  gip_utximm 'G'    
@@ -422,7 +413,7 @@ rx_length               .req r10 // note these 3 must be in order
     mov rx_time, r0 // time
     gip_extrm 0x60 // postbus rx d 0
     mov rx_status, r0 // status
-    gip_read_and_clear_semaphores 1<<23, rx_temp
+    gip_clear_semaphores 1, 23
 
     /*b Break out the status; request data from rx fifo
         reason = (status>>24)&7;
@@ -502,8 +493,7 @@ receive_data:
     beq check_status
 
 2:  
-    gip_extrn 0x81
-    tst r1, #(1<<23)
+    gip_test_semaphores 1, 23
     beq 2b
 
     cmp rx_dest, #0
@@ -595,8 +585,7 @@ read_rx_data_cmd:
     */
 ENTRY(gipeth_isr_asm)
  gip_utximm '<'    
-    .word 0xec00c11e
-    .word 0xec00d11e
+    .word 0xec00d111
     bic r1, r1, #2
     mov r0, sp
 	bl gipeth_isr
@@ -629,7 +618,7 @@ mkt_unknown_trap:
     gip_utximm 'K'
     gip_utximm '\n'
 
-    .word 0xec00c58e // disable the timer
+    .word 0xec0058e // disable the timer
      mov r0, #1<<31 
 
      mov pc, #0

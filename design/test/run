@@ -1,13 +1,33 @@
 #!/usr/bin/perl
+use lib $ENV{"TNBT_CVS_ROOT"}."/common/bin";
+require "lib_getopts.pl";
 
+#a Handle arguments
+$tests = "";
+$sim_prefix = "";
+$sim_options = "";
+&Getopts ('t:rVd:hv');
+
+if ($opt_t) {
+    $tests .= "--define $opt_t=1 ";
+}
+@regression = ("prefetch_tests", "system_scheduler_tests", "system_alu_tests", "system_memory_tests");
+if ($opt_r) {
+    foreach $t (@regression) {
+        $tests .= "--define $t=1 ";
+    }
+}
+$sim_prefix = "valgrind --num-callers=8 " if ($opt_V);
+$sim_options .= " --sl_debug_level $opt_d " if ($opt_d);
 #$tests .= "--define system_ethernet_tests=1 ";
 #$tests .= "--define system_microkernel_tests=1 ";
 # The next 4 are real regression tests now
 #$tests = "--define prefetch_tests=1 ";
 #$tests .= "--define system_scheduler_tests=1 ";
 #$tests .= "--define system_alu_tests=1 ";
-$tests .= "--define system_memory_tests=1 ";
+#$tests .= "--define system_memory_tests=1 ";
 
+#a Run the tests
 $tnbt_cvs_root = $ENV{"TNBT_CVS_ROOT"};
 $cwd = `pwd`;
 chomp($cwd);
@@ -15,12 +35,12 @@ chomp($cwd);
 #chdir("$tnbt_cvs_root/hardware/design/repository/regressions/ethernet");
 #chdir("$tnbt_cvs_root/hardware/design/repository/regressions/io");
 #chdir("$tnbt_cvs_root/hardware/design/repository/regressions/postbus");
-chdir("$tnbt_cvs_root/hardware/design/repository/regressions/gip");
 #chdir("$tnbt_cvs_root/hardware/design/repository/regressions/ddr");
-$sim = "$tnbt_cvs_root/hardware/design/build/simulation/linux/sim";
+chdir("$tnbt_cvs_root/hardware/design/repository/regressions/gip");
+$sim = "$tnbt_cvs_root/hardware/design/build/simulation/linux/sim ";
 #$sim = $sim." --sl_debug_level 1 ";
 #$sim = "valgrind --num-callers=8 ".$sim;
-$sim = $sim." ".$tests;
+$sim = $sim_prefix . $sim . $sim_options . $tests;
 print "$sim  --define run_dir=$cwd test.batch\n";
 system("$sim  --define run_dir=$cwd test.batch");
 

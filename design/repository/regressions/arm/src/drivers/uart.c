@@ -28,12 +28,12 @@ extern int uart_rx_poll( void )
     {
         // poll for status
         // read periph reg 1; test bit 0 for status available; if clear there is some; so would like to do an 'and rd, status, #1', but peripheral MUST be Rm...
-        __asm__ volatile ( " .word 0xec00de04 \n mov %0, r1 \n and %0, %0, #1\n" : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override
+        __asm__ volatile ( " .word 0xec00ce04 \n mov %0, r1 \n and %0, %0, #1\n" : "=r" (s) ); // extrdrm (d): dnxm n/m is top 3.1, type 7 for no override
         if (s)
             return 0;
 
         // read status fifo, which is periph reg 0
-        __asm__ volatile ( " .word 0xec00de04 \n mov %0, r0\n " : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override
+        __asm__ volatile ( " .word 0xec00ce04 \n mov %0, r0\n " : "=r" (s) ); // extrdrm (d): dnxm n/m is top 3.1, type 7 for no override
 
         // if it is an rx byte, data is [17] framing error [16] 1 [9;0] data
         if (s&0x10000)

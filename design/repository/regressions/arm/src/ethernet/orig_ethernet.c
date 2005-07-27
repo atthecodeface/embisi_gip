@@ -219,7 +219,7 @@ extern int test_entry_point()
     int empty;
     FLASH_CONFIG_WRITE( 0x355 );
     FLASH_ADDRESS_WRITE( 0x80000000 ); // CE 2
-//    __asm__ volatile ( " .word 0xec00de06 \n mov %0, r0 \n" : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override
+//    __asm__ volatile ( " .word 0xec00ce06 \n mov %0, r0 \n" : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override
     s = 0x08081008; // base 8, end 16, read 8, write 8
     __asm__ volatile ( " .word 0xec00c70e \n mov r0, %0 \n" : : "r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
 
@@ -231,10 +231,10 @@ extern int test_entry_point()
     NOP;
     NOP;
 
-    __asm__ volatile ( " .word 0xec00de07 \n mov %0, r1 \n" : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
+    __asm__ volatile ( " .word 0xec00ce07 \n mov %0, r1 \n" : "=r" (s) ); // extrdrm (d): dnxm n/m is top 3.1, type 7 for no override - tx fifo config
     FLASH_DATA_WRITE( s );
 
-    __asm__ volatile ( " .word 0xec00de07 \n mov %0, r0 \n" : "=r" (s) ); // extrnrm (d): dnxm n/m is top 3.1, type 7 for no override - rx fifo config
+    __asm__ volatile ( " .word 0xec00ce07 \n mov %0, r0 \n" : "=r" (s) ); // extrdrm (d): dnxm n/m is top 3.1, type 7 for no override - rx fifo config
     FLASH_DATA_WRITE( s );
 
     NOP;

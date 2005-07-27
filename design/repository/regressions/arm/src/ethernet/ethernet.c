@@ -83,17 +83,6 @@ extern int test_entry_point()
 {
     int i;
 
-    if (1)
-    {
-        unsigned int s;
-        __asm__ volatile (".word 0xec00c83e \n mov r0, %0" : : "r" (0x40000) ); // set special (4) reg gip_config (3) to 0x40000 (preemptive, prioritized, no privilege, 4 arm trap semaphore)
-        GIP_SET_THREAD(TIMER_1_THREAD,timer_1_entry,0x111); // set timer 1 thread startup to be ARM, on its semaphore 0 set, and the entry point
-        timer_1_delay = 128;
-        GIP_TIMER_ENABLE();
-        GIP_SET_LOCAL_EVENTS_CFG((8 + TIMER_1_THREAD)<<(0*4)); // timer 1 is event 0; attach to our thread and enable
-        GIP_READ_AND_SET_SEMAPHORES( s, 1<<(TIMER_1_THREAD*4+0) );
-        __asm__ volatile (" ldr     r0, [pc, #28] \n bl freeze \n  mov     r0, #0 " );
-    }
     if (0)
     {
         unsigned int s;

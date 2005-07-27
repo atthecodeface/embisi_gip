@@ -104,7 +104,7 @@
     ldr r1, [r1, #4]       // r1 = [r1+4]
     .word 0xec00c59e+(\timer<<4)       // extrd periph[25]/26/27
     add r0, r0, r1
-    .word 0xec00de08 // extrm spec0(0-15)
+    .word 0xec00ce08 // extrm spec0(0-15)
     mov r0, r0       // r0 <= spec0 (read and clear semaphores)
     .endm
     

@@ -25,7 +25,7 @@ static unsigned int *next_sem;
 static void thread_ ## thrd ## _entry( void )\
 { \
     unsigned int s; \
-    {__asm__ volatile (".word 0xec007219 ; ldr r0, =next_sem ; ldr r1, [r0] ; ldr r2, [r1], #4 ; cmp r2, #0; beq 0f ; str r1, [r0] ; .word 0xec00c80e ; mov r0, r2 ; mov r1, r1 ; mov r1, r1 ; .word 0xec00de08 ; mov r2, r1 ; 0:" ); } \
+    {__asm__ volatile (".word 0xec007219 ; ldr r0, =next_sem ; ldr r1, [r0] ; ldr r2, [r1], #4 ; cmp r2, #0; beq 0f ; str r1, [r0] ; .word 0xec00c80e ; mov r0, r2 ; mov r1, r1 ; mov r1, r1 ; .word 0xec00ce08 ; mov r2, r1 ; 0:" ); } \
     GIP_LED_OUTPUT_CFG_WRITE( 0xaaaa | (3<<(thrd*2)) ); \
     NOP; NOP; NOP; NOP; NOP; NOP; \
     {__asm__ volatile (".word 0xec007209 ; ldr r0, =checksum ; ldr r1, [r0] ; mov r1, r1, ror #28 ; add r1, r1, # "csum_add"; str r1, [r0] " ); } \

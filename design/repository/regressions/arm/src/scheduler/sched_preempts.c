@@ -142,7 +142,7 @@ static void next_test( void )
     // atomically enable timer, set semaphores and then deschedule
     __asm__ volatile ( ".word 0xec00723f" ); // We can atomic a long time as we will flush on the deschedule occurring
     __asm__ volatile ( " .word 0xec00c58e ; mov r0, #0<<31 " );
-    __asm__ volatile ( " mov r0, #0x10000 ; orr r0, r0, #0x200; orr r0, r0, #4; .word 0xec00c80e ; mov r0, r0 ; .word 0xec0072bf ; .word 0xec00de08 ; mov r0, r1 ; .word 0xec0072bf " ); // set our semaphores
+    __asm__ volatile ( " mov r0, #0x10000 ; orr r0, r0, #0x200; orr r0, r0, #4; .word 0xec00c80e ; mov r0, r0 ; .word 0xec0072bf ; .word 0xec00ce08 ; mov r0, r1 ; .word 0xec0072bf " ); // set our semaphores
     __asm__ volatile ( " mov lr, pc ; .word 0xec007305 ; nop ": : : "r14" ); // Deschedule, but recording lr for return here
 
     // Return here once the test is done!

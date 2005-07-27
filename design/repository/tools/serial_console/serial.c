@@ -50,6 +50,8 @@ extern int open_serial( const char *filename, int baud, int verbose )
      }
 
     ioctl( fd, TCGETA, &termio_data );
+    ioctl( fd, TIOCGSERIAL, &ser_data );
+
     if (verbose)
     {
          printf( "c_iflag %08x\n", termio_data.c_iflag );
@@ -70,7 +72,16 @@ extern int open_serial( const char *filename, int baud, int verbose )
     case 38400: termio_data.c_cflag |= B38400; break;
     case 57600: termio_data.c_cflag |= B57600; break;
     case 115200: termio_data.c_cflag |= B115200; break;
-    default: termio_data.c_cflag |= B9600; break;
+    default:
+        int div;
+        fprintf(stderr,"Warning: using custom divisor\n");
+        div = ser_data.baud_base/baud;
+        ser_data.custom_divisor = (div>=1)?div:1;
+        ser_data.flags &= ~ASYNC_SPD_MASK;
+        ser_data.flags |= ASYNC_SPD_CUST;
+        ioctl( fd, TIOCSSERIAL, &ser_data );
+        termio_data.c_cflag |= B38400;
+        break;
     }
     ioctl( fd, TCSETA, &termio_data );
 

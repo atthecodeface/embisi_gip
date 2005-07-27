@@ -9,12 +9,30 @@
 
 #include <stdio.h>
 static t_command_chain monitor_cmds_memory_chain;
+static t_command_chain monitor_cmds_extbus_chain;
+static t_command_chain monitor_cmds_flash_chain;
+static t_command_chain monitor_cmds_leds_chain;
 extern void chain_extra_cmds( t_command_chain *chain )
 {
     chain->next = &monitor_cmds_memory_chain;
     monitor_cmds_memory_chain.next = NULL;
     monitor_cmds_memory_chain.cmds = &monitor_cmds_memory[0];
     chain = &monitor_cmds_memory_chain;
+
+    chain->next = &monitor_cmds_extbus_chain;
+    monitor_cmds_extbus_chain.next = NULL;
+    monitor_cmds_extbus_chain.cmds = &monitor_cmds_extbus[0];
+    chain = &monitor_cmds_extbus_chain;
+
+    chain->next = &monitor_cmds_flash_chain;
+    monitor_cmds_flash_chain.next = NULL;
+    monitor_cmds_flash_chain.cmds = &monitor_cmds_flash[0];
+    chain = &monitor_cmds_flash_chain;
+
+    chain->next = &monitor_cmds_leds_chain;
+    monitor_cmds_leds_chain.next = NULL;
+    monitor_cmds_leds_chain.cmds = &monitor_cmds_leds[0];
+    chain = &monitor_cmds_leds_chain;
 
 }
 extern void extra_init( void )

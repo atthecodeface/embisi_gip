@@ -115,7 +115,7 @@ drive extbusth.leds leds
 
 #b Wire up GIP simple
 drive gip_simple.cke_last_of_logic cke_last_of_logic
-assign switches 3
+assign switches 0
 drive gip_simple.switches switches
 drive gip_simple.system_reset system_reset
 drive gip_simple.rxd rxd

@@ -246,11 +246,11 @@ return
 #b gip_system_microkernel_2
 gip_system_microkernel_2:
 set vcd_skip_length 0
-set run_length 200000
+set run_length 300000
 setenv "mii_rx_sources" ""
 setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/microkernel_test_2.regression.dmif"
-setenv "ddr_mif" "../arm/bin/factorial.regression.dmif"
+#setenv "ddr_mif" "../arm/bin/factorial.regression.dmif"
 set_string vcd_filename "gip_system_0"
 set vcd_create 1
 gosub gip_system_test
@@ -269,7 +269,7 @@ return
 # This test runs the scheduler and tests different round robin, cooperative and preemptive modes - it is not exhastive as to preempting different instruction types, though
 gip_system_scheduler_0:
 set vcd_skip_length 0
-set run_length 600000
+set run_length 620000
 setenv "mii_rx_sources" ""
 setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/scheduler_modes.regression.dmif"

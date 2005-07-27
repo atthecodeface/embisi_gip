@@ -1,19 +1,19 @@
 #define imm_bits(byte,shft)
 
     .macro gip_read_and_clear_semaphores, bits, shift, regnum
-    swi 0xfe0000 | (\bits<<(\shift&1)) | ((\shift&0x1e)<<7) | (\regnum<<12)
+    swi 0xfe0000 | (\bits<<(\shift&1)) | (((32-\shift)&0x1e)<<7) | (\regnum<<12)
     .endm
 
     .macro gip_read_and_set_semaphores, bits, shift, regnum
-    swi 0xee0000 | (\bits<<(\shift&1)) | ((\shift&0x1e)<<7) | (\regnum<<12)
+    swi 0xee0000 | (\bits<<(\shift&1)) | (((32-\shift)&0x1e)<<7) | (\regnum<<12)
     .endm
 
     .macro gip_clear_semaphores, bits, shift
-    swi 0xf60000 | (\bits<<(\shift&1)) | ((\shift&0x1e)<<7)
+    swi 0xf60000 | (\bits<<(\shift&1)) | (((32-\shift)&0x1e)<<7)
     .endm
 
     .macro gip_set_semaphores, bits, shift
-    swi 0xe60000 | (\bits<<(\shift&1)) | ((\shift&0x1e)<<7)
+    swi 0xe60000 | (\bits<<(\shift&1)) | (((32-\shift)&0x1e)<<7)
     .endm
 
     .macro gip_test_semaphores, bits, shift

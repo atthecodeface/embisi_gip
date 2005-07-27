@@ -9,6 +9,7 @@ asm simple simple
 asm simple pass
 asm simple run_dram
 cc simple inc_wait_test
+asm simple linux_wrapper
 
 cc factorial factorial
 
@@ -76,8 +77,8 @@ test dram monitor_full monitor:monitor monitor:all_cmds monitor:memory monitor:f
 test dram monitor_extra monitor:monitor monitor:bonus_cmds monitor:memory monitor:ethernet monitor:flash monitor:uart common:wrapper_download common:support_download
 test dram ethmonitor drivers:flash drivers:uart drivers:ethernet  drivers:gipeth drivers:gipeth_asm ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:regs ethmonitor:cmd_leds  ethmonitor:cmd_gipeth ethmonitor:cmd microkernel:microkernel_thread microkernel:init common:wrapper_download common:support_download
 test dram ethmonitor_noeth drivers:flash drivers:uart drivers:ethernet  drivers:gipeth drivers:gipeth_asm ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework_noeth ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:regs ethmonitor:cmd_leds  ethmonitor:cmd_gipeth ethmonitor:cmd microkernel:microkernel_thread microkernel:init common:wrapper_download common:support_download
-test rom ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd ethmonitor:cmd_leds common:wrapper common:support
-test sram ethmonitor drivers:flash drivers:uart ethmonitor:uart ethmonitor:framework_noeth ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd common:wrapper_download common:support_download
+test rom ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd ethmonitor:cmd_leds common:wrapper common:support
+#test sram ethmonitor drivers:flash drivers:uart ethmonitor:uart ethmonitor:framework_noeth ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd common:wrapper_download common:support_download
 test sram dram_setup ethmonitor:dram_setup common:wrapper_download common:support_download
 test dram drivertest drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm ethmonitor:uart ethmonitor:framework_noeth ethmonitor:drv_cmds ethmonitor:cmd_memory ethmonitor:cmd_gipeth ethmonitor:cmd common:wrapper_download common:support_download
 
@@ -102,3 +103,6 @@ test regression microkernel_test_2 ethmonitor:regs microkernel:test_2 microkerne
 test dram microkernel_test_leds microkernel:test_leds microkernel:init microkernel:microkernel_thread common:wrapper_download common:support_download
 
 test sram microkernel microkernel:init microkernel:microkernel_thread
+
+test plain linux_wrapper simple:linux_wrapper
+

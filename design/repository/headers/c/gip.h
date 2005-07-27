@@ -98,7 +98,7 @@ typedef enum
     gip_native_ins_class_extimm_2 = 10, // 8 thru 11
     gip_native_ins_class_extimm_3 = 11, // 8 thru 11
     gip_native_ins_class_extrdrm = 12, // extend rd, and 'top' half of rm; rn is as in instruction, bottom half of rm is as in instruction
-    gip_native_ins_class_extrnrm = 13, // extend rn, and 'top' half of rm; rd is as in instruction, bottom half of rm is as in instruction
+    gip_native_ins_class_extrdrn = 13, // extend rd, and 'top' half of rm; rm is as in instruction, bottom half of rn is as in instruction
     gip_native_ins_class_extcmd = 14, // extend command by 6 bits
     gip_native_ins_class_debug = 15, // Undefined as yet
 

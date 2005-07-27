@@ -39,15 +39,21 @@ static void nop_many( void ) { NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP
 }
 #define GIP_POSTIF_CFG(r,v) { __asm__ volatile ( " .word 0xec00c7ee+" #r "<<4 \n mov r0, %0 \n" : : "r" (v) ); }
 
-#define GIP_READ_AND_CLEAR_SEMAPHORES( s, m ) { __asm__ volatile ( " .word 0xec007209 ; .word 0xec00c80e ; mov r0, %0 ; .word 0xec007283 " : : "r" (m) ); __asm__ volatile ( " .word 0xec00de08 ; mov %0, r0 ; .word 0xec007281 " : "=r" (s) ); }
-#define GIP_CLEAR_SEMAPHORES_ATOMIC( m ) { __asm__ volatile ( " .word 0xec00c80e ; mov r0, %0 ; .word 0xec007281 ; .word 0xec00ce08 ; mov r0, r0 ; .word 0xec007281 " : : "r" (m) : "r0" ); }
-#define GIP_READ_AND_SET_SEMAPHORES( s, m ) { __asm__ volatile ( " .word 0xec007209 ; .word 0xec00c80e ; mov r0, %0 ; .word 0xec007283 " : : "r" (m) ); __asm__ volatile ( " .word 0xec00de08 ; mov %0, r1 ; .word 0xec007281 " : "=r" (s) ); }
-#define GIP_SET_SEMAPHORES_ATOMIC( m ) { __asm__ volatile ( " .word 0xec00c80e ; mov r0, %0 ; .word 0xec007281 ; .word 0xec00ce08 ; mov r0, r1 ; .word 0xec007281 " : : "r" (m) : "r0" ); }
+//#define GIP_READ_AND_CLEAR_SEMAPHORES( s, m ) { __asm__ volatile ( " .word 0xec007209 ; .word 0xec00c80e ; mov r0, %0 ; .word 0xec007283 " : : "r" (m) ); __asm__ volatile ( " .word 0xec00ce08 ; mov %0, r0 ; .word 0xec007281 " : "=r" (s) ); }
+//#define GIP_CLEAR_SEMAPHORES_ATOMIC( m ) { __asm__ volatile ( " .word 0xec00c80e ; mov r0, %0 ; .word 0xec007281 ; .word 0xec00ce08 ; mov r0, r0 ; .word 0xec007281 " : : "r" (m) : "r0" ); }
+//#define GIP_READ_AND_SET_SEMAPHORES( s, m ) { __asm__ volatile ( " .word 0xec007209 ; .word 0xec00c80e ; mov r0, %0 ; .word 0xec007283 " : : "r" (m) ); __asm__ volatile ( " .word 0xec00ce08 ; mov %0, r1 ; .word 0xec007281 " : "=r" (s) ); }
+//#define GIP_SET_SEMAPHORES_ATOMIC( m ) { __asm__ volatile ( " .word 0xec00c80e ; mov r0, %0 ; .word 0xec007281 ; .word 0xec00ce08 ; mov r0, r1 ; .word 0xec007281 " : : "r" (m) : "r0" ); }
+
+#define GIP_READ_AND_CLEAR_SEMAPHORES( s, m ) {  __asm__ volatile ( " mov r0, %1 ; swi 0xfa0000 ; mov %0, r0 " : "=r" (s) : "r" (m) : "r0" ); }
+#define GIP_CLEAR_SEMAPHORES_ATOMIC( m )      {  __asm__ volatile ( " mov r0, %0 ; swi 0xf20000 " : : "r" (m) : "r0" ); }
+#define GIP_READ_AND_SET_SEMAPHORES( s, m )   {  __asm__ volatile ( " mov r0, %1 ; swi 0xea0000 ; mov %0, r0 " : "=r" (s) : "r" (m) : "r0" ); }
+#define GIP_SET_SEMAPHORES_ATOMIC( m )        {  __asm__ volatile ( " mov r0, %0 ; swi 0xe20000 " : : "r" (m) : "r0" ); }
+
 // read gip_postbus(3) reg 12 (rx status 0)
-#define GIP_POST_STATUS_0(s) { __asm__ volatile ( " .word 0xec00de06 \n mov %0, r12 \n" : "=r" (s) ); }
-#define GIP_POST_RXD_0(s) { __asm__ volatile ( " .word 0xec00de06 \n mov %0, r0 \n" : "=r" (s) ); }
-#define GIP_POST_RXCFG_0(s) { __asm__ volatile ( " .word 0xec00de06 \n mov %0, r14 \n" : "=r" (s) ); }
-#define GIP_POST_TXCFG_0(s) { __asm__ volatile ( " .word 0xec00de06 \n mov %0, r15 \n" : "=r" (s) ); }
+#define GIP_POST_STATUS_0(s) { __asm__ volatile ( " .word 0xec00ce06 \n mov %0, r12 \n" : "=r" (s) ); }
+#define GIP_POST_RXD_0(s) { __asm__ volatile ( " .word 0xec00ce06 \n mov %0, r0 \n" : "=r" (s) ); }
+#define GIP_POST_RXCFG_0(s) { __asm__ volatile ( " .word 0xec00ce06 \n mov %0, r14 \n" : "=r" (s) ); }
+#define GIP_POST_TXCFG_0(s) { __asm__ volatile ( " .word 0xec00ce06 \n mov %0, r15 \n" : "=r" (s) ); }
 
 #define GIP_TIMER_WRITE(t,s) {__asm__ volatile ( " .word 0xec00c58e+" #t "<<4 \n mov r0, %0 \n" : : "r" (s) ); NOP; NOP; }
 #define GIP_TIMER_READ_0(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r8 \n " : "=r" (s) ); }
@@ -58,7 +64,7 @@ static void nop_many( void ) { NOP; NOP; NOP; NOP;    NOP; NOP; NOP; NOP;    NOP
 #define GIP_TIMER_DISABLE() {__asm__ volatile ( " .word 0xec00c58e \n mov r0, #1<<31 \n" ); NOP; NOP; }
 #define GIP_SET_LOCAL_EVENTS_CFG(s) {__asm__ volatile ( " .word 0xec00c82e \n mov r0, %0 \n" : : "r" (s) ); NOP; NOP; }
 #define GIP_SET_SCHED_CFG(s) { __asm__ volatile (".word 0xec00c83e \n mov r0, %0" : : "r" (s) ); }
-#define GIP_LED_INPUT_STATUS(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r0 \n " : "=r" (s) ); }
+#define GIP_GPIO_INPUT_STATUS(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r0 \n " : "=r" (s) ); }
 #define GIP_LED_INPUT_CFG_READ(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r1 \n " : "=r" (s) ); }
 #define GIP_LED_OUTPUT_CFG_READ(s) {__asm__ volatile ( " .word 0xec00ce05 \n mov %0, r2 \n " : "=r" (s) ); }
 #define GIP_LED_OUTPUT_CFG_WRITE(s) {__asm__ volatile ( " .word 0xec00c52e \n mov r0, %0 \n " : : "r" (s) ); }

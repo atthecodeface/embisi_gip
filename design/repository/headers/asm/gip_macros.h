@@ -1,17 +1,24 @@
-    .macro gip_read_and_clear_semaphores, semaphores, reg
-    gip_atomic 31
-    gip_mov_full_imm 0x80, #\semaphores
-    gip_atomic_block 1
-    gip_extrm 0x80
-    mov \reg, r0 // read and clear semaphores reading them in to \reg
+#define imm_bits(byte,shft)
+
+    .macro gip_read_and_clear_semaphores, bits, shift, regnum
+    swi 0xfe0000 | (\bits<<(\shift&1)) | ((\shift&0x1e)<<7) | (\regnum<<12)
     .endm
 
-    .macro gip_read_and_set_semaphores, semaphores, reg
-    gip_atomic 31
-    gip_mov_full_imm 0x80, #\semaphores
-    gip_atomic_block 1
-    gip_extrm 0x80
-    mov \reg, r1 // read and set semaphores reading them in to \reg
+    .macro gip_read_and_set_semaphores, bits, shift, regnum
+    swi 0xee0000 | (\bits<<(\shift&1)) | ((\shift&0x1e)<<7) | (\regnum<<12)
+    .endm
+
+    .macro gip_clear_semaphores, bits, shift
+    swi 0xf60000 | (\bits<<(\shift&1)) | ((\shift&0x1e)<<7)
+    .endm
+
+    .macro gip_set_semaphores, bits, shift
+    swi 0xe60000 | (\bits<<(\shift&1)) | ((\shift&0x1e)<<7)
+    .endm
+
+    .macro gip_test_semaphores, bits, shift
+    gip_extrn 0x80
+    tst r0, #\bits<<\shift
     .endm
 
     .macro restart_at_int_dis_system
@@ -43,7 +50,11 @@
     .endm
     
     .macro gip_extrn, full_reg
-    .word 0xec00d00e | (\full_reg<<4)
+    .word 0xec00de00 | (\full_reg>>4)
+    .endm
+    
+    .macro gip_extrdrn, full_rd, full_rn
+    .word 0xec00d000 | (\full_rd<<4) | (\full_rn>>4)
     .endm
     
     .macro gip_mov_full_reg, full_reg, reg
@@ -92,14 +103,6 @@
     .endm
 
     .macro gip_trap trap_num, tmp
-    gip_atomic 31
-    gip_mov_full_imm 0x80, #0x10 // spec0 <= 0x10:  GIP_SET_SEMAPHORES_ATOMIC(1<<(4*MICROKERNEL_THREAD))
-    gip_atomic_block 31
-    gip_extrm 0x80
-    mov \tmp, r1 // tmp = spec1 :  read and set semaphores
-    mov \tmp, #0x400
-    .word 0xec00c10e // r16 <= 1024+trap
-    orr \tmp, \tmp, #trap_num
-    .word 0xec007385 // deschedule, blocking first to ensure semaphores are done
+    swi \trap_num | 0x400
     mov r0, r0
    .endm

@@ -25,6 +25,7 @@ typedef enum [4]
     arm_ins_class_ldm,
     arm_ins_class_stm,
     arm_ins_class_mul,
+    arm_ins_class_swi,
     arm_ins_class_native,
 } t_arm_ins_class;
 

@@ -39,7 +39,7 @@ static int command_flash_boot( void *handle, int argc, unsigned int *args )
         }
         return 0;
     }
-    return !mon_flash_boot( args[0]<<17, 1 );
+    return !mon_flash_boot( args[0]<<17, 1, (void *)0, 0 );
 }
 
 /*f command_flash_download

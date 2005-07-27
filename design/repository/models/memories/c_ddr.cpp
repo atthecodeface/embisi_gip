@@ -633,14 +633,14 @@ t_sl_error_level c_ddr::clock_posedge_int_clock( void )
                     switch (posedge_int_clock_state.args[0]&3)
                     {
                     case 0: // mode reg
-                        fprintf(stderr,"%s:%d:DDR programming mode register %08x\n", engine->get_instance_name(engine_handle), engine->cycle(), posedge_int_clock_state.args[1] );
+                        //fprintf(stderr,"%s:%d:DDR programming mode register %08x\n", engine->get_instance_name(engine_handle), engine->cycle(), posedge_int_clock_state.args[1] );
                         if (posedge_int_clock_state.args[1]&1)
                         {
                             posedge_int_clock_state.dll_lock_counter = tim_dll_lock;
                         }
                         break;
                     case 1: // ext mode reg
-                        fprintf(stderr,"%s:%d:DDR programming ext mode register %08x\n", engine->get_instance_name(engine_handle), engine->cycle(), posedge_int_clock_state.args[1] );
+                        //fprintf(stderr,"%s:%d:DDR programming ext mode register %08x\n", engine->get_instance_name(engine_handle), engine->cycle(), posedge_int_clock_state.args[1] );
                         break;
                     default: // error
                         ERROR("unexpected mode register number (%d) in load mode command\n", posedge_int_clock_state.args[0]&3);

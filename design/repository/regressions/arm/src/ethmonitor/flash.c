@@ -178,7 +178,8 @@ extern int mon_flash_read_object( unsigned int address, unsigned int *csum, char
   Read the flash from address, and perform a boot of that if possible
   Return 0 on error, 1 if booting done (returned from image or no execution in objects at address)
  */
-extern int mon_flash_boot( unsigned int address, int verbose )
+#define DELAY(a) {int i;for (i=0; i<a; i++) __asm__ volatile("mov r0, r0");}
+extern int mon_flash_boot( unsigned int address, int verbose, unsigned char *config, int config_size )
 {
     int i;
     unsigned int csum;
@@ -211,6 +212,10 @@ extern int mon_flash_boot( unsigned int address, int verbose )
                 break;
             case obj_type_data:
             {
+                if (verbose)
+                {
+                    uart_tx_string_nl("Data blk ");
+                }
                 unsigned char *dest;
                 dest = (unsigned char *)(buffer[1] | (buffer[2]<<8) | (buffer[3]<<16) | (buffer[4]<<24));
                 for (i=5; i<obj_status-1; i++) // don't do the last byte - it will always be padding
@@ -220,11 +225,48 @@ extern int mon_flash_boot( unsigned int address, int verbose )
                 break;
             }
             case obj_type_regs:
+                if (verbose)
+                {
+                    uart_tx_string_nl("Regs ");
+                }
                 for (i=0; (i<obj_status)&&(i<(int)sizeof(regs)); i++)
                 {
                     ((unsigned char *)regs)[i] = buffer[i+1];
                 }
                 have_regs = 1;
+                break;
+            case obj_type_cfg:
+                if (verbose)
+                {
+                    uart_tx_string_nl("Cfg ");
+                }
+                for (i=0; (i<obj_status)&&(i<config_size); i++)
+                {
+                    ((unsigned char *)config)[i] = buffer[i+1];
+                }
+                break;
+            case obj_type_dram_phase:
+                if (verbose)
+                {
+                    uart_tx_string_nl("dram phase ");
+                }
+                GIP_LED_OUTPUT_CFG_WRITE(0);
+                for (i=0; i<256; i++)
+                {
+                    GIP_LED_OUTPUT_CFG_WRITE(0x3000); // set bit 7 to direction (1 is inc), bit 6 to make it go; then clear bit 6
+                    GIP_BLOCK_ALL();
+                    GIP_LED_OUTPUT_CFG_WRITE(0); // Clear psen
+                    GIP_BLOCK_ALL();
+                    DELAY(1000);
+                }
+                for (i=0; i<buffer[1]; i++)
+                {
+                    GIP_LED_OUTPUT_CFG_WRITE(0xf000); // set bit 7 to direction (1 is inc), bit 6 to make it go; then clear bit 6
+                    GIP_BLOCK_ALL();
+                    GIP_LED_OUTPUT_CFG_WRITE(0xc000); // Clear psen
+                    GIP_BLOCK_ALL();
+                    DELAY(1000);
+                }
                 break;
             case obj_type_end:
                 done = 1;

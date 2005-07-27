@@ -89,7 +89,7 @@ microkernel_thread_start:
     mov r4, #0
 
     // clear the semaphores that effect us - this clears interrupt enable and hw interrupt (as well as trap)
-    gip_read_and_clear_semaphores (0xf << (MICROKERNEL_THREAD*4)), r0
+    gip_clear_semaphores 0xf, MICROKERNEL_THREAD*4
 
     // clear any pending interrupts
     gip_mov_full_imm 0x11, #0 // r17 <= 0, clear interrupt sources
@@ -174,7 +174,7 @@ mkt_basic_system_mode:
     gip_gpio_instat r8
     tst r8, #2
     bne mkt_unknown_trap
-    gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8
+    gip_read_and_clear_semaphores TRAP_SEM, 4*MICROKERNEL_THREAD, 8
     tst r8, #TRAP_SEM_IN_READ
     beq mkt_basic_system_mode_interrupt
 
@@ -200,12 +200,12 @@ mkt_basic_system_mode_trap_return: // microkernel trap to return to given frame 
     DEBUG('r')
    
     // disable interrupts
-    gip_read_and_clear_semaphores INTEN_SEM_IN_READ, r0 // we can trash any registers here, we will get them from the stack frame
+    gip_clear_semaphores INTEN_SEM, 4*MICROKERNEL_THREAD
     ldr r1, [r13, #16*4] // get flags
     // enable interrupts if required
     movs r2, r1, lsr #30 // r2 = 0 for system ints disable, 1 for system ints enable, else user
     beq mkt_basic_system_mode_trap_return_ints_disabled
-    gip_read_and_set_semaphores INTEN_SEM_IN_READ, r0
+    gip_set_semaphores INTEN_SEM, 4*MICROKERNEL_THREAD
 mkt_basic_system_mode_trap_return_ints_disabled: // semaphores correct, r1=flags, r2 = 0/1 for system else user, r13->return frame
     tst r2, #2
     bne mkt_basic_system_mode_trap_return_user_mode // handle user mode and system mode differently - they return to different code for the microkernel thread, and user mode sets r18=sp, system puts sp in frame so it recovers cleanly
@@ -302,8 +302,7 @@ mkt_basic_system_mode_trap_done_return_to_caller:
     restart_at_basic_system
     gip_atomic 2     // Atomic while we play with spec4/5
     gip_mov_full_imm 0x84, #EMULATION_THREAD // spec4 <= EMULATION_THREAD
-    gip_extrd 0x85
-    gip_extrn 0x0f
+    gip_extrdrn 0x85, 0x0f
     orr r0, r15, #1 // spec5 <= pc to return to | 1
     gip_deschedule_block
 
@@ -329,7 +328,7 @@ mkt_basic_system_mode_trap_swi:
     gip_extrd 15
     ldr r0, [r8, #128] // r15 = swi handler vector
 
-    gip_read_and_clear_semaphores INTEN_SEM_IN_READ, r8
+    gip_clear_semaphores INTEN_SEM, 4*MICROKERNEL_THREAD
     
     gip_extrm 16
     mov r8, r0 // r8 = SWI number
@@ -375,7 +374,7 @@ mkt_basic_system_mode_interrupt:
     orr r0, r8, #1 // set restart address for emulated thread, spec5 <= pc | 1
 
     // change to interrupt disabled mode - clear INTEN semaphore, set restart to be mkt_int_dis_system_mode dependent on trap and inten
-    gip_read_and_clear_semaphores (HWINT_SEM_IN_READ | INTEN_SEM_IN_READ), r8
+    gip_clear_semaphores (HWINT_SEM | INTEN_SEM), 4*MICROKERNEL_THREAD
     restart_at_int_dis_system
 
     // deschedule, blocking first for cleanliness
@@ -385,7 +384,7 @@ mkt_basic_system_mode_interrupt:
     // System mode, not a trap, no interrupt sources claim to be pending, so we can clear the hardware interrupt, check sources again (in case one came in since between reading the hwint bit and clearing it)
 mkt_basic_system_mode_interrupt_no_interrupts:
     DEBUG('N')
-    gip_read_and_clear_semaphores (HWINT_SEM_IN_READ | TRAP_SEM_IN_READ), r8
+    gip_clear_semaphores (HWINT_SEM | TRAP_SEM), 4*MICROKERNEL_THREAD
     gip_atomic_block 1
     gip_extrm 0x11
     movs r8, r1 // r8 <= r17, interrupt sources
@@ -420,7 +419,7 @@ mkt_int_dis_system_mode:
     tst r8, #2
     bne mkt_unknown_trap
 
-    gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8
+    gip_read_and_clear_semaphores TRAP_SEM, 4*MICROKERNEL_THREAD, 8
     tst r8, #TRAP_SEM_IN_READ
     bne mkt_basic_system_mode_trap // for now we go back to the system mode handler, as it copes with interrupts enabled or disabled
 //fall through        
@@ -443,7 +442,7 @@ mkt_user_mode:
     tst r8, #2
     bne mkt_unknown_trap
 
-    gip_read_and_clear_semaphores TRAP_SEM_IN_READ, r8
+    gip_read_and_clear_semaphores TRAP_SEM, 4*MICROKERNEL_THREAD, 8
     tst r8, #TRAP_SEM_IN_READ
     beq mkt_user_mode_interrupt
 
@@ -466,7 +465,7 @@ mkt_user_mode_trap: // trap semaphore fired when in user mode (*must be SWI*) - 
     gip_extrd 15
     ldr r0, [r8, #128] // r15 = swi handler vector
 
-    gip_read_and_clear_semaphores INTEN_SEM_IN_READ, r8
+    gip_clear_semaphores INTEN_SEM, 4*MICROKERNEL_THREAD
     
     gip_extrm 16
     mov r8, r0 // r8 = SWI number
@@ -514,7 +513,7 @@ mkt_user_mode_interrupt:
     orr r0, r8, #1 // set restart address for emulated thread, spec5 <= pc | 1
 
     // change to interrupt disabled mode - clear INTEN semaphore, set restart to be mkt_int_dis_system_mode dependent on trap and inten
-    gip_read_and_clear_semaphores (HWINT_SEM_IN_READ | INTEN_SEM_IN_READ), r8
+    gip_clear_semaphores (HWINT_SEM | INTEN_SEM), 4*MICROKERNEL_THREAD
     restart_at_int_dis_system
 
     // deschedule, blocking first for cleanliness
@@ -524,7 +523,7 @@ mkt_user_mode_interrupt:
     // User mode, not a trap, no interrupt sources claim to be pending, so we can clear the hardware interrupt, check sources again (in case one came in since between reading the hwint bit and clearing it)
 mkt_user_mode_interrupt_no_interrupts:
     DEBUG('N')
-    gip_read_and_clear_semaphores (HWINT_SEM_IN_READ | TRAP_SEM_IN_READ), r8
+    gip_clear_semaphores (HWINT_SEM | TRAP_SEM), 4*MICROKERNEL_THREAD
     gip_atomic_block 1
     gip_extrm 0x11
     movs r8, r1 // r8 <= r17, interrupt sources

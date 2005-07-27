@@ -47,17 +47,7 @@ test_regs_stable:
     str r0, [sp, #13*4]
     str r1, [sp, #4]
     
-    gip_atomic_block 31
-    gip_read_and_set_semaphores 0x10, r0
-    gip_mov_full_imm 0x80, #0x10
-    gip_atomic_block 31
-    gip_extrm 0x80
-    mov r0, r1 // read and clear semaphores reading them in to \reg
-    gip_extrd 0x10
-    mov r0, #0x400
-    gip_extrd 0x0f
-    mov r0, pc
-    .word 0xec007305
+    swi 0x400 // return to the stack frame we just built
 
 user_entry_point:
     ands r1, r1, #255
@@ -113,13 +103,7 @@ test_regs_held_with_interrupt_mgmt:
     cmp_reg r3, 3
     cmp_reg r4, 4
 
-    .word 0xec00723f
-    .word 0xec00c80e
-    mov r0, #0x20
-    .word 0xec0072bf
-    .word 0xec00ce08
-    mov r0, r1 // enable interrupts
-    .word 0xec007283
+    gip_set_semaphores 2, 4
 
     cmp_reg r5, 5
     cmp_reg r6, 6
@@ -135,13 +119,7 @@ test_regs_held_with_interrupt_mgmt:
     cmp_reg r3, 3
     cmp_reg r4, 4
 
-    .word 0xec00723f
-    .word 0xec00c80e
-    mov r0, #0x20
-    .word 0xec0072bf
-    .word 0xec00ce08
-    mov r0, r0 // disable interrupts
-    .word 0xec007283
+    gip_clear_semaphores 2, 4
 
         b 0b
 
@@ -150,13 +128,7 @@ test_regs_held_with_interrupt_mgmt:
 test_sp_with_interrupt_mgmt:    
     mov r2, sp
 0:  
-    .word 0xec00723f
-    .word 0xec00c80e
-    mov r0, #0x20
-    .word 0xec0072bf
-    .word 0xec00ce08
-    mov r0, r1 // enable interrupts
-    .word 0xec007283
+    gip_set_semaphores 2, 4
 
     add sp, sp, #16
     sub r1, sp, r2
@@ -177,13 +149,7 @@ test_sp_with_interrupt_mgmt:
     cmp sp, r2
     bne failure
 
-    .word 0xec00723f
-    .word 0xec00c80e
-    mov r0, #0x20
-    .word 0xec0072bf
-    .word 0xec00ce08
-    mov r0, r0 // disable interrupts
-    .word 0xec007283
+    gip_clear_semaphores 2, 4
 
     add sp, sp, #16
     sub r1, sp, r2
@@ -215,23 +181,12 @@ test_flags_with_interrupt_mgmt:
     cmp r1, #0
     bne 1f
 
-    .word 0xec00723f
-    .word 0xec00c80e
-    mov r0, #0x20
-    .word 0xec0072bf
-    .word 0xec00ce08
-    mov r0, r1 // enable interrupts
-    .word 0xec007283
+    gip_set_semaphores 2, 4
+
     b 2f
 
 1:  
-    .word 0xec00723f
-    .word 0xec00c80e
-    mov r0, #0x20
-    .word 0xec0072bf
-    .word 0xec00ce08
-    mov r0, r0 // disable interrupts
-    .word 0xec007283
+    gip_clear_semaphores 2, 4
 2:
     
     gip_atomic_block 31

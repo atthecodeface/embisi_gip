@@ -137,7 +137,7 @@ static void led_flash( void )
     __asm__ volatile ( " .word 0xec00ce05 ; mov r0, r8 " );  // r0 <= periph[24] (timer value)
     __asm__ volatile ( " .word 0xec00c59e ; add r0, r0, #0x40000 " ); // periph[25] = timer value+0x40000, and clears passed
     __asm__ volatile ( " .word 0xec00c80e ; mov r0, #0x01<<28 " ); // write to spec0 (sems to clr)
-    __asm__ volatile ( " .word 0xec00c18e ; .word 0xec00d18e ; eor r8, r8, #1 ; .word 0xec00c521 ; mov r0, r8 " ); // set leds,r24 to r24^1
+    __asm__ volatile ( " .word 0xec00d181 ; eor r8, r8, #1 ; .word 0xec00c521 ; mov r0, r8 " ); // set leds,r24 to r24^1
     __asm__ volatile ( " .word 0xec00ce08 ; mov r0, r0 " ); // r0 <= spec0 (read and clear semaphores)
     __asm__ volatile ( " ldmfd sp!, {r0} " ); // pop r0
     __asm__ volatile ( " .word 0xec007305 " ); // deschedule
@@ -196,11 +196,11 @@ static int command_leds_read_write( void *handle, int argc, unsigned int *args )
 static void timer_int( void )
 {
     __asm__ volatile ( " .word 0xec00c1f5 ; mov r0, r8 " );  // r31 <= periph[24] (timer value)
-    __asm__ volatile ( " .word 0xec00c59e ; .word 0xec00d1fe ; add r0, r15, #0x30000 " ); // periph[25] = timer value+0x80, and clears passed // 0x40 is too tight
+    __asm__ volatile ( " .word 0xec00d591 ; add r0, r15, #0x30000 " ); // periph[25] = r31+0x30000, and clears passed // 0x40 is too tight
     __asm__ volatile ( " .word 0xec00c80e ; mov r0, #0x1<<28 " ); // write to spec0 (sems to clr)
     __asm__ volatile ( " .word 0xec007281 ; .word 0xec00c1f8 ; mov r0, r0 " ); // r31 <= spec0 (read and clear semaphores)
     __asm__ volatile ( " .word 0xec00c80e ; mov r0, #0x4<<4 " ); // write to spec0 (sems to set)
-    __asm__ volatile ( " .word 0xec00c11e ; .word 0xec00d11e ; orr r1, r1, #1 " ); // take some time setting our interrupt bit (r17 bit 0)
+    __asm__ volatile ( " .word 0xec00d111 ; orr r1, r1, #1 " ); // take some time setting our interrupt bit (r17 bit 0)
     __asm__ volatile ( " .word 0xec00c1f8 ; mov r0, r1 " ); // r31 <= spec1 (read and clear semaphores)
     __asm__ volatile ( " .word 0xec007305 " ); // deschedule
 }

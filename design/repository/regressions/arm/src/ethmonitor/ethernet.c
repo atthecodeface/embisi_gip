@@ -249,13 +249,15 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
         accept = 1;
     }
 
-    /*b Not accepted? bounce for now
+    /*b Not accepted? ignore
      */
     if (!accept) // for debug we bounce all unexpected packets :-)
     {
-        uart_tx_string( "nfu\r\n");
-        buffer->buffer_size = rxed_byte_length;
-        ethernet_tx_buffer( buffer );
+        uart_tx_string( "nfu ");
+        uart_tx_hex8( data[8] );
+        uart_tx_nl();
+        buffer->buffer_size = BUFFER_SIZE;
+        ethernet_add_rx_buffer( buffer );
         return;
     }
 
@@ -338,13 +340,13 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
         accept = (accept==0xffff);
     }
 
-    /*b Not accepted? bounce for now
+    /*b Not accepted? drop it
      */
     if (!accept) // for debug we bounce all unexpected packets :-)
     {
         uart_tx_string( "nfu/bad IP\r\n");
-        buffer->buffer_size = rxed_byte_length;
-        ethernet_tx_buffer( buffer );
+        buffer->buffer_size = BUFFER_SIZE;
+        ethernet_add_rx_buffer( buffer );
         return;
     }
 
@@ -495,13 +497,16 @@ extern void mon_ethernet_poll( void )
 
 /*f mon_ethernet_init
  */
-extern void mon_ethernet_init( void )
+extern void mon_ethernet_init( unsigned int eth_address_hi, unsigned int eth_address_lo, unsigned int ip_address )
 {
     int i;
 
-    eth.hwaddress_high16 = 0x1234;
-    eth.hwaddress_low32 = 0x56789abc;
-    eth.ip_address = 0x0a016405;
+//    eth.hwaddress_high16 = 0x1234;
+//    eth.hwaddress_low32 = 0x56789abc;
+//    eth.ip_address = 0x0a016405;
+    eth.hwaddress_high16 = eth_address_hi;
+    eth.hwaddress_low32 = eth_address_lo;
+    eth.ip_address = ip_address;
 
     eth.hwaddress_high32 = (eth.hwaddress_high16<<16) | (eth.hwaddress_low32>>16);
     eth.hwaddress_low16  = (eth.hwaddress_low32&0xffff);

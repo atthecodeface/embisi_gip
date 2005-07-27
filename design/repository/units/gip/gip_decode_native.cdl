@@ -181,7 +181,7 @@ module gip_decode_native( input bit[16] opcode,
                     case gip_native_ins_class_extimm_3:
                     case gip_native_ins_class_extcmd:
                     case gip_native_ins_class_extrdrm:
-                    case gip_native_ins_class_extrnrm:
+                    case gip_native_ins_class_extrdrn:
                     {
                         next_extended_rd = extended_rd;
                         next_extended_rm = extended_rm;
@@ -253,7 +253,7 @@ module gip_decode_native( input bit[16] opcode,
                     }
                     extending = 1;
                 }
-                /*b Extrdrm
+                /*b Extrdrn
                  */
                 case gip_native_ins_class_extrdrm:
                 {
@@ -266,14 +266,13 @@ module gip_decode_native( input bit[16] opcode,
                 }
                 /*b Extrnrm
                  */
-                case gip_native_ins_class_extrnrm:
+                case gip_native_ins_class_extrdrn:
                 {
-                    next_extended_rn.type = rn[3;1];
+                    next_extended_rd.type = full_rd[3;5];
+                    next_extended_rd.r = full_rd[5;0];
+                    next_extended_rn.type = rm[3;1];
                     next_extended_rn.r = 0;
-                    next_extended_rn.r[4] = rn[0];
-                    next_extended_rm.type = rm[3;1];
-                    next_extended_rm.r = 0;
-                    next_extended_rm.r[4] = rm[0];
+                    next_extended_rn.r[4] = rm[0];
                     extending = 1;
                 }
                 /*b Extcmd

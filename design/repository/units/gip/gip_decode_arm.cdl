@@ -73,6 +73,15 @@ module gip_decode_arm( input bit[32] opcode,
     comb bit[16] sel_reg_set;
     comb bit[4] ldm_stm_bottom_bit_set;
 
+    comb bit[12] swi_number;
+    comb bit swi_override_number;
+    comb bit swi_immediate;
+    comb bit swi_clear_sems;
+    comb bit swi_read_sems;
+    comb bit swi_dont_set_r15;
+    comb bit swi_dont_set_r16;
+    comb bit swi_dont_deschedule;
+
     comb t_gip_ins_cc ins_cc;
     comb t_gip_ins_cc inv_cc;
 
@@ -285,6 +294,20 @@ module gip_decode_arm( input bit[32] opcode,
             if (sel_reg_set[ 2]) {ldm_stm_bottom_bit_set= 2;}
             if (sel_reg_set[ 1]) {ldm_stm_bottom_bit_set= 1;}
             if (sel_reg_set[ 0]) {ldm_stm_bottom_bit_set= 0;}
+
+            /*b SWI
+             */
+            swi_number = opcode[12;0];
+            swi_override_number = opcode[17]; // set to override default semaphore of 4 - uses ALU immediate or ALU rm instead (depending on swi_immediate)
+            swi_immediate = opcode[18];  // if overriding, indicate whether to use ALU immediate or ALU rm
+            swi_read_sems = opcode[19];  // assert if the semaphores should be read back to 'rd' (acutally ALU rn)
+            swi_clear_sems = opcode[20]; // assert if the semaphores given should be cleared; deassert to set them
+            swi_dont_deschedule = opcode[21]; // assert if the thread should NOT deschedule
+            swi_dont_set_r16 = opcode[22]; // assert if r16 should not be written with the swi number
+            swi_dont_set_r15 = opcode[23]; // assert if r15 should not be written with the address of the next instruction
+
+            /*b Done
+             */
         }
 
     /*b Map registers and immediate
@@ -436,6 +459,10 @@ module gip_decode_arm( input bit[32] opcode,
                 case 6:
                 {
                     ins_class = arm_ins_class_native;
+                }
+                case 7:
+                {
+                    ins_class = arm_ins_class_swi;
                 }
                 default:
                 {
@@ -692,6 +719,7 @@ module gip_decode_arm( input bit[32] opcode,
             inst.k = 0;
             inst.f = 0;
             inst.d = 0;
+            inst.tag = 0;
             inst.gip_ins_rm = arm_mapped_rm;
             inst.gip_ins_rn = arm_mapped_rn;
             inst.gip_ins_rd = {type=gip_ins_r_type_none, r=arm_mapped_rd.r};
@@ -1919,6 +1947,185 @@ module gip_decode_arm( input bit[32] opcode,
                         }
                     }
 
+                }
+                /*b SWI
+                 */
+                case arm_ins_class_swi: // we have 24 bits - we support 1024 system calls, 1024 microkernel calls - 12 bits of call number
+                    // a SWI atomically...
+                    //   sets a semaphore (4 by default)
+                    //   sets r16 to be the call number (12 bits) - fortunately we can effectively use ld_st_offset, so no new mux for the immediate value
+                    //   optionally sets r15 to be the next instruction
+                    //   optionally blocks and deschedules
+                    // of course, a standard SWI must block, deschedule, set r15, set r16, and set semaphore 4
+                    // we could try to bundle everything here, to do [test] (set|clear) semaphore [set r16] [set r15] [block and deschedule]
+                    // semaphore set|clear is rx80 <= (1<<4) | rn ; block ; none|rd = (rx80|rx81)
+                    // r16 set is rx10 <= #n
+                    // r15 set is rx15 <= pc-4
+                    // deschedule and block is as native (nop with block and deschedule)
+                    // we could play with the swi number (24 bits) then as...
+                    //   abcdefghijklmnopqrstuvwx
+                    //   fsDC000.....SSSSSSSSSSSS
+                    //   fsDCRIO.ddddIIIIIIIIIIII (rd, rm; note we do not want rm = mapped rn as we would be the only path for that)
+                    //   fsDCRIO.dddd........mmmm (rd, rm; note we do not want rm = mapped rn as we would be the only path for that)
+                    // f -> don't set r15
+                    // s -> don't set r16
+                    // D -> don't descehdule and block
+                    // C -> clear semaphores, don't set
+                    // R -> read semaphores to rd
+                    // I -> use immediate not rm if overriding to set/clear semaphores
+                    // O -> override SWI number and allow reading semaphores
+                    // to set/clear semaphores other than '4', extend rm
+                    // to set/clear semaphores immediately, extend cmd - then ALU immediate is used
+                    // to read semaphore results to a register, extend rd
+                    // so the actual effect is to...
+                    // 1) mov rx80, #1<<4 | #alu_immediate | mapped_rm (mapped_rm if extended and not I, else alu_immediate if extended, else 1<<4)
+                    // 2) if f clear, sub r15, pc, #4
+                    // 3) if s clear, mov r16, #system_call
+                    // 4) mov (none | mapped_rd if R set), (rx80|rx81 depending on C); rn blocking all
+                    // 5) if D clear, deschedule and block
+                {
+                    /*b Handle 5 cycles as 5 instructions
+                     */
+                    full_switch (cycle_of_opcode)
+                        {
+                        case 0: // mov rx80, #semaphore | reg - there is no need to block as this effectively does nothing until the RFW stage
+                        {
+                            inst.gip_ins_class = gip_ins_class_logic;
+                            inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                            inst.a = 0;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+                            inst.gip_ins_rn.type = gip_ins_r_type_none;
+                            inst.gip_ins_rd = {type=gip_ins_r_type_special, r=gip_special_reg_semaphores_clear};
+                            inst.gip_ins_rm = arm_mapped_rm;
+                            inst.rm_is_imm = 1;
+                            inst.immediate = 16;
+                            if (swi_override_number)
+                            {
+                                inst.rm_is_imm = swi_immediate;
+                                inst.immediate = alu_immediate;
+                            }
+
+                            inst.valid = 1;
+
+                            pc_op = gip_pc_op_hold;
+                            next_cycle_of_opcode = 1;
+                            if (swi_dont_set_r15)
+                            {
+                                next_cycle_of_opcode = 2;
+                                if (swi_dont_set_r16)
+                                {
+                                    next_cycle_of_opcode = 3;
+                                }
+                            }
+                        }
+                        case 1: // sub r15, pc, #4
+                        {
+                            inst.gip_ins_class = gip_ins_class_arith;
+                            inst.gip_ins_subclass = gip_ins_subclass_arith_sub;
+                            inst.gip_ins_cc = gip_ins_cc_cp; // subsequent cycles
+                            inst.a = 0;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+                            inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                            inst.gip_ins_rd = {type=gip_ins_r_type_register, r=15};
+                            inst.rm_is_imm = 1;
+                            inst.immediate = 4;
+
+                            inst.valid = 1;
+
+                            pc_op = gip_pc_op_hold;
+                            next_cycle_of_opcode = 2;
+                            if (swi_dont_set_r16)
+                            {
+                                next_cycle_of_opcode = 3;
+                            }
+                        }
+                        case 2: // mov r16, #swi_number
+                        {
+                            inst.gip_ins_class = gip_ins_class_logic;
+                            inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                            inst.gip_ins_cc = gip_ins_cc_cp; // subsequent cycles
+                            inst.a = 0;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+                            inst.gip_ins_rn.type = gip_ins_r_type_none;
+                            inst.gip_ins_rd = {type=gip_ins_r_type_register, r=16};
+                            inst.rm_is_imm = 1;
+                            inst.immediate = 0;
+                            inst.immediate[12;0] = swi_number;
+
+                            inst.valid = 1;
+
+                            pc_op = gip_pc_op_hold;
+                            next_cycle_of_opcode = 3;
+                        }
+                        case 3: // nop, blocking rn
+                        {
+                            inst.gip_ins_class = gip_ins_class_logic;
+                            inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                            inst.gip_ins_cc = gip_ins_cc_cp; // subsequent cycles
+                            inst.a = 0;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+                            inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_block_all};
+                            inst.gip_ins_rd.type=gip_ins_r_type_none;
+                            inst.rm_is_imm = 1;
+
+                            inst.valid = 1;
+
+                            pc_op = gip_pc_op_hold;
+                            next_cycle_of_opcode = 4;
+                        }
+                        case 4: // mov (none|rd), (rx80|rx81)
+                        {
+                            inst.gip_ins_class = gip_ins_class_logic;
+                            inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                            inst.gip_ins_cc = gip_ins_cc_cp; // subsequent cycles
+                            inst.a = 0;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+                            inst.gip_ins_rn.type = gip_ins_r_type_none;
+                            inst.gip_ins_rd.type = gip_ins_r_type_none;
+                            inst.gip_ins_rm = {type=gip_ins_r_type_special, r=gip_special_reg_semaphores_set};
+                            if (swi_clear_sems)
+                            {
+                                inst.gip_ins_rm = {type=gip_ins_r_type_special, r=gip_special_reg_semaphores_clear};
+                            }
+                            if (swi_read_sems)
+                            {
+                                inst.gip_ins_rd = arm_mapped_rd;
+                            }
+                            inst.rm_is_imm = 0;
+
+                            inst.valid = 1;
+
+                            pc_op = gip_pc_op_hold;
+                            next_cycle_of_opcode = 5;
+                            if (swi_dont_deschedule)
+                            {
+                                pc_op = gip_pc_op_sequential;
+                                next_cycle_of_opcode = 0;
+                            }
+                        }
+                        default:
+                        {
+                            inst.gip_ins_class = gip_ins_class_logic;
+                            inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                            inst.gip_ins_cc = gip_ins_cc_cp; // subsequent cycles
+                            inst.a = 0;
+                            inst.s_or_stack = 0;
+                            inst.p_or_offset_is_shift = 0;
+                            inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_block_all};
+                            inst.gip_ins_rm.type=gip_ins_r_type_none;
+                            inst.gip_ins_rd.type=gip_ins_r_type_none;
+                            inst.tag = 1;
+                            inst.f = 1;
+                            inst.valid = 1;
+                            pc_op = gip_pc_op_sequential;
+                            next_cycle_of_opcode = 0;
+                        }
+                        }
                 }
                 /*b Native
                  */

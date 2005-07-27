@@ -153,9 +153,9 @@ bottom of SR is then in << 32-x
                         {
                         case gip_shift_op_lsl: {result = 0;}
                         case gip_shift_op_lsr: {result = 0;}
-                        case gip_shift_op_asr: {result = value[31]?-1:0;}
+                        case gip_shift_op_asr: {if (value[31]) {result = -1;} else {result = 0;};}
                         case gip_shift_op_ror: {result = value;}
-                        case gip_shift_op_rrx: {result = value_shift_top | (carry_in?32h80000000:0);}
+                        case gip_shift_op_rrx: {if (carry_in) {result = value_shift_top | 32h80000000;} else {result = value_shift_top;};}
                         }
                 }
             elsif (amount[3;5]!=0)
@@ -164,9 +164,9 @@ bottom of SR is then in << 32-x
                         {
                         case gip_shift_op_lsl: {result = 0;}
                         case gip_shift_op_lsr: {result = 0;}
-                        case gip_shift_op_asr: {result = value[31]?-1:0;}
+                        case gip_shift_op_asr: {if (value[31]) {result = -1;} else {result = 0;};}
                         case gip_shift_op_ror: {result = value_shift_top | value_shift_bottom;}
-                        case gip_shift_op_rrx: {result = value_shift_top | (carry_in?32h80000000:0);}
+                        case gip_shift_op_rrx: {if (carry_in) {result = value_shift_top | 32h80000000;} else {result = value_shift_top;};}
                         }
                 }
             else
@@ -177,7 +177,7 @@ bottom of SR is then in << 32-x
                     case gip_shift_op_lsr: {result = value_shift_top; }
                     case gip_shift_op_asr: {result = value_shift_top | top_bit_rotate_down; }
                     case gip_shift_op_ror: {result = value_shift_top | value_shift_bottom; }
-                    case gip_shift_op_rrx: {result = value_shift_top | (carry_in?32h80000000:0);}
+                    case gip_shift_op_rrx: {if (carry_in) {result = value_shift_top | 32h80000000;} else {result = value_shift_top;};}
                     }
             }
         }

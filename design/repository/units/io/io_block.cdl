@@ -215,6 +215,8 @@ module io_block( clock int_clock,
     comb bit[4]    cmd_req_bus;
     comb bit[4]    tx_data_req_bus;
     net bit[4]     tx_data_ack_bus;
+    comb t_io_tx_data_fifo_cmd tx_data_cmd; // mux of commands - currently done by priority order, as that is what io_egress_control does too. Not too good.
+
     clocked bit[4] tx_data_read_being_presented_bus=0;
     clocked bit[4] tx_data_reading_bus = 0;
 
@@ -743,7 +745,7 @@ module io_block( clock int_clock,
 
                                               tx_data_req <= tx_data_req_bus,
                                               tx_data_ack => tx_data_ack_bus,
-                                              tx_data_cmd <= etx_data_fifo_cmd,
+                                              tx_data_cmd <= tx_data_cmd,
 
                                               postbus_req <= egress_postbus_req,
                                               postbus_ack => egress_postbus_ack,
@@ -817,18 +819,27 @@ module io_block( clock int_clock,
             tx_data_reading_bus <= tx_data_read_being_presented_bus;
 
             tx_data_req_bus = 0;
-            tx_data_req_bus[0] = etx_txd_req;
-            etx_txd_ack = tx_data_ack_bus[0];
-            if (tx_data_reading_bus[0])
-            {
-                etx_data_fifo_data <= egress_sram_read_data;
-            }
             
             tx_data_req_bus[1] = ss_txd_req;
+            if (ss_txd_req) // this only works because 0 is the top priority in io_egress_control, and we have them in priority order here.
+            {
+                tx_data_cmd = ss_tx_data_fifo_cmd;
+            }
             ss_txd_ack = tx_data_ack_bus[1];
             if (tx_data_reading_bus[1])
             {
                 ss_tx_data_fifo_data <= egress_sram_read_data;
+            }
+
+            tx_data_req_bus[0] = etx_txd_req;
+            if (etx_txd_req) // this only works because 0 is the top priority in io_egress_control
+            {
+                tx_data_cmd = etx_data_fifo_cmd;
+            }
+            etx_txd_ack = tx_data_ack_bus[0];
+            if (tx_data_reading_bus[0])
+            {
+                etx_data_fifo_data <= egress_sram_read_data;
             }
             
             io_egress_fifos egress_fifos( int_clock <- int_clock,

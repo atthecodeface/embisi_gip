@@ -76,7 +76,7 @@ static const t_data_type data_type[] =
 /*f command_mem_rep_read
   .. <address> <count> [<delay>]
  */
-#if 0
+#ifndef TINY
 static int command_mem_rep_read( void *handle, int argc, unsigned int *args )
 {
     volatile unsigned int *ptr;
@@ -102,7 +102,7 @@ static int command_mem_rep_read( void *handle, int argc, unsigned int *args )
 /*f command_mem_rep_write
   .. <address> <data> <count> [<delay>]
  */
-#if 0
+#ifndef TINY
 static int command_mem_rep_write( void *handle, int argc, unsigned int *args )
 {
     volatile unsigned int *ptr;
@@ -129,7 +129,7 @@ static int command_mem_rep_write( void *handle, int argc, unsigned int *args )
 /*f command_mem_fill
   .. <address> <size> <type>
  */
-#if 0
+#ifndef TINY
 static int command_mem_fill( void *handle, int argc, unsigned int *args )
 {
     unsigned int *ptr;
@@ -154,7 +154,7 @@ static int command_mem_fill( void *handle, int argc, unsigned int *args )
 /*f command_mem_verify
   .. <address> <size> <type>
  */
-#if 0
+#ifndef TINY
 static int command_mem_verify( void *handle, int argc, unsigned int *args )
 {
     volatile unsigned int *ptr;
@@ -292,7 +292,7 @@ static int command_mem_rep_test( void *handle, int argc, unsigned int *args )
     int errors;
     int errored_bits[32];
 
-    static unsigned int test_values[] = {0, 0xffffffff, 0x55555555, 0x00000001, 0xfffffffe, 0x11111111, 0xf, 0xff };
+    static const unsigned int test_values[] = {0, 0xffffffff, 0x55555555, 0x00000001, 0xfffffffe, 0x11111111, 0xf, 0xff };
 
     if (argc<1)
         return 1;
@@ -367,7 +367,7 @@ const t_command monitor_cmds_memory[] =
 {
     {"mr", command_mem_read_location},
     {"mw", command_mem_write_location},
-#if 0
+#ifndef TINY
     {"mmrr", command_mem_rep_read},
     {"mmrw", command_mem_rep_write},
     {"mmf", command_mem_fill},

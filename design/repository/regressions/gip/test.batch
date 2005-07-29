@@ -297,15 +297,16 @@ return
 gip_system_ethernet:
 setenv "verbose_level" 1
 
-    gosub gip_system_ethernet_reset
-    gosub gip_system_scheduler_1
+#    gosub gip_system_ethernet_reset
+#    gosub gip_system_scheduler_1
+    gosub gip_system_ethernet_0
 return
 
 #b gip_system_ethernet_0
 gip_system_ethernet_0:
 set vcd_skip_length 0
-#set run_length 400000
-set run_length 32000
+set run_length 400000
+#set run_length 32000
 set vcd_create 1
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"

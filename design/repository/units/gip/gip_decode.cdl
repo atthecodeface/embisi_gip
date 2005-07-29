@@ -371,6 +371,7 @@ module gip_decode( clock gip_clock,
             write_pc_from_fetch = 0;
             force_write_pc = 0;
             force_fetch_flush = 0;
+            preempt_blocked = 0;
 
             atomic <= next_atomic;
             atomic_dec = atomic;

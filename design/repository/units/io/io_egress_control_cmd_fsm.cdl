@@ -72,6 +72,7 @@ module io_egress_control_cmd_fsm( clock int_clock "Internal system clock",
     state_machine "FSM":
         {
             cmd_state <= next_cmd_state;
+            next_cmd_state = cmd_state;
             clear_ready = 0;
             load_data = 0;
 

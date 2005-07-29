@@ -819,6 +819,7 @@ module io_block( clock int_clock,
             tx_data_reading_bus <= tx_data_read_being_presented_bus;
 
             tx_data_req_bus = 0;
+            tx_data_cmd = io_tx_data_fifo_cmd_revert_fifo;
             
             tx_data_req_bus[1] = ss_txd_req;
             if (ss_txd_req) // this only works because 0 is the top priority in io_egress_control, and we have them in priority order here.

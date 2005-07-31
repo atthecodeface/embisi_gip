@@ -242,11 +242,13 @@ extern module gip_core( clock gip_clock,
                         output bit fetch_flush,
 
                         output bit rfr_periph_read,
+                        output bit rfr_periph_read_global,
                         output bit[5] rfr_periph_read_address,
                         input bit rfr_periph_read_data_valid,
                         input bit[32] rfr_periph_read_data,
                         input bit rfr_periph_busy,
                         output bit rfw_periph_write,
+                        output bit rfw_periph_write_global,
                         output bit[5] rfw_periph_write_address,
                         output bit[32] rfw_periph_write_data,
                         output bit gip_pipeline_flush,
@@ -277,6 +279,10 @@ extern module gip_core( clock gip_clock,
     timing to rising clock gip_clock fetch_data, fetch_data_valid, fetch_pc;
     timing from rising clock gip_clock prefetch_op, prefetch_address;
     timing from rising clock gip_clock fetch_flush;
+
+    timing from rising clock gip_clock rfr_periph_read, rfr_periph_read_global, rfr_periph_read_address;
+    timing to rising clock gip_clock rfr_periph_read_data, rfr_periph_read_data_valid;
+    timing from rising clock gip_clock rfw_periph_write, rfw_periph_write_global, rfw_periph_write_address, rfw_periph_write_data;
 
     timing from rising clock gip_clock alu_mem_op, alu_mem_address, alu_mem_write_data, alu_mem_burst;
     timing to rising clock gip_clock mem_alu_busy, mem_read_data_valid, mem_read_data;

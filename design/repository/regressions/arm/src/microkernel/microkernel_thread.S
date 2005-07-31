@@ -1,5 +1,6 @@
     #include "gip_macros.h"
     
+#define EMULATION_THREAD (1)
 #define MICROKERNEL_THREAD (1)
 #define TRAP_SEM (0x1)
 #define INTEN_SEM (0x2)

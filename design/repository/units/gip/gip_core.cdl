@@ -30,11 +30,13 @@ module gip_core( clock gip_clock,
                  output bit fetch_flush,
 
                  output bit rfr_periph_read,
+                 output bit rfr_periph_read_global,
                  output bit[5] rfr_periph_read_address,
                  input bit rfr_periph_read_data_valid,
                  input bit[32] rfr_periph_read_data,
                  input bit rfr_periph_busy,
                  output bit rfw_periph_write,
+                 output bit rfw_periph_write_global,
                  output bit[5] rfw_periph_write_address,
                  output bit[32] rfw_periph_write_data,
                  output bit gip_pipeline_flush,
@@ -107,6 +109,7 @@ module gip_core( clock gip_clock,
     net bit[5] rfr_special_read_address;
     net bit[32] rfr_special_read_data;
     net bit rfr_periph_read;
+    net bit rfr_periph_read_global;
     net bit[5] rfr_periph_read_address;
 
     /*b Nets from RF write
@@ -116,6 +119,7 @@ module gip_core( clock gip_clock,
     net bit rfw_special_write;
     net bit[5] rfw_special_write_address;
     net bit rfw_periph_write;
+    net bit rfw_periph_write_global;
     net bit[5] rfw_periph_write_address;
     net bit rfw_accepting_alu_rd;
 
@@ -227,6 +231,7 @@ module gip_core( clock gip_clock,
                        rfr_special_read_data <= rfr_special_read_data,
 
                        rfr_periph_read => rfr_periph_read,
+                       rfr_periph_read_global => rfr_periph_read_global,
                        rfr_periph_read_address => rfr_periph_read_address,
                        rfr_periph_read_data_valid <= rfr_periph_read_data_valid,
                        rfr_periph_read_data <= rfr_periph_read_data,
@@ -254,6 +259,7 @@ module gip_core( clock gip_clock,
                        rfw_special_write => rfw_special_write,
                        rfw_special_write_address => rfw_special_write_address,
                        rfw_periph_write => rfw_periph_write,
+                       rfw_periph_write_global => rfw_periph_write_global,
                        rfw_periph_write_address => rfw_periph_write_address,
 
                        gip_pipeline_rfw_write_pc => gip_pipeline_rfw_write_pc,

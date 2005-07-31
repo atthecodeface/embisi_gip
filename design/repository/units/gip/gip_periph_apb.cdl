@@ -22,18 +22,20 @@ module gip_periph_apb( clock gip_clock,
                        input bit gip_reset,
 
                        input bit read,
+                       input bit read_global,
                        input bit flush,
                        input bit[5] read_address,
                        output bit read_data_valid,
                        output bit[32] read_data,
 
                        input bit write,
+                       input bit write_global,
                        input bit[5] write_address,
                        input bit[32] write_data,
 
                        output bit periph_busy, // So that blocking can occur on a 'block all' instruction, until APB is done - only effected by writes (i.e. post-RF read stuff)
 
-                       output bit[5] apb_paddr,
+                       output bit[6] apb_paddr,
                        output bit apb_penable,
                        output bit apb_pselect,
                        output bit[32] apb_pwdata,
@@ -72,7 +74,7 @@ module gip_periph_apb( clock gip_clock,
      */
     clocked bit write_pending=0;
     clocked bit[32] write_buffer_data=0;
-    clocked bit[5] write_buffer_address=0;
+    clocked bit[6] write_buffer_address=0;
 
     /*b Address and data buffers for reads
      */
@@ -94,7 +96,8 @@ module gip_periph_apb( clock gip_clock,
             if (write)
             {
                 write_pending <= 1;
-                write_buffer_address <= write_address;
+                write_buffer_address[5;0] <= write_address;
+                write_buffer_address[5] <= write_global;
                 write_buffer_data <= write_data;
             }
 
@@ -138,7 +141,8 @@ module gip_periph_apb( clock gip_clock,
                     apb_pselect = 1;
                     apb_penable = 0;
                     apb_prnw = 1;
-                    apb_paddr = read_address;
+                    apb_paddr[5;0] = read_address;
+                    apb_paddr[5] = read_global;
                     periph_busy = write_pending;
                     if (!apb_pwait)
                     {
@@ -150,7 +154,8 @@ module gip_periph_apb( clock gip_clock,
                     apb_pselect = 1;
                     apb_penable = 1;
                     apb_prnw = 1;
-                    apb_paddr = read_address;
+                    apb_paddr[5;0] = read_address;
+                    apb_paddr[5] = read_global;
                     periph_busy = write_pending;
                     if (!apb_pwait)
                     {

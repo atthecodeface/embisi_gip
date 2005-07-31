@@ -1988,14 +1988,14 @@ module gip_decode_arm( input bit[32] opcode,
                      */
                     full_switch (cycle_of_opcode)
                         {
-                        case 0: // mov rx80, #semaphore | reg - there is no need to block as this effectively does nothing until the RFW stage
+                        case 0: // mov rx80, #semaphore | reg - there is no need to block for us as this effectively does nothing until the RFW stage, but the previous instructions may have a write posted that interferes, so we do
                         {
                             inst.gip_ins_class = gip_ins_class_logic;
                             inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
                             inst.a = 0;
                             inst.s_or_stack = 0;
                             inst.p_or_offset_is_shift = 0;
-                            inst.gip_ins_rn.type = gip_ins_r_type_none;
+                            inst.gip_ins_rn = {type=gip_ins_r_type_internal, r=gip_ins_rnm_int_block_all};
                             inst.gip_ins_rd = {type=gip_ins_r_type_special, r=gip_special_reg_semaphores_clear};
                             inst.gip_ins_rm = arm_mapped_rm;
                             inst.rm_is_imm = 1;

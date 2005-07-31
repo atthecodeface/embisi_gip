@@ -49,7 +49,7 @@ typedef enum [5]
 typedef enum [3]
 {
     gip_ins_r_type_register = 0,
-    gip_ins_r_type_register_indirect = 1, // DEPRECATED - use to expand register space
+    gip_ins_r_type_periph_global = 1, // access to n+2-cycle global peripheral space (timer, ?uart?)
     gip_ins_r_type_periph = 2, // access to 2-cycle peripheral space (timer, ?uart?)
     gip_ins_r_type_postbus = 3, // direct addressing of postbus register file, FIFOs and command/status
     gip_ins_r_type_special = 4, // access to DAGs, scheduler semaphores, repeat counts, ZOL data
@@ -271,6 +271,7 @@ extern module gip_rf( clock gip_clock,
                       input t_gip_word rfr_special_read_data,
 
                       output bit rfr_periph_read,
+                      output bit rfr_periph_read_global,
                       output bit[5] rfr_periph_read_address,
                       input bit rfr_periph_read_data_valid,
                       input bit[32] rfr_periph_read_data,
@@ -299,6 +300,7 @@ extern module gip_rf( clock gip_clock,
                       output bit[5] rfw_special_write_address,
 
                       output bit rfw_periph_write,
+                      output bit rfw_periph_write_global,
                       output bit[5] rfw_periph_write_address,
 
                       input bit gip_pipeline_flush,
@@ -321,7 +323,7 @@ extern module gip_rf( clock gip_clock,
     timing from rising clock gip_clock rfr_special_read, rfr_special_read_address;
     timing to rising clock gip_clock rfr_special_read_data;
     timing comb input rfr_special_read_data;
-    timing from rising clock gip_clock rfr_periph_read, rfr_periph_read_address;
+    timing from rising clock gip_clock rfr_periph_read, rfr_periph_read_global, rfr_periph_read_address;
     timing to rising clock gip_clock rfr_periph_read_data, rfr_periph_read_data_valid;
     timing comb input rfr_periph_read_data;
 
@@ -341,6 +343,7 @@ extern module gip_rf( clock gip_clock,
 
     timing from rising clock gip_clock rfw_postbus_write, rfw_postbus_write_address;
     timing from rising clock gip_clock rfw_special_write, rfw_special_write_address;
+    timing from rising clock gip_clock rfw_periph_write, rfw_periph_write_global, rfw_periph_write_address;
 
     timing to rising clock gip_clock gip_pipeline_flush;
 

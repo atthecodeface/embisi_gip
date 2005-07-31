@@ -28,59 +28,61 @@ typedef enum [3]
 /*a Module
  */
 module gip_rf( clock gip_clock,
-                      input bit gip_reset,
+               input bit gip_reset,
 
-                      input t_gip_instruction_rf dec_inst,
-                      output t_gip_instruction_rf rfr_inst,
+               input t_gip_instruction_rf dec_inst,
+               output t_gip_instruction_rf rfr_inst,
 
-                      output bit rfr_accepting_dec_instruction_always "Asserted if the RF stage is taking a proffered instruction from the decode independent of the ALU; will be asserted if the RF stage has no valid instruction to decode currently",
-                      output bit rfr_accepting_dec_instruction_if_alu_does"Asserted if the RF stage is taking a proffered instruction from the decode depending on the ALU taking the current instruction; 0 if the RF has no valid instruction, or if it has an instruction blocking on a pending register scoreboard; 1 if the RF has all the data and instruction ready for the ALU, and so depends on the ALU taking its instruction",
-                      input bit rfr_accepting_dec_instruction,
+               output bit rfr_accepting_dec_instruction_always "Asserted if the RF stage is taking a proffered instruction from the decode independent of the ALU; will be asserted if the RF stage has no valid instruction to decode currently",
+               output bit rfr_accepting_dec_instruction_if_alu_does"Asserted if the RF stage is taking a proffered instruction from the decode depending on the ALU taking the current instruction; 0 if the RF has no valid instruction, or if it has an instruction blocking on a pending register scoreboard; 1 if the RF has all the data and instruction ready for the ALU, and so depends on the ALU taking its instruction",
+               input bit rfr_accepting_dec_instruction,
 
-                      output bit rfr_postbus_read,
-                      output bit[5] rfr_postbus_read_address,
-                      input t_gip_word rfr_postbus_read_data,
+               output bit rfr_postbus_read,
+               output bit[5] rfr_postbus_read_address,
+               input t_gip_word rfr_postbus_read_data,
 
-                      output bit rfr_special_read,
-                      output bit[5] rfr_special_read_address,
-                      input t_gip_word rfr_special_read_data,
+               output bit rfr_special_read,
+               output bit[5] rfr_special_read_address,
+               input t_gip_word rfr_special_read_data,
 
                output bit rfr_periph_read,
+               output bit rfr_periph_read_global,
                output bit[5] rfr_periph_read_address,
                input bit rfr_periph_read_data_valid,
                input bit[32] rfr_periph_read_data,
 
                input bit rfr_periph_busy,
 
-                      output t_gip_word rfr_port_0,
-                      output t_gip_word rfr_port_1,
+               output t_gip_word rfr_port_0,
+               output t_gip_word rfr_port_1,
 
-                      input bit alu_inst_valid, // ALU state
-                      input t_gip_ins_r alu_inst_gip_ins_rd,
+               input bit alu_inst_valid, // ALU state
+               input t_gip_ins_r alu_inst_gip_ins_rd,
 
-                      input t_gip_ins_r alu_rd,
-                      input bit alu_use_shifter,
-                      input t_gip_word alu_arith_logic_result,
-                      input t_gip_word alu_shifter_result,
+               input t_gip_ins_r alu_rd,
+               input bit alu_use_shifter,
+               input t_gip_word alu_arith_logic_result,
+               input t_gip_word alu_shifter_result,
 
-                      input t_gip_ins_r mem_1_rd,
-                      input t_gip_ins_r mem_2_rd,
-                      input bit mem_read_data_valid,
-                      input t_gip_word mem_read_data,
+               input t_gip_ins_r mem_1_rd,
+               input t_gip_ins_r mem_2_rd,
+               input bit mem_read_data_valid,
+               input t_gip_word mem_read_data,
 
-                      output bit rfw_postbus_write,
-                      output bit[5] rfw_postbus_write_address,
-                      output bit rfw_special_write,
-                      output bit[5] rfw_special_write_address,
+               output bit rfw_postbus_write,
+               output bit[5] rfw_postbus_write_address,
+               output bit rfw_special_write,
+               output bit[5] rfw_special_write_address,
                output bit rfw_periph_write,
+               output bit rfw_periph_write_global,
                output bit[5] rfw_periph_write_address,
 
-                      input bit gip_pipeline_flush,
+               input bit gip_pipeline_flush,
 
-                      output bit rfw_accepting_alu_rd,
-                      output bit gip_pipeline_rfw_write_pc,
-                      output bit[32] gip_pipeline_rfw_data
-               )
+               output bit rfw_accepting_alu_rd,
+               output bit gip_pipeline_rfw_write_pc,
+               output bit[32] gip_pipeline_rfw_data
+    )
 {
     /*b Default clock and reset
      */
@@ -204,6 +206,10 @@ module gip_rf( clock gip_clock,
                     case gip_ins_r_type_postbus:
                     {
                         read_port_1_src = rf_src_postbus;
+                    }
+                    case gip_ins_r_type_periph_global:
+                    {
+                        read_port_1_src = rf_src_periph;
                     }
                     case gip_ins_r_type_periph:
                     {
@@ -329,7 +335,8 @@ module gip_rf( clock gip_clock,
                         rfr_blocked = 1;
                     }
                 }
-                if (rfr_inst_in.gip_ins_rm.type==gip_ins_r_type_periph) // Blocked if RF read of periph and data is not ready yet
+                if ( (rfr_inst_in.gip_ins_rm.type==gip_ins_r_type_periph_global) ||
+                     (rfr_inst_in.gip_ins_rm.type==gip_ins_r_type_periph) ) // Blocked if RF read of periph and data is not ready yet
                 {
                     rfr_blocked = !rfr_periph_read_data_valid;
                 }
@@ -354,6 +361,7 @@ module gip_rf( clock gip_clock,
             rfr_special_read = 0;
             rfr_special_read_address = 0;
             rfr_periph_read = 0;
+            rfr_periph_read_global = 0;
             rfr_periph_read_address = rfr_inst_in.gip_ins_rm.r;
             part_switch (rfr_inst_in.gip_ins_rn.type)
                 {
@@ -380,9 +388,15 @@ module gip_rf( clock gip_clock,
                     rfr_special_read = 1;
                     rfr_special_read_address = rfr_special_read_address | rfr_inst_in.gip_ins_rm.r;
                 }
+                case gip_ins_r_type_periph_global:
+                {
+                    rfr_periph_read = 1;
+                    rfr_periph_read_global = 1;
+                }
                 case gip_ins_r_type_periph:
                 {
                     rfr_periph_read = 1;
+                    rfr_periph_read_global = 0;
                 }
                 }
             if (!rfr_inst_in.valid)
@@ -394,6 +408,7 @@ module gip_rf( clock gip_clock,
             rfw_postbus_write = 0;
             rfw_special_write = 0;
             rfw_periph_write = 0;
+            rfw_periph_write_global = 0;
             rfw_postbus_write_address = rfw_rd.r;
             rfw_special_write_address = rfw_rd.r;
             rfw_periph_write_address = rfw_rd.r;
@@ -407,9 +422,15 @@ module gip_rf( clock gip_clock,
                 {
                     rfw_postbus_write = 1;
                 }
+                case gip_ins_r_type_periph_global:
+                {
+                    rfw_periph_write = 1;
+                    rfw_periph_write_global = 1;
+                }
                 case gip_ins_r_type_periph:
                 {
                     rfw_periph_write = 1;
+                    rfw_periph_write_global = 0;
                 }
                 }
         }

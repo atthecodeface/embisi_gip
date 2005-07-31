@@ -83,17 +83,19 @@ extern module gip_periph_apb( clock gip_clock,
 
                               input bit read,
                               input bit flush,
+                              input bit read_global,
                               input bit[5] read_address,
                               output bit read_data_valid,
                               output bit[32] read_data,
 
                               input bit write,
+                              input bit write_global,
                               input bit[5] write_address,
                               input bit[32] write_data,
 
                               output bit periph_busy, // So that blocking can occur on a 'block all' instruction, until APB is done - only effected by writes (i.e. post-RF read stuff)
 
-                              output bit[5] apb_paddr,
+                              output bit[6] apb_paddr,
                               output bit apb_penable,
                               output bit apb_pselect,
                               output bit[32] apb_pwdata,
@@ -103,10 +105,10 @@ extern module gip_periph_apb( clock gip_clock,
     )
 {
     timing to rising clock gip_clock gip_reset;
-    timing to rising clock gip_clock flush, read, read_address;
+    timing to rising clock gip_clock flush, read, read_global, read_address;
     timing from rising clock gip_clock read_data, read_data_valid;
 
-    timing to rising clock gip_clock write, write_address, write_data;
+    timing to rising clock gip_clock write, write_global, write_address, write_data;
 
     timing from rising clock gip_clock periph_busy;
 
@@ -128,7 +130,7 @@ module gip_core_plus( clock int_clock,
                       input bit[32] gip_mem_read_data,
                       input bit gip_mem_wait,
 
-                      output bit[5] apb_paddr,
+                      output bit[6] apb_paddr,
                       output bit apb_penable,
                       output bit apb_pselect,
                       output bit[32] apb_pwdata,
@@ -162,7 +164,7 @@ module gip_core_plus( clock int_clock,
     net t_postbus_data postbus_tx_data;
     net t_postbus_ack postbus_rx_ack;
 
-    net bit[5] apb_paddr;
+    net bit[6] apb_paddr;
     net bit apb_penable;
     net bit apb_pselect;
     net bit[32] apb_pwdata;
@@ -178,11 +180,13 @@ module gip_core_plus( clock int_clock,
     net bit fetch_flush;
 
     net bit periph_read;
+    net bit periph_read_global;
     net bit[5] periph_read_address;
     net bit periph_read_data_valid;
     net bit[32] periph_read_data;
     net bit periph_busy;
     net bit periph_write;
+    net bit periph_write_global;
     net bit[5] periph_write_address;
     net bit[32] periph_write_data;
     net bit gipc_pipeline_flush;
@@ -220,12 +224,14 @@ module gip_core_plus( clock int_clock,
                           fetch_flush => fetch_flush,
 
                           rfr_periph_read => periph_read,
+                          rfr_periph_read_global => periph_read_global,
                           rfr_periph_read_address => periph_read_address,
                           rfr_periph_read_data <= periph_read_data,
                           rfr_periph_read_data_valid <= periph_read_data_valid,
                           rfr_periph_busy <= periph_busy,
 
                           rfw_periph_write => periph_write,
+                          rfw_periph_write_global => periph_write_global,
                           rfw_periph_write_address => periph_write_address,
                           rfw_periph_write_data => periph_write_data,
 
@@ -307,11 +313,13 @@ module gip_core_plus( clock int_clock,
 
                                     read <= periph_read,
                                     flush <= gipc_pipeline_flush,
+                                    read_global <= periph_read_global,
                                     read_address <= periph_read_address,
                                     read_data => periph_read_data,
                                     read_data_valid => periph_read_data_valid,
 
                                     write <= periph_write,
+                                    write_global <= periph_write_global,
                                     write_address <= periph_write_address,
                                     write_data <= periph_write_data,
                                     periph_busy => periph_busy,

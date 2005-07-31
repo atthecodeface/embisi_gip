@@ -21,13 +21,19 @@ extern module apb_devices( clock int_clock,
                            input bit apb_pselect,
                            input bit apb_penable,
                            input bit apb_prnw,
-                           input bit[5] apb_paddr,
+                           input bit[6] apb_paddr,
                            input bit[32] apb_pwdata,
                            output bit[32] apb_prdata,
                            output bit apb_pwait,
 
-//                           input bit[8] switches,
-//                           output bit[8] leds,
+                           output bit global_apb_pselect,
+                           output bit global_apb_penable,
+                           output bit global_apb_prnw,
+                           output bit[5] global_apb_paddr,
+                           output bit[32] global_apb_pwdata,
+                           input bit[32] global_apb_prdata,
+                           input bit global_apb_pwait,
+
                            output bit txd,
                            input bit rxd,
 
@@ -52,10 +58,11 @@ extern module apb_devices( clock int_clock,
     timing to rising clock int_clock apb_pselect, apb_penable, apb_prnw, apb_paddr, apb_pwdata;
     timing from rising clock int_clock apb_prdata, apb_pwait;
 
+    timing from rising clock int_clock global_apb_pselect, global_apb_penable, global_apb_prnw, global_apb_paddr, global_apb_pwdata;
+    timing to rising clock int_clock global_apb_prdata, global_apb_pwait;
+
     timing to rising clock int_clock rxd;
     timing from rising clock int_clock txd;
-//    timing to rising clock int_clock switches;
-//    timing from rising clock int_clock leds;
 
     timing from rising clock int_clock ext_bus_ce, ext_bus_oe, ext_bus_we, ext_bus_address, ext_bus_write_data_enable, ext_bus_write_data;
     timing to rising clock int_clock ext_bus_read_data;
@@ -81,7 +88,7 @@ extern module gip_core_plus( clock int_clock,
                              input bit[32] gip_mem_read_data,
                              input bit gip_mem_wait,
 
-                             output bit[5] apb_paddr,
+                             output bit[6] apb_paddr,
                              output bit apb_penable,
                              output bit apb_pselect,
                              output bit[32] apb_pwdata,
@@ -182,6 +189,49 @@ extern module ddr_dram_as_sram( clock drm_clock,
     timing from rising clock slow_clock sram_read_data, sram_low_priority_wait;
 }
 
+/*m analyzer
+ */
+extern module analyzer( clock analyzer_clock,
+                        clock output_clock,
+                        clock apb_clock,
+
+                        input bit analyzer_reset,
+
+                        input bit[3] apb_paddr,
+                        input bit apb_penable,
+                        input bit apb_pselect,
+                        input bit[32] apb_pwdata,
+                        input bit apb_prnw,
+                        output bit[32] apb_prdata,
+                        output bit apb_pwait,
+
+                        output bit trace_ready,
+                        output bit trace_done,
+
+                        output bit[32]analyzer_mux_control,
+                        input bit[32]internal_signal_in,
+
+                        input bit ext_trigger_reset,
+                        input bit ext_trigger_enable,
+
+                        input bit async_trace_read_enable,
+                        output bit async_trace_valid_out,
+                        output bit[32] async_trace_out )
+{
+    timing to rising clock analyzer_clock internal_signal_in;
+    timing to rising clock analyzer_clock analyzer_reset;
+
+    timing to rising clock output_clock ext_trigger_enable, ext_trigger_reset;
+    timing to rising clock output_clock async_trace_read_enable;
+    timing from rising clock output_clock async_trace_valid_out, async_trace_out;
+
+    timing to rising clock apb_clock apb_pselect, apb_penable, apb_prnw, apb_paddr, apb_pwdata;
+    timing from rising clock apb_clock apb_prdata, apb_pwait;
+
+    timing from rising clock apb_clock trace_ready, trace_done;
+
+}
+
 /*a Modules
  */
 module gip_system( clock drm_clock,
@@ -240,7 +290,8 @@ module gip_system( clock drm_clock,
                    output bit[8] sscs,
 
                    clock analyzer_clock,
-                   output bit[32] analyzer_signals
+                   output bit analyzer_async_trace_valid,
+                   output bit[32] analyzer_async_trace_out
                    )
 {
     default clock int_clock;
@@ -279,7 +330,7 @@ module gip_system( clock drm_clock,
     comb bit[32] gip_mem_read_data;
     comb bit gip_mem_wait;
 
-    net bit[5] apb_paddr;
+    net bit[6] apb_paddr;
     net bit apb_penable;
     net bit apb_pselect;
     net bit[32] apb_pwdata;
@@ -331,8 +382,21 @@ module gip_system( clock drm_clock,
 
     comb bit[8] local_events_in;
 
-    comb bit[32] analyzer_mux_control;
+    net bit[32] analyzer_mux_control;
     net bit[32] iob_analyzer_signals;
+    clocked bit[32] analyzer_signals = 0;
+    net bit analyzer_trace_ready;
+    net bit analyzer_trace_done;
+    net bit analyzer_async_trace_valid;
+    net bit[32] analyzer_async_trace_out;
+
+    net bit global_apb_pselect;
+    net bit global_apb_penable;
+    net bit global_apb_prnw;
+    net bit[5] global_apb_paddr;
+    net bit[32] global_apb_pwdata;
+    net bit[32] global_apb_prdata;
+    net bit global_apb_pwait;
 
     /*b Reset detect from ethernet
       Note that the MII_RX clock stops when our reset goes off, so our reset should come from 
@@ -483,8 +547,14 @@ module gip_system( clock drm_clock,
                              apb_prdata => apb_prdata,
                              apb_pwait => apb_pwait,
 
-//                             switches <= switches,
-//                             leds => leds,
+                             global_apb_pselect => global_apb_pselect,
+                             global_apb_penable => global_apb_penable,
+                             global_apb_paddr => global_apb_paddr,
+                             global_apb_prnw => global_apb_prnw,
+                             global_apb_pwdata => global_apb_pwdata,
+                             global_apb_prdata <= global_apb_prdata,
+                             global_apb_pwait <= global_apb_pwait,
+
                              txd => txd,
                              rxd <= rxd,
 
@@ -550,24 +620,59 @@ module gip_system( clock drm_clock,
 
                           analyzer_mux_control <= analyzer_mux_control[2;0],
                           analyzer_signals => iob_analyzer_signals );
+        }
 
-            analyzer_mux_control = 0;
-            analyzer_mux_control[3;0] = switches[3;4];
-            analyzer_signals = iob_analyzer_signals;
+    /*b Logic analyzer
+     */
+    logic_analyzer "Logic analyzer instantiation and signal muxing":
+        {
+
+            analyzer_signals <= iob_analyzer_signals;
             part_switch (analyzer_mux_control)
                 {
                 case 0:
                 {
-                    analyzer_signals = gip_mem_address;
-                    analyzer_signals[31] = gip_mem_read;
-                    analyzer_signals[30] = gip_mem_write;
-                    analyzer_signals[4;26] = gip_mem_write_byte_enables;
+                    analyzer_signals <= gip_mem_address;
+                    analyzer_signals[31] <= gip_mem_read;
+                    analyzer_signals[30] <= gip_mem_write;
+                    analyzer_signals[4;26] <= gip_mem_write_byte_enables;
                 }
                 case 1:
                 {
-                    analyzer_signals = gip_mem_write_data;
+                    analyzer_signals <= gip_mem_write_data;
+                }
+                case 2:
+                {
+                    analyzer_signals <= gip_mem_read_data;
                 }
                 }
+            analyzer logic_analyzer( analyzer_clock <- int_clock,
+                                     output_clock <- analyzer_clock,
+                                     apb_clock <- int_clock,
+
+                                     analyzer_reset <= switches[6],
+
+                                     apb_paddr <= global_apb_paddr[3;0],
+                                     apb_penable <= global_apb_penable,
+                                     apb_pselect <= global_apb_pselect,
+                                     apb_prnw <= global_apb_prnw,
+                                     apb_pwdata <= global_apb_pwdata,
+                                     apb_pwait => global_apb_pwait,
+                                     apb_prdata => global_apb_prdata,
+
+                                     trace_ready => analyzer_trace_ready,
+                                     trace_done => analyzer_trace_done,
+
+                                     analyzer_mux_control => analyzer_mux_control,
+                                     internal_signal_in <= analyzer_signals,
+
+                                     ext_trigger_reset <= 0,
+                                     ext_trigger_enable <= 0,
+
+                                     async_trace_read_enable <= switches[5],
+                                     async_trace_valid_out => analyzer_async_trace_valid,
+                                     async_trace_out => analyzer_async_trace_out );
+
             uart0_rxd = 1;
             uart0_txd_fc = 1;
         }

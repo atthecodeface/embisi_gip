@@ -11,6 +11,17 @@ include "apb_target_timer.h"
 
 /*a Types
  */
+/*t t_global_apb_state
+ */
+typedef fsm
+{
+    global_apb_state_idle         "APB idle";
+    global_apb_state_write_select "APB writing, select asserted, no enable";
+    global_apb_state_write_enable "APB writing, select and enable asserted";
+    global_apb_state_read_select  "APB reading, select asserted, no enable";
+    global_apb_state_read_enable  "APB reading, select and enable asserted, data should be valid (unless wait asserted)";
+    global_apb_state_recover      "APB done reading/writing; read data valid to internal APB, write just waiting for enable to go away";
+} t_global_apb_state;
 
 /*a Modules
  */
@@ -20,13 +31,19 @@ module apb_devices( clock int_clock,
                     input bit apb_pselect,
                     input bit apb_penable,
                     input bit apb_prnw,
-                    input bit[5] apb_paddr,
+                    input bit[6] apb_paddr,
                     input bit[32] apb_pwdata,
                     output bit[32] apb_prdata,
                     output bit apb_pwait,
 
-//                    input bit[8] switches,
-//                    output bit[8] leds,
+                    output bit global_apb_pselect,
+                    output bit global_apb_penable,
+                    output bit global_apb_prnw,
+                    output bit[5] global_apb_paddr,
+                    output bit[32] global_apb_pwdata,
+                    input bit[32] global_apb_prdata,
+                    input bit global_apb_pwait,
+
                     output bit txd,
                     input bit rxd,
                     output bit[4]ext_bus_ce,
@@ -48,9 +65,6 @@ module apb_devices( clock int_clock,
     default clock int_clock;
     default reset int_reset;
 
-//    comb bit[8] leds;
-    net bit txd;
-
     net bit[4]ext_bus_ce;
     net bit ext_bus_oe;
     net bit ext_bus_we;
@@ -59,11 +73,10 @@ module apb_devices( clock int_clock,
     net bit[32]ext_bus_write_data;
 
     comb bit tx_baud_enable "Baud enable for transmit, 16 x bit time";
-//    net bit txd "Transmit data out";
+    net bit txd "Transmit data out";
 //    net bit txd_fc "Transmit flow control; assert to pause transmit";
 
     comb bit rx_baud_enable "Baud enable for receive, 16 x bit time";
-//    net bit rxd "Receive data in";
     net bit rxd_fc "Receive flow control; asserted to pause transmit";
 
     net bit cmd_fifo_empty;
@@ -74,22 +87,22 @@ module apb_devices( clock int_clock,
     net bit status_fifo_toggle;
     net bit[32] status_fifo_data;
 
-//    net bit[32] apb_prdata;
     net bit[32] apb_prdata_uart;
     net bit[32] apb_prdata_ext_bus;
     net bit[32] apb_prdata_gpio;
     net bit[32] apb_prdata_timer;
+    clocked bit[32] apb_prdata_global = 0;
     net bit apb_pwait_ext_bus;
     net bit apb_pwait_timer;
+    comb bit apb_pwait_global;
+    clocked t_global_apb_state global_apb_state = global_apb_state_idle;
+    clocked bit[32] global_apb_pwdata = 0;
+    clocked bit[5] global_apb_paddr = 0;
 
     comb bit[2] cfg_uart_speed;
     comb bit[16] cfg_baud_divider;
     clocked bit[16] baud_counter=0;
-//    clocked bit toggle=0;
     clocked bit[6] baud_divider = 0;
-//    clocked bit toggle_2=0;
-//    clocked bit[24] clock_divider=0;
-//    comb bit clock_enable;
 
     net bit[16]gpio_output;
     net bit[16]gpio_output_enable;
@@ -101,20 +114,6 @@ module apb_devices( clock int_clock,
     divider "Clock divider for LED":
         {
             cfg_uart_speed = 0;
-//switches[2;0];
-//            clock_divider <= clock_divider+1;
-//            clock_enable = 0;
-//            if ((clock_divider[8;12]==switches) && (clock_divider[12;0]==0))
-//            {
-//                toggle <= ~toggle;
-//                clock_enable = 1;
-//                clock_divider <= 0;
-//            }
-//            leds = clock_divider[8;11];
-//            leds[0] = toggle;
-//            leds[1] = toggle_2;
-//            leds[2] = txd;
-//            leds[3] = rxd;
             full_switch( cfg_uart_speed )
                 {
                 case 0: // 260=>9600 - actually 1200 for 5MHz; for 125/12 we need 60
@@ -148,10 +147,6 @@ module apb_devices( clock int_clock,
             if (rx_baud_enable)
             {
                 baud_divider <= baud_divider+1;
-//                if (baud_divider==0)
-//                {
-//                    toggle_2 <= ~toggle_2;
-//                }
             }
         }
 
@@ -159,38 +154,28 @@ module apb_devices( clock int_clock,
      */
     apb_instances "APB Instances":
         {
-            apb_target_gpio gpio_apb( apb_clock <- int_clock,
+            apb_target_uart uart_apb( apb_clock <- int_clock,
                                       int_reset <= int_reset,
 
-                                      apb_pselect <= apb_pselect && (apb_paddr[2;3]==2),
+                                      apb_pselect <= apb_pselect && (apb_paddr[3;3]==0),
                                       apb_penable <= apb_penable,
                                       apb_paddr <= apb_paddr[3;0],
                                       apb_prnw <= apb_prnw,
                                       apb_pwdata <= apb_pwdata,
-                                      apb_prdata => apb_prdata_gpio,
+                                      apb_prdata => apb_prdata_uart,
+                                      
+                                      cmd_fifo_empty => cmd_fifo_empty,
+                                      cmd_fifo_data => cmd_fifo_data,
+                                      cmd_fifo_toggle <= cmd_fifo_toggle,
 
-                                      gpio_output => gpio_output,
-                                      gpio_output_enable => gpio_output_enable,
-                                      gpio_input <= gpio_input,
-                                      gpio_input_event => gpio_input_event );
-
-            apb_target_timer timer_apb( apb_clock <- int_clock,
-                                        int_reset <= int_reset,
-
-                                        apb_pselect <= apb_pselect && (apb_paddr[2;3]==3),
-                                        apb_penable <= apb_penable,
-                                        apb_paddr <= apb_paddr[3;0],
-                                        apb_prnw <= apb_prnw,
-                                        apb_pwdata <= apb_pwdata,
-                                        apb_prdata => apb_prdata_timer,
-                                        apb_pwait => apb_pwait_timer,
-
-                                        timer_equalled => timer_equalled );
+                                      status_fifo_full => status_fifo_full,
+                                      status_fifo_data <= status_fifo_data,
+                                      status_fifo_toggle <= status_fifo_toggle );
 
             apb_target_ext_bus_master ext_bus_apb( apb_clock <- int_clock,
                                                    int_reset <= int_reset,
 
-                                                   apb_pselect <= apb_pselect && (apb_paddr[2;3]==1),
+                                                   apb_pselect <= apb_pselect && (apb_paddr[3;3]==1),
                                                    apb_penable <= apb_penable,
                                                    apb_paddr <= apb_paddr[3;0],
                                                    apb_prnw <= apb_prnw,
@@ -206,25 +191,130 @@ module apb_devices( clock int_clock,
                                                    ext_bus_write_data => ext_bus_write_data,
                                                    ext_bus_read_data <= ext_bus_read_data );
 
-
-            apb_target_uart uart_apb( apb_clock <- int_clock,
+            apb_target_gpio gpio_apb( apb_clock <- int_clock,
                                       int_reset <= int_reset,
 
-                                      apb_pselect <= apb_pselect && (apb_paddr[2;3]==0),
+                                      apb_pselect <= apb_pselect && (apb_paddr[3;3]==2),
                                       apb_penable <= apb_penable,
                                       apb_paddr <= apb_paddr[3;0],
                                       apb_prnw <= apb_prnw,
                                       apb_pwdata <= apb_pwdata,
-                                      apb_prdata => apb_prdata_uart,
-                                      
-                                      cmd_fifo_empty => cmd_fifo_empty,
-                                      cmd_fifo_data => cmd_fifo_data,
-                                      cmd_fifo_toggle <= cmd_fifo_toggle,
+                                      apb_prdata => apb_prdata_gpio,
 
-                                      status_fifo_full => status_fifo_full,
-                                      status_fifo_data <= status_fifo_data,
-                                      status_fifo_toggle <= status_fifo_toggle );
+                                      gpio_output => gpio_output,
+                                      gpio_output_enable => gpio_output_enable,
+                                      gpio_input <= gpio_input,
+                                      gpio_input_event => gpio_input_event );
 
+            apb_target_timer timer_apb( apb_clock <- int_clock,
+                                        int_reset <= int_reset,
+
+                                        apb_pselect <= apb_pselect && (apb_paddr[3;3]==3),
+                                        apb_penable <= apb_penable,
+                                        apb_paddr <= apb_paddr[3;0],
+                                        apb_prnw <= apb_prnw,
+                                        apb_pwdata <= apb_pwdata,
+                                        apb_prdata => apb_prdata_timer,
+                                        apb_pwait => apb_pwait_timer,
+
+                                        timer_equalled => timer_equalled );
+
+            full_switch (apb_paddr[3;3])
+                {
+                case 0:  {apb_prdata = apb_prdata_uart;    apb_pwait = 0;}
+                case 1:  {apb_prdata = apb_prdata_ext_bus; apb_pwait = apb_pwait_ext_bus;}
+                case 2:  {apb_prdata = apb_prdata_gpio;    apb_pwait = 0;}
+                case 3:  {apb_prdata = apb_prdata_timer;   apb_pwait = apb_pwait_timer;}
+                default: {apb_prdata = apb_prdata_global;  apb_pwait = apb_pwait_global;}
+                }
+        }
+
+    /*b Global APB FSM
+     */
+    global_apb_state_machine "FSM and decode for global APB":
+        {
+            global_apb_paddr <= apb_paddr[5;0];
+            full_switch(global_apb_state)
+                {
+                case global_apb_state_idle:
+                {
+                    global_apb_pselect = 0;
+                    global_apb_penable = 0;
+                    global_apb_prnw = 0;
+                    apb_pwait_global = 0;
+                    if (apb_pselect && apb_paddr[5]) // if global
+                    {
+                        if (apb_prnw)
+                        {
+                            global_apb_state <= global_apb_state_read_select;
+                        }
+                        else
+                        {
+                            global_apb_state <= global_apb_state_write_select;
+                            global_apb_pwdata <= apb_pwdata;
+                        }
+                    }
+                }
+                case global_apb_state_read_select: // internal apb will be presenting enable, we need to hold that until we have data in our buffer
+                {
+                    global_apb_pselect = 1;
+                    global_apb_penable = 0;
+                    global_apb_prnw = 1;
+                    apb_pwait_global = 1;
+                    if (!global_apb_pwait)
+                    {
+                        global_apb_state <= global_apb_state_read_enable;
+                    }
+                }
+                case global_apb_state_read_enable: // internal apb will be presenting enable, we need to hold that until we have data in our buffer
+                {
+                    global_apb_pselect = 1;
+                    global_apb_penable = 1;
+                    global_apb_prnw = 1;
+                    apb_pwait_global = 1;
+                    if (!global_apb_pwait)
+                    {
+                        global_apb_state <= global_apb_state_recover;
+                        apb_prdata_global <= global_apb_prdata;
+                    }
+                }
+                case global_apb_state_write_select: // internal apb will be presenting enable, we need to hold APB and present select to global APB (we cannot let internal APB run as it may do another transaction!)
+                {
+                    global_apb_pselect = 1;
+                    global_apb_penable = 0;
+                    global_apb_prnw = 0;
+                    apb_pwait_global = 1;
+                    if (!global_apb_pwait)
+                    {
+                        global_apb_state <= global_apb_state_write_enable;
+                    }
+                }
+                case global_apb_state_write_enable: // internal apb will be presenting enable, we need to hold APB and present enable to global APB (we cannot let internal APB run as it may do another transaction!)
+                {
+                    global_apb_pselect = 1;
+                    global_apb_penable = 1;
+                    global_apb_prnw = 0;
+                    apb_pwait_global = 1;
+                    if (!global_apb_pwait)
+                    {
+                        global_apb_state <= global_apb_state_recover; // ensure that we enter idle with the current transaction just complete
+                    }
+                }
+                case global_apb_state_recover: // internal apb will be presenting enable, and for reads we have the read data to present, for writes we just need to wait
+                {
+                    global_apb_pselect = 0;
+                    global_apb_penable = 0;
+                    global_apb_prnw = 0;
+                    apb_pwait_global = 0;
+                    global_apb_state <= global_apb_state_idle;
+                }
+                }
+        }
+
+    /*b Extra components for APB-based IO UART
+     */
+    uart_comps "Extra components for APB-based IO UART":
+        {
             io_uart uart_io( int_clock <- int_clock,
                           int_reset <= int_reset,
                           tx_baud_enable <= tx_baud_enable,
@@ -242,13 +332,6 @@ module apb_devices( clock int_clock,
                           status_fifo_data => status_fifo_data,
                           status_fifo_toggle => status_fifo_toggle );
 
-            full_switch (apb_paddr[2;3])
-                {
-                case 0: {apb_prdata = apb_prdata_uart; apb_pwait = 0;}
-                case 1: {apb_prdata = apb_prdata_ext_bus; apb_pwait = apb_pwait_ext_bus;}
-                case 2: {apb_prdata = apb_prdata_gpio; apb_pwait = 0;}
-                case 3: {apb_prdata = apb_prdata_timer; apb_pwait = apb_pwait_timer;}
-                }
         }
 
 }

@@ -37,6 +37,14 @@ beq env_int("system_microkernel_tests") 0 skip_system_microkernel_tests
 gosub gip_system_microkernel
 skip_system_microkernel_tests:
 
+beq env_int("system_analyzer_tests") 0 skip_system_analyzer_tests
+gosub gip_system_analyzer
+skip_system_analyzer_tests:
+
+beq env_int("system_bug_tests") 0 skip_system_bug_tests
+gosub gip_system_bug
+skip_system_bug_tests:
+
 end
 
 #a Gip prefetch tests
@@ -171,6 +179,7 @@ return
 #a GIP system ALU tests
 #f gip_system_alu
 gip_system_alu:
+printf "gip_system_alu tests"
 setenv "verbose_level" 1
 
     gosub gip_system_alu_0
@@ -179,6 +188,7 @@ return
 #b gip_system_alu_0
 # This test runs the full ALU regression tests which exercise most ALU operations with most flags and most shifter operations
 gip_system_alu_0:
+printf "gip_system_alu_0"
 set vcd_skip_length 0
 set run_length 4000000
 setenv "mii_rx_sources" ""
@@ -192,6 +202,7 @@ return
 #b gip_system_alu_1
 # This test runs the linux div64 function
 gip_system_alu_1:
+printf "gip_system_alu_0"
 set vcd_skip_length 0
 set run_length 100000
 setenv "mii_rx_sources" ""
@@ -205,6 +216,7 @@ return
 #a GIP system memory tests
 #f gip_system_memory
 gip_system_memory:
+printf "gip_system_memory tests"
 setenv "verbose_level" 1
 
     gosub gip_system_memory_0
@@ -212,11 +224,35 @@ return
 
 #b gip_system_memory_0
 gip_system_memory_0:
+printf "gip_system_memory_0 test"
 set vcd_skip_length 0
 set run_length 600000
 setenv "mii_rx_sources" ""
 setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/memory.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 1
+gosub gip_system_test
+return
+
+#a GIP system bug tests
+#f gip_system_bug
+gip_system_bug:
+setenv "verbose_level" 1
+
+bne env_int("system_bug_tests") 2 skip_system_bug_2
+    gosub gip_system_bug_2
+skip_system_bug_2:
+
+return
+
+#b gip_system_bug_2
+gip_system_bug_2:
+set vcd_skip_length 0
+set run_length 1000000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/bug_2.regression.dmif"
 set_string vcd_filename "gip_system_0"
 set vcd_create 1
 gosub gip_system_test
@@ -253,6 +289,42 @@ setenv "ddr_mif" "../arm/bin/microkernel_test_2.regression.dmif"
 #setenv "ddr_mif" "../arm/bin/factorial.regression.dmif"
 set_string vcd_filename "gip_system_0"
 set vcd_create 1
+gosub gip_system_test
+return
+
+#a GIP system analyzer tests
+#f gip_system_analyzer
+gip_system_analyzer:
+printf "gip_system_analyzer tests"
+setenv "verbose_level" 1
+
+    gosub gip_system_analyzer_1
+    gosub gip_system_analyzer_2
+return
+
+#b gip_system_analyzer_1
+gip_system_analyzer_1:
+printf "gip_system_analyzer_1 test"
+set vcd_skip_length 000000
+set run_length 280000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/analyzer_test_1.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 0
+gosub gip_system_test
+return
+
+#b gip_system_analyzer_2
+gip_system_analyzer_2:
+printf "gip_system_analyzer_2 test"
+set vcd_skip_length 0000
+set run_length 130000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/analyzer_test_2.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 0
 gosub gip_system_test
 return
 
@@ -389,6 +461,7 @@ vcd_file_add "allsignals" "gip_simple.iob"
 vcd_file_add "allsignals" "gip_simple.iob.ss"
 vcd_file_add "allsignals" "gip_simple.iob.ingress_fifos"
 vcd_file_add "allsignals" "gip_simple.iob.egress_fifos"
+vcd_file_add "allsignals" "gip_simple.logic_analyzer"
 vcd_file_add "allsignals" "mii"
 #vcd_file_add "allsignals" "gip_simple.iob"
 #vcd_file_add "allsignals" "gip_system.uart_apb" "gip_system.uart_apb.status_fifo"  "gip_system.uart_apb.cmd_fifo" "gip_system.uart_io"

@@ -61,6 +61,7 @@ drive ddrth.ddr_clock ddr_clock
 drive ddr_pins.ddr_clock ddr_x4_clock
 drive extbusth.extbus_clock logic_clock
 drive gip_simple.int_clock logic_clock
+drive gip_simple.analyzer_clock logic_clock
 drive gip_simple.drm_clock ddr_clock
 drive gip_simple.eth_mii_tx_clock eth_clock
 drive gip_simple.eth_mii_rx_clock eth_clock

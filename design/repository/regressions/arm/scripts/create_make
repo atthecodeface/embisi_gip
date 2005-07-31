@@ -22,16 +22,24 @@ while (<desc>)
     $line = $_;
     next if $line =~/^\s*#/;
     next if $line =~/^\s*;/;
-    if ($line =~ /^asm\s+(\S*)\s+(.*)/) {
-        $dir = $1;
-        $file = $2;
-        $asms[$#asms] = "$dir $file";
+    if ($line =~ /^asm\s+(.*)/) {
+        @data = split(" ",$1);
+        $dir = $data[0];
+        $file = $data[1];
+        $opts = $data[2];
+        die "Directory and file needed for asm line in test_list (dir '$dir' file '$file')" unless (($dir ne "") and ($file ne ""));
+        #print "asm '$dir' '$file' '$opts'\n";
+        $asms[$#asms] = "$dir $file $opts";
         $#asms++;
     }
-    if ($line =~ /^cc\s+(\S*)\s+(.*)/) {
-        $dir = $1;
-        $file = $2;
-        $ccs[$#ccs] = "$dir $file";
+    if ($line =~ /^cc\s+(.*)/) {
+        @data = split(" ",$1);
+        $dir = $data[0];
+        $file = $data[1];
+        $opts = $data[2];
+        die "Directory and file needed for cc line in test_list (dir '$dir' file '$file')" unless (($dir ne "") and ($file ne ""));
+        #print "cc '$dir' '$file' '$opts'\n";
+        $ccs[$#ccs] = "$dir $file $opts";
         $#ccs++;
     }
     if ($line =~ /^test\s+(\S*)\s+(\S*)\s+(.*)/) {
@@ -66,17 +74,20 @@ print make  " \n";
 
 foreach $asm (@asms) {
     next if ($asm=~/^\s*$/);
-    ($dir, $file) = split(/ /,$asm);
+    ($dir, $file, $opts) = split(/ /,$asm);
+    $opts =~ s/@/ /g;
     print make "obj/$dir.$file.o: src/$dir/$file.S\n";
-    print make "\t\${ARM_CC} \${ARM_AS_FLAGS} -c src/$dir/$file.S -o obj/$dir.$file.o\n";
+    print make "\t\${ARM_CC} \${ARM_AS_FLAGS} -c src/$dir/$file.S $opts -o obj/$dir.$file.o\n";
     print make "\n";
 }
 
 foreach $cc (@ccs) {
     next if ($cc=~/^\s*$/);
-    ($dir, $file) = split(/ /,$cc);
+    ($dir, $file, $opts) = split(/ /,$cc);
+    $opts =~ s/@/ /g;
+    $opts = "\${ARM_CC_FLAGS}" if ($opts eq "");
     print make "obj/$dir.$file.o: src/$dir/$file.c\n";
-    print make "\t\${ARM_CC} \${ARM_CC_FLAGS} -c src/$dir/$file.c -o obj/$dir.$file.o\n";
+    print make "\t\${ARM_CC} $opts \${ARM_CC_INCLUDES} -c src/$dir/$file.c -o obj/$dir.$file.o\n";
     print make "\n";
 }
 

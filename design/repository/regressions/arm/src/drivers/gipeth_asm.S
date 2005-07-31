@@ -15,8 +15,13 @@
 #define ENTRY(name) \
   .globl name; \
   name:
+#ifdef REGRESSION
 #include <gip_macros.h>
 #include <postbus_asm.h>
+#else
+#include <asm/gip_macros.h>
+#include <asm/postbus_asm.h>
+#endif    
 
 #define t_gipeth__rx_next_buffer_to_reuse (0*4)
 #define t_gipeth__rx_buffer_in_hand       (1*4)
@@ -401,7 +406,7 @@ rx_length               .req r10 // note these 3 must be in order
  gip_utximm 'W'    
 
     gip_extrn 28
-    add rx_temp, r12, #t_gipeth__next_buffer_to_reuse
+    add rx_temp, r12, #t_gipeth__rx_next_buffer_to_reuse
     ldmia rx_temp, {rx_next_buffer_to_reuse, rx_buffer_in_hand, rx_length}
 
 0:
@@ -535,7 +540,7 @@ check_status:
 block_done: 
  gip_utximm 'E'    
     gip_extrn 28
-    add rx_temp, r12, #t_gipeth__next_buffer_to_reuse
+    add rx_temp, r12, #t_gipeth__rx_next_buffer_to_reuse
     stmia rx_temp, {rx_next_buffer_to_reuse, rx_buffer_in_hand, rx_length}
     mov pc, lr
 
@@ -618,7 +623,7 @@ mkt_unknown_trap:
     gip_utximm 'K'
     gip_utximm '\n'
 
-    .word 0xec0058e // disable the timer
+    .word 0xec00c58e // disable the timer
      mov r0, #1<<31 
 
      mov pc, #0

@@ -278,7 +278,7 @@ static int command_mem_push_phase( void *handle, int argc, unsigned int *args )
 }
 
 /*f command_mem_rep_test
-  .. <address> [<length>] [<count>] [<delay>]
+  .. <address> [<length in bytes / 0x1000>] [<count / 8>] [<max errors / 1>] [xor address]
   mmrt 80000000 20 100 0 1
   mmrt 80000000 20 10000
   mmrt 80000000 1000 60
@@ -287,9 +287,9 @@ static int command_mem_rep_test( void *handle, int argc, unsigned int *args )
 {
     int i, j, k;
     volatile unsigned int *ptr;
-    int length, count, delay, stop_on_error;
+    int length, count, max_errors, xor_address;
     unsigned int value, read, diff;
-    int errors;
+    int errors, last_error;
     int errored_bits[32];
 
     static const unsigned int test_values[] = {0, 0xffffffff, 0x55555555, 0x00000001, 0xfffffffe, 0x11111111, 0xf, 0xff };
@@ -297,32 +297,33 @@ static int command_mem_rep_test( void *handle, int argc, unsigned int *args )
     if (argc<1)
         return 1;
 
-    length = 32;
-    if (argc>1) length=args[1];
-    count = 32;
-    if (argc>2) count=args[2];
-    delay = 0;
-    if (argc>3) delay=args[3];
-    stop_on_error = 0;
-    if (argc>4) stop_on_error=args[4];
     ptr = (unsigned int *)args[0];
+    length = 0x1000;
+    if (argc>1) length=args[1]/4;
+    count = 8;
+    if (argc>2) count=args[2];
+    max_errors = 1;
+    if (argc>3) max_errors=args[3];
+    xor_address = 0;
+    if (argc>4) xor_address=args[4];
 
     for (i=0; i<32; i++) errored_bits[i] = 0;
     errors = 0;
+    last_error = 0;
 
-    for (i=0; (i<count) && !(stop_on_error && errors); i++)
+    for (i=0; (i<count) && (errors<max_errors); i++)
     {
         value = test_values[i&7];
         for (j=0; j<length; j++)
         {
-            ptr[j] = value;
+            ptr[j] = value ^ (xor_address?((unsigned int)(ptr+j)):0);
             value = ((value&0x80000000)?1:0) | (value<<1);
         }
         value = test_values[i&7];
         for (j=0; j<length; j++)
         {
             read = ptr[j];
-            diff = read ^ value;
+            diff = read ^ value ^ (xor_address?((unsigned int)(ptr+j)):0);
             if (diff)
             {
                 for (k=0; k<32; k++, diff>>=1)
@@ -330,29 +331,78 @@ static int command_mem_rep_test( void *handle, int argc, unsigned int *args )
                     if (diff&1) errored_bits[k]++;
                 }
                 errors++;
+                last_error = j;
             }
             value = ((value&0x80000000)?1:0) | (value<<1);
         }
-        DELAY(delay);
     }
 
     if (errors)
     {
         cmd_result_string( handle, "!!ERRORS:" );
         cmd_result_hex8( handle, errors );
+        cmd_result_string( handle, " last at ");
+        cmd_result_hex8( handle, (unsigned int)(ptr+last_error) );
         cmd_result_nl( handle );
         for (i=0; i<32; i++)
         {
             cmd_result_hex2( handle, i );
             cmd_result_string( handle, ":" );
             cmd_result_hex8( handle, errored_bits[i] );
-            cmd_result_nl( handle );
+            cmd_result_string( handle, "    " );
         }
     }
     else
     {
         cmd_result_string( handle, "No errors" );
         cmd_result_nl( handle );
+    }
+
+    return 0;
+}
+
+/*f command_mem_find
+  .. <address> <value> [<mask>] [<length in words / 0x400>] [end_after / 16]
+ */
+static int command_mem_find( void *handle, int argc, unsigned int *args )
+{
+    int i, j, k;
+    volatile unsigned int *ptr;
+    int length, finds, end_after;
+    unsigned int value, mask, read;
+    int errors, last_error;
+    int errored_bits[32];
+
+    static const unsigned int test_values[] = {0, 0xffffffff, 0x55555555, 0x00000001, 0xfffffffe, 0x11111111, 0xf, 0xff };
+
+    if (argc<2)
+        return 1;
+
+    ptr = (unsigned int *)args[0];
+    value=args[1];
+    mask = 0xffffffff;
+    if (argc>2) mask=args[2];
+    length = 0x400;
+    if (argc>3) length=args[3];
+    end_after = 16;
+    if (argc>4) end_after=args[4];
+
+    finds = 0;
+    for (i=0; (i<length) && (finds<end_after); i++)
+    {
+        if ((ptr[i] & mask)==value)
+        {
+            cmd_result_string( handle, "Found at :" );
+            cmd_result_hex8( handle, (unsigned int)(ptr+i) );
+            cmd_result_string( handle, " value ");
+            cmd_result_hex8( handle, ptr[i] );
+            cmd_result_nl( handle );
+            finds++;
+        }
+    }
+    if (finds==0)
+    {
+        cmd_result_string_nl( handle, "Not found" );
     }
 
     return 0;
@@ -370,10 +420,11 @@ const t_command monitor_cmds_memory[] =
 #ifndef TINY
     {"mmrr", command_mem_rep_read},
     {"mmrw", command_mem_rep_write},
-    {"mmf", command_mem_fill},
-    {"mmv", command_mem_verify},
+    {"mmfi", command_mem_fill},
+    {"mmve", command_mem_verify},
 #endif
     {"mmrt", command_mem_rep_test},
+    {"mmfn", command_mem_find},
     {"mmpp", command_mem_push_phase},
     {(const char *)0, (t_command_fn *)0},
 };

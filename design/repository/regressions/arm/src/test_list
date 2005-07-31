@@ -69,6 +69,11 @@ cc ethmonitor cmd
 asm ethmonitor regs
 cc ethmonitor dram_setup
 
+cc analyzer test_1
+cc analyzer test_2
+
+cc bugs bug_2 -Os@-g@-fno-omit-frame-pointer@-mno-sched-prolog
+
 test rom  run_dram simple:run_dram common:wrapper common:support
 test rom  ethernet ethernet:ethernet drivers:ethernet drivers:uart common:support common:wrapper
 test rom  simple simple:simple common:support common:wrapper
@@ -97,8 +102,14 @@ test regression  uart uart:uart common:wrapper_regression common:support_regress
 test regression inc_wait_test simple:inc_wait_test common:wrapper_regression common:support_regression
 test regression test_div64 alu:test_div64 alu:div64 common:wrapper_regression common:support_regression
 
+test dram bug_2 bugs:bug_2 common:wrapper_download common:support_download
+test regression bug_2 bugs:bug_2 common:wrapper_regression common:support_regression
+
 test regression microkernel_test_1 microkernel:test_1 microkernel:init microkernel:microkernel_thread common:wrapper_regression common:support_regression
 test regression microkernel_test_2 ethmonitor:regs microkernel:test_2 microkernel:init microkernel:microkernel_thread common:wrapper_regression common:support_regression
+
+test regression analyzer_test_1 analyzer:test_1 common:wrapper_regression common:support_regression
+test regression analyzer_test_2 analyzer:test_2 common:wrapper_regression common:support_regression
 
 test dram microkernel_test_leds microkernel:test_leds microkernel:init microkernel:microkernel_thread common:wrapper_download common:support_download
 

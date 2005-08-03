@@ -64,7 +64,6 @@ There is an additional global disabled that is reset to 1; this stops all compar
     comb bit[31] read_data "Mux of timer comparators and timer_value, dependent on disabled and stage";
     comb bit read_data_match "Asserted if read_data matches the timer_value";
 
-    comb bit[2] access "If disabled then only the timer is accessed";
     clocked bit apb_pwait=0;
     clocked bit[32] apb_prdata=0 "Output data register; increases gate count, but decreases power as then we do not drive the databus out with continuously changing values";
     clocked bit did_read=0 "Asserted if a read request has been serviced and the data stored in the output";

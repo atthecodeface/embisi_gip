@@ -263,6 +263,14 @@ module gip_rf( clock gip_clock,
                 if ( (rfr_inst_in.gip_ins_rn.type==gip_ins_r_type_internal) && 
                      (rfr_inst_in.gip_ins_rn.r==gip_ins_rnm_int_block_all) ) // Blocked if anything has a write pending
                 {
+                    if (rfw_alu_rd.type!=gip_ins_r_type_none)
+                    {
+                        rfr_blocked = 1;
+                    }
+                    if (rfw_mem_rd.type!=gip_ins_r_type_none)
+                    {
+                        rfr_blocked = 1;
+                    }
                     if (mem_1_rd.type!=gip_ins_r_type_none)
                     {
                         rfr_blocked = 1;

@@ -609,6 +609,7 @@ module gip_alu( clock gip_clock,
             alu_mem_rd.type = gip_ins_r_type_none;
             alu_mem_rd.r = 0;
             alu_mem_op = gip_mem_op_none;
+            alu_mem_burst = alu_inst.k;
             alu_accepting_rfr_instruction_always = 0;
             alu_accepting_rfr_instruction_if_rfw_does = 0;
             alu_accepting_rfr_instruction_if_mem_does = 0;

@@ -291,8 +291,8 @@ NET "switches<1>" LOC = "AK3"   | IOSTANDARD = "LVTTL";
 NET "switches<2>" LOC = "AJ5"   | IOSTANDARD = "LVTTL";
 //NET "switches<3>" LOC = "AH6"   | IOSTANDARD = "LVTTL";
 //NET "switches<4>" LOC = "AG7"   | IOSTANDARD = "LVTTL";
-//NET "switches<5>" LOC = "AF7"   | IOSTANDARD = "LVTTL";
-//NET "switches<6>" LOC = "AF11"  | IOSTANDARD = "LVTTL";
+NET "switches<5>" LOC = "AF7"   | IOSTANDARD = "LVTTL";
+NET "switches<6>" LOC = "AF11"  | IOSTANDARD = "LVTTL";
 NET "switches<7>" LOC = "AE11"  | IOSTANDARD = "LVTTL";
 
 //b Expansion bus (addr_av, data_av, and various ce's: flash_ce<3..0> is N10 M10 K6 E4, from page 3/14; flash_we/ce/oe is J6 H7 K4 from pg 3/7/14; flash_rst is L10 from pg 3)

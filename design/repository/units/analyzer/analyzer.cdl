@@ -267,7 +267,7 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
             trigger_transition = 0;
             trigger_hold_counter = 0;
             trigger_reset_counter = 0;
-            trigger_residence_expired = ( (trigger[trigger_stage].counter!=0) && (trigger[trigger_stage].counter==trigger_residence) );
+            trigger_residence_expired = ( (trigger[trigger_stage].counter==0) || (trigger[trigger_stage].counter==trigger_residence) );
             trigger_store_type = trigger_store_type_none;
             action_trigger_end = 0;
             full_switch (trigger_action)
@@ -522,6 +522,7 @@ Maybe the 'interstate' action (which is now 'goto stage n' plus the counter) cou
 
             apb_valid_sync_0 <= valid;
             apb_valid_sync_1 <= apb_valid_sync_0;
+            apb_last_valid_sync_1 <= apb_valid_sync_1;
 
             apb_trace_req <= apb_trace_readback;
             if (apb_trace_valid)

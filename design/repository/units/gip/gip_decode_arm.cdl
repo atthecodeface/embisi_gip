@@ -726,6 +726,7 @@ module gip_decode_arm( input bit[32] opcode,
             inst.rm_is_imm = 0;
             inst.immediate = alu_immediate;
             inst.valid = 0;
+            inst.pc = 0; // always overwriten in gip_decode, but it keeps Xilinx happy
             next_stored_reg_set = sel_reg_set;
             arm_use_native_decode = 0;
 

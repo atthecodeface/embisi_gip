@@ -210,6 +210,7 @@ module gip_decode_native( input bit[16] opcode,
             inst.gip_ins_rd = native_mapped_rd;
             inst.tag = 0;
             inst.valid = 0;
+            inst.pc = 0; // always overwriten in gip_decode, but it keeps Xilinx happy
 
             if (extended_cmd.extended)
             {

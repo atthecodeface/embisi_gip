@@ -2,6 +2,7 @@
  */
 //constant integer ddr_refresh_counter_initial_value=1328; // This will do for now - we need it to be 16us, which (at 83MHz) is 16*83 = 1328
 constant integer ddr_refresh_counter_initial_value=400; // This will do for now - we need it to be 16us, which (at 83MHz) is 16*83 = 1328
+//gjs aug 1 constant integer ddr_refresh_counter_initial_value=4; // This will do for now - we need it to be 16us, which (at 83MHz) is 16*83 = 1328
 
 /*a Types
  */

@@ -234,7 +234,11 @@ module apb_devices( clock int_clock,
     global_apb_state_machine "FSM and decode for global APB":
         {
             global_apb_paddr <= apb_paddr[5;0];
-            full_switch(global_apb_state)
+            global_apb_pselect = 0;
+            global_apb_penable = 0;
+            global_apb_prnw = 0;
+            apb_pwait_global = 0;
+            full_switch (global_apb_state)
                 {
                 case global_apb_state_idle:
                 {

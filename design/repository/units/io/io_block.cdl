@@ -692,6 +692,10 @@ module io_block( clock int_clock,
                     }
                     }
                 }
+                case io_sram_data_reg_op_postbus: // we do not actually use this one yet
+                {
+                    ingress_data_reg <= postbus_write_data;
+                }
                 }
 
             /*b Handle the SRAM address

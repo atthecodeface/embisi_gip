@@ -7,23 +7,6 @@
 
 /*a Defines
  */
-typedef enum
-{
-    analyzer_action_idle,                           // H Store nothing, and do not touch counter
-    analyzer_action_reset_counter,                  // L Store nothing, and reset counter to 1, stay in current stage
-    analyzer_action_store_signal_and_transition,    // M Store signal value and transition immediately
-    analyzer_action_store_signal_and_reside,        // H Store signal value and transition if counter matches residence time
-    analyzer_action_store_time_and_reside,          // L Store time of occurrence (cycles since trigger_reset went away) and trigger signals, transition if counter matches residence time
-    analyzer_action_store_time_and_transition,      // H Store time of occurrence (cycles since trigger_reset went away) and trigger signals and transition
-    analyzer_action_store_residence_and_transition, // M Store residence time and transition
-    analyzer_action_end,                            // H Store nothing, disable trace
-} t_analyzer_action;
-#define GIP_ANALYZER_WRITE(t,s) {__asm__ volatile ( " .word 0xec00c20e+" #t "<<4 \n mov r0, %0 \n" : : "r" (s) ); NOP; GIP_BLOCK_ALL(); NOP; }
-#define GIP_ANALYZER_READ_CONTROL(s)  {__asm__ volatile ( " .word 0xec00ce02 \n mov %0, r0 \n " : "=r" (s) ); }
-#define GIP_ANALYZER_READ_DATA(s)  {__asm__ volatile ( " .word 0xec00ce02 \n mov %0, r1 \n " : "=r" (s) ); }
-#define GIP_ANALYZER_TRIGGER_CONTROL(count,stage_if_true,action_if_true,stage_if_false,action_if_false) { GIP_ANALYZER_WRITE(1, ( (count)<<0) | ((stage_if_true)<<16) | ((action_if_true)<<20) | ((stage_if_false)<<24) | ((action_if_false)<<28)); }
-#define GIP_ANALYZER_TRIGGER_MASK(mask) {GIP_ANALYZER_WRITE(2,(mask));}
-#define GIP_ANALYZER_TRIGGER_COMPARE(mask) {GIP_ANALYZER_WRITE(3,(mask));}
 
 /*a Types
  */
@@ -52,6 +35,7 @@ extern int test_entry_point()
     {
         GIP_ANALYZER_WRITE( 0, 1 ); // reset the trigger, disable it, set stage to 0
         GIP_ANALYZER_READ_CONTROL(s); // read back control - resets should be 1, enables 0, readback 0, valid 0, done 0
+        dprintf("Got %d\n", s , 0, 0);
         if ((s&0xff)!=0x11) break;
         failure++;
 
@@ -119,5 +103,7 @@ extern int test_entry_point()
 
         failure = 0;
     } while (0);
+
+    dprintf( "Analyzer test 1 complete, failure (0=>pass) %d", failure, 0, 0 );
     return failure;
 }

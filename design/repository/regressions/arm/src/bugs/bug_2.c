@@ -2,6 +2,13 @@
 #include "../microkernel/microkernel.h"
 typedef int size_t;
 
+/*
+This bug stems from the microkernel not running when the SWI is kicked off
+It fails the first time after reset, but thereafter it works fine because the kernel is running as thread 1...
+Also, at reset the threads are all set to start off there semaphore 0 - so even without a microkernel loaded, thread 1 wants to kick off.
+The bug does NOT appear if the simulation is mismanaging the 'deschedule' - this mean that simulation was not mirroring emulation, as 'deschedle' in the decode was combinatorial and this was not expressed properly.
+Presumably in these cases 'deschedule' just never happens.
+ */
 #define utx(a) {__asm__ volatile ("  .word 0xec00c40e \n mov r0, %0" :  : "r" (0x16000096 | (a<<8)) );}
 static char printk_buf[1024];
 
@@ -56,6 +63,9 @@ static int printk(const char *fmt, ...)
         zero = 1;
         __asm__ volatile( "mov r0, r0 ; mov r1, r1 ; " );
     }
+    GIP_ANALYZER_WRITE(0,2); GIP_BLOCK_ALL();// enable analyzer
+//    __asm__ volatile( "mov r0, #0x9900 ; ldr r0, [r0] ; .word 0xec007281" : : : "r0" ); // trigger the analyzer
+    __asm__ volatile( "mov r0, #0 ; ldr r0, [r0] ; .word 0xec007281" : : : "r0" ); // trigger the analyzer
     utx('B');
 	/* This stops the holder of console_sem just where we want him */
 //    { { __asm__ volatile ( " mov r0, r0 ; mov %0, r0 " : "=r" (flags) : : "r0" ); } ; flags=!(flags&0x20);} // works on new avnet
@@ -63,7 +73,8 @@ static int printk(const char *fmt, ...)
 //    { { __asm__ volatile ( " swi 0xef0000 ; mov %0, r0 " : "=r" (flags) : : "r0" ); } ; flags=!(flags&0x20);} // works on new avnet
 //    { { __asm__ volatile ( " swi 0x600000 ; mov %0, r0 " : "=r" (flags) : : "r0" ); } ; flags=!(flags&0x20);} // works on new avnet
 //    { { __asm__ volatile ( " swi 0xa00000 ; mov %0, r0 " : "=r" (flags) : : "r0" ); } ; flags=!(flags&0x20);} // works on new avnet
-    { { __asm__ volatile ( " swi 0x200000 ; mov %0, r0 " : "=r" (flags) : : "r0" ); } ; flags=!(flags&0x20);} // works on new avnet
+    { { __asm__ volatile ( " swi 0x200000 ; mov %0, r0 " : "=r" (flags) : : "r0" ); } ; flags=!(flags&0x20);} // works on new avnet - this failed in regression - yay!
+//    { { __asm__ volatile ( " swi 0x260000 ; mov %0, r0 " : "=r" (flags) : : "r0" ); } ; flags=!(flags&0x20);} // works on new avnet
 //    { { __asm__ volatile ( " swi 0x200000 ; mov %0, r0 " : "=r" (flags) : : "r0" ); } ; flags=!(flags&0x20);} // did not appear to work
 
 	/* Emit the output into the temporary buffer */

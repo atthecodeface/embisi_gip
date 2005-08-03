@@ -47,6 +47,8 @@ cc microkernel init
 asm microkernel microkernel_thread
 cc microkernel test_1
 cc microkernel test_2
+cc microkernel test_3
+asm microkernel timer_int
 cc microkernel test_leds
 
 cc ethmonitor framework
@@ -65,7 +67,10 @@ cc ethmonitor cmd_flash
 cc ethmonitor cmd_test
 cc ethmonitor cmd_leds
 cc ethmonitor cmd_gipeth
+cc ethmonitor cmd_analyzer
+cc ethmonitor cmd_control
 cc ethmonitor cmd
+asm ethmonitor timer_int
 asm ethmonitor regs
 cc ethmonitor dram_setup
 
@@ -80,8 +85,8 @@ test rom  simple simple:simple common:support common:wrapper
 test rom  monitor monitor:monitor monitor:no_cmds monitor:flash monitor:uart common:wrapper common:support
 test dram monitor_full monitor:monitor monitor:all_cmds monitor:memory monitor:flash monitor:uart common:wrapper_download common:support_download
 test dram monitor_extra monitor:monitor monitor:bonus_cmds monitor:memory monitor:ethernet monitor:flash monitor:uart common:wrapper_download common:support_download
-test dram ethmonitor drivers:flash drivers:uart drivers:ethernet  drivers:gipeth drivers:gipeth_asm ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:regs ethmonitor:cmd_leds  ethmonitor:cmd_gipeth ethmonitor:cmd microkernel:microkernel_thread microkernel:init common:wrapper_download common:support_download
-test dram ethmonitor_noeth drivers:flash drivers:uart drivers:ethernet  drivers:gipeth drivers:gipeth_asm ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework_noeth ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:regs ethmonitor:cmd_leds  ethmonitor:cmd_gipeth ethmonitor:cmd microkernel:microkernel_thread microkernel:init common:wrapper_download common:support_download
+test dram ethmonitor drivers:flash drivers:uart drivers:ethernet  drivers:gipeth drivers:gipeth_asm ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:timer_int ethmonitor:regs ethmonitor:cmd_leds  ethmonitor:cmd_gipeth ethmonitor:cmd microkernel:microkernel_thread microkernel:init common:wrapper_download common:support_download
+test dram ethmonitor_noeth drivers:flash drivers:uart drivers:ethernet  drivers:gipeth drivers:gipeth_asm ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework_noeth ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:timer_int ethmonitor:regs ethmonitor:cmd_leds  ethmonitor:cmd_gipeth ethmonitor:cmd microkernel:microkernel_thread microkernel:init common:wrapper_download common:support_download
 test rom ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd ethmonitor:cmd_leds common:wrapper common:support
 #test sram ethmonitor drivers:flash drivers:uart ethmonitor:uart ethmonitor:framework_noeth ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd common:wrapper_download common:support_download
 test sram dram_setup ethmonitor:dram_setup common:wrapper_download common:support_download
@@ -105,13 +110,18 @@ test regression test_div64 alu:test_div64 alu:div64 common:wrapper_regression co
 test dram bug_2 bugs:bug_2 common:wrapper_download common:support_download
 test regression bug_2 bugs:bug_2 common:wrapper_regression common:support_regression
 
-test regression microkernel_test_1 microkernel:test_1 microkernel:init microkernel:microkernel_thread common:wrapper_regression common:support_regression
-test regression microkernel_test_2 ethmonitor:regs microkernel:test_2 microkernel:init microkernel:microkernel_thread common:wrapper_regression common:support_regression
-
 test regression analyzer_test_1 analyzer:test_1 common:wrapper_regression common:support_regression
 test regression analyzer_test_2 analyzer:test_2 common:wrapper_regression common:support_regression
 
+test dram analyzer_test_1 analyzer:test_1 common:wrapper_download common:support_download
+test dram analyzer_test_2 analyzer:test_2 common:wrapper_download common:support_download
+
+test regression microkernel_test_1 microkernel:test_1 microkernel:init microkernel:microkernel_thread common:wrapper_regression common:support_regression
+test regression microkernel_test_2 ethmonitor:regs microkernel:test_2 microkernel:init microkernel:microkernel_thread common:wrapper_regression common:support_regression
+test regression microkernel_test_3 microkernel:timer_int microkernel:test_3 microkernel:init microkernel:microkernel_thread common:wrapper_regression common:support_regression
+
 test dram microkernel_test_leds microkernel:test_leds microkernel:init microkernel:microkernel_thread common:wrapper_download common:support_download
+test dram microkernel_test_3 microkernel:timer_int microkernel:test_3 microkernel:init microkernel:microkernel_thread common:wrapper_download common:support_download
 
 test sram microkernel microkernel:init microkernel:microkernel_thread
 

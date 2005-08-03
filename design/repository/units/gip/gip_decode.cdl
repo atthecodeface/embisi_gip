@@ -163,7 +163,6 @@ module gip_decode( clock gip_clock,
 
     /*b Selected decode results
      */
-    comb t_gip_ins_cc dec_cc;
     comb bit request_fetch;
     comb bit next_pc_valid;
     comb bit[32] next_pc;
@@ -405,33 +404,37 @@ module gip_decode( clock gip_clock,
                 {
                     if (sched_thread_to_start_resuming)
                     {
+                        // need to issue a mov pc, preempt_pc_level
+                        dec_inst.gip_ins_class = gip_ins_class_logic;
+                        dec_inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
+                        dec_inst.gip_ins_cc = gip_ins_cc_always;
+                        dec_inst.a = 0;
+                        dec_inst.s_or_stack = 0;
+                        dec_inst.p_or_offset_is_shift = 0;
+                        dec_inst.k = 0;
+                        dec_inst.f = 0;
+                        dec_inst.d = 0;
+                        dec_inst.tag = 0;
+                        dec_inst.rm_is_imm = 0;
+                        dec_inst.immediate = 0;
+                        dec_inst.pc = pc+8;
+                        dec_inst.gip_ins_rn.type=gip_ins_r_type_none;
+                        dec_inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
+                        if (sched_thread_to_start_level==0)
+                        {
+                            dec_inst.gip_ins_rm = {type=gip_ins_r_type_special, r=gip_special_reg_preempted_pc_l};
+                        }
+                        else
+                        {
+                            dec_inst.gip_ins_rm = {type=gip_ins_r_type_special, r=gip_special_reg_preempted_pc_m};
+                        }
+                        dec_inst.valid = 0;
                         if (rfr_accepting_dec_instruction)
                         {
+                            dec_inst.valid = 1;
                             acknowledge_scheduler <= 1;
                             thread <= sched_thread_to_start;
                             decoding_thread_level <= (sched_thread_to_start_level!=0);
-                            // need to issue a mov pc, preempt_pc_level
-                            dec_inst.gip_ins_class = gip_ins_class_logic;
-                            dec_inst.gip_ins_subclass = gip_ins_subclass_logic_mov;
-                            dec_inst.gip_ins_cc = gip_ins_cc_always;
-                            dec_inst.a = 0;
-                            dec_inst.s_or_stack = 0;
-                            dec_inst.p_or_offset_is_shift = 0;
-                            dec_inst.k = 0;
-                            dec_inst.f = 0;
-                            dec_inst.d = 0;
-                            dec_inst.gip_ins_rn.type=gip_ins_r_type_none;
-                            dec_inst.gip_ins_rd = {type=gip_ins_r_type_internal, r=gip_ins_r_int_pc};
-                            if (sched_thread_to_start_level==0)
-                            {
-                                dec_inst.gip_ins_rm = {type=gip_ins_r_type_special, r=gip_special_reg_preempted_pc_l};
-                            }
-                            else
-                            {
-                                dec_inst.gip_ins_rm = {type=gip_ins_r_type_special, r=gip_special_reg_preempted_pc_m};
-                            }
-                            dec_inst.tag = 0;
-                            dec_inst.valid = 1;
                             full_switch (sched_thread_to_start_config[0])
                                 {
                                 case 1:
@@ -651,6 +654,10 @@ module gip_decode( clock gip_clock,
                     if (arm_use_native_decode && (native_dec_next_atomic!=0))
                     {
                         next_atomic = native_dec_next_atomic;
+                    }
+                    if ((!arm_use_native_decode) && (arm_dec_inst.tag!=0) && arm_dec_inst.valid)
+                    {
+                        next_atomic = -1; // if the ARM decode wants to deschedule, we must be atomic
                     }
                 }
                 if (gip_pipeline_rfw_write_pc)

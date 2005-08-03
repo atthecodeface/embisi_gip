@@ -52,24 +52,24 @@ input output_clock;
 output pad_p;
 output pad_n;
 
-OFDDRTCPE pos_pad( .CLR(reset),
+OFDDRTCPE pos_pad( .CLR(1'b0),
                     .PRE(1'b0),
                     .CE(1'b1),
-                    .D0(1),
-                    .D1(0),
+                    .D0(1'b1),
+                    .D1(1'b0),
                     .C0(output_clock),
                     .C1(!output_clock),
-                    .T( 0 ),
+                    .T( 1'b0 ),
                     .O( pad_p ) );
 
 OFDDRTCPE neg_pad( .CLR(reset),
                     .PRE(1'b0),
                     .CE(1'b1),
-                    .D0(0),
-                    .D1(1),
+                    .D0(1'b0),
+                    .D1(1'b1),
                     .C0(output_clock),
                     .C1(!output_clock),
-                    .T( 0 ),
+                    .T( 1'b0 ),
                     .O( pad_n ) );
 endmodule
 
@@ -470,6 +470,7 @@ wire ssdo, ssdo_oe;
 wire [1:0]ssdi;
 wire [7:0]sscs;
 wire [7:0]internal_switches;
+wire [31:0]analyzer_async_trace_out;
 
 assign mii_mdc = sscl[0];
 assign mii_mdio = ssdo_oe ? ssdo : 1'bz; //'
@@ -539,7 +540,8 @@ gip_system body( .drm_clock(int_drm_clock_buffered),
                  .input_dq_high(drm_input_dq_high[31:0]), // last dq data during high period of drm_clock - GJS swapped these July 3 2005
 
                  .analyzer_clock(analyzer_clock),
-                 .analyzer_signals(analyzer_signals)
+                 .analyzer_async_trace_valid(analyzer_signals_valid),
+                 .analyzer_async_trace_out(analyzer_signals)
     );
 assign drm_next_dq[63:32] = 0;
 assign drm_next_dqm[7:4] = 0;

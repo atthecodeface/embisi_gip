@@ -262,6 +262,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
                     ingress_fifo_event_type = last_postbus_fifo_event_type;
                     ingress_fifo_op_to_status = last_postbus_fifo_op_to_status;
                     ingress_sram_data_op = last_postbus_sram_data_op;
+                    ingress_sram_data_reg_op = io_sram_data_reg_op_postbus; // this is not effectively used yet as the data_op will not be write_data_reg - need to fix this
                     ingress_sram_address_op = last_postbus_sram_address_op;
                 }
                 }

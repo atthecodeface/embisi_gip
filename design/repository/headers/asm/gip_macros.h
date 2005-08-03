@@ -1,19 +1,22 @@
 #define imm_bits(byte,shft)
 
+    // Note that for even left shift (say 12) we want bits ror (32-shift), so the ror in the instructions is 16-shift/2, put in bits 8-11 - this is ((33-12)&0x1e)=20 put in 7 through 11
+    // Note that for odd left shift (say 13) we want (bits<<1) ror (33-shift), so the ror in the instructions is 16-(shift-1)/2, put in bits 8-11 - this is ((33-13)&0x1e)=20 put in 7 through 11
+    // effectively for odd left shifts are the same as even left shifts with the bits left-shifted-by-1 and the left shift reduced by 1, i.e. rotate right increased by 1.
     .macro gip_read_and_clear_semaphores, bits, shift, regnum
-    swi 0xfe0000 | (\bits<<(\shift&1)) | (((32-\shift)&0x1e)<<7) | (\regnum<<12)
+    swi 0xfe0000 | (\bits<<(\shift&1)) | (((33-\shift)&0x1e)<<7) | (\regnum<<12)
     .endm
 
     .macro gip_read_and_set_semaphores, bits, shift, regnum
-    swi 0xee0000 | (\bits<<(\shift&1)) | (((32-\shift)&0x1e)<<7) | (\regnum<<12)
+    swi 0xee0000 | (\bits<<(\shift&1)) | (((33-\shift)&0x1e)<<7) | (\regnum<<12)
     .endm
 
     .macro gip_clear_semaphores, bits, shift
-    swi 0xf60000 | (\bits<<(\shift&1)) | (((32-\shift)&0x1e)<<7)
+    swi 0xf60000 | (\bits<<(\shift&1)) | (((33-\shift)&0x1e)<<7)
     .endm
 
     .macro gip_set_semaphores, bits, shift
-    swi 0xe60000 | (\bits<<(\shift&1)) | (((32-\shift)&0x1e)<<7)
+    swi 0xe60000 | (\bits<<(\shift&1)) | (((33-\shift)&0x1e)<<7)
     .endm
 
     .macro gip_test_semaphores, bits, shift

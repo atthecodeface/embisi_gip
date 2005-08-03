@@ -248,8 +248,8 @@ return
 
 #b gip_system_bug_2
 gip_system_bug_2:
-set vcd_skip_length 0
-set run_length 1000000
+set vcd_skip_length 00000
+set run_length 4000000
 setenv "mii_rx_sources" ""
 setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/bug_2.regression.dmif"
@@ -263,8 +263,10 @@ return
 gip_system_microkernel:
 setenv "verbose_level" 1
 
+#test 3 is a regression test, the others are not as yet
 #    gosub gip_system_microkernel_1
-    gosub gip_system_microkernel_2
+#    gosub gip_system_microkernel_2
+    gosub gip_system_microkernel_3
 return
 
 #b gip_system_microkernel_1
@@ -289,6 +291,19 @@ setenv "ddr_mif" "../arm/bin/microkernel_test_2.regression.dmif"
 #setenv "ddr_mif" "../arm/bin/factorial.regression.dmif"
 set_string vcd_filename "gip_system_0"
 set vcd_create 1
+gosub gip_system_test
+return
+
+#b gip_system_microkernel_3
+gip_system_microkernel_3:
+set vcd_skip_length 0
+set run_length 1000000
+setenv "mii_rx_sources" ""
+setenv "uart_exec_file" "src/end.ef"
+setenv "ddr_mif" "../arm/bin/microkernel_test_3.regression.dmif"
+#setenv "ddr_mif" "../arm/bin/factorial.regression.dmif"
+set_string vcd_filename "gip_system_0"
+set vcd_create 0
 gosub gip_system_test
 return
 
@@ -319,7 +334,7 @@ return
 gip_system_analyzer_2:
 printf "gip_system_analyzer_2 test"
 set vcd_skip_length 0000
-set run_length 130000
+set run_length 140000
 setenv "mii_rx_sources" ""
 setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/analyzer_test_2.regression.dmif"

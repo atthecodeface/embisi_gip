@@ -87,8 +87,8 @@ module gip_scheduler( clock gip_clock,
     clocked t_gip_sched_thread[8] thread_data={{restart_pc=0, flag_dependencies=1, register_map=0, config=1, running=0}}; // 'Register file' of thread data for all eight threads
     clocked bit[3] thread=0 "Actual thread number that is currently running; 1+last running thread if none running";
     clocked bit running=0; // 1 if a thread is running, 0 otherwise
-    clocked bit[3] preempted_medium_thread=0; // 0 if none, else number
-    clocked bit preempted_low_thread=0; // 0 if not, else 1
+    //clocked bit[3] preempted_medium_thread=0; // 0 if none, else number
+    //clocked bit preempted_low_thread=0; // 0 if not, else 1
 
     clocked bit thread_to_start_valid=0; // 1 if the bus contents are valid; bus contents may only change when this signal rises
     clocked bit[3] thread_to_start=0; // Thread number to start

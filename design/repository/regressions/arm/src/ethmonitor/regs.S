@@ -26,6 +26,7 @@ stable_regs_table:
     // 01->regs with interrupt enable/disable
     // 02->stack pointer with interrupt enable/disable
     // 03->flags with interrupt enable/disable
+    // 04->ldmia
 test_regs_stable:
 
     tst r1, #1<<31
@@ -55,7 +56,9 @@ user_entry_point:
     cmp r1, #2
     blt test_regs_held_with_interrupt_mgmt
     beq test_sp_with_interrupt_mgmt
-    b test_flags_with_interrupt_mgmt
+    cmp r1, #4
+    blt test_flags_with_interrupt_mgmt
+    b test_ldmia
 
 /*a Register test functions
  */
@@ -250,6 +253,98 @@ test_flags_with_interrupt_mgmt:
     add r2, r2, #1
     and r2, r2, #15
     b 0b
+
+/*a LDMIA test function
+ */
+test_ldmia: 
+
+    ldr r0, = ldmia_test_1
+    ldmia r0, {r1-r12,r15}
+
+test_ldmia_restart_2:       
+    ldr r0, = ldmia_test_2  
+    bl check_ldmia_regs
+    b test_ldmia
+
+test_ldmia_restart_1:       
+    ldr r0, = ldmia_test_1
+    bl check_ldmia_regs
+    ldr r0, = ldmia_test_2  
+    ldmia r0, {r1-r12,r15}
+
+ldmia_test_1:
+    .word 1
+    .word 2
+    .word 3
+    .word 4
+    .word 5
+    .word 6
+    .word 7
+    .word 8
+    .word 9
+    .word 10
+    .word 11
+    .word 12
+    .word test_ldmia_restart_1
+
+ldmia_test_2:
+    .word 0x101
+    .word 0x102
+    .word 0x103
+    .word 0x104
+    .word 0x105
+    .word 0x106
+    .word 0x107
+    .word 0x108
+    .word 0x109
+    .word 0x1010
+    .word 0x1011
+    .word 0x1012
+    .word test_ldmia_restart_2
+    
+    
+check_ldmia_regs:
+    stmfd sp!, {r1}
+    ldr r1, [r0, #4]
+    cmp r2, r1
+    bne failure
+    ldr r1, [r0, #8]
+    cmp r3, r1
+    bne failure
+    ldr r1, [r0, #12]
+    cmp r4, r1
+    bne failure
+    ldr r1, [r0, #16]
+    cmp r5, r1
+    bne failure
+    ldr r1, [r0, #20]
+    cmp r6, r1
+    bne failure
+    ldr r1, [r0, #24]
+    cmp r7, r1
+    bne failure
+    ldr r1, [r0, #28]
+    cmp r8, r1
+    bne failure
+    ldr r1, [r0, #32]
+    cmp r9, r1
+    bne failure
+    ldr r1, [r0, #36]
+    cmp r10, r1
+    bne failure
+    ldr r1, [r0, #40]
+    cmp r11, r1
+    bne failure
+    ldr r1, [r0, #44]
+    cmp r12, r1
+    bne failure
+    ldmfd sp!, {r1}
+    ldr r2, [r0]
+    cmp r1, r2
+    bne failure
+    mov pc, lr
+        
+    
 
 /*a Failure routine
  */

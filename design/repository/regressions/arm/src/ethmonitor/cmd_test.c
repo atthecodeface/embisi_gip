@@ -193,17 +193,7 @@ static int command_leds_read_write( void *handle, int argc, unsigned int *args )
 /*f timer_int
   The order of operations is important, as the timer passed bit gets cleared when its write completes, and that then flows through the local semaphores which can take (!) 8 cycles to 'uneffect' our semaphore
  */
-static void timer_int( void )
-{
-    __asm__ volatile ( " .word 0xec00c1f5 ; mov r0, r8 " );  // r31 <= periph[24] (timer value)
-    __asm__ volatile ( " .word 0xec00d591 ; add r0, r15, #0x30000 " ); // periph[25] = r31+0x30000, and clears passed // 0x40 is too tight
-    __asm__ volatile ( " .word 0xec00c80e ; mov r0, #0x1<<28 " ); // write to spec0 (sems to clr)
-    __asm__ volatile ( " .word 0xec007281 ; .word 0xec00c1f8 ; mov r0, r0 " ); // r31 <= spec0 (read and clear semaphores)
-    __asm__ volatile ( " .word 0xec00c80e ; mov r0, #0x4<<4 " ); // write to spec0 (sems to set)
-    __asm__ volatile ( " .word 0xec00d111 ; orr r1, r1, #1 " ); // take some time setting our interrupt bit (r17 bit 0)
-    __asm__ volatile ( " .word 0xec00c1f8 ; mov r0, r1 " ); // r31 <= spec1 (read and clear semaphores)
-    __asm__ volatile ( " .word 0xec007305 " ); // deschedule
-}
+extern void timer_int( void );
 
 /*f timer_operation
  */
@@ -251,6 +241,22 @@ static int command_leds_flash( void *handle, int argc, unsigned int *args )
     return 0;
 }
 
+/*f command_ints
+ */
+static int command_ints( void *handle, int argc, unsigned int *args )
+{
+    if (argc<1) return 1;
+    if (args[0])
+    {
+        MK_INT_EN();
+    }
+    else
+    {
+        MK_INT_DIS();
+    }
+    return 0;
+}
+
 /*f command_test_regs
   syntax: <test> - test is top bit set for system mode, clear for user mode, and bottom bits 0->regs, 1->regs with ints, 2->sp with ints, 3->flags with ints
  */
@@ -274,6 +280,7 @@ const t_command monitor_cmds_test[] =
     {"tmld", command_timer_leds},
     {"ldrw", command_leds_read_write},
     {"ldfl", command_leds_flash},
+    {"ints", command_ints},
     {"tstr", command_test_regs},
     {(const char *)0, (t_command_fn *)0},
 };

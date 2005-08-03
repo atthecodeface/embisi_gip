@@ -11,7 +11,7 @@ $sim_options = "";
 if ($opt_t) {
     $tests .= "--define $opt_t=1 ";
 }
-@regression = ("prefetch_tests", "system_scheduler_tests", "system_alu_tests", "system_memory_tests", "system_analyzer_tests");
+@regression = ("prefetch_tests", "system_scheduler_tests", "system_alu_tests", "system_memory_tests", "system_microkernel_tests", "system_analyzer_tests");
 if ($opt_r) {
     foreach $t (@regression) {
         $tests .= "--define $t=1 ";

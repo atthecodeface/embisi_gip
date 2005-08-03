@@ -10,7 +10,7 @@ ARM_LD := ${ARM_PREFIX}ld -EB
 ARM_STRIP := ${ARM_PREFIX}strip
 ARM_CC_INCLUDES :=  -I../../headers/c
 ARM_CC_FLAGS := -Wall -fomit-frame-pointer -O4 -DREGRESSION
-ARM_AS_FLAGS := -Wall -I../../headers/asm -fomit-frame-pointer -O4 -mapcs-32 -march=gip -mbig-endian -DREGRESSION
+ARM_AS_FLAGS := -Wall -I../../headers/asm -fomit-frame-pointer -O4 -mapcs-32 -mcpu=gip -mbig-endian -DREGRESSION
 BIN_TO_MIF := ${TNBT_CVS_ROOT}/common/bin/bin_to_mif -s
 MIF_TO_CDL := ${TNBT_CVS_ROOT}/common/bin/mif_to_cdl
 # ARM_CC_FLAGS := 

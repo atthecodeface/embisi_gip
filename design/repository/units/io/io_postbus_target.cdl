@@ -77,6 +77,7 @@ module io_postbus_target( clock int_clock "main system clck",
              write_address = postbus_command_word[5;postbus_command_target_io_dest_start];
              fifo_to_access = postbus_command_word[2;postbus_command_target_io_fifo_start];
              fifo_op_to_cmd_status = postbus_command_word[postbus_command_target_io_cmd_status];
+             fifo_address_from_read_ptr = 0;
 
              egress_req = 0;
              ingress_req = 0;

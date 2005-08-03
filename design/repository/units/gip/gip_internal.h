@@ -337,7 +337,7 @@ extern module gip_rf( clock gip_clock,
     timing to rising clock gip_clock mem_1_rd, mem_2_rd, mem_read_data, mem_read_data_valid;
 
     timing comb input alu_inst_valid, alu_inst_gip_ins_rd;
-    timing comb input rfr_periph_read_data_valid;
+    timing comb input rfr_periph_read_data_valid, rfr_periph_busy;
     timing comb output rfr_accepting_dec_instruction_if_alu_does;
     timing comb output rfr_inst; // .valid depends on blocking
 
@@ -476,8 +476,8 @@ extern module gip_decode( clock gip_clock,
     timing from rising clock gip_clock force_fetch_flush;
 
     timing to rising clock gip_clock rfr_accepting_dec_instruction;
-    timing comb input rfr_accepting_dec_instruction, gip_pipeline_flush, gip_pipeline_tag;
-    timing comb output fetch_op, prefetch_op;
+    timing comb input rfr_accepting_dec_instruction, gip_pipeline_flush, gip_pipeline_tag, sched_thread_to_start_valid;
+    timing comb output fetch_op, prefetch_op, prefetch_address, force_fetch_flush;
     timing comb output deschedule;
 
     timing to rising clock gip_clock gip_pipeline_flush, gip_pipeline_rfw_write_pc, gip_pipeline_executing, gip_pipeline_tag, gip_pipeline_rfw_data;

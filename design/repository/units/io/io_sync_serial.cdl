@@ -175,7 +175,8 @@ SPI modes 2 and 3 (CPOL=1) use the clock inverted compared to SPI modes 0 and 1
 
     /*b State for I/O fifo interfaces
      */
-    clocked t_io_tx_data_fifo_cmd         tx_data_fifo_cmd = io_tx_data_fifo_cmd_read_and_commit_fifo;
+//    comb t_io_tx_data_fifo_cmd         tx_data_fifo_cmd; 
+//    fix_for_xilinx: { tx_data_fifo_cmd= io_tx_data_fifo_cmd_read_and_commit_fifo; } - has empty sensitivity list, so we'll put this further down
     clocked bit                           tx_data_fifo_toggle = 0;
     clocked bit[32] tx_shift_register = 0    "Shift register; bit 31 is driven out first";
 
@@ -231,6 +232,7 @@ SPI modes 2 and 3 (CPOL=1) use the clock inverted compared to SPI modes 0 and 1
      */
     serial_fsm "Serial FSM":
         {
+            tx_data_fifo_cmd = io_tx_data_fifo_cmd_read_and_commit_fifo;//    fix_for_xilinx - its constant, so we're okay
             sync_cmd_fifo_empty <= { metastable=cmd_fifo_empty, stable=metastable };
             status_fifo_data = cmd_fifo_data;
             full_switch (serial_fsm_state)

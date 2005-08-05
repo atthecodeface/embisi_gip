@@ -82,6 +82,7 @@ cdl units/io          io_postbus_event_manager    inc:headers/cdl
 cdl units/io          io_postbus                  inc:headers/cdl
 cdl units/io          io_uart                     inc:headers/cdl
 cdl units/io          io_block                    inc:headers/cdl
+cdl units/io          io_parallel                 inc:headers/cdl
 
 #c_model src c_gip_cyc
 #c_src src c_gip_full

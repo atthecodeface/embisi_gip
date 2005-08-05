@@ -218,6 +218,8 @@ mkt_basic_system_mode_trap_return_user_mode:
     gip_extrd 18
     add r2, r13, #STACK_FRAME_SIZE // r18 = system stack pointer, after we pop off our frame - only needed for user mode, as otherwise r13 is valid
     ldr r0, [r13, #15*4]
+    tst r0, #0x6000000
+    blne mkt_unknown_trap
     circular_buffer r0, r8
     circular_buffer r13, r8
     gip_extrm 20
@@ -545,6 +547,8 @@ mkt_user_mode_interrupt_no_interrupts:
    	.global mkt_unknown_trap
    // fatal unknown trap - reboot!
 mkt_unknown_trap:
+    ldr r0, =0x0
+    strb r0, [r0]
     mov r0, #0x11000
     add r0, r0, #0x200
     stmia r0, {r0-r14}

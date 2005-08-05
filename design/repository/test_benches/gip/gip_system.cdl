@@ -639,9 +639,33 @@ module gip_system( clock drm_clock,
                 }
                 case 1:
                 {
+                    if (gip_mem_read || gip_mem_write)
+                    {
+                        analyzer_signals <= gip_mem_address; // transaction type in bits [2;0] is 00->data read, 01->ins read, 10->data word write, 11->data subword write
+                    }
+                    else
+                    {
+                        analyzer_signals <= 0;
+                    }
+                    analyzer_signals[2;0] <= 0;
+                    if (gip_mem_priority) // data read has bits 1:0 as 1
+                    {
+                        analyzer_signals[2;0] <= 1;
+                    }
+                    if (gip_mem_write) // data write (no inst write :-) has bits 1:0 as 2 or 3
+                    {
+                        analyzer_signals[2;0] <= 2;
+                        if (gip_mem_write_byte_enables!=4hf)
+                        {
+                            analyzer_signals[0] <= 1;
+                        }
+                    }
+                }
+                case 4:
+                {
                     analyzer_signals <= gip_mem_write_data;
                 }
-                case 2:
+                case 5:
                 {
                     analyzer_signals <= gip_mem_read_data;
                 }

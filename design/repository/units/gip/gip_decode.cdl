@@ -485,6 +485,10 @@ module gip_decode( clock gip_clock,
                 dec_inst.k = 0;
                 dec_inst.f = 0;
                 dec_inst.d = 0;
+                dec_inst.tag = 0;
+                dec_inst.rm_is_imm = 0;
+                dec_inst.immediate = 0;
+                dec_inst.pc = pc+8;
                 dec_inst.gip_ins_rn.type=gip_ins_r_type_none;
                 dec_inst.gip_ins_rd.type=gip_ins_r_type_none;
                 if (sched_thread_to_start_level==0)
@@ -495,7 +499,6 @@ module gip_decode( clock gip_clock,
                 {
                     dec_inst.gip_ins_rm = {type=gip_ins_r_type_special, r=gip_special_reg_preempted_flags_m};
                 }
-                dec_inst.tag = 0;
                 dec_inst.valid = 1;
                 if (op_state==gip_decode_state_resume_emulate)
                 {
@@ -670,7 +673,7 @@ module gip_decode( clock gip_clock,
                 {
                     preempt_blocked = 1;
                 }
-                if (arm_use_native_decode && native_dec_extending)
+                if ((arm_use_native_decode && native_dec_extending) || extended)
                 {
                     preempt_blocked = 1;
                 }

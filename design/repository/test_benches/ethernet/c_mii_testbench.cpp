@@ -1054,15 +1054,20 @@ t_sl_error_level c_mii_testbench::clock_posedge_int_clock( void )
         eth_packet_receive_clock( &tgt_packet, 1 );
         if (tgt_packet.complete)
         {
+            int pkt_ok;
+            pkt_ok = 1;
             sl_data_stream_start_packet( sinks[0].data_stream );
             if (tgt_packet.length!=8+2*sl_data_stream_packet_length( sinks[0].data_stream ))
             {
-                sprintf( buffer, "c_mii_testbench:Expected TX ethernet packet length %d", sl_data_stream_packet_length( sinks[0].data_stream ) );
+                sprintf( buffer, "**FAILURE**:Expected TX ethernet packet length %d (got %d nybbles)", sl_data_stream_packet_length( sinks[0].data_stream ), tgt_packet.length );
                 engine->error->add_error( NULL, error_level_info, error_number_sl_fail, error_id_sl_exec_file_allocate_and_read_exec_file,
                                           error_arg_type_integer, engine->cycle(),
                                           error_arg_type_malloc_string, buffer,
                                           error_arg_type_malloc_string, engine->get_instance_name(engine_handle), 
+                                          error_arg_type_malloc_filename, "c_mii_testbench.cpp",
+                                          error_arg_type_line_number, 0,
                                           error_arg_type_none );
+                pkt_ok = 0;
             }
             data = sl_data_stream_packet_header( sinks[0].data_stream );
             for (i=0; i<tgt_packet.length/2-8; i++)
@@ -1071,13 +1076,25 @@ t_sl_error_level c_mii_testbench::clock_posedge_int_clock( void )
                 data = sl_data_stream_packet_data_byte( sinks[0].data_stream );
                 if ( data != tgt_packet.data[i+4] )
                 {
-                    sprintf( buffer, "c_mii_testbench:Expected TX ethernet data %02x, got data %02x at octet %d of packet", data, tgt_packet.data[i+4], i );
+                    sprintf( buffer, "**FAILURE**:Expected TX ethernet data %02x, got data %02x at octet %d of packet", data, tgt_packet.data[i+4], i );
                     engine->error->add_error( NULL, error_level_info, error_number_sl_fail, error_id_sl_exec_file_allocate_and_read_exec_file,
                                               error_arg_type_integer, engine->cycle(),
                                               error_arg_type_malloc_string, buffer,
                                               error_arg_type_malloc_string, engine->get_instance_name(engine_handle), 
+                                              error_arg_type_malloc_filename, "c_mii_testbench.cpp",
+                                              error_arg_type_line_number, 0,
                                               error_arg_type_none );
+                    pkt_ok = 0;
                 }
+            }
+            if (pkt_ok)
+            {
+                sprintf( buffer, "Correctly received expected packet length %d nybbles (inc CRC)", tgt_packet.length );
+                engine->message->add_error( NULL, error_level_info, error_number_sl_message, error_id_sl_exec_file_allocate_and_read_exec_file,
+                                            error_arg_type_malloc_string, buffer,
+                                            error_arg_type_malloc_filename, "c_mii_testbench.cpp",
+                                            error_arg_type_line_number, 0,
+                                            error_arg_type_none );
             }
         }
     }

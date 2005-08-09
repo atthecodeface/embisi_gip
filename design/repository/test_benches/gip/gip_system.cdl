@@ -6,6 +6,8 @@
 include "postbus.h"
 include "gip.h"
 include "io_block.h"
+include "io_slots_eth_ss_par.h"
+include "io_cmd.h"
 include "memories.h"
 
 /*a Types
@@ -148,7 +150,7 @@ extern module postbus_test_rom_contents( clock int_clock, input bit int_reset, i
 /*m ddr_dram_as_sram
  */
 extern module ddr_dram_as_sram( clock drm_clock,
-                                clock slow_clock,
+                                //clock slow_clock,
 
                                 input bit drm_ctl_reset,
                                 output bit init_done,
@@ -185,8 +187,8 @@ extern module ddr_dram_as_sram( clock drm_clock,
     timing from rising clock drm_clock next_cke, next_s_n, next_ras_n, next_cas_n, next_we_n, next_a, next_ba, next_dq, next_dqm, next_dqoe, next_dqs_high, next_dqs_low;
     timing to rising clock drm_clock input_dq_high, input_dq_low;
 
-    timing to rising clock slow_clock sram_priority, sram_read, sram_write, sram_write_byte_enables, sram_address, sram_write_data;
-    timing from rising clock slow_clock sram_read_data, sram_low_priority_wait;
+//    timing to rising clock slow_clock sram_priority, sram_read, sram_write, sram_write_byte_enables, sram_address, sram_write_data;
+//    timing from rising clock slow_clock sram_read_data, sram_low_priority_wait;
 }
 
 /*m analyzer
@@ -346,6 +348,27 @@ module gip_system( clock drm_clock,
     net t_postbus_data postbus_rx_data;
     net t_postbus_ack postbus_rx_ack;
 
+    net bit    io_slot_cfg_write "asserted if cfg_data should be written to cfg_slot";
+    net bit[8] io_slot_cfg_data  "data for setting a slot configuration";
+    net bit[2] io_slot_cfg_slot  "number of slot cfg data is destined for";
+
+    net bit[4]    io_slot_egr_cmd_ready  "bus of command emptys from all slots - they are filled asynchronously to requests";
+    net bit       io_slot_egr_data_req    "OR of data requests, masked by pending acknowledgements";
+    net t_io_tx_data_fifo_cmd   io_slot_egr_data_cmd    "data command from lowest number slot with an unmasked request";
+    net bit[2]    io_slot_egr_data_slot   "slot the data command is coming from";
+    net bit      io_slot_egr_data_ack "asserted to acknowledge the current data request";
+    net bit[32]  io_slot_egr_data "contains data for writes to the slots, registered here, valid 3 cycles after acknowledged request (acked req in cycle 0, sram req in cycle 1, sram data stored end cycle 2, this valid in cycle 3";
+    net bit[2]   io_slot_egr_slot "indicates which slot the egress data is for, registered here; ";
+    net bit      io_slot_egr_cmd_write  "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client";
+    net bit      io_slot_egr_data_write "asserted if the data on the bus in this cycle is for the data side interface";
+
+    net bit[32]  io_slot_ingr_data       "muxed in slot head from clients, ANDed with a select from io_slot_ing_number";
+    net bit      io_slot_ingr_status_req "OR of status requests, masked by pending acknowledgements";
+    net bit      io_slot_ingr_data_req    "OR of rx data requests, masked by pending acknowledgements, clear if status_req is asserted";
+    net bit[2]   io_slot_ingr_slot       "indicates which slot the status or rx data request is from";
+    net bit     io_slot_ingr_ack        "acknowledge, valid in same clock as status_req and data_req";
+    net bit[4]  io_slot_ingr_data_full  "for use by I/O";
+
     comb bit rom_next_access;
     comb bit sram_next_access;
     comb bit dram_next_access;
@@ -363,11 +386,6 @@ module gip_system( clock drm_clock,
     net bit eth_mii_tx_en;
     net bit[4] eth_mii_tx_d;
 //    comb bit eth_mii_tx_er;
-
-    net bit uart0_txd;
-    comb bit uart0_txd_fc;
-    net bit uart0_rxd_fc;
-    comb bit uart0_rxd;
 
     net bit[16] gpio_output;
     net bit[16] gpio_output_enable;
@@ -489,7 +507,7 @@ module gip_system( clock drm_clock,
                                                 sram_read_data => sram_read_data );
 
             ddr_dram_as_sram main_ram( drm_clock <- drm_clock,
-                                       slow_clock <- int_clock,
+                                       //slow_clock <- int_clock,
 
                                        drm_ctl_reset <= reset_out,
                                        init_done => ddr_ready,
@@ -581,7 +599,7 @@ module gip_system( clock drm_clock,
 
             io_reset = int_reset;
             eth_mii_tx_er = 0;
-            io_block iob( int_clock <- int_clock,
+            io_block iob_a( int_clock <- int_clock,
                           int_reset <= int_reset,
 
                           postbus_tgt_type <= postbus_tx_type,
@@ -592,34 +610,77 @@ module gip_system( clock drm_clock,
                           postbus_src_data => postbus_rx_data,
                           postbus_src_ack <= postbus_rx_ack,
 
-                          erx_clock <- eth_mii_rx_clock,
-                          erx_reset <= io_reset,
+                          io_slot_cfg_write => io_slot_cfg_write,
+                          io_slot_cfg_data => io_slot_cfg_data,
+                          io_slot_cfg_slot => io_slot_cfg_slot,
 
-                          erx_mii_dv <= eth_mii_rx_dv,
-                          erx_mii_err <= eth_mii_rx_er,
-                          erx_mii_data <= eth_mii_rx_d,
+                          io_slot_egr_cmd_ready <= io_slot_egr_cmd_ready,
+                          io_slot_egr_data_req <= io_slot_egr_data_req,
+                            io_slot_egr_data_cmd <= io_slot_egr_data_cmd,
+                          io_slot_egr_data_slot <= io_slot_egr_data_slot,
+                          io_slot_egr_data_ack => io_slot_egr_data_ack,
+                          io_slot_egr_data => io_slot_egr_data,
+                          io_slot_egr_slot => io_slot_egr_slot,
+                          io_slot_egr_cmd_write => io_slot_egr_cmd_write,
+                          io_slot_egr_data_write => io_slot_egr_data_write,
 
-                          etx_clock <- eth_mii_tx_clock,
-                          etx_reset <= io_reset,
-                          etx_mii_enable => eth_mii_tx_en,
-                          etx_mii_data => eth_mii_tx_d,
-                          etx_mii_crs <= eth_mii_crs,
-                          etx_mii_col <= eth_mii_col,
+                          io_slot_ingr_data <= io_slot_ingr_data,
+                          io_slot_ingr_status_req <= io_slot_ingr_status_req,
+                          io_slot_ingr_data_req <= io_slot_ingr_data_req,
+                          io_slot_ingr_slot <= io_slot_ingr_slot,
+                          io_slot_ingr_ack => io_slot_ingr_ack,
+                          io_slot_ingr_data_full => io_slot_ingr_data_full,
 
-                          uart0_txd => uart0_txd,
-                          uart0_txd_fc <= uart0_txd_fc,
-                          uart0_rxd <= uart0_rxd,
-                          uart0_rxd_fc => uart0_rxd_fc,
-
-                          sscl => sscl,
-                          sscl_oe => sscl_oe,
-                          ssdo => ssdo,
-                          ssdo_oe => ssdo_oe,
-                          ssdi <= ssdi,
-                          sscs => sscs,
-
-                          analyzer_mux_control <= analyzer_mux_control[2;0],
+                          analyzer_mux_control <= analyzer_mux_control[3;0],
                           analyzer_signals => iob_analyzer_signals );
+
+            io_slots_eth_ss_par ios_a ( int_clock <- int_clock,
+                                        int_reset <= int_reset,
+
+                                        io_slot_cfg_write <= io_slot_cfg_write,
+                                        io_slot_cfg_data <= io_slot_cfg_data,
+                                        io_slot_cfg_slot <= io_slot_cfg_slot,
+
+                                        io_slot_egr_cmd_ready => io_slot_egr_cmd_ready,
+                                        io_slot_egr_data_req => io_slot_egr_data_req,
+                                        io_slot_egr_data_cmd => io_slot_egr_data_cmd,
+                                        io_slot_egr_data_slot => io_slot_egr_data_slot,
+                                        io_slot_egr_data_ack <= io_slot_egr_data_ack,
+                                        io_slot_egr_data <= io_slot_egr_data,
+                                        io_slot_egr_slot <= io_slot_egr_slot,
+                                        io_slot_egr_cmd_write <= io_slot_egr_cmd_write,
+                                        io_slot_egr_data_write <= io_slot_egr_data_write,
+
+                                        io_slot_ingr_data => io_slot_ingr_data,
+                                        io_slot_ingr_status_req => io_slot_ingr_status_req,
+                                        io_slot_ingr_data_req => io_slot_ingr_data_req,
+                                        io_slot_ingr_slot => io_slot_ingr_slot,
+                                        io_slot_ingr_ack <= io_slot_ingr_ack,
+                                        io_slot_ingr_data_full <= io_slot_ingr_data_full,
+
+                                        erx_clock <- eth_mii_rx_clock,
+                                        erx_reset <= io_reset,
+
+                                        erx_mii_dv <= eth_mii_rx_dv,
+                                        erx_mii_err <= eth_mii_rx_er,
+                                        erx_mii_data <= eth_mii_rx_d,
+
+                                        etx_clock <- eth_mii_tx_clock,
+                                        etx_reset <= io_reset,
+                                        etx_mii_enable => eth_mii_tx_en,
+                                        etx_mii_data => eth_mii_tx_d,
+                                        etx_mii_crs <= eth_mii_crs,
+                                        etx_mii_col <= eth_mii_col,
+
+                                        sscl => sscl,
+                                        sscl_oe => sscl_oe,
+                                        ssdo => ssdo,
+                                        ssdo_oe => ssdo_oe,
+                                        ssdi <= ssdi,
+                                        sscs => sscs,
+
+                                        analyzer_mux_control <= analyzer_mux_control[2;0],
+                                        analyzer_signals => iob_analyzer_signals );
         }
 
     /*b Logic analyzer
@@ -697,8 +758,6 @@ module gip_system( clock drm_clock,
                                      async_trace_valid_out => analyzer_async_trace_valid,
                                      async_trace_out => analyzer_async_trace_out );
 
-            uart0_rxd = 1;
-            uart0_txd_fc = 1;
         }
 }
 

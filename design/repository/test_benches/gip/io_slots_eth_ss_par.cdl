@@ -1,0 +1,367 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "io_cmd.h"
+include "io.h"
+include "io_slot.h"
+
+include "io_ethernet_rx.h"
+include "io_ethernet_tx.h"
+include "io_sync_serial.h"
+include "io_parallel.h"
+include "io_slot_head.h"
+
+/*a io_slots_eth_ss_par module
+ */
+module io_slots_eth_ss_par( clock int_clock,
+                            input bit int_reset,
+
+                            input bit    io_slot_cfg_write "asserted if cfg_data should be written to cfg_slot",
+                            input bit[8] io_slot_cfg_data  "data for setting a slot configuration",
+                            input bit[2] io_slot_cfg_slot  "number of slot cfg data is destined for",
+
+                            output bit[4]    io_slot_egr_cmd_ready  "bus of command emptys from all slots - they are filled asynchronously to requests",
+                            output bit       io_slot_egr_data_req    "OR of data requests, masked by pending acknowledgements",
+                            output t_io_tx_data_fifo_cmd   io_slot_egr_data_cmd    "data command from lowest number slot with an unmasked request",
+                            output bit[2]    io_slot_egr_data_slot   "slot the data command is coming from",
+                            input bit      io_slot_egr_data_ack "asserted to acknowledge the current data request",
+                            input bit[32]  io_slot_egr_data "contains data for writes to the slots, registered here, valid 3 cycles after acknowledged request (acked req in cycle 0, sram req in cycle 1, sram data stored end cycle 2, this valid in cycle 3",
+                            input bit[2]   io_slot_egr_slot "indicates which slot the egress data is for, registered here; ",
+                            input bit      io_slot_egr_cmd_write  "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client",
+                            input bit      io_slot_egr_data_write "asserted if the data on the bus in this cycle is for the data side interface",
+
+                            output bit[32]  io_slot_ingr_data       "muxed in slot head from clients, ANDed with a select from io_slot_ing_number",
+                            output bit      io_slot_ingr_status_req "OR of status requests, masked by pending acknowledgements",
+                            output bit      io_slot_ingr_data_req    "OR of rx data requests, masked by pending acknowledgements, clear if status_req is asserted",
+                            output bit[2]   io_slot_ingr_slot       "indicates which slot the status or rx data request is from",
+                            input bit     io_slot_ingr_ack        "acknowledge, valid in same clock as status_req and data_req",
+                            input bit[4]  io_slot_ingr_data_full  "for use by I/O",
+
+                            clock erx_clock,
+                            input bit erx_reset,
+                            input bit erx_mii_dv, // goes high during the preamble OR at the latest at the start of the SFD
+                            input bit erx_mii_err, // if goes high with dv, then abort the receive; wait until dv goes low
+                            input bit[4] erx_mii_data,
+
+                            clock etx_clock,
+                            input bit etx_reset,
+                            output bit etx_mii_enable,
+                            output bit[4] etx_mii_data,
+                            input bit etx_mii_crs,
+                            input bit etx_mii_col,
+
+                            output bit[2] sscl,
+                            output bit[2] sscl_oe,
+                            output bit ssdo,
+                            output bit ssdo_oe,
+                            input bit[2] ssdi,
+                            output bit[8] sscs,
+
+                            input bit[2] analyzer_mux_control,
+                            output bit[32] analyzer_signals
+                            )
+
+    /*b Documentation
+     */
+"
+For now...
+
+Slot 0 is ethernet rx
+Slot 1 is ethernet tx
+Slot 2 is sync serial
+Slot 3 is parallel
+
+"
+{
+
+    /*b -------------------- Registers and signals
+     */
+
+    /*b Default clock and reset - internal clock domain
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Ethernet TX & RX wiring
+     */
+    net bit etx_mii_enable;
+    net bit[4] etx_mii_data;
+
+    net bit[8]                eth_slot_cfg;
+
+    net bit[32]               eth_tx_data_fifo_data;
+    net t_io_tx_data_fifo_cmd eth_tx_data_fifo_cmd;
+    net bit                   eth_tx_data_fifo_toggle;
+
+    net bit                   eth_cmd_fifo_empty;
+    net bit[32]               eth_cmd_fifo_data;
+    net bit                   eth_cmd_fifo_toggle;
+
+    net bit[32]               eth_rx_data_fifo_data;
+    net bit                   eth_rx_data_fifo_toggle;
+    net bit                   eth_rx_data_fifo_full;
+
+    net bit[32]               etx_status_fifo_data;   // pass-through from etx to erx to slot head
+    net bit                   etx_status_fifo_toggle; // pass-through from etx to erx to slot head
+
+    net bit[32]               eth_status_fifo_data;
+    net bit                   eth_status_fifo_toggle;
+
+    net bit                   eth_slot_egr_cmd_ready;
+    net bit                   eth_slot_egr_data_req;
+    net t_io_tx_data_fifo_cmd eth_slot_egr_data_cmd;
+    net bit[32]               eth_slot_ingr_data;
+    net bit                   eth_slot_ingr_status_req;
+    net bit                   eth_slot_ingr_data_req;
+
+    /*b Sync serial wiring
+     */
+    net bit[8]                ss_slot_cfg;
+
+    net bit[32]               ss_tx_data_fifo_data;
+    net t_io_tx_data_fifo_cmd ss_tx_data_fifo_cmd;
+    net bit                   ss_tx_data_fifo_toggle;
+
+    net bit                   ss_cmd_fifo_empty;
+    net bit[32]               ss_cmd_fifo_data;
+    net bit                   ss_cmd_fifo_toggle;
+
+    net bit                   ss_rx_data_fifo_full;  // not really used, but its an output so it must be tied
+    net bit[32]               ss_rx_data_fifo_data;
+    net bit                   ss_rx_data_fifo_toggle;
+
+    net bit[32]               ss_status_fifo_data;
+    net bit                   ss_status_fifo_toggle;
+
+    net bit                   ss_slot_egr_cmd_ready;
+    net bit                   ss_slot_egr_data_req;
+    net t_io_tx_data_fifo_cmd ss_slot_egr_data_cmd;
+    net bit[32]               ss_slot_ingr_data;
+    net bit                   ss_slot_ingr_status_req;
+    net bit                   ss_slot_ingr_data_req;
+
+    net bit[2] sscl;
+    net bit[2] sscl_oe;
+    net bit ssdo;
+    net bit ssdo_oe;
+    net bit[8] sscs;
+
+    /*b -------------------- Instantiations
+     */
+
+    /*b Analyzer signals
+     */
+    clocked bit[2] analyzer_mux_control_reg = 0;
+    analyzer_signal_setting "Analyzer signals":
+        {
+            analyzer_mux_control_reg <= analyzer_mux_control;
+            analyzer_signals = 0;
+            analyzer_signals[12] = eth_cmd_fifo_toggle;
+            analyzer_signals[13] = 0;
+            analyzer_signals[14] = eth_tx_data_fifo_toggle;
+            analyzer_signals[15] = 0;
+        }
+
+    /*b Ethernet transmit and receive 0 instantiation
+     */
+    ethernet_0 "Ethernet transmit and receive module and sync interface":
+        {
+            io_ethernet_tx etx( io_clock <- etx_clock,
+                                io_reset <= etx_reset | !eth_slot_cfg[0],
+
+                                data_fifo_data   <= eth_tx_data_fifo_data,
+                                data_fifo_cmd    => eth_tx_data_fifo_cmd,
+                                data_fifo_toggle => eth_tx_data_fifo_toggle,
+
+                                cmd_fifo_empty   <= eth_cmd_fifo_empty,
+                                cmd_fifo_data    <= eth_cmd_fifo_data,
+                                cmd_fifo_toggle  => eth_cmd_fifo_toggle,
+
+                                status_fifo_data   => etx_status_fifo_data,
+                                status_fifo_toggle => etx_status_fifo_toggle,
+
+                                mii_enable => etx_mii_enable,
+                                mii_data => etx_mii_data,
+                                mii_crs <= etx_mii_crs,
+                                mii_col <= etx_mii_col,
+
+                                cfg_padding <= eth_slot_cfg[2;io_slot_cfg_io_start] );
+
+            io_ethernet_rx erx( io_clock <- erx_clock,
+                                io_reset <= erx_reset | !eth_slot_cfg[0],
+
+                                data_fifo_data   => eth_rx_data_fifo_data,
+                                data_fifo_toggle => eth_rx_data_fifo_toggle,
+                                data_fifo_full   <= eth_rx_data_fifo_full,
+
+                                status_fifo_data   => eth_status_fifo_data,
+                                status_fifo_toggle => eth_status_fifo_toggle,
+
+                                mii_dv <= erx_mii_dv,
+                                mii_err <= erx_mii_err,
+                                mii_data <= erx_mii_data,
+
+                                etx_status_fifo_toggle <= etx_status_fifo_toggle,
+                                etx_status_fifo_data <= etx_status_fifo_data,
+
+                                cfg_padding <= eth_slot_cfg[2;io_slot_cfg_io_start]);
+
+            io_slot_head eth_head( int_clock <- int_clock,
+                                   int_reset <= int_reset,
+
+                                   io_slot_cfg_write <= (io_slot_cfg_write && (io_slot_cfg_slot==0)),
+                                   io_slot_cfg_data <= io_slot_cfg_data,
+                                   io_slot_cfg => eth_slot_cfg,
+
+                                   io_slot_egr_cmd_ready => eth_slot_egr_cmd_ready,
+                                   io_slot_egr_data_req  => eth_slot_egr_data_req,
+                                   io_slot_egr_data_cmd  => eth_slot_egr_data_cmd,
+                                   io_slot_egr_data_ack  <= (io_slot_egr_data_ack && (io_slot_egr_data_slot==0)),
+
+                                   io_slot_egr_data      <= io_slot_egr_data,
+                                   io_slot_egr_slot_select <= (io_slot_egr_slot==0),
+                                   io_slot_egr_cmd_write   <= io_slot_egr_cmd_write,
+                                   io_slot_egr_data_write  <= io_slot_egr_data_write,
+
+                                   io_slot_ingr_data       => eth_slot_ingr_data,
+                                   io_slot_ingr_status_req => eth_slot_ingr_status_req,
+                                   io_slot_ingr_data_req   => eth_slot_ingr_data_req,
+                                   io_slot_ingr_ack        <= (io_slot_ingr_ack && (io_slot_ingr_slot==0)),
+                                   io_slot_ingr_data_full  <= io_slot_ingr_data_full[0],
+
+                                   tx_data_fifo_data => eth_tx_data_fifo_data,
+                                   tx_data_fifo_cmd <= eth_tx_data_fifo_cmd,
+                                   tx_data_fifo_toggle <= eth_tx_data_fifo_toggle,
+
+                                   cmd_fifo_empty => eth_cmd_fifo_empty,
+                                   cmd_fifo_data => eth_cmd_fifo_data,
+                                   cmd_fifo_toggle <= eth_cmd_fifo_toggle,
+
+                                   rx_data_fifo_data <= eth_rx_data_fifo_data,
+                                   rx_data_fifo_toggle <= eth_rx_data_fifo_toggle,
+                                   rx_data_fifo_full => eth_rx_data_fifo_full,
+
+                                   status_fifo_toggle <= eth_status_fifo_toggle,
+                                   status_fifo_data <= eth_status_fifo_data );
+
+        }
+
+    /*b Sync serial instantiation
+     */
+    sync_serial "Sync serial module and sync interface":
+        {
+            io_sync_serial ss( int_clock <- int_clock,
+                               int_reset <= int_reset | !ss_slot_cfg[0],
+
+                               tx_data_fifo_data   <= ss_tx_data_fifo_data,
+                               tx_data_fifo_cmd    => ss_tx_data_fifo_cmd,
+                               tx_data_fifo_toggle => ss_tx_data_fifo_toggle,
+
+                               cmd_fifo_empty   <= ss_cmd_fifo_empty,
+                               cmd_fifo_data    <= ss_cmd_fifo_data,
+                               cmd_fifo_toggle  => ss_cmd_fifo_toggle,
+
+                               rx_data_fifo_data   => ss_rx_data_fifo_data,
+                               rx_data_fifo_toggle => ss_rx_data_fifo_toggle,
+
+                               status_fifo_data   => ss_status_fifo_data,
+                               status_fifo_toggle => ss_status_fifo_toggle,
+
+                               sscl => sscl,
+                               sscl_oe => sscl_oe,
+                               ssdo => ssdo,
+                               ssdo_oe => ssdo_oe,
+                               ssdi <= ssdi,
+                               sscs => sscs );
+
+            io_slot_head ss_head( int_clock <- int_clock,
+                                  int_reset <= int_reset,
+
+                                  io_slot_cfg_write <= (io_slot_cfg_write && (io_slot_cfg_slot==1)),
+                                  io_slot_cfg_data <= io_slot_cfg_data,
+                                  io_slot_cfg => ss_slot_cfg,
+
+                                  io_slot_egr_cmd_ready => ss_slot_egr_cmd_ready,
+                                  io_slot_egr_data_req  => ss_slot_egr_data_req,
+                                  io_slot_egr_data_cmd  => ss_slot_egr_data_cmd,
+                                  io_slot_egr_data_ack  <= (io_slot_egr_data_ack && (io_slot_egr_data_slot==1)),
+
+                                  io_slot_egr_data        <= io_slot_egr_data,
+                                  io_slot_egr_slot_select <= (io_slot_egr_slot==1),
+                                  io_slot_egr_cmd_write   <= io_slot_egr_cmd_write,
+                                  io_slot_egr_data_write  <= io_slot_egr_data_write,
+
+                                  io_slot_ingr_data       => ss_slot_ingr_data,
+                                  io_slot_ingr_status_req => ss_slot_ingr_status_req,
+                                  io_slot_ingr_data_req   => ss_slot_ingr_data_req,
+                                  io_slot_ingr_ack        <= (io_slot_ingr_ack && (io_slot_ingr_slot==1)),
+                                  io_slot_ingr_data_full  <= io_slot_ingr_data_full[1],
+
+                                  tx_data_fifo_data => ss_tx_data_fifo_data,
+                                  tx_data_fifo_cmd <= ss_tx_data_fifo_cmd,
+                                  tx_data_fifo_toggle <= ss_tx_data_fifo_toggle,
+
+                                  cmd_fifo_empty => ss_cmd_fifo_empty,
+                                  cmd_fifo_data => ss_cmd_fifo_data,
+                                  cmd_fifo_toggle <= ss_cmd_fifo_toggle,
+
+                                  rx_data_fifo_data <= ss_rx_data_fifo_data,
+                                  rx_data_fifo_toggle <= ss_rx_data_fifo_toggle,
+                                  rx_data_fifo_full => ss_rx_data_fifo_full,
+
+                                  status_fifo_toggle <= ss_status_fifo_toggle,
+                                  status_fifo_data <= ss_status_fifo_data );
+
+        }
+
+    /*b -------------------- Logic
+     */
+
+    /*b IO slot logic
+     */
+    io_slot_logic "IO slot logic":
+        {
+            io_slot_egr_cmd_ready = 0;
+            io_slot_egr_cmd_ready[0] = eth_slot_egr_cmd_ready;
+            io_slot_egr_cmd_ready[1] = ss_slot_egr_cmd_ready;
+
+            io_slot_egr_data_req = 0;
+            io_slot_egr_data_slot = 0; // our internal priority encoded select
+            if (ss_slot_egr_data_req) // this is the priority encoding for tx data requests
+            {
+                io_slot_egr_data_req = 1;
+                io_slot_egr_data_cmd = ss_slot_egr_data_cmd;
+                io_slot_egr_data_slot = 1;
+            }
+            if (eth_slot_egr_data_req) // this is the priority encoding for tx data requests
+            {
+                io_slot_egr_data_req = 1;
+                io_slot_egr_data_cmd = eth_slot_egr_data_cmd;
+                io_slot_egr_data_slot = 0;
+            }
+
+            io_slot_ingr_slot = 0;
+            io_slot_ingr_data = eth_slot_ingr_data;
+            io_slot_ingr_status_req = 0;
+            io_slot_ingr_data_req = 0;
+            if (ss_slot_ingr_status_req || ss_slot_ingr_data_req)
+            {
+                io_slot_ingr_data = ss_slot_ingr_data;
+                io_slot_ingr_status_req = ss_slot_ingr_status_req;
+                io_slot_ingr_data_req = ss_slot_ingr_data_req;
+                io_slot_ingr_slot = 1;
+            }
+            if (eth_slot_ingr_status_req || eth_slot_ingr_data_req)
+            {
+                io_slot_ingr_data = eth_slot_ingr_data;
+                io_slot_ingr_status_req = eth_slot_ingr_status_req;
+                io_slot_ingr_data_req = eth_slot_ingr_data_req;
+                io_slot_ingr_slot = 0;
+            }
+        }
+
+    /*b -------------------- Done
+     */
+}

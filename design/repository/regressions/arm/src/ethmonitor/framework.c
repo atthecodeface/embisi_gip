@@ -3,6 +3,7 @@
 #include <stdlib.h> // for NULL
 #include "gip_support.h"
 #include "../common/wrapper.h"
+#include "postbus_config.h"
 #include "ethernet.h"
 #include "uart.h"
 #include "memory.h"
@@ -34,6 +35,7 @@ extern int test_entry_point()
             mon_flash_boot( 0, 1, &config, sizeof(config) );
         }
     }
+    postbus_config( 16, 16, 0, 0 ); // use 16 for tx and 16 for rx, no sharing
     mon_ethernet_init( config.eth_hi, config.eth_lo, config.ip_address );
     mon_uart_init();
     extra_init();

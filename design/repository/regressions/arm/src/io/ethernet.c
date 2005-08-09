@@ -3,14 +3,11 @@
 #include <stdlib.h> // for NULL
 #include "gip_support.h"
 #include "postbus.h"
+#include "../common/wrapper.h"
 #include "ethernet.h"
-#include "uart.h"
 
 /*a Defines
  */
-#define DELAY(a) {int i;for (i=0; i<a; i++);}
-#define DEBUG
-
 
 /*a Types
  */
@@ -117,12 +114,6 @@ static void handle_tx_status( unsigned int status )
 
     /*b A buffer should have been in transit - grab it, start another tx if required, then call the callback
      */
-#ifdef DEBUG
-    uart_tx_string("!");
-//    uart_tx_hex8(tx.buffer_in_transit);
-//    uart_tx_hex8(status);
-//    uart_tx_nl();
-#endif
     if (eth.tx.buffer_in_transit)
     {
         buffer = eth.tx.buffer_in_transit;
@@ -160,18 +151,6 @@ static void handle_rx_status( unsigned int status )
 
     /*b Break out the status; request data from rx fifo
      */
-#ifdef DEBUG
-//    uart_tx_string("*");
-#endif
-#ifdef VDEBUG
-    uart_tx_string("rxs ");
-    uart_tx_hex8(status);
-    uart_tx_string(":");
-    uart_tx_hex8(rx.current_data);
-    uart_tx_string(":");
-    uart_tx_hex8(rx.length_received);
-    uart_tx_nl();
-#endif
     reason = (status>>24)&7;
     block_size = (status>>16)&0xff; // read this (number of bytes+3)/4 words from the data FIFO unless there was overflow!
     size_so_far = (status&0xffff);
@@ -261,13 +240,6 @@ static void handle_rx_status( unsigned int status )
     switch (reason)
     {
     case 0: // FCS ok
-#ifdef VDEBUG
-        uart_tx_string("fcs_ok ");
-        uart_tx_hex8(rx.current_data);
-        uart_tx_string(":");
-        uart_tx_hex8(rx.length_received);
-        uart_tx_nl();
-#endif
         if (eth.rx.current_data) // if we were receiving properly then invoke callback and pop buffer
         {
             t_eth_buffer *buffer;
@@ -293,6 +265,7 @@ static void handle_rx_status( unsigned int status )
 static void handle_tx_status_fifo( void )
 {
     unsigned int status, time;
+    t_eth_buffer *buffer;
 
     /*b Read the status and time
      */
@@ -317,7 +290,8 @@ static void handle_tx_status_fifo( void )
  */
 static void handle_rx_status_fifo( void )
 {
-    unsigned int status, time;
+    unsigned int status, time, size_so_far, block_size, reason;
+    unsigned char *data;
 
     /*b Read the status and time
      */
@@ -341,7 +315,8 @@ static void handle_rx_status_fifo( void )
  */
 static void handle_eth_status_fifo( void )
 {
-    unsigned int status, time;
+    unsigned int status, time, size_so_far, block_size, reason;
+    unsigned char *data;
 
     /*b Read the status and time
      */
@@ -374,10 +349,6 @@ static void handle_eth_status_fifo( void )
  */
 extern void ethernet_tx_buffer( t_eth_buffer *buffer )
 {
-#ifdef DEBUG
-    uart_tx_string("+");
-//    uart_tx_hex2(buffer);
-#endif
     if (eth.tx.buffer_in_transit)
     {
         if (eth.tx.buffers_to_tx)
@@ -419,23 +390,11 @@ extern void ethernet_add_rx_buffer( t_eth_buffer *buffer )
 {
     if (eth.rx.buffer_list) // we may be receiving in to this one!
     {
-#ifdef VDEBUG
-        uart_tx_string("addrxbuf ");
-        uart_tx_hex8(buffer);
-        uart_tx_string(":");
-        uart_tx_hex8(eth.rx.buffer_list);
-        uart_tx_nl();
-#endif
         buffer->next = eth.rx.buffer_list->next;
         eth.rx.buffer_list->next = buffer;
     }
     else
     {
-#ifdef VDEBUG
-        uart_tx_string("addrxbuf ");
-        uart_tx_hex8(buffer);
-        uart_tx_nl();
-#endif
         buffer->next = NULL;
         eth.rx.buffer_list = buffer;
     }
@@ -525,3 +484,5 @@ extern void ethernet_init( int slot, int endian_swap, int padding )
     }
 
 }
+
+

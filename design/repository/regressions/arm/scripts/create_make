@@ -20,6 +20,12 @@ while (<desc>)
 {
     chomp;
     $line = $_;
+    while ($line =~ /\\$/) {
+        $line =~ s/\\$//;
+        $next = <desc>;
+        chomp $next;
+        $line = $line . " " . $next;
+    }
     next if $line =~/^\s*#/;
     next if $line =~/^\s*;/;
     if ($line =~ /^asm\s+(.*)/) {

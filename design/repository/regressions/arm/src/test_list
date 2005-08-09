@@ -31,7 +31,17 @@ cc monitor bonus_cmds
 cc monitor memory
 cc monitor ethernet
 
-cc ethernet ethernet
+cc io postbus_config
+cc io ethernet
+cc io sync_serial
+cc io ethernet_test_1
+cc io ethernet_test_2
+cc io ethernet_test_3
+cc io ethernet_test_4
+cc io ethernet_test_5
+cc io ethernet_test_6
+cc io sync_serial_test_1
+cc io sync_serial_test_2
 
 cc scheduler sched_modes
 cc scheduler sched_preempts
@@ -40,6 +50,7 @@ asm scheduler preempt_branches
 cc drivers ethernet
 cc drivers uart
 cc drivers flash
+cc drivers sync_serial
 cc drivers gipeth
 asm drivers gipeth_asm
 
@@ -53,6 +64,7 @@ cc microkernel test_leds
 
 cc ethmonitor framework
 cc ethmonitor framework_noeth
+cc ethmonitor postbus_config
 cc ethmonitor ethernet
 cc ethmonitor uart
 cc ethmonitor flash
@@ -79,15 +91,39 @@ cc analyzer test_2
 
 cc bugs bug_2 -Os@-g@-fno-omit-frame-pointer@-mno-sched-prolog
 
-test rom  run_dram simple:run_dram common:wrapper common:support
-test rom  ethernet ethernet:ethernet drivers:ethernet drivers:uart common:support common:wrapper
-test rom  simple simple:simple common:support common:wrapper
+#test rom  run_dram simple:run_dram common:wrapper common:support
+#test rom  ethernet ethernet:ethernet drivers:ethernet drivers:uart common:support common:wrapper
+#test rom  simple simple:simple common:support common:wrapper
+
 test rom  monitor monitor:monitor monitor:no_cmds monitor:flash monitor:uart common:wrapper common:support
-test dram monitor_full monitor:monitor monitor:all_cmds monitor:memory monitor:flash monitor:uart common:wrapper_download common:support_download
-test dram monitor_extra monitor:monitor monitor:bonus_cmds monitor:memory monitor:ethernet monitor:flash monitor:uart common:wrapper_download common:support_download
-test dram ethmonitor drivers:flash drivers:uart drivers:ethernet  drivers:gipeth drivers:gipeth_asm ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:timer_int ethmonitor:regs ethmonitor:cmd_leds  ethmonitor:cmd_gipeth ethmonitor:cmd microkernel:microkernel_thread microkernel:init common:wrapper_download common:support_download
-test dram ethmonitor_noeth drivers:flash drivers:uart drivers:ethernet  drivers:gipeth drivers:gipeth_asm ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework_noeth ethmonitor:all_cmds ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_test ethmonitor:timer_int ethmonitor:regs ethmonitor:cmd_leds  ethmonitor:cmd_gipeth ethmonitor:cmd microkernel:microkernel_thread microkernel:init common:wrapper_download common:support_download
-test rom ethmonitor drivers:flash drivers:uart drivers:ethernet ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:framework ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd ethmonitor:cmd_leds common:wrapper common:support
+
+test dram monitor_full  monitor:monitor monitor:all_cmds monitor:memory monitor:flash monitor:uart \
+                         common:wrapper_download common:support_download
+
+test dram monitor_extra monitor:monitor monitor:bonus_cmds monitor:memory monitor:ethernet monitor:flash monitor:uart \
+                         common:wrapper_download common:support_download
+
+test dram ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync_serial drivers:gipeth drivers:gipeth_asm \
+                        ethmonitor:postbus_config ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:timer_int ethmonitor:regs \
+                        ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd \
+                        ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash \
+                        ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_gipeth \
+                        common:wrapper_download common:support_download
+
+#drivers:ethernet ethmonitor:ethernet
+test dram ethmonitor_noeth drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm \
+                        ethmonitor:flash ethmonitor:uart ethmonitor:timer_int ethmonitor:regs \
+                        ethmonitor:framework_noeth ethmonitor:all_cmds ethmonitor:cmd \
+                        ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash \
+                        ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_gipeth \
+                        common:wrapper_download common:support_download
+
+test rom ethmonitor     drivers:flash drivers:uart drivers:ethernet drivers:sync_serial \
+                        ethmonitor:postbus_config ethmonitor:flash ethmonitor:uart ethmonitor:ethernet \
+                        ethmonitor:framework ethmonitor:min_cmds ethmonitor:cmd \
+                        ethmonitor:cmd_memory ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_leds \
+                        common:wrapper common:support
+
 #test sram ethmonitor drivers:flash drivers:uart ethmonitor:uart ethmonitor:framework_noeth ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd common:wrapper_download common:support_download
 test sram dram_setup ethmonitor:dram_setup common:wrapper_download common:support_download
 test dram drivertest drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm ethmonitor:uart ethmonitor:framework_noeth ethmonitor:drv_cmds ethmonitor:cmd_memory ethmonitor:cmd_gipeth ethmonitor:cmd common:wrapper_download common:support_download
@@ -96,11 +132,45 @@ test dram  factorial factorial:factorial ethmonitor:regs common:wrapper_download
 test dram  alu alu:alu alu:alu_call common:wrapper_download common:support_download
 test dram  memory memory:memory common:wrapper_download common:support_download
 
-test regression  ethernet ethernet:ethernet drivers:ethernet drivers:uart common:support_regression common:wrapper_regression
-test regression  scheduler_modes scheduler:sched_modes  common:support_regression common:wrapper_regression
-test regression  scheduler_preempt scheduler:sched_preempts scheduler:preempt_branches common:support_regression common:wrapper_regression
-test regression  pass simple:pass common:wrapper_regression common:support_regression
-test regression  factorial factorial:factorial ethmonitor:regs common:wrapper_regression common:support_regression
+#test regression  ethernet          ethernet:ethernet drivers:ethernet drivers:uart \
+#                                   common:support_regression common:wrapper_regression
+
+test regression  sync_serial_test_1 io:sync_serial_test_1 io:postbus_config io:sync_serial \
+                                    common:support_regression common:wrapper_regression
+
+test regression  sync_serial_test_2 io:sync_serial_test_2 io:postbus_config io:sync_serial \
+                                    common:support_regression common:wrapper_regression
+
+test regression  ethernet_test_1 io:ethernet_test_1 io:postbus_config io:ethernet \
+                                    common:support_regression common:wrapper_regression
+
+test regression  ethernet_test_2 io:ethernet_test_2 io:postbus_config io:ethernet \
+                                    common:support_regression common:wrapper_regression
+
+test regression  ethernet_test_3 io:ethernet_test_3 io:postbus_config io:ethernet \
+                                    common:support_regression common:wrapper_regression
+
+test regression  ethernet_test_4 io:ethernet_test_4 io:postbus_config io:ethernet \
+                                    common:support_regression common:wrapper_regression
+
+test regression  ethernet_test_5 io:ethernet_test_5 io:postbus_config io:ethernet \
+                                    common:support_regression common:wrapper_regression
+
+test regression  ethernet_test_6 io:ethernet_test_6 io:postbus_config io:ethernet \
+                                    common:support_regression common:wrapper_regression
+
+test regression  scheduler_modes   scheduler:sched_modes \
+                                   common:support_regression common:wrapper_regression
+
+test regression  scheduler_preempt scheduler:sched_preempts scheduler:preempt_branches \
+                                   common:support_regression common:wrapper_regression
+
+test regression  pass              simple:pass \
+                                   common:wrapper_regression common:support_regression
+
+test regression  factorial         factorial:factorial ethmonitor:regs \
+                                   common:wrapper_regression common:support_regression
+
 test regression  alu alu:alu alu:alu_call common:wrapper_regression common:support_regression
 test regression  memory memory:memory common:wrapper_regression common:support_regression
 test regression  uart uart:uart common:wrapper_regression common:support_regression

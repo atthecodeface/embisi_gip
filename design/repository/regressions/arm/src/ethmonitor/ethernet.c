@@ -2,11 +2,13 @@
  */
 #include <stdlib.h> // for NULL
 #include "gip_support.h"
+#include "gip_system.h"
 #include "postbus.h"
 #include "../common/wrapper.h"
 #include "../drivers/ethernet.h"
 #include "../drivers/uart.h"
 #include "../drivers/flash.h"
+#include "../drivers/sync_serial.h"
 #include "memory.h"
 #include "cmd.h"
 
@@ -204,14 +206,14 @@ static void tx_callback( void *handle, t_eth_buffer *buffer )
 }
 
 /*f rx_callback
-Ethernet packet: 6 bytes dest, 6 bytes source, 2 bytes protocol type, rest...
+Ethernet packet: 2 bytes padding, 6 bytes dest, 6 bytes source, 2 bytes protocol type, rest...
 ARP: 2 byte address space; 2 byte protocol type; 1 byte length of hw address; 1 byte length of protocol address; 2 bytes opcode (reply/request); hw sender addr; protocol sender address; hw target address; protocol target address
 
 for all ethernet packets: check dest is us or broadcast
 for ARP: check eth protocol type, arp prot type, address space, hw address len, prot address len
          if match, add sender prot/hw to our small arp table; if request, put sender->target fields, fill sender fields, send to hw sender address
 
-ARP...
+Unpadded ARP...
 0: ffffffff
 1: ffff0005
 2: 5d49311e
@@ -223,6 +225,19 @@ ARP...
 8: 00000000
 9: 00000a01
 10: 6405xxxx
+
+Padded ARP...
+0:  xxxxffff
+1:  ffffffff
+2:  00055d49
+3:  311e0806
+4:  00010800
+5:  06040001
+6:  00055d49
+7:  311e0a01
+8:  64010000
+9:  00000000
+10: 0a016405
 
  */
 static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_length )
@@ -240,11 +255,13 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
      */
     data = (unsigned int *)(buffer->data);
     accept = 0;
-    if ((data[0]==0xffffffff) && ((data[1]>>16)==0xffff))
+    if ( ((data[0]&0xffff)==0xffff) &&
+         (data[1]==0xffffffff) )
     {
         accept = 1;
     }
-    else if ( (data[0]==eth.hwaddress_high32) && ((data[1]>>16)==eth.hwaddress_low16) )
+    else if ( ((data[0]&0xffff)==eth.hwaddress_high16) &&
+              (data[1]==eth.hwaddress_low32) )
     {
         accept = 1;
     }
@@ -266,26 +283,28 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
     // ARP...
     // 08 06 00 01  08 00  06 04  00 01        00055d49311e 0a016401   000000000000 0a016405    xxxxx
     // ethpt addsp  arppt  hw ip  opcode(req)  senderhw     senderip   targethw     targetip
-    if ((data[3]==0x08060001) && (data[4]==0x08000604) && (rxed_byte_length>=46))
+    if ( ((data[3]&0xffff)==0x0806) &&
+         (data[4]==0x00010800) &&
+         (rxed_byte_length>=48))
     {
         uart_tx_string( "arp\r\n");
         //arp_entry_set( data[7], data[5]&0xffff, data[6] );
-        if ( ((data[5]>>16)==1) && // ARP request for us
-             ((data[9]&0xffff) == (eth.ip_address>>16)) &&
-             ((data[10]>>16) == (eth.ip_address&0xffff)) )
+        if ( (data[5]==0x06040001) && // HW IP ARP request for us
+             (data[10] == eth.ip_address) )
         {
             uart_tx_string( "to us\r\n");
-            data[0] = (data[5]<<16) | (data[6]>>16);
-            data[1] = (data[6]<<16) | eth.hwaddress_high16;
-            data[2] = eth.hwaddress_low32;
-            data[8] = (data[5]<<16) | (data[6]>>16);
-            data[9] = (data[6]<<16) | (data[7]>>16);
-            data[10] = (data[7]<<16);
-            data[5] = (0x0002 << 16) | (eth.hwaddress_high16); // ARP reply
-            data[6] = eth.hwaddress_low32;
-            data[7] = eth.ip_address;
+            data[0] = (data[6]>>16);
+            data[1] = (data[6]<<16) | (data[7]>>16);
+            data[2] = eth.hwaddress_high32;
+            data[3] = (eth.hwaddress_low16<<16) | 0x0806;
+            data[10] = (data[7]<<16) | (data[8]>>16); // their ip address, before [7] and [8] get touched
+            data[9] = (data[6]<<16) | (data[7]>>16); // their hwip bottom 32, before [6] and [7] get touched
+            data[8] = (eth.ip_address<<16) | (data[6]>>16); // their hwip top 16, before [6] gets touched
+            data[7] = (eth.hwaddress_low16<<16) | (eth.ip_address>>16);
+            data[6] = eth.hwaddress_high32;
+            data[5] = 0x06040002; // ARP reply
 
-            buffer->buffer_size = 64; // always pad to 64 minimum eth packet size...
+            buffer->buffer_size = 60; // always pad to 64 minimum eth packet size inc CRC...
             ethernet_tx_buffer( buffer );
             return;
         }
@@ -305,36 +324,37 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
       0x4500+0x54+0x4000+0x4001+0x0a01+0x6401+0x0a01+0x6405 = 0x1a15d -> 0xa15e ~-> 0x5ea1
       0x4500+0x54+0x4000+0x4001+0x0a01+0x6401+0x0a01+0x6405+0x5ea1 == 0x1fffe
                                                                       seq  data
-      0000  12 34 56 78 9a bc 00 05 5d 49 31 1e 08 00 45 00   .4Vx....]I1...E.
-      0010  00 54 00 00 40 00 40 01 5e a1 0a 01 64 01 0a 01   .T..@.@.^...d...
-      0020  64 05 08 00 c5 92 19 70 01 00 bb e8 90 42 d2 ce   d......p.....B..
-      0030  0e 00 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15   ................
-      0040  16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23 24 25   .......... !"#$%
-      0050  26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33 34 35   &'()*+,-./012345
-      0060  36 37                                             67
+      0000  xx xx 12 34 56 78 9a bc 00 05 5d 49 31 1e 08 00   .4Vx....]I1...E.
+      0010  45 00 00 54 00 00 40 00 40 01 5e a1 0a 01 64 01   .T..@.@.^...d...
+      0020  0a 01 64 05 08 00 c5 92 19 70 01 00 bb e8 90 42   d......p.....B..
+      0030  d2 ce 0e 00 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13   ................
+      0040  14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20 21 22 23   .......... !"#$%
+      0050  24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30 31 32 33   &'()*+,-./012345
+      0060  34 35 36 37                                       67
 
-      0: 12345678
-      1: 9abc0005
-      2: 5d49311e
-      3: 08004500 IP..VHSS
-      4: 00540000 lengIden
-      5: 40004001 fFrgTTPP
-      6: 5ea10a01 csum..IP
-      7: 64010a01 SRC...IP
-      8: 64050800 DST.data
-      9: c5921970
-      10: 0100bbe8
-      11: 9042d2ce
-      12: 0e000809 ...
+      0: xxxx1234
+      1: 56789abc
+      2: 00055d49
+      3: 311e0800 ....IP..
+      4: 45000054 VHSSleng
+      5: 00004000 IdenfFrg
+      6: 40015ea1 TTPPcsum
+      7: 0a016401 ..IPSRC.
+      8: 0a016405 ..IPDST.
+      9: 0800c592 .data...
+      10: 19700100
+      11: bbe89042
+      12: d2ce0e00 ...
+      13; 0809 ...
     */
     accept = 0;
-    if ( (data[3]==0x08004500) && // check IP, version, IHL, SS
-         ((data[4]>>16) <= (rxed_byte_length-14)) && // check length is all within received buffer
-         ((data[5]&0xbfff0000)==0) && // fragment = 0, flags bits 0 and 2 clear
-         ((data[7]&0xffff)==(eth.ip_address>>16)) && // dest IP
-         ((data[8]>>16)==(eth.ip_address&0xffff)) )
+    if ( ((data[3]&0xffff)==0x0800) && // check IP
+         ((data[4]>>16)==0x4500) && // check version, IHL, SS
+         ((data[4]&0xffff) <= (rxed_byte_length-16)) && // check length is all within received buffer
+         ((data[5]&0xbfff)==0) && // fragment = 0, flags bits 0 and 2 clear
+         (data[8]==eth.ip_address) ) // dest IP
     {
-        accept = 0x4500+(data[4]>>16)+(data[4]&0xffff)+(data[5]>>16)+(data[5]&0xffff)+(data[6]>>16)+(data[6]&0xffff)+(data[7]>>16)+(data[7]&0xffff)+(data[8]>>16);
+        accept = 0x4500+(data[4]&0xffff)+(data[5]>>16)+(data[5]&0xffff)+(data[6]>>16)+(data[6]&0xffff)+(data[7]>>16)+(data[7]&0xffff)+(data[8]>>16)+(data[8]&0xffff);
         accept = (accept&0xffff)+(accept>>16);
         accept = (accept&0xffff)+(accept>>16);
         accept = (accept==0xffff);
@@ -355,28 +375,30 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
       08               00   c592                  1970       0100       data...
       8=echo, 0=reply  00   1's comp 16bit-csum   identifier sequence   data...
      */
-    if ( ((data[5]&0xff)==1) && // ICMP
-         ((data[8]&0xffff)==0x0800) ) // echo
+    if ( ((data[6]&0x00ff0000)==0x010000) && // ICMP
+         ((data[9]>>16)==0x0800) ) // echo
     {
         unsigned int csum;
         // swap src and dest (does not effect crc)
         // set reply not echo (+8 from body csum, <0 =>?)
         // send to source eth address
-        data[8] = (data[7]&0xffff0000) | 0x0000; // set reply not echo and copy src to dest
-        data[7] = (data[6]&0xffff) | (eth.ip_address<<16); // copy src to dest
-        data[6] = (data[6]&0xffff0000) | (eth.ip_address>>16); // note hdr csum unchanged
-        csum = (data[9]>>16)+8;
+        data[8] = data[7];
+        data[7] = eth.ip_address;
+        csum = (data[9]&0xffff)+8; // account for taking 8 from ~csum due to reply not echo
         csum = ((csum>>16)+csum)&0xffff;
-        data[9] = (csum<<16) | (data[9]&0xffff);
-        data[0] = (data[1]<<16) | (data[2]>>16);
-        data[1] = (data[2]<<16) | eth.hwaddress_high16;
-        data[2] = eth.hwaddress_low32;
-        buffer->buffer_size = rxed_byte_length; // should have at least 64 bytes; we are sending a crc and another crc though!
+        data[9] = csum; // set reply not echo
+
+        data[0] = (data[2]>>16);
+        data[1] = (data[2]<<16) | (data[3]>>16);
+        data[2] = eth.hwaddress_high32;
+        data[3] = (eth.hwaddress_low16<<16) | 0x0800;
+        buffer->buffer_size = rxed_byte_length-6; // should have at least 64 bytes; do not need to send our CRC, and the length included padding
         ethernet_tx_buffer( buffer );
         return;
     }
 
     /*b UDP packet? (RFC768)
+      // unpadded
       // source port 1234 (0x4d2), dest port 2345 (0x929
     0000  12 34 56 78 9a bc 00 05 5d 49 31 1e 08 00 45 00   .4Vx....]I1...E.
     0010  00 3a 6a 9a 40 00 40 11 f4 10 0a 01 64 01 0a 01   .:j.@.@.....d...
@@ -388,18 +410,19 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
     0010  00 1c e8 85 40 00 40 11 76 43 0a 01 64 01 0a 01   ....@.@.vC..d...
     0020  64 05 04 d2 09 29 00 08 15 db                     d....)....
 
-    0: 12345678
-    1: 9abc0005
-    2: 5d49311e
-    3: 08004500 IP..VHSS
-    4: 003a6a9a lengIden
-    5: 40004011 fFregTTPP (0x11 = UDP)
-    6: f4100a01 csum..IP
-    7: 64010a01 SRC...IP
-    8: 640504d2 DST.SrcP
-    9: 09290026 DstPLeng
-    10: e6175468 CsumData
-    11: 69732069 UDP payload...
+    0: xxxx1234
+    1: 56789abc
+    2: 00055d49
+    3: 311e0800     IP..
+    4: 4500003a VHSSleng
+    5: 6a9a4000 IdenfFreg
+    6: 4011f410 TTPPcsum (0x11 = UDP)
+    7: 0a016401 ..IPSRC.
+    8: 0a016405 ..IPDST.
+    9: 04d20929 SrcPDstP
+    10: 0026e617 LengCsum
+    11: 54686973 Data UDP payload...
+    12: 2069
 
     9: 09290008
     10: 15db
@@ -409,53 +432,51 @@ static void rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_lengt
     src    dst   length  csum
      */
     int udp_byte_length;
-    udp_byte_length = data[9]&0xffff;
-    if ( ((data[5]&0xff)==0x11) && // UDP
-         ((udp_byte_length+20)==(data[4]>>16)) ) // lengths match
+    udp_byte_length = data[10]>>16;
+    if ( ((data[6]&0x00ff0000)==0x110000) && // UDP
+         ((udp_byte_length+20)==(data[4]&0xffff)) ) // lengths match
     {
         unsigned int csum;
         unsigned int *csum_data;
         int i;
         // source and dest IP, 0x0011 (protocol), udp length are pseudo-header; then all the data, which (if odd) is right-padded with a zero byte; if csum==0, then send ffff
-        csum = data[6]&0xffff; // source IP low to start
-        csum += 0x11; // protocol in pseudo header
+        csum = 0x11; // protocol in pseudo header
         csum += udp_byte_length; // length in pseudo header
         csum_data = data+7;
-        for (i=0; i<(1+udp_byte_length/4); i++) // do 1+(byte_length/4) words from data[7] - for zero data (byte_length==8) this means data[7] thru data[9] - we still need 2 more bytes!
+        for (i=0; i<(2+udp_byte_length/4); i++) // do 2+(byte_length/4) words from data[7] - for zero data (byte_length==8) this means data[7] thru data[10] - we got it all!
         {
             CSUM32( csum , csum_data );
         }
-        // byte length=8/12/14 implies 2 more bytes; 9/13/17 implies 3 more bytes, 10 implies 4 more bytes, 11 implies 5 more bytes
-        csum += (csum_data[0]>>16);
+        // byte length=8/12/14 implies 0 more bytes; 9/13/17 implies 1 more bytes, 10 implies 2 more bytes, 11 implies 3 more bytes
         switch (udp_byte_length&3)
         {
         case 0:
             break;
         case 1:
-            csum += csum_data[0]&0xff00;
+            csum += (csum_data[0]>>16)&0xff00;
             break;
         case 2:
-            csum += csum_data[0]&0xffff;
+            csum += (csum_data[0]>>16)&0xffff;
             break;
         case 3:
-            csum += csum_data[0]&0xffff;
-            csum += (csum_data[1]>>16)&0xff00;
+            csum += (csum_data[0]>>16)&0xffff;
+            csum += (csum_data[0])&0xff00;
             break;
         }
         csum = (csum>>16)+(csum&0xffff);
         csum = (csum>>16)+(csum&0xffff);
         if (csum==0xffff) // csum okay!
         {
-            if ((data[9]>>16) == 0x929)
+            if ((data[9]&0xffff) == 0x929)
             {
                 uart_tx_string_nl( "c");
-                cmd_obey( buffer, ((char *)data)+42, udp_byte_length-8, 1200 );
+                cmd_obey( buffer, ((char *)data)+44, udp_byte_length-8, 1200 );
                 return;
             }
-            if ((data[9]>>16) == 0x92a)
+            if ((data[9]&0xffff) == 0x92a)
             {
                 uart_tx_string( "m");
-                mem_obey( buffer, ((char *)data)+42, udp_byte_length-8 );
+                mem_obey( buffer, ((char *)data)+44, udp_byte_length-8 );
                 return;
             }
             buffer->buffer_size = BUFFER_SIZE;
@@ -510,7 +531,17 @@ extern void mon_ethernet_init( unsigned int eth_address_hi, unsigned int eth_add
 
     eth.hwaddress_high32 = (eth.hwaddress_high16<<16) | (eth.hwaddress_low32>>16);
     eth.hwaddress_low16  = (eth.hwaddress_low32&0xffff);
-    ethernet_init();
+    ethernet_init( IO_A_SLOT_ETHERNET_0, 0, 2 ); // we use padding of 2 to align IP addresses etc with words, as ethernet has a 14 byte protocol header
+    sync_serial_init( IO_A_SLOT_SYNC_SERIAL_0 );
+    // set auto-neg to 10FD only
+    // clock MDC 32 times with MDIO high, then send command
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0xffffffff ); 
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0x58920040 );
+    // restart auto-neg
+    // clock MDC 32 times with MDIO high, then send command
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0xffffffff ); 
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0x58821340 );
+
     ethernet_set_tx_callback( tx_callback, NULL );
     ethernet_set_rx_callback( rx_callback, NULL );
     for (i=0; i<8; i++)

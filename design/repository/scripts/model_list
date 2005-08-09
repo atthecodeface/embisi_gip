@@ -23,6 +23,8 @@ cdl test_benches/gip gip_ddr inc:headers/cdl
 cdl test_benches/gip gip_system inc:headers/cdl
 cdl test_benches/gip gip_core_plus inc:headers/cdl
 cdl test_benches/gip apb_devices inc:headers/cdl
+cdl test_benches/gip io_slots_eth_ss_par inc:headers/cdl
+
 #cdl test_benches/gip pass_rom rmn:cdl_rom=gip_simple_boot_rom
 #cdl test_benches/gip uart_rom rmn:cdl_rom=gip_simple_boot_rom
 #cdl test_benches/gip monitor_rom rmn:cdl_rom=gip_simple_boot_rom
@@ -82,6 +84,7 @@ cdl units/io          io_postbus_event_manager    inc:headers/cdl
 cdl units/io          io_postbus                  inc:headers/cdl
 cdl units/io          io_uart                     inc:headers/cdl
 cdl units/io          io_block                    inc:headers/cdl
+cdl units/io          io_slot_head                inc:headers/cdl
 cdl units/io          io_parallel                 inc:headers/cdl
 
 #c_model src c_gip_cyc

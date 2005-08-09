@@ -402,6 +402,7 @@ module gip_system( clock drm_clock,
 
     net bit[32] analyzer_mux_control;
     net bit[32] iob_analyzer_signals;
+    net bit[32] ios_analyzer_signals;
     clocked bit[32] analyzer_signals = 0;
     net bit analyzer_trace_ready;
     net bit analyzer_trace_done;
@@ -680,7 +681,7 @@ module gip_system( clock drm_clock,
                                         sscs => sscs,
 
                                         analyzer_mux_control <= analyzer_mux_control[2;0],
-                                        analyzer_signals => iob_analyzer_signals );
+                                        analyzer_signals => ios_analyzer_signals );
         }
 
     /*b Logic analyzer

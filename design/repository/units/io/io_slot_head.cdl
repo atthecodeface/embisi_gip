@@ -169,7 +169,7 @@ There is another variant of this that allows two I/O blobs to plug in to a singl
             {
                 io_slot_egr_data_req <= 1;
             }
-            if (io_slot_egr_data_ack)
+            if (io_slot_egr_data_req && io_slot_egr_data_ack)
             {
                 io_slot_egr_data_req <= 0;
             }

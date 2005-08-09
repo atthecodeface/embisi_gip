@@ -113,7 +113,7 @@ test dram ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync
 #test dram_high ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync_serial drivers:gipeth drivers:gipeth_asm \
 
 #drivers:ethernet ethmonitor:ethernet
-test dram ethmonitor_noeth drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm \
+test dram ethmonitor_noeth drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm drivers:sync_serial \
                         ethmonitor:flash ethmonitor:uart ethmonitor:timer_int ethmonitor:regs \
                         ethmonitor:framework_noeth ethmonitor:all_cmds ethmonitor:cmd \
                         ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash \
@@ -128,7 +128,7 @@ test rom ethmonitor     drivers:flash drivers:uart drivers:ethernet drivers:sync
 
 #test sram ethmonitor drivers:flash drivers:uart ethmonitor:uart ethmonitor:framework_noeth ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd common:wrapper_download common:support_download
 test sram dram_setup ethmonitor:dram_setup common:wrapper_download common:support_download
-test dram drivertest drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm ethmonitor:uart ethmonitor:framework_noeth ethmonitor:drv_cmds ethmonitor:cmd_memory ethmonitor:cmd_gipeth ethmonitor:cmd common:wrapper_download common:support_download
+#test dram drivertest drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm ethmonitor:uart ethmonitor:framework_noeth ethmonitor:drv_cmds ethmonitor:cmd_memory ethmonitor:cmd_gipeth ethmonitor:cmd common:wrapper_download common:support_download
 
 test dram  factorial factorial:factorial ethmonitor:regs common:wrapper_download common:support_download
 test dram  alu alu:alu alu:alu_call common:wrapper_download common:support_download

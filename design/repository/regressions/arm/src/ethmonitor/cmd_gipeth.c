@@ -32,7 +32,7 @@ static int command_gipeth_tx( void *handle, int argc, unsigned int *args )
 {
     if (argc<1)
         return 1;
-    return gipeth_xmit( (unsigned int)command_gipeth_tx, args[0] );
+    return gipeth_xmit( (unsigned int)"This is the string we want to send", args[0] );
 }
 
 /*a External variables

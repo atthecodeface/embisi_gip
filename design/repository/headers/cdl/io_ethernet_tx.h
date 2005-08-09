@@ -29,23 +29,24 @@ typedef enum [io_eth_tx_packet_status_bits]
 /*a Modules
  */
 extern module io_ethernet_tx( clock io_clock,
-                           input bit io_reset,
+                              input bit io_reset,
 
-                           input bit[32] data_fifo_data,
-                           output t_io_tx_data_fifo_cmd data_fifo_cmd,
-                           output bit data_fifo_toggle,
+                              input bit[32] data_fifo_data,
+                              output t_io_tx_data_fifo_cmd data_fifo_cmd,
+                              output bit data_fifo_toggle,
 
-                           input bit cmd_fifo_empty,
-                           input bit[32] cmd_fifo_data,
-                           output bit cmd_fifo_toggle,
+                              input bit cmd_fifo_empty,
+                              input bit[32] cmd_fifo_data,
+                              output bit cmd_fifo_toggle,
 
-                           output bit status_fifo_toggle,
-                           output bit[32] status_fifo_data,
+                              output bit status_fifo_toggle,
+                              output bit[32] status_fifo_data,
 
-                           output bit mii_enable,
-                           output bit[4] mii_data,
-                           input bit mii_crs,
-                           input bit mii_col )
+                              output bit mii_enable,
+                              output bit[4] mii_data,
+                              input bit mii_crs,
+                              input bit mii_col,
+                              input bit[2] cfg_padding )
 {
     timing to rising clock io_clock io_reset;
 
@@ -59,6 +60,8 @@ extern module io_ethernet_tx( clock io_clock,
 
     timing to rising clock io_clock mii_crs, mii_col;
     timing from rising clock io_clock mii_enable, mii_data;
+
+    timing to rising clock io_clock cfg_padding;
 
     timing comb input io_reset;
 }

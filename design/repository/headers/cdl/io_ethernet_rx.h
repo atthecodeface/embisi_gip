@@ -26,18 +26,23 @@ typedef enum [io_eth_rx_block_status_bits]
 /*a Modules
  */
 extern module io_ethernet_rx( clock io_clock,
-                    input bit io_reset,
+                              input bit io_reset,
 
-                    output bit[32] data_fifo_data,
-                    output bit data_fifo_toggle,
-                    input bit data_fifo_full,
+                              output bit[32] data_fifo_data,
+                              output bit data_fifo_toggle,
+                              input bit data_fifo_full,
 
-                    output bit[32] status_fifo_data,
-                    output bit status_fifo_toggle,
+                              output bit[32] status_fifo_data,
+                              output bit status_fifo_toggle,
 
-                    input bit mii_dv,
-                    input bit mii_err,
-                    input bit[4] mii_data
+                              input bit mii_dv,
+                              input bit mii_err,
+                              input bit[4] mii_data,
+
+                              input bit etx_status_fifo_toggle, // for passing etx status through to our fifo
+                              input bit[32] etx_status_fifo_data,
+
+                              input bit[2] cfg_padding
     )
 {
     timing to rising clock io_clock io_reset;
@@ -45,6 +50,10 @@ extern module io_ethernet_rx( clock io_clock,
     timing to rising clock io_clock mii_dv, mii_err, mii_data;
     timing from rising clock io_clock data_fifo_data, data_fifo_toggle;
     timing from rising clock io_clock status_fifo_data, status_fifo_toggle;
+
+    timing to rising clock io_clock etx_status_fifo_toggle, etx_status_fifo_data; // actually sync and synchronized internally
+
+    timing to rising clock io_clock cfg_padding;
 
     timing comb input io_reset;
 }

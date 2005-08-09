@@ -22,12 +22,14 @@ extern module io_egress_control( clock int_clock "Internal system clock",
 
                                  input bit[io_cmd_timestamp_length+2] io_timer "Timer for stamping received status and for outgoing command timing",
 
-                                 output bit[4] cmd_valid "Valid indicator for registering command and its availability",
+                                 output bit cmd_valid "Valid indicator for registering command and its availability",
+                                 output bit[2] cmd_valid_number "Indicate (if cmd_valid) which command is valid on the bus",
                                  input bit[4] cmd_available "Available from external data register and indicator to client",
 
-                                 input bit[4] tx_data_req "Requests from Tx data toggles",
-                                 output bit[4] tx_data_ack "Acknowledges to Tx data toggles",
-                                 input t_io_tx_data_fifo_cmd tx_data_cmd "Command from chosen Tx data source",
+                                 input bit tx_data_req "Request for tx data",
+                                 input bit[2] tx_data_req_fifo "Which FIFO to get tx data from",
+                                 output bit tx_data_ack "Acknowledges to tx data request",
+                                 input t_io_tx_data_fifo_cmd tx_data_cmd "Command from chosen Tx data source, must be valid with req",
 
                                  input bit postbus_req "Request from the postbus master",
                                  output bit postbus_ack "Acknowledge to the postbus master",
@@ -58,11 +60,11 @@ extern module io_egress_control( clock int_clock "Internal system clock",
 
     timing to rising clock int_clock io_timer;
 
-    timing from rising clock int_clock cmd_valid;
+    timing from rising clock int_clock cmd_valid, cmd_valid_number;
     timing to rising clock int_clock cmd_available;
 
-    timing to rising clock int_clock tx_data_req, postbus_req;
-    timing comb input tx_data_req, postbus_req;
+    timing to rising clock int_clock tx_data_req, tx_data_req_fifo, postbus_req;
+    timing comb input tx_data_req, tx_data_req_fifo, postbus_req;
     timing from rising clock int_clock tx_data_ack, postbus_ack;
     timing comb output tx_data_ack, postbus_ack;
 

@@ -69,7 +69,7 @@ typedef enum [4]
 /*a Module
  */
 module ddr_dram_as_sram( clock drm_clock,
-                         clock slow_clock,
+                         //clock slow_clock,
 
                          input bit drm_ctl_reset,
                          output bit init_done,

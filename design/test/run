@@ -6,12 +6,20 @@ require "lib_getopts.pl";
 $tests = "";
 $sim_prefix = "";
 $sim_options = "";
-&Getopts ('b:t:rVd:hv');
+&Getopts ('b:t:rgd:hvwW:S:R:');
 
-if ($opt_t) {
-    $tests .= "--define $opt_t=1 ";
-}
-@regression = ("prefetch_tests", "system_scheduler_tests", "system_alu_tests", "system_memory_tests", "system_microkernel_tests", "system_analyzer_tests");
+
+$tests .= "--define $opt_t=1 " if ($opt_t);
+$tests .= "--define override_run_length=$opt_R " if ($opt_R);
+$tests .= "--define vcd_create=1 " if ($opt_w);
+$tests .= "--define vcd_skip_length=$opt_S " if ($opt_S);
+if ($opt_W) {
+    foreach $w (split(/,/,$opt_W)) {
+        $tests .= "--define vcd_signals_$w=1 ";
+    }
+}    
+
+@regression = ("prefetch_tests", "system_scheduler_tests", "system_alu_tests", "system_memory_tests", "system_microkernel_tests", "system_analyzer_tests", "system_io_tests");
 if ($opt_r) {
     foreach $t (@regression) {
         $tests .= "--define $t=1 ";
@@ -20,7 +28,7 @@ if ($opt_r) {
 if ($opt_b) {
     $tests .= "--define system_bug_tests=$opt_b ";
 }
-$sim_prefix = "valgrind --num-callers=8 " if ($opt_V);
+$sim_prefix = "valgrind --num-callers=8 " if ($opt_g);
 $sim_options .= " --sl_debug_level $opt_d " if ($opt_d);
 #$tests .= "--define system_ethernet_tests=1 ";
 #$tests .= "--define system_microkernel_tests=1 ";

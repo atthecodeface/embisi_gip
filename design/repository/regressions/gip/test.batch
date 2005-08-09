@@ -4,15 +4,41 @@
 #  
 
 #a Variables
-int vcd_skip_length
+string test_name
 int run_length
+int run_step_size
+int to_do
+int override_run_length
+int vcd_skip_length
 int vcd_create
+int vcd_create
+int vcd_signals_toplevel
+int vcd_signals_gip
+int vcd_signals_io
+int vcd_signals_eth
+int vcd_signals_ss
+int vcd_signals_par
+int vcd_signals_analyzer
+int vcd_signals_apb
 string vcd_full_filename
 string vcd_filename
 
 set vcd_create 1
 
 #a Main
+set_string vcd_filename "gip_system_0"
+set override_run_length env_int("override_run_length")
+set vcd_create env_int("vcd_create")
+set vcd_skip_length env_int("vcd_skip_length")
+set vcd_signals_toplevel env_int("vcd_signals_toplevel")
+set vcd_signals_gip env_int("vcd_signals_gip")
+set vcd_signals_io env_int("vcd_signals_io")
+set vcd_signals_eth env_int("vcd_signals_eth")
+set vcd_signals_ss env_int("vcd_signals_ss")
+set vcd_signals_par env_int("vcd_signals_par")
+set vcd_signals_analyzer env_int("vcd_signals_analyzer")
+set vcd_signals_apb env_int("vcd_signals_apb")
+
 beq env_int("prefetch_tests") 0 skip_prefetch_tests
 gosub gip_prefetch_tests
 skip_prefetch_tests:
@@ -41,6 +67,10 @@ beq env_int("system_analyzer_tests") 0 skip_system_analyzer_tests
 gosub gip_system_analyzer
 skip_system_analyzer_tests:
 
+beq env_int("system_io_tests") 0 skip_system_io_tests
+gosub gip_system_io
+skip_system_io_tests:
+
 beq env_int("system_bug_tests") 0 skip_system_bug_tests
 gosub gip_system_bug
 skip_system_bug_tests:
@@ -52,7 +82,7 @@ end
 gip_prefetch_tests:
 
 #b gip_prefetch_0
-set vcd_skip_length 0
+printf "Prefetch test 0"
 set run_length 40000
 set_string vcd_filename "gip_prefetch_0"
 setenv "memory_log_size" 16
@@ -88,7 +118,6 @@ return
 
 #b gip_0
 gip_0:
-set vcd_skip_length 0
 set run_length 400
 set_string vcd_filename "gip_0"
 setenv "memory_log_size" 16
@@ -100,7 +129,8 @@ return
 
 #b gip_1
 gip_1:
-set vcd_skip_length 0
+
+printf "GIP test 1"
 #set run_length 40000000
 set run_length 400
 set_string vcd_filename "gip_1"
@@ -113,7 +143,8 @@ return
 
 #b gip_uart
 gip_uart:
-set vcd_skip_length 0
+
+printf "GIP UART test"
 #set run_length 40000000
 set run_length 10000
 set_string vcd_filename "gip_uart"
@@ -126,7 +157,8 @@ return
 
 #b gip_memory
 gip_memory:
-set vcd_skip_length 0
+
+printf "GIP memory 1"
 #set run_length 40000000
 set run_length 10000
 set_string vcd_filename "gip_memory"
@@ -139,7 +171,8 @@ return
 
 #b gip_factorial
 gip_factorial:
-set vcd_skip_length 0
+
+printf "GIP factorial"
 set run_length 10000
 set_string vcd_filename "gip_factorial"
 setenv "memory_log_size" 16
@@ -151,7 +184,6 @@ return
 
 #b gip_arm_alu
 gip_arm_alu:
-set vcd_skip_length 0
 set run_length 80000
 set_string vcd_filename "gip_arm_alu"
 setenv "memory_log_size" 16
@@ -163,7 +195,6 @@ return
 
 #b gip_linux
 gip_linux:
-set vcd_skip_length 0
 set run_length 200000
 set_string vcd_filename "gip_linux"
 # 16 MB of RAM!
@@ -188,28 +219,20 @@ return
 #b gip_system_alu_0
 # This test runs the full ALU regression tests which exercise most ALU operations with most flags and most shifter operations
 gip_system_alu_0:
-printf "gip_system_alu_0"
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_alu_0"
 set run_length 4000000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/alu.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 0
 gosub gip_system_test
 return
 
 #b gip_system_alu_1
 # This test runs the linux div64 function
 gip_system_alu_1:
-printf "gip_system_alu_0"
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_alu_0"
 set run_length 100000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/test_div64.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 1
 gosub gip_system_test
 return
 
@@ -224,14 +247,10 @@ return
 
 #b gip_system_memory_0
 gip_system_memory_0:
-printf "gip_system_memory_0 test"
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_memory_0 test"
 set run_length 600000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/memory.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 1
 gosub gip_system_test
 return
 
@@ -248,13 +267,10 @@ return
 
 #b gip_system_bug_2
 gip_system_bug_2:
-set vcd_skip_length 00000
+gosub gip_system_test_init
+set_string test_name "gip_system_bug_2"
 set run_length 4000000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/bug_2.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 1
 gosub gip_system_test
 return
 
@@ -271,39 +287,28 @@ return
 
 #b gip_system_microkernel_1
 gip_system_microkernel_1:
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_microkernel_1"
 set run_length 430000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/microkernel_test_1.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 0
 gosub gip_system_test
 return
 
 #b gip_system_microkernel_2
 gip_system_microkernel_2:
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_microkernel_2"
 set run_length 300000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/microkernel_test_2.regression.dmif"
-#setenv "ddr_mif" "../arm/bin/factorial.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 1
 gosub gip_system_test
 return
 
 #b gip_system_microkernel_3
 gip_system_microkernel_3:
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_microkernel_3"
 set run_length 1000000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/microkernel_test_3.regression.dmif"
-#setenv "ddr_mif" "../arm/bin/factorial.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 0
 gosub gip_system_test
 return
 
@@ -319,27 +324,131 @@ return
 
 #b gip_system_analyzer_1
 gip_system_analyzer_1:
-printf "gip_system_analyzer_1 test"
-set vcd_skip_length 000000
+gosub gip_system_test_init
+set_string test_name "gip_system_analyzer_1 test"
 set run_length 280000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/analyzer_test_1.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 0
 gosub gip_system_test
 return
 
 #b gip_system_analyzer_2
 gip_system_analyzer_2:
-printf "gip_system_analyzer_2 test"
-set vcd_skip_length 0000
+gosub gip_system_test_init
+set_string test_name "gip_system_analyzer_2 test"
 set run_length 140000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
 setenv "ddr_mif" "../arm/bin/analyzer_test_2.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 0
+gosub gip_system_test
+return
+
+#a GIP system io tests
+#f gip_system_io
+gip_system_io:
+printf "gip_system_io tests"
+setenv "verbose_level" 1
+
+# gip_system_io_1, gip_system_io_2, gip_system_io_101, gip_system_io_102, gip_system_io_103, gip_system_io_104, gip_system_io_105, gip_system_io_106 are regression worthy
+#   gosub gip_system_io_1
+#   gosub gip_system_io_2
+#   gosub gip_system_io_101
+#   gosub gip_system_io_102
+#   gosub gip_system_io_103
+   gosub gip_system_io_104
+   gosub gip_system_io_105
+   gosub gip_system_io_106
+return
+
+#b gip_system_io_1 - sync_serial_test_1
+gip_system_io_1:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_1 test - sync_serial_test_1"
+set run_length 200000
+setenv "ss_enable" "1"
+setenv "ddr_mif" "../arm/bin/sync_serial_test_1.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_2 - sync_serial_test_2
+gip_system_io_2:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_2 test - sync_serial_test_2"
+set run_length 110000
+setenv "ss_enable" "1"
+setenv "ddr_mif" "../arm/bin/sync_serial_test_2.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_101 - ethernet_test_1
+gip_system_io_101:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_101 test - ethernet_test_1"
+set run_length 650000
+setenv "extbus_enable" "1"
+setenv "mii_enable" "1"
+# () ( (stream_type length header seed value interval delay)* )
+# MII clock is about 400 ticks per clock - so 80 gets us to 32k cycles - and a 64 byte packet is 128 nybbles+ which is about 80k cycles
+# the interval is between requests - we need about 160 nybbles
+setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 160 80 ) )"
+setenv "ddr_mif" "../arm/bin/ethernet_test_1.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_102 - ethernet_test_2
+gip_system_io_102:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_102 test - ethernet_test_2"
+set run_length 750000
+setenv "extbus_enable" "1"
+setenv "mii_enable" "1"
+setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 160 80 ) )"
+setenv "ddr_mif" "../arm/bin/ethernet_test_2.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_103 - ethernet_test_3
+gip_system_io_103:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_103 test - ethernet_test_3"
+set run_length 650000
+setenv "extbus_enable" "1"
+setenv "mii_enable" "1"
+setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 160 80 ) )"
+setenv "ddr_mif" "../arm/bin/ethernet_test_3.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_104 - ethernet_test_4
+gip_system_io_104:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_104 test - ethernet_test_4"
+set run_length 400000
+setenv "extbus_enable" "1"
+setenv "mii_enable" "1"
+setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
+setenv "ddr_mif" "../arm/bin/ethernet_test_4.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_105 - ethernet_test_5
+gip_system_io_105:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_105 test - ethernet_test_5"
+set run_length 400000
+setenv "extbus_enable" "1"
+setenv "mii_enable" "1"
+setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
+setenv "ddr_mif" "../arm/bin/ethernet_test_5.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_106 - ethernet_test_6
+gip_system_io_106:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_106 test - ethernet_test_6"
+set run_length 400000
+setenv "extbus_enable" "1"
+setenv "mii_enable" "1"
+setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
+setenv "ddr_mif" "../arm/bin/ethernet_test_6.regression.dmif"
 gosub gip_system_test
 return
 
@@ -355,27 +464,23 @@ return
 #b gip_system_scheduler_0
 # This test runs the scheduler and tests different round robin, cooperative and preemptive modes - it is not exhastive as to preempting different instruction types, though
 gip_system_scheduler_0:
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_scheduler_0 test - scheduler_modes"
 set run_length 620000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
+setenv "extbus_enable" "1"
 setenv "ddr_mif" "../arm/bin/scheduler_modes.regression.dmif"
-set_string vcd_filename "gip_system_0"
-set vcd_create 0
 gosub gip_system_test
 return
 
 #b gip_system_scheduler_1
 # This test runs the scheduler and tests different instruction preemptions
 gip_system_scheduler_1:
+gosub gip_system_test_init
+set_string test_name "gip_system_scheduler_1 test - scheduler_preempt"
 # we run at about 1M cycles in 30s
-set vcd_create 0
-set vcd_skip_length 85000
 set run_length 1100000
-setenv "mii_rx_sources" ""
-setenv "uart_exec_file" "src/end.ef"
+setenv "extbus_enable" "1"
 setenv "ddr_mif" "../arm/bin/scheduler_preempt.regression.dmif"
-set_string vcd_filename "gip_system_0"
 gosub gip_system_test
 return
 
@@ -391,39 +496,38 @@ return
 
 #b gip_system_ethernet_0
 gip_system_ethernet_0:
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_ethernet_0 test"
 set run_length 400000
 #set run_length 32000
-set vcd_create 1
+setenv "mii_enable" "1"
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
 setenv "ddr_mif" "../arm/bin/ethernet.regression.dmif"
-set_string vcd_filename "gip_system_0"
 gosub gip_system_test
 return
 
 #b gip_system_1
 gip_system_1:
-set vcd_skip_length 0
+gosub gip_system_test_init
+set_string test_name "gip_system_1 test"
 set run_length 40000
-set vcd_create 1
+setenv "mii_enable" "1"
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
 setenv "ddr_mif" "../arm/bin/ethernet.regression.dmif"
-set_string vcd_filename "gip_system_0"
 gosub gip_system_test
 return
 
 #b gip_system_ethernet_reset
 gip_system_ethernet_reset:
-set vcd_skip_length 180000
+gosub gip_system_test_init
+set_string test_name "gip_system_ethernet_reset test"
 set run_length 280000
-set vcd_create 0
+setenv "mii_enable" "1"
 setenv "mii_rx_sources" "( ) ( ( c 144 0x1234 0x55555555 0 10000 0 ) )"
-setenv "uart_exec_file" "src/end.ef"
 # We need this to wait >1250 cycles (>120,000ns) before checking it has run twice; the eth packet takes about that to get in
 setenv "ddr_mif" "../arm/bin/inc_wait_test.regression.dmif"
-set_string vcd_filename "gip_system_0"
 gosub gip_system_test
 return
 
@@ -450,49 +554,121 @@ reset
 step run_length
 return
 
+#f gip_system_test_init
+gip_system_test_init:
+set_string test_name "<no test name given>"
+setenv "ss_enable" "0"
+setenv "uart_exec_file" "src/end.ef"
+setenv "mii_enable" "0"
+setenv "mii_rx_sources" ""
+setenv "mii_tx_sinks" ""
+#setenv "extbus_enable" "1" is needed for test pass/fail messages
+setenv "extbus_enable" "1"
+set run_step_size 50000
+return
+
 #f gip_system_test
 gip_system_test:
 
+printf "****************************** Loading test %s0%" test_name
 read_hw_file gip_system.hwex
+
+beq override_run_length 0 gip_system_test_no_runlength_override
+set run_length override_run_length
+gip_system_test_no_runlength_override:
 
 beq vcd_create 0 gip_system_test_no_vcd
 sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
 vcd_file_open "allsignals" vcd_full_filename
+
+beq vcd_signals_toplevel 0 gip_system_test_vcd_signals_toplevel_no
 vcd_file_add "allsignals" "gip_simple"
-#vcd_file_add "allsignals" "system"
-vcd_file_add "allsignals" "gip_simple.gip.gip.postbus"
-vcd_file_add "allsignals" "gip_simple.gip.gip.special"
-vcd_file_add "allsignals" "gip_simple.gip.gip.scheduler"
-#vcd_file_add "allsignals" "gip_system.prefetch" "gip_system.data_ram" "gip_system.boot_rom" "gip_system.shared_sram"
+vcd_file_add "allsignals" "mii"
+vcd_file_add "allsignals" "uart_testbench"
+vcd_file_add "allsignals" "ddr"
+vcd_file_add "allsignals" "ss_th"
+gip_system_test_vcd_signals_toplevel_no:
+
+beq vcd_signals_gip 0 gip_system_test_vcd_signals_gip_no
 vcd_file_add "allsignals" "gip_simple.gip.gip.decode" "gip_simple.gip.gip.decode.native" "gip_simple.gip.gip.decode.arm"
 vcd_file_add "allsignals" "gip_simple.gip.gip.rf"
 vcd_file_add "allsignals" "gip_simple.gip.gip.alu"
 vcd_file_add "allsignals" "gip_simple.gip.gip.alu.shift_op"
-#vcd_file_add "allsignals" "gip_simple.gip_apb"
-vcd_file_add "allsignals" "gip_simple.iob.pst.src"
-vcd_file_add "allsignals" "gip_simple.iob.pst.tgt"
-vcd_file_add "allsignals" "gip_simple.iob.pst.event_mgr"
-vcd_file_add "allsignals" "gip_simple.iob"
-vcd_file_add "allsignals" "gip_simple.iob.ss"
-vcd_file_add "allsignals" "gip_simple.iob.ingress_fifos"
-vcd_file_add "allsignals" "gip_simple.iob.egress_fifos"
-vcd_file_add "allsignals" "gip_simple.logic_analyzer"
+vcd_file_add "allsignals" "gip_simple.gip.gip.postbus"
+vcd_file_add "allsignals" "gip_simple.gip.gip.special"
+vcd_file_add "allsignals" "gip_simple.gip.gip.scheduler"
+vcd_file_add "allsignals" "gip_simple.prefetch"
+vcd_file_add "allsignals" "gip_simple.data_ram"
+vcd_file_add "allsignals" "gip_simple.boot_rom"
+vcd_file_add "allsignals" "gip_simple.shared_sram"
+gip_system_test_vcd_signals_gip_no:
+
+beq vcd_signals_io 0 gip_system_test_vcd_signals_io_no
+vcd_file_add "allsignals" "gip_simple.iob_a.pst.src"
+vcd_file_add "allsignals" "gip_simple.iob_a.pst.tgt"
+vcd_file_add "allsignals" "gip_simple.iob_a.pst.event_mgr"
+vcd_file_add "allsignals" "gip_simple.iob_a"
+vcd_file_add "allsignals" "gip_simple.iob_a.ingress_fifos"
+vcd_file_add "allsignals" "gip_simple.iob_a.egress_fifos"
+vcd_file_add "allsignals" "gip_simple.ios_a"
+gip_system_test_vcd_signals_io_no:
+
+beq vcd_signals_eth 0 gip_system_test_vcd_signals_eth_no
 vcd_file_add "allsignals" "mii"
-#vcd_file_add "allsignals" "gip_simple.iob"
-#vcd_file_add "allsignals" "gip_system.uart_apb" "gip_system.uart_apb.status_fifo"  "gip_system.uart_apb.cmd_fifo" "gip_system.uart_io"
-#vcd_file_add "allsignals" "gip_system.ext_bus_apb"
-vcd_file_add "allsignals" "rxd" "txd"
+vcd_file_add "allsignals" "gip_simple.ios_a.erx"
+vcd_file_add "allsignals" "gip_simple.ios_a.erx_head"
+vcd_file_add "allsignals" "gip_simple.ios_a.etx"
+vcd_file_add "allsignals" "gip_simple.ios_a.etx_head"
+gip_system_test_vcd_signals_eth_no:
+
+beq vcd_signals_ss 0 gip_system_test_vcd_signals_ss_no
+vcd_file_add "allsignals" "gip_simple.ios_a.ss"
+vcd_file_add "allsignals" "gip_simple.ios_a.ss_head"
+gip_system_test_vcd_signals_ss_no:
+
+beq vcd_signals_par 0 gip_system_test_vcd_signals_par_no
+vcd_file_add "allsignals" "gip_simple.ios_a.par"
+vcd_file_add "allsignals" "gip_simple.ios_a.par_head"
+gip_system_test_vcd_signals_par_no:
+
+beq vcd_signals_analyzer 0 gip_system_test_vcd_signals_analyzer_no
+vcd_file_add "allsignals" "gip_simple.logic_analyzer"
+gip_system_test_vcd_signals_analyzer_no:
+
+beq vcd_signals_apb 0 gip_system_test_vcd_signals_apb_no
+vcd_file_add "allsignals" "gip_simple.apb"
+vcd_file_add "allsignals" "gip_simple.apb.uart_apb"
+vcd_file_add "allsignals" "gip_simple.apb.ext_bus_apb"
+vcd_file_add "allsignals" "gip_simple.apb.gpio_apb"
+vcd_file_add "allsignals" "gip_simple.apb.timer_apb"
+gip_system_test_vcd_signals_apb_no:
+
+
+gip_system_test_no_vcd:
+
+printf "****************************** Running test %s0% for %d1% cycles (vcd enable %d2%)" test_name run_length vcd_create
+
 reset
+
+beq vcd_create 0 gip_system_test_no_vcd_1
 step vcd_skip_length
 vcd_file_enable "allsignals"
 sub run_length run_length vcd_skip_length
-step run_length
-vcd_file_close "allsignals"
-return
+gip_system_test_no_vcd_1:
 
-gip_system_test_no_vcd:
-reset
-step run_length
+gip_system_test_loop:
+set to_do run_step_size
+bgt run_length to_do gip_system_test_step_max
+set to_do run_length
+gip_system_test_step_max:
+step to_do
+sub run_length run_length to_do
+bgt run_length 0 gip_system_test_loop
+
+beq vcd_create 0 gip_system_test_no_vcd_2
+vcd_file_close "allsignals"
+gip_system_test_no_vcd_2:
+
 return
 
 

@@ -1,0 +1,83 @@
+#a Copyright
+#  
+#  This file 'ss.th' copyright Gavin J Stark 2003, 2004
+#  
+
+#a SS read/write
+bne env_int("enable") 0 enabled
+printf "Sync serial test harness not enabled"
+end
+
+int ssdi
+int next_ssdi
+int write_shift_reg
+int read_shift_reg
+int test_bit
+enabled:
+
+printf "Sync serial test harness running"
+
+spawn read_write_thread ss_read_write 10
+
+while 1
+wait 1
+beq input("ssdo_oe") 0 ssdo_is_input
+set ssdi input("ssdo")
+ssdo_is_input:
+reset "ssdi" ssdi
+endwhile
+
+end
+
+int cont
+int clk
+ss_read_write_complete:
+printf "%d0%:Sync serial write complete %x1%" global_cycle() write_shift_reg
+set read_shift_reg write_shift_reg
+
+ss_read_write:
+
+wait_until_value "sscs" 0x80
+set write_shift_reg 0
+printf "%d0%:ss chip select" global_cycle()
+
+ss_read_write_selected:
+set cont 1
+set clk 0
+while cont
+    wait 1
+    beq input("sscs") 0x80 ss_rw_cont
+    set cont 0
+ss_rw_cont:
+    bne clk 0 ss_rw_clk_was_high
+    beq input("sscl") 0 ss_rw_next
+
+    set clk 1
+    add write_shift_reg write_shift_reg write_shift_reg
+    add write_shift_reg write_shift_reg input("ssdo")
+
+    set next_ssdi 0
+    and test_bit read_shift_reg 0x80000000
+    beq test_bit 0 next_ssdi_clr
+    set next_ssdi 1
+next_ssdi_clr:
+    add read_shift_reg read_shift_reg read_shift_reg
+    goto ss_rw_next
+
+ss_rw_clk_was_high:
+    bne input("sscl") 0 ss_rw_next
+    set ssdi next_ssdi
+    set clk 0
+ss_rw_next:
+endwhile
+
+goto ss_read_write_complete
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

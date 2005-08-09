@@ -72,7 +72,7 @@ pass 0 "Test succeeded"
 end
 
 test_fail:
-printf "Test failed %d0% %d1%" global_cycle() data
+printf "Test failed %d0% %d1% %x1%" global_cycle() data
 fail global_cycle() "**************************************************************************** Test failed"
 end
 

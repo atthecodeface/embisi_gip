@@ -13,17 +13,19 @@
 # and data capture occurs at 1,3,5,7,9,11 etc
 printf "DDR test pins logic"
 
-reset ddr_ck 1
+int ddr_ck
+
+set ddr_ck 1
 reset logic_ck 1
 wait 2
 
-reset ddr_ck 0
+set ddr_ck 0
 
 wait 2
 
 while 1
 
-reset ddr_ck 1
+set ddr_ck 1
 
 drive cke input("next_cke")
 drive select_n input("next_s_n")
@@ -40,7 +42,7 @@ wait 1
 drive dq_in_high input("dq_to_ctl")
 wait 1
 
-reset ddr_ck 0
+set ddr_ck 0
 
 drive dqs_out input("next_dqs_low")
 wait 1

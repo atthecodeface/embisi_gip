@@ -10,6 +10,7 @@ module gip_system "gip_simple"
 #b Add MII testbench
 option_string "monitor_level" "15"
 option_string "sources" env_string("mii_rx_sources")
+option_string "sinks" env_string("mii_tx_sinks")
 module mii_testbench "mii"
 
 #b Add UART testbench
@@ -27,7 +28,7 @@ module ddr_16m_x_32 "ddr"
 
 #b Add test harness
 option_string "clock" "ddr_clock"
-option_string "inputs" "dq_oe_ctl dq_oe_ddr"
+option_string "inputs" "dq_oe_ctl dq_oe_ddr logic_ck_fb"
 option_string "outputs" "test_reset cke_last_of_logic logic_ck"
 option_string "filename" "gip_ddr.th"
 module se_test_harness "ddrth"
@@ -39,10 +40,18 @@ option_string "outputs" "ext_bus_read_data[32]"
 option_string "filename" "extbus.th"
 module se_test_harness "extbusth"
 
+#b Sync serial test harness
+option_string enable env_string("ss_enable")
+option_string "clock" "ss_clock"
+option_string "inputs" "ssdo ssdo_oe sscl[2] sscl_oe[2] sscs[8]"
+option_string "outputs" "ssdi[2]"
+option_string "filename" "ss.th"
+module se_test_harness "ss_th"
+
 #b Add DDR pin logic
 option_string "clock" "ddr_clock"
 option_string "inputs" "next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4] dq_to_ctl[32] dqs_to_ctl[4]"
-option_string "outputs" "ddr_ck cke select_n[2] ras_n cas_n we_n ba[2] a[13] dqs_out[4] dq_out[32] dqm[4] dq_in_low[32] dq_in_high[32] dq_oe_ctl"
+option_string "outputs" "cke select_n[2] ras_n cas_n we_n ba[2] a[13] dqs_out[4] dq_out[32] dqm[4] dq_in_low[32] dq_in_high[32] dq_oe_ctl"
 option_string "filename" "ddr_pins.th"
 module se_test_harness "ddr_pins"
 
@@ -56,17 +65,39 @@ clock ddr_x4_clock 0 1 1
 clock ddr_clock 0 4 4
 clock logic_clock 0 48 48
 clock eth_clock 0 200 200
+clock never_clock 0 0x7ffffff 0x7fffffff
 
 drive ddrth.ddr_clock ddr_clock
 drive ddr_pins.ddr_clock ddr_x4_clock
-drive extbusth.extbus_clock logic_clock
 drive gip_simple.int_clock logic_clock
 drive gip_simple.analyzer_clock logic_clock
 drive gip_simple.drm_clock ddr_clock
+drive ddr.ddr_clock ddr_clock
+
+beq env_int("extbus_enable") 1 extbus_enabled
+drive extbusth.extbus_clock never_clock
+goto extbus_clocked
+extbus_enabled:
+drive extbusth.extbus_clock logic_clock
+extbus_clocked:
+
+beq env_int("mii_enable") 1 mii_enabled
+drive gip_simple.eth_mii_tx_clock never_clock
+drive gip_simple.eth_mii_rx_clock never_clock
+drive mii.int_clock never_clock
+goto mii_clocked
+mii_enabled:
 drive gip_simple.eth_mii_tx_clock eth_clock
 drive gip_simple.eth_mii_rx_clock eth_clock
-drive ddr.ddr_clock ddr_clock
 drive mii.int_clock eth_clock
+mii_clocked:
+
+beq env_int("ss_enable") 1 ss_enabled
+drive ss_th.ss_clock never_clock
+goto ss_clocked
+ss_enabled:
+drive ss_th.ss_clock logic_clock
+ss_clocked:
 
 #b Add wires
 wire system_reset
@@ -79,7 +110,6 @@ wire        dq_to_ctl[32] dqs_to_ctl[4] dq_oe_ddr
 wire dq_to_ctl_high[32] dq_to_ctl_low[32]
 wire cke a[13] ba[2] we_n cas_n ras_n select_n[2]
 wire select_0
-wire high
 extract select_0 select_n 0 1
 
 wire ext_bus_ce[4] ext_bus_oe ext_bus_we ext_bus_address[24]
@@ -88,21 +118,25 @@ wire ext_bus_read_data[32] ext_bus_write_data[32] ext_bus_write_data_enable
 wire eth_mii_rx_dv eth_mii_rx_d[4] eth_mii_rx_er
 wire eth_mii_tx_en eth_mii_tx_d[4]
 
-wire eth_mdio_in
 wire eth_mii_col
 wire eth_mii_crs
-assign eth_mdio_in 0
 assign eth_mii_col 0
 assign eth_mii_crs 0
 
-wire ssdo
+wire ssdo ssdo_oe
 wire ssdi[2]
+wire sscl[2] sscl_oe[2]
+wire sscs[8]
+
+wire logic_ck
 
 #b Wire up DDR test harness
 drive system_reset        ddrth.test_reset 
 drive cke_last_of_logic ddrth.cke_last_of_logic
 drive ddrth.dq_oe_ctl dq_oe_ctl
 drive ddrth.dq_oe_ddr dq_oe_ddr
+drive logic_ck ddrth.logic_ck
+drive ddrth.logic_ck_fb logic_ck
 
 #b Wire up extbus test harness
 drive ext_bus_read_data extbusth.ext_bus_read_data
@@ -147,7 +181,6 @@ drive next_dqoe     gip_simple.next_dqoe
 drive next_dqs_high gip_simple.next_dqs_high
 drive next_dqs_low  gip_simple.next_dqs_low
 
-drive gip_simple.eth_mdio_in    eth_mdio_in
 drive gip_simple.eth_mii_rx_dv  eth_mii_rx_dv
 drive gip_simple.eth_mii_rx_d   eth_mii_rx_d
 drive gip_simple.eth_mii_rx_er  eth_mii_rx_er
@@ -157,12 +190,14 @@ drive gip_simple.eth_mii_crs    eth_mii_crs
 drive eth_mii_tx_en gip_simple.eth_mii_tx_en
 drive eth_mii_tx_d  gip_simple.eth_mii_tx_d
 
-extract ssdi eth_mii_rx_d 0 2
+drive ssdo    gip_simple.ssdo
+drive ssdo_oe gip_simple.ssdo_oe
+drive sscl    gip_simple.sscl
+drive sscl_oe gip_simple.sscl_oe
+drive sscs    gip_simple.sscs
 drive gip_simple.ssdi ssdi
-drive ssdo gip_simple.ssdo
 
 #b Wire up DDR model
-assign high 1
 drive ddr.dqm     dqm
 drive ddr.dq_in   dq_to_ddr
 drive ddr.dqs_in  dqs_to_ddr
@@ -217,12 +252,22 @@ drive mii.mon_mii_enable     eth_mii_tx_en
 drive eth_mii_rx_d           mii.rx_mii_data
 drive eth_mii_rx_dv          mii.rx_mii_dv
 drive eth_mii_rx_er          mii.rx_mii_err
+drive mii.tx_mii_data        eth_mii_tx_d
+drive mii.tx_mii_enable      eth_mii_tx_en
 
 #b Wire up UART testbench
 drive uart_testbench.uart_clock logic_clock
 drive uart_testbench.uart_reset system_reset
 drive uart_testbench.rxd txd
 drive rxd uart_testbench.txd
+
+#b Wire up sync serial testbench
+drive ss_th.ssdo       ssdo
+drive ss_th.ssdo_oe    ssdo_oe
+drive ss_th.sscl       sscl
+drive ss_th.sscl_oe    sscl_oe
+drive ss_th.sscs       sscs
+drive ssdi             ss_th.ssdi
 
 #b End
 end

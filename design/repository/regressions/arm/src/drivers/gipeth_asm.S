@@ -11,15 +11,18 @@
  *  Low-level vector interface routines
  *
  */
-
+//#define DEBUG
+    
 #define ENTRY(name) \
   .globl name; \
   name:
 #ifdef REGRESSION
 #include <gip_macros.h>
+#include <gip_system.h>
 #include <postbus_asm.h>
 #else
 #include <asm/gip_macros.h>
+#include <asm/gip_system.h>
 #include <asm/postbus_asm.h>
 #endif    
 
@@ -38,48 +41,51 @@
 #define t_gipeth_buffer__done             (4*4)
 
 #define GIPETH_BUFFER_LENGTH (2048)
-    
+
+#ifdef DEBUG    
+#define debug_ch(a) gip_utximm a
+#else
+#define debug_ch(a)
+#endif    
+        
 /*a GIP ethernet hardware thread code
  */
 /*f gipeth_hw_thread
     Runs as thread 6
     Uses r28-30 and timer 1
     r28 -> t_gipeth structure for the driver
-    Semaphore 23 is the postbus txd0/comm0 access semaphore
-    Semaphore 24 is virtual rx status fifo ne
-    Semaphore 25 is virtual tx status fifo ne
+    Semaphore 24 is virtual eth status fifo ne
+    Semaphore 25 is virtual tx data fifo nnf
     Semaphore 26 is 'work to be done' from the device driver
-    Semaphore 27 is virtual tx data fifo nnf
+    Semaphore 27 is the postbus txd0/comm0 access semaphore
 */
 ENTRY(gipeth_hw_thread)
 
     /*b Preserve registers
     */
- gip_utximm 'P'    
+ debug_ch('P')    
     gip_extrn 28
     str r0, [r12, #t_gipeth__regs]
     gip_extrn 28
     add r0, r12, #t_gipeth__regs
     stmib r0, {r1-r14}
 
-    /*b Read and clear semaphores 23-26 - don't clear 27 unless we add to the tx data fifo, as otherwise it is invalid
+    /*b Read and clear semaphores 24,26,27 - don't clear 25 unless we add to the tx data fifo, as otherwise it is invalid
     */
     mov r12, #0
-    gip_read_and_clear_semaphores 0xf, 23, 13
-    tst r13, #1<<24
-    blne gipeth_hw_thread_handle_rx
-    tst r13, #1<<25
-    blne gipeth_hw_thread_handle_tx_status
-    tst r13, #1<<26
+    gip_read_and_clear_semaphores (SEM_STATUS_VNE | SEM_SOFT_IRQ | SEM_POSTBUS )>>24, 24, 13
+    tst r13, #SEM_STATUS_VNE
+    blne gipeth_hw_thread_handle_eth_status
+    tst r13, #SEM_SOFT_IRQ
     blne gipeth_hw_thread_handle_soft_irq
-    tst r13, #1<<27
+    tst r13, #SEM_TX_DATA_VWM
     blne gipeth_hw_thread_handle_tx_data // now if there is room in the tx fifo and we have data for tx, then transmit it    
 
     /*b If we care have data to transmit then wait for space in the FIFO, else don't
     */
     tst r12, #2
-    mov r0, #((0x7)<<4)|1   // set our flag dependencies and restart mode - don't depend on watermark semaphore if no data to send
-    movne r0, #((0xf)<<4)|1 // set our flag dependencies and restart mode - depend on watermark semaphore if data to send
+    mov r0,   #(((SEM_STATUS_VNE | SEM_SOFT_IRQ)>>24)<<4)|1                   // set our flag dependencies and restart mode - don't depend on txd watermark semaphore if no data to send
+    movne r0, #(((SEM_STATUS_VNE | SEM_SOFT_IRQ | SEM_TX_DATA_VWM)>>24)<<4)|1 // set our flag dependencies and restart mode - depend on txd watermark semaphore if data to send
     gip_extrd 0x86
     mov r0, r0
 
@@ -89,7 +95,7 @@ ENTRY(gipeth_hw_thread)
     beq 0f
 
     gip_extrdrn 0x11, 0x11
-    orr r1, r1, #2 // take some time setting our interrupt bit (r17 bit 2) */
+    orr r1, r1, #2
     gip_set_semaphores 4, 4
 
 0:
@@ -104,69 +110,14 @@ ENTRY(gipeth_hw_thread)
     */
     nop
     nop
- gip_utximm 'D'
+ debug_ch('D')
     nop
     nop
- gip_utximm '\n'
+ debug_ch('\n')
     nop
     nop
     .word 0xec007305  // deschedule */
     nop
-
-/*f gipeth_hw_thread_handle_tx_status
-    on entry - r12 = need to set soft irq
-    preserve r13, can set (but not clear) r12
-
-    There is status for us - get it, and handle it
-    Most status just tells us there is more room in the tx fifo
- */
-gipeth_hw_thread_handle_tx_status:
-
-    gip_utximm 'T'
-    gip_atomic_block 1
-    gip_utximm 'X'    
-    gip_atomic_block 1
-    gip_utximm 'S'    
-    gip_atomic_block 1
-    
-    /*b Define registers - r12, r13, r14 must not be used
-    */
-txs_temp       .req r0
-txs_temp2      .req r1        
-txs_time       .req r2
-txs_status     .req r3
-
-    /*b Read the status (time/status) pair - issue the command to the postbus, wait for it to come back, then read the time and status
-    on entry - none
-    on exit - time, status, next_buffer_to_reuse, buffer_in_hand, length
-    */
- gip_utximm 'S'    
-    gip_extrd 0x60    // extrd postbus tx d fifo 0
-    ldr r0, read_tx_status_data
-    gip_extrd 0x6c    // extrd postbus tx c 0
-    ldr r0, read_tx_status_cmd
-
- gip_utximm 'W'    
-0:
-    gip_test_semaphores 1, 23
-    beq 0b
-    
- gip_utximm 'G'    
-    gip_extrm 0x60 // postbus rx d 0
-    mov txs_time, r0 // time
-    gip_extrm 0x60 // postbus rx d 0
-    mov txs_status, r0 // status
-
-    gip_clear_semaphores 1, 23
-
-    mov pc, lr
-
-    /*b Numbers we need
-    */
-read_tx_status_data: 
-    .word    (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (23<<postbus_command_target_gip_rx_semaphore_start)
-read_tx_status_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((1-1)<<postbus_command_source_gip_tx_length_start) | ((0)<<postbus_command_source_gip_tx_signal_start) | ((13)<<postbus_command_target_io_dest_start) | (0<<postbus_command_target_io_dest_type_start)
 
 /*f gipeth_hw_thread_handle_soft_irq
     on entry - r12 = need to set soft irq
@@ -178,12 +129,7 @@ read_tx_status_cmd:
  */
 gipeth_hw_thread_handle_soft_irq:
 
-    gip_utximm 'S'
-    gip_atomic_block 1
-    gip_utximm 'O'    
-    gip_atomic_block 1
-    gip_utximm 'F'    
-    gip_atomic_block 1
+    debug_ch('I')
     
 
     /*b Define registers - r12, r13, r14 must not be used
@@ -225,12 +171,7 @@ si_length               .req r11 // note these 3 must be in order
  */
 gipeth_hw_thread_handle_tx_data:    
 
-    gip_utximm 'T'
-    gip_atomic_block 1
-    gip_utximm 'X'    
-    gip_atomic_block 1
-    gip_utximm 'D'    
-    gip_atomic_block 1
+    debug_ch('T')
     
     /*b Define registers - r12, r13, r14 must not be used
     */
@@ -251,11 +192,11 @@ txd_length               .req r11 // note these 3 must be in order
     */
     cmp txd_buffer_in_hand, #0
     moveq pc, lr
- 
+
     /*b Data to send and room for 512 bytes
         Send up to 512 bytes from the current packet - do no more than the current packet
     */
-    gip_utximm 'D'    
+    debug_ch('D')    
     bic txd_temp, txd_length, #0xff000000 // mask out flags
     cmp txd_temp, #512
     movge txd_temp, #512
@@ -274,40 +215,40 @@ txd_sent_data_word:
     b txd_sent_burst
 
 txd_start_burst:  
-    gip_utximm 'B'    
-    gip_clear_semaphores 1, 27
+    debug_ch('B')    
+    gip_clear_semaphores 1, SEM_NUM_TX_DATA_VWM
     gip_extrd 0x6c    // extrd postbus tx c 0
     ldr r0, write_tx_data_8_cmd
 4:  
-    gip_test_semaphores 1, 23
+    gip_test_semaphores 1, SEM_NUM_POSTBUS
     beq 4b
-    gip_clear_semaphores 1, 23
+    gip_clear_semaphores 1, SEM_NUM_POSTBUS
     mov txd_temp2, #8
     b txd_sent_data_word
 
 txd_sent_burst:
     rsbs txd_temp2, txd_temp2, #7 // txd_temp2 = (8-number of words pushed)-1
     blt txd_no_final_partial_burst
-    gip_utximm 'P'    
-    gip_clear_semaphores 1, 27
+    debug_ch('P')    
+    gip_clear_semaphores 1, SEM_NUM_TX_DATA_VWM
     ldr txd_temp, write_tx_data_n_cmd
     gip_extrd 0x6c    // extrd postbus tx c 0
     orr r0, txd_temp, txd_temp2, lsl #postbus_command_source_gip_tx_length_start
 
 4:  
-    gip_test_semaphores 1, 23
+    gip_test_semaphores 1, SEM_NUM_POSTBUS
     beq 4b
-    gip_clear_semaphores 1, 23
+    gip_clear_semaphores 1, SEM_NUM_POSTBUS
     
 txd_no_final_partial_burst: 
 
     /*b Sent a burst of data - send 'tx packet' command if this is first burst of a packet
     */
-    gip_utximm 'T'    
+    debug_ch('T')    
     tst txd_length, #1<<31
     bne not_first_burst_of_packet
 
-    gip_utximm 'C'    
+    debug_ch('C')    
 
     gip_extrd 0x60    // extrd postbus tx d fifo 0
     mov r0, #0x01000000 // send packet immediately
@@ -318,21 +259,21 @@ txd_no_final_partial_burst:
     ldr r0, write_tx_cmd_cmd
 
 4:  
-    gip_test_semaphores 1, 23
+    gip_test_semaphores 1, SEM_NUM_POSTBUS
     beq 4b
-    gip_clear_semaphores 1, 23
+    gip_clear_semaphores 1, SEM_NUM_POSTBUS
 
 not_first_burst_of_packet:
 
     /*b Reduce length to send - if packet completes, then move to next packet
     */
-    gip_utximm 'L'    
+    debug_ch('L')    
     sub txd_length, txd_length, txd_burst
     bics txd_temp, txd_length, #1<<31 // ignore top bit and test for zero
     orr txd_length, txd_length, #1<<31
     bne packet_still_in_progress
 
-    gip_utximm 'P'    
+    debug_ch('P')    
 
     mov txd_temp, #0 // clear ready so we don't pick it up again, and then set done so isr picks it up
     str txd_temp, [txd_next_buffer_to_tx, #t_gipeth_buffer__ready]
@@ -348,7 +289,7 @@ packet_still_in_progress:
     
     /*b Put tx data from storage
     */
-    gip_utximm 'S'    
+    debug_ch('S')    
     cmp txd_buffer_in_hand, #0
     orrne r12, r12, #2
     gip_extrn 28
@@ -362,29 +303,24 @@ packet_still_in_progress:
     /*b Numbers we need
     */
 write_tx_data_8_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((8-1)<<postbus_command_source_gip_tx_length_start) | ((23)<<postbus_command_source_gip_tx_signal_start) | ((0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
+    .word    ((0)<<postbus_command_route_start) | ((8-1)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((0|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
 write_tx_data_n_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((0)<<postbus_command_source_gip_tx_length_start) | ((23)<<postbus_command_source_gip_tx_signal_start) | ((0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
+    .word    ((0)<<postbus_command_route_start) | ((0)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((0|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
 write_tx_cmd_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((2-1)<<postbus_command_source_gip_tx_length_start) | ((23)<<postbus_command_source_gip_tx_signal_start) | ((8)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
+    .word    ((0)<<postbus_command_route_start) | ((2-1)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((8|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
 
-/*f gipeth_hw_thread_handle_rx
+/*f gipeth_hw_thread_handle_eth_status
     on entry - r12 = need to set soft irq
     preserve r13, can set (but not clear) r12
 */
-gipeth_hw_thread_handle_rx: 
-    
-    gip_utximm 'R'
-    gip_atomic_block 1
-    gip_utximm 'X'    
-    gip_atomic_block 1
+gipeth_hw_thread_handle_eth_status: 
     
     /*b Define registers - r12, r13, r14 must not be used
     */
 rx_temp       .req r0
 rx_temp2      .req r1        
-rx_time       .req r2
-rx_status     .req r3
+eth_time      .req r2
+eth_status    .req r3
 rx_block_size .req r4
 rx_dest       .req r5
 rx_size_so_far .req r6 // could overlap with temp    
@@ -396,29 +332,36 @@ rx_length               .req r10 // note these 3 must be in order
     on entry - none
     on exit - time, status, next_buffer_to_reuse, buffer_in_hand, length
     */
- gip_utximm 'S'    
+ debug_ch('S')    
 
     gip_extrd 0x60    // extrd postbus tx d fifo 0
     ldr r0, read_rx_status_data
     gip_extrd 0x6c    // extrd postbus tx c 0
     ldr r0, read_rx_status_cmd
 
- gip_utximm 'W'    
-
     gip_extrn 28
     add rx_temp, r12, #t_gipeth__rx_next_buffer_to_reuse
     ldmia rx_temp, {rx_next_buffer_to_reuse, rx_buffer_in_hand, rx_length}
 
 0:
-    gip_test_semaphores 1, 23
+    gip_test_semaphores 1, SEM_NUM_POSTBUS
     beq 0b
     
- gip_utximm 'G'    
     gip_extrm 0x60 // postbus rx d 0
-    mov rx_time, r0 // time
+    mov eth_time, r0 // time
     gip_extrm 0x60 // postbus rx d 0
-    mov rx_status, r0 // status
-    gip_clear_semaphores 1, 23
+    mov eth_status, r0 // status
+    gip_clear_semaphores 1, SEM_NUM_POSTBUS
+
+    /*b Check for ethernet TX status
+    */
+    tst eth_status, #1<<31
+    beq eth_status_rx
+
+    debug_ch('T')
+    mov pc, lr
+
+eth_status_rx:  
 
     /*b Break out the status; request data from rx fifo
         reason = (status>>24)&7;
@@ -427,8 +370,8 @@ rx_length               .req r10 // note these 3 must be in order
     on entry - time, status, next_buffer_to_reuse, buffer_in_hand, length
     on exit - time, status, block_size, next_buffer_to_reuse, buffer_in_hand, length
      */
- gip_utximm 'B'    
-    mov rx_block_size, rx_status, lsr #16
+    debug_ch('R')
+    mov rx_block_size, eth_status, lsr #16
     ands rx_block_size, rx_block_size, #0xff // number of words in rx data FIFO indicated by this status
     beq 1f
 
@@ -444,15 +387,15 @@ rx_length               .req r10 // note these 3 must be in order
 
     /*b Now figure out what to do with the data while it comes
     // 0 => fcs ok; 1=>fcs bad; 2=> odd nybbles; 3=> complete block; 4=>fifo overrun!; 5=>framing error
-    // we get 03400040, 03400080, 00120092 for a 146 byte packet
+    // we get 03400040, 03400080, 00120092 for a 146 byte packet inc padding
     on entry - time, status, block_size, next_buffer_to_reuse, buffer_in_hand, length
     on exit - status, block_size, dest, next_buffer_to_reuse, buffer_in_hand, length (updated)
     dest = 0 -> discard, buffer_in_hand must be 0
     buffer_in_hand = 0 -> length invalid
      */
- gip_utximm 'D'    
+ debug_ch('D')    
     mov rx_dest, #0 // default is to discard
-    bic rx_size_so_far, rx_status, #0xff000000
+    bic rx_size_so_far, eth_status, #0xff000000
     bic rx_size_so_far, rx_size_so_far, #0x00ff0000
     cmp rx_size_so_far, #64
     bgt middle_of_packet
@@ -460,7 +403,7 @@ rx_length               .req r10 // note these 3 must be in order
     // start of packet (size_so_far is from the status we just read)
     mov rx_length, rx_size_so_far
     movs rx_dest, rx_buffer_in_hand
-    strne rx_time, [rx_buffer_in_hand, #-4]
+    strne eth_time, [rx_buffer_in_hand, #-4]
     bne receive_data  // start of packet with an active packet already - just restart the buffer
 
     // else get first buffer from list - if it is not done, then use it
@@ -493,12 +436,12 @@ receive_data:
     on entry - status, block_size, dest, next_buffer_to_reuse, buffer_in_hand, length
     on exit - status, next_buffer_to_reuse, buffer_in_hand, length
      */
- gip_utximm 'W'    
+ debug_ch('W')    
     cmp rx_block_size, #0
     beq check_status
 
 2:  
-    gip_test_semaphores 1, 23
+    gip_test_semaphores 1, SEM_NUM_POSTBUS
     beq 2b
 
     cmp rx_dest, #0
@@ -512,7 +455,7 @@ receive_data:
     b check_status
 
 discard_data:     
- gip_utximm 'D'    
+ debug_ch('D')    
   
 3:  
     gip_extrm 0x60
@@ -526,10 +469,10 @@ discard_data:
     on exit - next_buffer_to_reuse, buffer_in_hand, length
      */
 check_status:
- gip_utximm 'S'    
-    movs rx_status, rx_status, lsr #24
+ debug_ch('S')    
+    movs eth_status, eth_status, lsr #24
     beq handle_fcs_ok
-    cmp rx_status, #3
+    cmp eth_status, #3
     bne handle_error_status
     // here the status is 3 - block received, not end of packet - so we are done
 
@@ -538,7 +481,7 @@ check_status:
     on exit - 
      */
 block_done: 
- gip_utximm 'E'    
+ debug_ch('E')    
     gip_extrn 28
     add rx_temp, r12, #t_gipeth__rx_next_buffer_to_reuse
     stmia rx_temp, {rx_next_buffer_to_reuse, rx_buffer_in_hand, rx_length}
@@ -551,7 +494,7 @@ block_done:
 handle_fcs_ok:
     cmp rx_buffer_in_hand, #0
     beq packet_disarded
- gip_utximm 'F'    
+ debug_ch('F')    
     str rx_next_buffer_to_reuse, [rx_next_buffer_to_reuse, #t_gipeth_buffer__ready]
     str rx_length, [rx_next_buffer_to_reuse, #t_gipeth_buffer__length]
     ldr rx_next_buffer_to_reuse, [rx_next_buffer_to_reuse, #t_gipeth_buffer__next_in_list]
@@ -559,7 +502,7 @@ handle_fcs_ok:
     orr r12, r12, #1
     b block_done
 packet_disarded:
- gip_utximm 'D'    
+ debug_ch('D')    
     b block_done
 
     /*b Bad status (FCS bad, odd nybbles, FIFO overrun, framing error) - for now just discard any data we have
@@ -567,20 +510,21 @@ packet_disarded:
     on exit - next_buffer_to_reuse, buffer_in_hand, length
     */
 handle_error_status:        
- gip_utximm 'E'    
+ debug_ch('E')
+    bl mkt_unknown_trap
     mov rx_buffer_in_hand, #0
     b block_done
 
     /*b Numbers we need
     */
 read_rx_status_data: 
-    .word    (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (23<<postbus_command_target_gip_rx_semaphore_start)
+    .word    (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (SEM_NUM_POSTBUS<<postbus_command_target_gip_rx_semaphore_start)
 read_rx_status_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((1-1)<<postbus_command_source_gip_tx_length_start) | ((0)<<postbus_command_source_gip_tx_signal_start) | ((12)<<postbus_command_target_io_dest_start) | (0<<postbus_command_target_io_dest_type_start)
+    .word    ((0)<<postbus_command_route_start) | ((1-1)<<postbus_command_source_gip_tx_length_start) | ((0)<<postbus_command_source_gip_tx_signal_start) | ((12|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_dest_start) | (0<<postbus_command_target_io_dest_type_start)
 read_rx_data_data:      
-    .word (0<<postbus_command_source_io_cmd_op_start) | (23<<postbus_command_target_gip_rx_semaphore_start)
+    .word (0<<postbus_command_source_io_cmd_op_start) | (SEM_NUM_POSTBUS<<postbus_command_target_gip_rx_semaphore_start)
 read_rx_data_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((1-1)<<postbus_command_source_gip_tx_length_start) | ((0)<<postbus_command_source_gip_tx_signal_start) | ((4)<<postbus_command_target_io_dest_start) | (0<<postbus_command_target_io_dest_type_start)
+    .word    ((0)<<postbus_command_route_start) | ((1-1)<<postbus_command_source_gip_tx_length_start) | ((0)<<postbus_command_source_gip_tx_signal_start) | ((4|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_dest_start) | (0<<postbus_command_target_io_dest_type_start)
 
 /*a GIP ethernet ISR code
  */
@@ -589,18 +533,20 @@ read_rx_data_cmd:
     Basically we clear the interrupt bit in r17, call our handler, then return from interrupt
     */
 ENTRY(gipeth_isr_asm)
- gip_utximm '<'    
+ debug_ch('<')    
     .word 0xec00d111
     bic r1, r1, #2
     mov r0, sp
 	bl gipeth_isr
- gip_utximm '>'    
+ debug_ch('>')    
     gip_trap 0, r0 // trashing r0 is fine, as this returns to frame
 
         
         
    // fatal unknown trap - reboot!
 mkt_unknown_trap:
+    ldr r0, =0x7f999990
+    strb r0, [r0]
     mov r0, #0x11000
     add r0, r0, #0x200
     stmia r0, {r0-r14}
@@ -614,9 +560,9 @@ mkt_unknown_trap:
     str r0, [r0, #18*4]
     gip_extrd 19
     str r0, [r0, #19*4]
-    gip_utximm 'M'
-    gip_utximm 'K'
+    gip_utximm 'E'
     gip_utximm 'T'
+    gip_utximm 'H'
     gip_utximm ' '
     gip_utximm 'U'
     gip_utximm 'N'

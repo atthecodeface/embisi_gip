@@ -94,7 +94,7 @@ This UART utilizes a command FIFO to provide its configuration and all transmit 
 
     /*b Command fsm state
      */
-    clocked t_sync sync_cmd_fifo_empty = {metastable=0, stable=0};
+    clocked t_sync sync_cmd_fifo_empty = {metastable=1, stable=1};
     clocked t_cmd_state cmd_state=cmd_state_idle;
     clocked bit cmd_fifo_toggle = 0;
     clocked bit[2] cmd_count=0;

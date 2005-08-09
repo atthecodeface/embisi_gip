@@ -55,142 +55,185 @@ typedef struct
 module io_block( clock int_clock,
                  input bit int_reset,
 
-                 input t_postbus_type postbus_tgt_type,
-                 input t_postbus_data postbus_tgt_data,
-                 output t_postbus_ack postbus_tgt_ack,
+                 input t_postbus_type postbus_tgt_type "Postbus target bus type",
+                 input t_postbus_data postbus_tgt_data "Postbus target bus data",
+                 output t_postbus_ack postbus_tgt_ack  "Postbus target bus ack",
 
-                 output t_postbus_type postbus_src_type,
-                 output t_postbus_data postbus_src_data,
-                 input t_postbus_ack postbus_src_ack,
+                 output t_postbus_type postbus_src_type  "Postbus source bus type",
+                 output t_postbus_data postbus_src_data  "Postbus source bus data",
+                 input t_postbus_ack postbus_src_ack     "Postbus source bus ack",
 
-                 clock erx_clock,
-                 input bit erx_reset,
-                 input bit erx_mii_dv, // goes high during the preamble OR at the latest at the start of the SFD
-                 input bit erx_mii_err, // if goes high with dv, then abort the receive; wait until dv goes low
-                 input bit[4] erx_mii_data,
+                 output bit    io_slot_cfg_write "asserted if cfg_data should be written to cfg_slot",
+                 output bit[8] io_slot_cfg_data  "data for setting a slot configuration",
+                 output bit[2] io_slot_cfg_slot  "number of slot cfg data is destined for",
 
-                 clock etx_clock,
-                 input bit etx_reset,
-                 output bit etx_mii_enable,
-                 output bit[4] etx_mii_data,
-                 input bit etx_mii_crs,
-                 input bit etx_mii_col,
+                 input bit[4]    io_slot_egr_cmd_ready  "bus of command emptys from all slots - they are filled asynchronously to requests",
+                 input bit       io_slot_egr_data_req    "OR of data requests, masked by pending acknowledgements",
+                 input t_io_tx_data_fifo_cmd   io_slot_egr_data_cmd    "data command from lowest number slot with an unmasked request",
+                 input bit[2]    io_slot_egr_data_slot   "slot the data command is coming from",
+                 output bit      io_slot_egr_data_ack "asserted to acknowledge the current data request",
+                 output bit[32]  io_slot_egr_data "contains data for writes to the slots, registered here, valid 3 cycles after acknowledged request (acked req in cycle 0, sram req in cycle 1, sram data stored end cycle 2, this valid in cycle 3",
+                 output bit[2]   io_slot_egr_slot "indicates which slot the egress data is for, registered here; ",
+                 output bit      io_slot_egr_cmd_write  "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client",
+                 output bit      io_slot_egr_data_write "asserted if the data on the bus in this cycle is for the data side interface",
 
-                 output bit uart0_txd,
-                 input bit uart0_txd_fc,
-                 input bit uart0_rxd,
-                 output bit uart0_rxd_fc,
+                 input bit[32]  io_slot_ingr_data       "muxed in slot head from clients, ANDed with a select from io_slot_ing_number",
+                 input bit      io_slot_ingr_status_req "OR of status requests, masked by pending acknowledgements",
+                 input bit      io_slot_ingr_data_req    "OR of rx data requests, masked by pending acknowledgements, clear if status_req is asserted",
+                 input bit[2]   io_slot_ingr_slot       "indicates which slot the status or rx data request is from",
+                 output bit     io_slot_ingr_ack        "acknowledge, valid in same clock as status_req and data_req",
+                 output bit[4]  io_slot_ingr_data_full  "for use by I/O",
 
-                 output bit[2] sscl,
-                 output bit[2] sscl_oe,
-                 output bit ssdo,
-                 output bit ssdo_oe,
-                 input bit[2] ssdi,
-                 output bit[8] sscs,
-                 
-                 input bit[2] analyzer_mux_control,
-                 output bit[32] analyzer_signals
+                 input bit[3] analyzer_mux_control "Logic analyzer multiplex control, registered internally",
+                 output bit[32] analyzer_signals   "Logic analyzer output signals, registered internally"
     )
+
+    /*b Documentation
+     */
+"
+This basically consists of a postbus interface to two main I/O subsections, ingress and egress, and the interfaces attached to the ingress and egress
+
+Ingress and egress each have a 2kB by 32 bit RAM that implements a command/status set of 4 FIFOs and a set of 4 data FIFOs.
+
+Each I/O interface then attaches to one of the four slots; the I/O interface should have a command interface for 32-bit commands to the interface, a status interface for 32-bit status indications, and they may also use a transmit data FIFO and/or a received data FIFO.
+
+The I/O interfaces receive 'not empty' indications for commands and transmit data, but these have different semantics.
+The command 'not empty' means that the command data is sitting on the bus in to the I/O interface, and acknowledging the command results in it changing.
+The tx data 'not empty' means that transmit data can be fetched from the data FIFO; a command must then be issued to make the data appear, with a request.
+
+The status and rx data FIFOs operate by presenting data with a request.
+
+The synchronization for these interfaces is novel. Each request is presented by toggling a signal; this toggle is synchronized to the internal clock domain, which handles the requests from the active I/O interfaces.
+The internal clock domain handles the requests in priority order (interface 0 through 3), intermixing with single words from the postbus side, so a request from interface 0 for transmit data takes up to 3 internal cycles for synchronization, one for request preparation, one for presentation to SRAM, one to perform an SRAM access, one to transfer the data to the slot head, then another to present the data; this is a total of 8 internal cycles plus data routing time. The requests from the I/O interface, therefore, must be placed at least 8 internal cycles apart, which would mean that for 8-bit wide I/O interfaces they must run at slower than internal clock/8*4.
+
+The same restrictions apply to the status and receive data, with the caveat that receive status actually requires two internal clocks to write a time and a status indication word, so it requires 8 internal cycles of holdoff between the request and the status data from the interface changing or the status request toggling again.
+
+For interfaces with lower priority the constraints of the higher priority interface should feed in to their calculations. Usually this is irrelevant, as the rate of requests from an interface will be less than one per 8 cycles, which should allow space for almost peak rates for each interface; but the actual latency should be increased by 4 internal cycles per interface, for safe operation.
+
+The command interface consists of:
+  dirn      signal    size   clock   description
+to I/O      empty       1     int    brought low to indicate the command data bus has valid data - should be synchronized to i/o clock domain
+from I/O    toggle      1     i/o    toggled to indicate acknowledgement of a valid command on the command data pins; after this toggles, the command data should be deemed invalid; the empty signal will assert after at most 4 internal clock ticks
+to I/O      data       32     int    always qualify with a synchronized empty signal so the data need not be synchronized
+
+The tx data interface consists of:
+  dirn      signal    size   clock   description
+from I/O    cmd       cmd     i/o    indicates read, read and commit, commit, or revert
+from I/O    toggle      1     i/o    toggled to indicate request for the corresponding command to occur
+to I/O      data       32     int    presents data read in response to a read command, at 8+ internal clocks after the command
+
+The rx data interface consists of:
+  dirn      signal    size   clock   description
+to I/O      full        1     int    indicates the receive data FIFO is full - asserted when a write takes place filling the FIFO. May be used (synchronized) to effect operation of the I/O.
+from I/O    toggle      1     i/o    toggled to indicate request for data to be written to the FIFO
+from I/O    data       32     i/o    contains data to be written to the receive data FIFO; must be stable for 8+ internal clocks after the toggle
+
+The rx status interface consists of:
+  dirn      signal    size   clock   description
+to I/O      full        1     int    indicates the receive status FIFO is full - asserted when a write takes place filling the FIFO. May be used (synchronized) to effect operation of the I/O.
+from I/O    toggle      1     i/o    toggled to indicate request for status to be written to the FIFO
+from I/O    data       32     i/o    contains data to be written to the receive status FIFO; must be stable for 8+ internal clocks after the toggle
+
+
+A standard module (io_sync_request) is used to synchronize the toggle signals to generate internal requests, which are acknowledged also off the internal clock domain.
+
+We have in each module:
+2 ethernet (tx plus rx)
+2 general purpose (flexible I/O)
+1 async serial
+1 sync serial (MDIO/SPI)
+1 usb
+
+Slot 0 is always ethernet A
+Slot 1 is either ethernet B or a general purpose data in/out A
+Slot 2 is either sync serial of general purpose data in/out B
+Slot 3 is either async serial or USB
+
+Each interface slot requires its own io_sync_request modules for each of the toggles.
+For data to the I/O, each slot has a register which stores the command or data, and it drives all the interfaces which may be attached to that slot; the main block drives the data out from a register with controls indicating which slot it is for.
+For data (rx status and rx data) and cmd (tx data) from the I/O, these are ORed together at the slot head
+Each slot also has 8 control signal associated with it, which may be used to reset the various interfaces attached to the slot, and indicate which client of the slot is selected.
+
+So this level has...
+
+
+to I/O     io_slot_cfg_data (contains data for setting a slot configuration)
+to I/O     io_slot_cfg_slot (number of slot cfg data is destined for)
+to I/O     io_slot_cfg_write (asserted if cfg_data should be written
+
+from I/O   io_slot_egr_cmd_empty (bus of command emptys from all slots - they are filled asynchronously to requests)
+from I/O   io_slot_egr_data_req (OR of data requests, masked by pending acknowledgements)
+from I/O   io_slot_egr_data_cmd (data command from lowest number slot with an unmasked request)
+from I/O   io_slot_egr_data_slot (slot the data command is coming from)
+
+to I/O     io_slot_egr_data (contains data for writes to the slots, registered here, valid 3 cycles after acknowledged request (acked req in cycle 0, sram req in cycle 1, sram data stored end cycle 2, this valid in cycle 3)
+to I/O     io_slot_egr_slot (indicates which slot the egress data is for, registered here; )
+to I/O     io_slot_egr_cmd_not_data (asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client)
+
+from I/O   io_slot_ingr_data (muxed in slot head from clients, ANDed with a select from io_slot_ing_number)
+from I/O   io_slot_ingr_status_req (OR of status requests, masked by pending acknowledgements)
+from I/O   io_slot_ingr_rxd_req    (OR of rx data requests, masked by pending acknowledgements, clear if status_req is asserted)
+from I/O   io_slot_ingr_slot       (indicates which slot the status or rx data request is from)
+to I/O     io_slot_ingr_ack        (acknowledge, valid in same clock as status_req and rxd_req)
+to I/O     io_slot_ingr_data_full  (for use by the I/O)
+"
 {
+
+    /*b -------------------- Registers, nets and combinatorials
+     */
+
     /*b Default clock and reset - internal clock domain
      */
     default clock int_clock;
     default reset int_reset;
 
-    /*b Ethernet RX wiring
+    /*b Logic analyzer control
      */
-    net bit[32]               erx_data_fifo_data;
-    net bit                   erx_data_fifo_toggle;
-    net bit                   erx_rxd_req;
-    comb bit                  erx_rxd_ack;
-    comb bit                  erx_data_fifo_full;
+    clocked bit[3] analyzer_mux_control_reg = 0 "Register the analyzer mux control to reduce any timing issues on this bus system";
+    clocked bit[32] analyzer_signals = 0 "Registered logic analyzer output signals, registered internally to reduce any timing issues on the bus system";
 
-    net bit[32]               erx_status_fifo_data;
-    net bit                   erx_status_fifo_toggle;
-    net bit                   erx_status_req;
-    comb bit                  erx_status_ack;
-
-    /*b Ethernet TX wiring
+    /*b I/O Slot registers
      */
-    net bit etx_mii_enable;
-    net bit[4] etx_mii_data;
+    clocked bit io_slot_cfg_write = 0;
+    clocked bit[2] io_slot_cfg_slot = 0;
+    clocked bit[8] io_slot_cfg_data = 0;
 
-    net t_io_tx_data_fifo_cmd etx_data_fifo_cmd;
-    net bit                   etx_data_fifo_toggle;
-    clocked bit[32]           etx_data_fifo_data = 0;
-    net bit                   etx_txd_req;
-    comb bit                  etx_txd_ack;
+//    clocked bit io_slot_egr_data_ack "asserted to acknowledge the current data request",
+    clocked bit[32]  io_slot_egr_data = 0;
+    clocked bit[2]   io_slot_egr_slot = 0;
+    clocked bit      io_slot_egr_cmd_write  = 0;
+    clocked bit      io_slot_egr_data_write = 0;
 
-    clocked bit[32]           etx_cmd_data = 0;
-    net bit                   etx_cmd_fifo_toggle;
-    comb bit                  etx_cmd_available;
-    net bit                   etx_cmd_req;
-    comb bit                  etx_cmd_ack;
+    clocked bit rx_data_req = 0;
+    clocked bit status_req = 0;
+    clocked bit io_slot_ingr_ack = 0;
+    net bit status_rx_data_will_be_acked;
+    clocked bit[2] status_rx_data_fifo = 0;
+    clocked bit[32] status_rx_data_fifo_data = 0;
 
-    net bit[32]               etx_status_fifo_data;
-    net bit                   etx_status_fifo_toggle;
-    net bit                   etx_status_req;
-    comb bit                  etx_status_ack;
+    clocked bit[4] cmd_available_bus = 0;
+    net bit        cmd_valid "Asserted if the SRAM has a command for a slot";
+    net bit[2]     cmd_valid_number "If cmd_valid is asserted, then it indicates which slot the command is for";
 
-    /*b UART 0 wiring
-     */
-    net bit uart0_txd;
-    net bit uart0_rxd_fc;
+    clocked bit    tx_data_req = 0     "Asserted if we are requesting data for one of the slots";
+    net bit tx_data_ack;
+    clocked bit[2] tx_data_req_num = 0 "Number of the slot we are requesting data for";
+    clocked t_io_tx_data_fifo_cmd tx_data_cmd = io_tx_data_fifo_cmd_read_fifo "Command to do if request asserted";
 
-    clocked bit[32]           uart0_cmd_data = 0;
-    net bit                   uart0_cmd_fifo_toggle;
-    comb bit                  uart0_cmd_available;
-    net bit                   uart0_cmd_req;
-    comb bit                  uart0_cmd_ack;
+    clocked bit[4] last_io_slot_egr_cmd_ready = 0;
 
-    net bit[32]               uart0_status_fifo_data;
-    net bit                   uart0_status_fifo_toggle;
-    net bit                   uart0_status_req;
-    comb bit                  uart0_status_ack;
-    comb bit                  uart0_status_fifo_full;
-
-    /*b Sync serial wiring
-     */
-    net t_io_tx_data_fifo_cmd ss_tx_data_fifo_cmd;
-    net bit                   ss_tx_data_fifo_toggle;
-    clocked bit[32]           ss_tx_data_fifo_data = 0;
-    net bit                   ss_txd_req;
-    comb bit                  ss_txd_ack;
-
-    clocked bit[32]           ss_cmd_data = 0;
-    net bit                   ss_cmd_fifo_toggle;
-    comb bit                  ss_cmd_available;
-    net bit                   ss_cmd_req;
-    comb bit                  ss_cmd_ack;
-
-    net bit[32]               ss_rx_data_fifo_data;
-    net bit                   ss_rx_data_fifo_toggle;
-    net bit                   ss_rxd_req;
-    comb bit                  ss_rxd_ack;
-
-    net bit[32]               ss_status_fifo_data;
-    net bit                   ss_status_fifo_toggle;
-    net bit                   ss_status_req;
-    comb bit                  ss_status_ack;
-
-    net bit[2] sscl;
-    net bit[2] sscl_oe;
-    net bit ssdo;
-    net bit ssdo_oe;
-    net bit[8] sscs;
+    clocked bit tx_data_read_being_presented=0;
+    clocked bit[2] tx_data_slot_being_presented=0;
+    clocked bit tx_data_reading = 0;
+    clocked bit[2] tx_data_slot_reading = 0;
 
     /*b Ingress arbiter and controller wiring
      */
-    comb bit[4] status_req_bus;
-    net bit[4] status_ack_bus;
-    comb bit[4] rx_data_req_bus;
-    net bit[4] rx_data_ack_bus;
-
     net bit ingress_postbus_req;
     net bit ingress_postbus_ack;
 
     net t_io_sram_data_op ingress_sram_data_op;
-    net t_io_sram_data_reg_op ingress_sram_data_reg_op;
+    net bit ingress_sram_data_reg_hold;
     net t_io_sram_address_op ingress_sram_address_op;
 
     net t_io_fifo_op ingress_fifo_op;
@@ -209,17 +252,6 @@ module io_block( clock int_clock,
 
     /*b Egress arbiter and controller wiring
      */
-    clocked bit[4] cmd_available_bus = 0;
-    net bit[4]     cmd_valid_bus;
-
-    comb bit[4]    cmd_req_bus;
-    comb bit[4]    tx_data_req_bus;
-    net bit[4]     tx_data_ack_bus;
-    comb t_io_tx_data_fifo_cmd tx_data_cmd; // mux of commands - currently done by priority order, as that is what io_egress_control does too. Not too good.
-
-    clocked bit[4] tx_data_read_being_presented_bus=0;
-    clocked bit[4] tx_data_reading_bus = 0;
-
     net bit egress_postbus_req;
     net bit egress_postbus_ack;
 
@@ -336,187 +368,77 @@ module io_block( clock int_clock,
     comb bit[io_baud_rate_divider_size] cfg_baud_addition_value;
     comb bit[io_baud_rate_divider_size] cfg_baud_subtraction_value;
 
-    /*b Configuration for the possible ports
+    /*b -------------------- Logic
      */
-    clocked t_io_port_config[8] io_port_configs = { {in_reset=1, fifo=0, little_endian=1, config=0} };
 
     /*b Analyzer signals
      */
     analyzer_signal_setting "Analyzer signals":
         {
-            analyzer_signals = 0;
-            analyzer_signals[0] = egress_postbus_req;
-            analyzer_signals[1] = egress_postbus_ack;
-            analyzer_signals[2] = egress_sram_write;
-            analyzer_signals[3] = egress_sram_read;
-            analyzer_signals[4;4] = egress_sram_write_data[4;0];
-            analyzer_signals[4;8] = egress_sram_read_data[4;0];
-            analyzer_signals[12] = etx_cmd_fifo_toggle;
-            analyzer_signals[13] = etx_cmd_available;
-            analyzer_signals[14] = etx_data_fifo_toggle;
-            analyzer_signals[15] = etx_txd_ack;
+            analyzer_mux_control_reg <= analyzer_mux_control;
+            analyzer_signals <= 0;
+            part_switch (analyzer_mux_control_reg)
+                {
+                case 0: // egress sram signals
+                {
+                    analyzer_signals[0] <= egress_sram_write;
+                    analyzer_signals[1] <= egress_sram_read;
+                    analyzer_signals[2] <= egress_fifo_op_to_cmd;
+                    analyzer_signals[2;3] <= egress_fifo_to_access;
+                    analyzer_signals[3;5] <= egress_fifo_op;
+                    analyzer_signals[8] <= egress_fifo_address_from_read_ptr;
+                    analyzer_signals[2;9] <= egress_fifo_event_type;
+                    analyzer_signals[11] <= egress_event_from_cmd;
+                    analyzer_signals[2;12] <= egress_event_fifo;
+                    analyzer_signals[14] <= egress_postbus_req;
+                    analyzer_signals[15] <= egress_postbus_ack;
+                    analyzer_signals[16] <= tx_data_req;
+                    analyzer_signals[17] <= cmd_valid;
+                    analyzer_signals[io_sram_log_size;18] <= egress_sram_address;
+                }
+                case 1: // ingress sram signals
+                {
+                    analyzer_signals[0] <= ingress_sram_write;
+                    analyzer_signals[1] <= ingress_sram_read;
+                    analyzer_signals[2] <= ingress_fifo_op_to_status;
+                    analyzer_signals[2;3] <= ingress_fifo_to_access;
+                    analyzer_signals[3;5] <= ingress_fifo_op;
+                    analyzer_signals[8] <= ingress_fifo_address_from_read_ptr;
+                    analyzer_signals[2;9] <= ingress_fifo_event_type;
+                    analyzer_signals[11] <= ingress_event_from_status;
+                    analyzer_signals[2;12] <= ingress_event_fifo;
+                    analyzer_signals[14] <= ingress_postbus_req;
+                    analyzer_signals[15] <= ingress_postbus_ack;
+                    analyzer_signals[16] <= rx_data_req;
+                    analyzer_signals[17] <= status_req;
+                    analyzer_signals[io_sram_log_size;18] <= ingress_sram_address;
+                }
+                }
         }
 
-    /*b Ethernet receive 0 instantiation
+    /*b IO status/rx data slot interface
      */
-    ethernet_receive "Ethernet receive module and sync interface":
+    io_status_rx_data_slot_interface "IO status and receive data slot interface":
         {
-            io_ethernet_rx erx( io_clock <- erx_clock,
-                             io_reset <= erx_reset,
+            // this interface works as follows:
+            //       0              1             2                    3                   4             5
+            // sreqin,ack   sreq,sreqin,ack  sreq,!ack,wrtime    sreq,ack,wrdata       !ack,wrtime      ack,wrdata
+            //              srdfd status     dreg st, srdfd st2  dreg st, srdfd st2      dreg st2        dreg st2
+            //
+            //       0              1             2                    3                   4   
+            // dreqin,ack   dreq,dreqin,ack  dreq,ack,wrdata   dreq,ack,wrdata       ack,wrdata
+            //              srdfd data       dreg d, srdfd d2  dreg d2, srdfd d3      dreg d3
+            if (io_slot_ingr_ack)
+            {
+                status_req <= io_slot_ingr_status_req;
+                rx_data_req <= io_slot_ingr_data_req;
+                status_rx_data_fifo <= io_slot_ingr_slot;
+                status_rx_data_fifo_data <= io_slot_ingr_data;
+            }
+            io_slot_ingr_ack <= status_rx_data_will_be_acked;
 
-                             data_fifo_data   => erx_data_fifo_data,
-                             data_fifo_toggle => erx_data_fifo_toggle,
-                             data_fifo_full   <= erx_data_fifo_full,
+            io_slot_ingr_data_full = rx_data_fifo_full;
 
-                             status_fifo_data   => erx_status_fifo_data,
-                             status_fifo_toggle => erx_status_fifo_toggle,
-
-                             mii_dv <= erx_mii_dv,
-                             mii_err <= erx_mii_err,
-                             mii_data <= erx_mii_data );
-
-            io_sync_request erx_sr_rxd( int_clock <- int_clock,
-                                        int_reset <= int_reset,
-                                        io_cmd_toggle <= erx_data_fifo_toggle,
-                                        io_arb_request => erx_rxd_req,
-                                        arb_io_ack <= erx_rxd_ack );
-
-            io_sync_request erx_sr_status( int_clock <- int_clock,
-                                           int_reset <= int_reset,
-                                           io_cmd_toggle <= erx_status_fifo_toggle,
-                                           io_arb_request => erx_status_req,
-                                           arb_io_ack <= erx_status_ack );
-        }
-
-    /*b Ethernet transmit 0 instantiation
-     */
-    ethernet_transmit "Ethernet transmit module and sync interface":
-        {
-            io_ethernet_tx etx( io_clock <- etx_clock,
-                                io_reset <= etx_reset,
-
-                                data_fifo_data   <= etx_data_fifo_data,
-                                data_fifo_cmd    => etx_data_fifo_cmd,
-                                data_fifo_toggle => etx_data_fifo_toggle,
-
-                                cmd_fifo_empty   <= !etx_cmd_available,
-                                cmd_fifo_data    <= etx_cmd_data,
-                                cmd_fifo_toggle  => etx_cmd_fifo_toggle,
-
-                                status_fifo_data   => etx_status_fifo_data,
-                                status_fifo_toggle => etx_status_fifo_toggle,
-
-                                mii_enable => etx_mii_enable,
-                                mii_data => etx_mii_data,
-                                mii_crs <= etx_mii_crs,
-                                mii_col <= etx_mii_col );
-
-            io_sync_request etx_sr_txd( int_clock <- int_clock,
-                                        int_reset <= int_reset,
-                                        io_cmd_toggle <= etx_data_fifo_toggle,
-                                        io_arb_request => etx_txd_req,
-                                        arb_io_ack <= etx_txd_ack );
-
-            io_sync_request etx_sr_cmd( int_clock <- int_clock,
-                                           int_reset <= int_reset,
-                                           io_cmd_toggle <= etx_cmd_fifo_toggle,
-                                           io_arb_request => etx_cmd_req,
-                                           arb_io_ack <= etx_cmd_ack );
-
-            io_sync_request etx_sr_status( int_clock <- int_clock,
-                                           int_reset <= int_reset,
-                                           io_cmd_toggle <= etx_status_fifo_toggle,
-                                           io_arb_request => etx_status_req,
-                                           arb_io_ack <= etx_status_ack );
-        }
-
-    /*b UART 0 instantiation
-     */
-    uart_0 "UART 0 module and sync interface":
-        {
-            io_uart uart0( int_clock <- int_clock,
-                           int_reset <= int_reset,
-
-                           tx_baud_enable <= brg0_baud_enable,
-                           txd => uart0_txd,
-                           txd_fc <= uart0_txd_fc,
-
-                           rx_baud_enable <= brg1_baud_enable,
-                           rxd <= uart0_rxd,
-                           rxd_fc => uart0_rxd_fc,
-
-                           cmd_fifo_empty   <= !uart0_cmd_available,
-                           cmd_fifo_data    <= uart0_cmd_data,
-                           cmd_fifo_toggle  => uart0_cmd_fifo_toggle,
-
-                           status_fifo_full <= uart0_status_fifo_full,
-                           status_fifo_data   => uart0_status_fifo_data,
-                           status_fifo_toggle => uart0_status_fifo_toggle );
-
-            io_sync_request uart0_sr_cmd( int_clock <- int_clock,
-                                           int_reset <= int_reset,
-                                           io_cmd_toggle <= uart0_cmd_fifo_toggle,
-                                           io_arb_request => uart0_cmd_req,
-                                           arb_io_ack <= uart0_cmd_ack );
-
-            io_sync_request uart0_sr_status( int_clock <- int_clock,
-                                           int_reset <= int_reset,
-                                           io_cmd_toggle <= uart0_status_fifo_toggle,
-                                           io_arb_request => uart0_status_req,
-                                           arb_io_ack <= uart0_status_ack );
-        }
-
-    /*b Sync serial instantiation
-     */
-    sync_serial "Sync serial module and sync interface":
-        {
-            io_sync_serial ss( int_clock <- int_clock,
-                               int_reset <= int_reset,
-
-                               tx_data_fifo_data   <= ss_tx_data_fifo_data,
-                               tx_data_fifo_cmd    => ss_tx_data_fifo_cmd,
-                               tx_data_fifo_toggle => ss_tx_data_fifo_toggle,
-
-                               cmd_fifo_empty   <= !ss_cmd_available,
-                               cmd_fifo_data    <= ss_cmd_data,
-                               cmd_fifo_toggle  => ss_cmd_fifo_toggle,
-
-                               rx_data_fifo_data   => ss_rx_data_fifo_data,
-                               rx_data_fifo_toggle => ss_rx_data_fifo_toggle,
-
-                               status_fifo_data   => ss_status_fifo_data,
-                               status_fifo_toggle => ss_status_fifo_toggle,
-
-                               sscl => sscl,
-                               sscl_oe => sscl_oe,
-                               ssdo => ssdo,
-                               ssdo_oe => ssdo_oe,
-                               ssdi <= ssdi,
-                               sscs => sscs );
-
-            io_sync_request ss_sr_txd( int_clock <- int_clock,
-                                        int_reset <= int_reset,
-                                        io_cmd_toggle <= ss_tx_data_fifo_toggle,
-                                        io_arb_request => ss_txd_req,
-                                        arb_io_ack <= ss_txd_ack );
-
-            io_sync_request ss_sr_cmd( int_clock <- int_clock,
-                                           int_reset <= int_reset,
-                                           io_cmd_toggle <= ss_cmd_fifo_toggle,
-                                           io_arb_request => ss_cmd_req,
-                                           arb_io_ack <= ss_cmd_ack );
-
-            io_sync_request ss_sr_rxd( int_clock <- int_clock,
-                                        int_reset <= int_reset,
-                                        io_cmd_toggle <= ss_rx_data_fifo_toggle,
-                                        io_arb_request => ss_rxd_req,
-                                        arb_io_ack <= ss_rxd_ack );
-
-            io_sync_request ss_sr_status( int_clock <- int_clock,
-                                           int_reset <= int_reset,
-                                           io_cmd_toggle <= ss_status_fifo_toggle,
-                                           io_arb_request => ss_status_req,
-                                           arb_io_ack <= ss_status_ack );
         }
 
     /*b Status and RxData FIFO ptrs and their arbiter
@@ -525,10 +447,10 @@ module io_block( clock int_clock,
         {
             io_ingress_control ingress_control( int_clock <- int_clock,
                                                 int_reset <= int_reset,
-                                                status_req <= status_req_bus,
-                                                status_ack => status_ack_bus,
-                                                rx_data_req <= rx_data_req_bus,
-                                                rx_data_ack => rx_data_ack_bus,
+                                                status_req <= status_req,
+                                                rx_data_req <= rx_data_req,
+                                                status_rx_data_fifo <= status_rx_data_fifo,
+                                                status_rx_data_will_be_acked => status_rx_data_will_be_acked,
 
                                                 postbus_req <= ingress_postbus_req,
                                                 postbus_ack => ingress_postbus_ack,
@@ -549,30 +471,8 @@ module io_block( clock int_clock,
                                                 ingress_fifo_event_type => ingress_fifo_event_type,
 
                                                 ingress_sram_data_op => ingress_sram_data_op,
-                                                ingress_sram_data_reg_op => ingress_sram_data_reg_op,
+                                                ingress_sram_data_reg_hold => ingress_sram_data_reg_hold,
                                                 ingress_sram_address_op => ingress_sram_address_op );
-
-            status_req_bus = 0;
-
-            status_req_bus[0] = erx_status_req;
-            erx_status_ack = status_ack_bus[0];
-
-            status_req_bus[1] = etx_status_req;
-            etx_status_ack = status_ack_bus[1];
-
-            status_req_bus[2] = uart0_status_req;
-            uart0_status_ack = status_ack_bus[2];
-            uart0_status_fifo_full = status_fifo_full[2];
-
-            status_req_bus[3] = ss_status_req;
-            ss_status_ack = status_ack_bus[3];
-
-            rx_data_req_bus = 0;
-            rx_data_req_bus[0] = erx_rxd_req;
-            erx_rxd_ack = rx_data_ack_bus[0];
-
-            rx_data_req_bus[1] = ss_rxd_req;
-            ss_rxd_ack = rx_data_ack_bus[1];
 
             io_ingress_fifos ingress_fifos( int_clock <- int_clock,
                                             int_reset <= int_reset,
@@ -604,7 +504,6 @@ module io_block( clock int_clock,
                                             cfg_watermark <= cfg_watermark,
                                             read_cfg_status => ingress_fifo_cfg_status );
 
-            erx_data_fifo_full = rx_data_fifo_full[0];
         }
 
     /*b Ingress SRAM operation, data and address selectors
@@ -614,6 +513,11 @@ module io_block( clock int_clock,
             /*b Status timer
              */
             status_timer <= status_timer+1;
+
+            if (!ingress_sram_data_reg_hold)
+            {
+                ingress_data_reg <= status_rx_data_fifo_data;
+            }
 
             /*b Handle the data op
              */
@@ -646,11 +550,7 @@ module io_block( clock int_clock,
                 case io_sram_data_op_write_data:
                 {
                     ingress_sram_write = 1;
-                    ingress_sram_write_data = erx_data_fifo_data;
-                    if (ingress_fifo_to_access!=0)
-                    {
-                        ingress_sram_write_data = ss_rx_data_fifo_data;
-                    }
+                    ingress_sram_write_data = ingress_data_reg;
                 }
                 case io_sram_data_op_read:
                 {
@@ -662,44 +562,10 @@ module io_block( clock int_clock,
                 }
                 }
 
-            /*b Handle the data reg - should select the appropriate interface, but we have just one at present
-             */
-            full_switch ( ingress_sram_data_reg_op )
-                {
-                case io_sram_data_reg_op_hold:
-                {
-                    ingress_data_reg <= ingress_data_reg;
-                }
-                case io_sram_data_reg_op_status:
-                {
-                    full_switch (ingress_fifo_to_access)
-                    {
-                    case 0:
-                    {
-                        ingress_data_reg <= erx_status_fifo_data;
-                    }
-                    case 1:
-                    {
-                        ingress_data_reg <= etx_status_fifo_data;
-                    }
-                    case 2:
-                    {
-                        ingress_data_reg <= uart0_status_fifo_data;
-                    }
-                    case 3:
-                    {
-                        ingress_data_reg <= ss_status_fifo_data;
-                    }
-                    }
-                }
-                case io_sram_data_reg_op_postbus: // we do not actually use this one yet
-                {
-                    ingress_data_reg <= postbus_write_data;
-                }
-                }
 
             /*b Handle the SRAM address
              */
+            ingress_sram_address = ingress_fifo_address;
             full_switch ( ingress_sram_address_op )
                 {
                 case io_sram_address_op_egress_addressed:
@@ -734,6 +600,55 @@ module io_block( clock int_clock,
                                                 sram_read_data => ingress_sram_read_data );
         }
 
+    /*b IO cmd/tx data slot interface
+     */
+    io_cmd_tx_data_slot_interface "IO command and transmit data slot interface":
+        {
+            // note that the tx data interface runs at half speed, effectively, as a handled request will always be followed by an idle - this needs to be taken into account by the users
+            io_slot_egr_data_ack = !tx_data_req; // if we do not have a request pending, then acknowledge anything if it arrives, coz we will make it pending
+            if (tx_data_ack)
+            {
+                tx_data_req <= 0;
+            }
+            if (io_slot_egr_data_ack && io_slot_egr_data_req)
+            {
+                tx_data_req <= 1 ;
+                tx_data_cmd <= io_slot_egr_data_cmd;
+                tx_data_req_num <= io_slot_egr_data_slot;
+            }
+            last_io_slot_egr_cmd_ready <= io_slot_egr_cmd_ready;
+            for (i; 4)
+            {
+                if ((!io_slot_egr_cmd_ready[i]) && (last_io_slot_egr_cmd_ready[i])) // on a cmd read the ready goes away - so our 'available' can clear to be filled again
+                {
+                    cmd_available_bus[i] <= 0;
+                }
+                if (cmd_valid && (i==cmd_valid_number)) // as soon as a read occurs though we need to set our indication, so that back-to-back commands to the same slot do not occur without a toggle from the I/O
+                {
+                    cmd_available_bus[i] <= 1;
+                }
+            }
+
+            io_slot_egr_cmd_write <= 0;
+            io_slot_egr_data_write <= 0;
+            if (cmd_valid) 
+            {
+                io_slot_egr_slot <= cmd_valid_number;
+                io_slot_egr_cmd_write <= 1;
+                io_slot_egr_data <= egress_sram_read_data;
+            }
+            tx_data_read_being_presented <= tx_data_ack;
+            tx_data_slot_being_presented <= tx_data_req_num;
+            tx_data_reading              <= tx_data_read_being_presented;
+            tx_data_slot_reading         <= tx_data_req_num;
+            if (tx_data_reading)
+            {
+                io_slot_egr_slot <= tx_data_slot_reading;
+                io_slot_egr_data_write <= 1;
+                io_slot_egr_data <= egress_sram_read_data;
+            }
+        }
+
     /*b Command and TxData FIFO ptrs and their arbiter
      */
     comb bit[io_cmd_timestamp_length+2]io_timer;
@@ -744,11 +659,13 @@ module io_block( clock int_clock,
                                               int_reset <= int_reset,
 
                                               io_timer <= io_timer,
-                                              cmd_valid => cmd_valid_bus,
+                                              cmd_valid => cmd_valid,
+                                              cmd_valid_number => cmd_valid_number,
                                               cmd_available <= cmd_available_bus,
 
-                                              tx_data_req <= tx_data_req_bus,
-                                              tx_data_ack => tx_data_ack_bus,
+                                              tx_data_req <= tx_data_req,
+                                              tx_data_req_fifo <= tx_data_req_num,
+                                              tx_data_ack => tx_data_ack,
                                               tx_data_cmd <= tx_data_cmd,
 
                                               postbus_req <= egress_postbus_req,
@@ -775,78 +692,6 @@ module io_block( clock int_clock,
                                               egress_sram_address_op => egress_sram_address_op,
                                               egress_sram_read_data <= egress_sram_read_data );
 
-            cmd_req_bus = 0;
-
-            cmd_req_bus[0] = etx_cmd_req;
-            etx_cmd_ack = 0;
-            if (cmd_valid_bus[0])
-            {
-                cmd_available_bus[0] <= 1;
-                etx_cmd_data <= egress_sram_read_data;
-                etx_cmd_ack = 1;
-            }
-            elsif (etx_cmd_req)
-                {
-                    cmd_available_bus[0] <= 0;
-                }
-            etx_cmd_available = cmd_available_bus[0];
-
-            cmd_req_bus[1] = uart0_cmd_req;
-            uart0_cmd_ack = 0;
-            if (cmd_valid_bus[1])
-            {
-                cmd_available_bus[1] <= 1;
-                uart0_cmd_data <= egress_sram_read_data;
-                uart0_cmd_ack = 1;
-            }
-            elsif (uart0_cmd_req)
-                {
-                    cmd_available_bus[1] <= 0;
-                }
-            uart0_cmd_available = cmd_available_bus[1];
-
-            cmd_req_bus[2] = ss_cmd_req;
-            ss_cmd_ack = 0;
-            if (cmd_valid_bus[2])
-            {
-                cmd_available_bus[2] <= 1;
-                ss_cmd_data <= egress_sram_read_data;
-                ss_cmd_ack = 1;
-            }
-            elsif (ss_cmd_req)
-                {
-                    cmd_available_bus[2] <= 0;
-                }
-            ss_cmd_available = cmd_available_bus[2];
-
-            tx_data_read_being_presented_bus <= tx_data_ack_bus;
-            tx_data_reading_bus <= tx_data_read_being_presented_bus;
-
-            tx_data_req_bus = 0;
-            tx_data_cmd = io_tx_data_fifo_cmd_revert_fifo;
-            
-            tx_data_req_bus[1] = ss_txd_req;
-            if (ss_txd_req) // this only works because 0 is the top priority in io_egress_control, and we have them in priority order here.
-            {
-                tx_data_cmd = ss_tx_data_fifo_cmd;
-            }
-            ss_txd_ack = tx_data_ack_bus[1];
-            if (tx_data_reading_bus[1])
-            {
-                ss_tx_data_fifo_data <= egress_sram_read_data;
-            }
-
-            tx_data_req_bus[0] = etx_txd_req;
-            if (etx_txd_req) // this only works because 0 is the top priority in io_egress_control
-            {
-                tx_data_cmd = etx_data_fifo_cmd;
-            }
-            etx_txd_ack = tx_data_ack_bus[0];
-            if (tx_data_reading_bus[0])
-            {
-                etx_data_fifo_data <= egress_sram_read_data;
-            }
-            
             io_egress_fifos egress_fifos( int_clock <- int_clock,
                                           int_reset <= int_reset,
                                           fifo_op <= egress_fifo_op,
@@ -1099,15 +944,26 @@ module io_block( clock int_clock,
 
             brg0_set_config = 0;
             brg1_set_config = 0;
+
+            io_slot_cfg_write <= 0;
             if (postbus_configuration_write)
             {
                 part_switch (postbus_write_address[3;0])
                 {
                 case 0:
+                case 1:
+                case 2:
+                case 3:
+                {
+                    io_slot_cfg_write <= 1;
+                    io_slot_cfg_slot <= postbus_write_address[2;0];
+                    io_slot_cfg_data <= postbus_write_data[8;0];
+                }
+                case 4:
                 {
                     brg0_set_config = 1;
                 }
-                case 1:
+                case 5:
                 {
                     brg1_set_config = 1;
                 }
@@ -1124,6 +980,6 @@ module io_block( clock int_clock,
             cfg_watermark[io_sram_log_size-1;0]   = postbus_write_data[io_sram_log_size-1;2*io_sram_log_size-1];
         }
 
-    /*b Done
+    /*b -------------------- Done
      */
 }

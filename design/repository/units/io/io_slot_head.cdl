@@ -1,0 +1,232 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a To do
+ */
+
+/*a Includes
+ */
+include "io_cmd.h"
+include "io_slot.h"
+
+/*a Constants
+ */
+constant integer rf_state_counter_value_start  = 0;   // 12 bits
+constant integer rf_state_counter_number_start = 12;  // 2 bits
+constant integer rf_state_arc0_condition       = 14;  // 3 bits which condition
+constant integer rf_state_arc0_action          = 17;     // 3 bits: 1 bit capture, 2 bits counter action
+constant integer rf_state_arc0_rel_state       = 20;  // 3 bits: adds n-3, for n=0 to 7
+constant integer rf_state_arc1_condition       = 23;  // 3 bits which condition
+constant integer rf_state_arc1_action          = 26;     // 3 bits: 1 bit capture, 2 bits counter action
+constant integer rf_state_arc1_rel_state       = 29;  // 3 bits: adds n-3, for n=0 to 7
+
+/*a Types
+ */
+/*t t_sync
+ */
+typedef struct
+{
+    bit metastable;
+    bit stable;
+    bit last;
+} t_sync;
+
+/*a io_slot_head module
+ */
+module io_slot_head( clock int_clock,
+                     input bit int_reset,
+
+                     input bit    io_slot_cfg_write       "asserted if cfg_data should be written, if selected",
+                     input bit[8] io_slot_cfg_data        "data for setting a slot configuration",
+                     output bit[8] io_slot_cfg "configuration for the slot",
+
+                     output bit       io_slot_egr_cmd_ready   "bus of command emptys from all slots - they are filled asynchronously to requests",
+                     output bit       io_slot_egr_data_req    "OR of data requests, masked by pending acknowledgements",
+                     output t_io_tx_data_fifo_cmd   io_slot_egr_data_cmd    "data command from lowest number slot with an unmasked request",
+                     input bit        io_slot_egr_data_ack    "asserted to acknowledge the current data request",
+                     input bit[32]    io_slot_egr_data        "contains data for writes to the slots, registered here, valid 3 cycles after acknowledged request (acked req in cycle 0, sram req in cycle 1, sram data stored end cycle 2, this valid in cycle 3",
+                     input bit        io_slot_egr_slot_select "indicates which slot the egress data is for, registered here; ",
+                     input bit        io_slot_egr_cmd_write   "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client",
+                     input bit        io_slot_egr_data_write  "asserted if the data on the bus in this cycle is for the data side interface",
+
+                     output bit[32]  io_slot_ingr_data        "muxed in slot head from clients, ANDed with a select from io_slot_ing_number",
+                     output bit      io_slot_ingr_status_req  "OR of status requests, masked by pending acknowledgements",
+                     output bit      io_slot_ingr_data_req    "OR of rx data requests, masked by pending acknowledgements, clear if status_req is asserted",
+                     input bit       io_slot_ingr_ack         "acknowledge, valid in same clock as status_req and rxd_req",
+                     input bit       io_slot_ingr_data_full   "for use by I/O",
+
+                     output bit[32] tx_data_fifo_data,
+                     input t_io_tx_data_fifo_cmd tx_data_fifo_cmd,
+                     input bit tx_data_fifo_toggle,
+
+                     output bit cmd_fifo_empty,
+                     output bit[32] cmd_fifo_data,
+                     input bit cmd_fifo_toggle,
+
+                     input bit[32] rx_data_fifo_data,
+                     input bit rx_data_fifo_toggle,
+                     output bit rx_data_fifo_full,
+
+                     input bit status_fifo_toggle,
+                     input bit[32] status_fifo_data )
+
+    /*b Documentation
+     */
+"
+Basically this interface has the toggle detectors for a single slot, and creates signals which can be easily muxed and selected externally
+
+An I/O blob plugs in here, and it connects up to the I/O on the I/O slot bus.
+
+There is another variant of this that allows two I/O blobs to plug in to a single slot
+"
+{
+
+    /*b -------------------- Registers, nets and combinatorials
+     */
+
+    /*b Default clock and reset - internal clock domain
+     */
+    default clock int_clock;
+    default reset int_reset;
+
+    /*b Synchronizers
+     */
+    clocked t_sync sync_cmd_fifo_toggle = {metastable=0, stable=0, last=0};
+    comb bit cmd_fifo_toggle_detected;
+    clocked t_sync sync_tx_data_fifo_toggle = {metastable=0, stable=0, last=0};
+    comb bit tx_data_fifo_toggle_detected;
+    clocked t_sync sync_status_fifo_toggle = {metastable=0, stable=0, last=0};
+    comb bit status_fifo_toggle_detected;
+    clocked t_sync sync_rx_data_fifo_toggle = {metastable=0, stable=0, last=0};
+    comb bit rx_data_fifo_toggle_detected;
+
+    /*b Registers for I/O slot
+     */
+    clocked bit[8] io_slot_cfg = 0;
+    clocked bit io_slot_egr_cmd_ready = 0 "We start off as not ready with a command; we assert when the slot gives us a command";
+    clocked bit io_slot_egr_data_req = 0 "Request to slot when we get a toggle";
+    clocked bit[32] cmd_fifo_data = 0;
+    clocked bit[32] tx_data_fifo_data = 0;
+    clocked bit status_pending = 0 "Asserted if the status toggle has toggled and a status request has not yet been acked";
+    clocked bit rx_data_pending = 0 "Asserted if the rx data toggle has toggled and a rx data request has not yet been acked";
+
+    /*b -------------------- Logic
+     */
+
+    /*b Synchronizers
+     */
+    synchronizers "Synchronizers":
+        {
+            sync_cmd_fifo_toggle.metastable <= cmd_fifo_toggle;
+            sync_cmd_fifo_toggle.stable <= sync_cmd_fifo_toggle.metastable;
+            sync_cmd_fifo_toggle.last <= sync_cmd_fifo_toggle.stable;
+            cmd_fifo_toggle_detected = sync_cmd_fifo_toggle.last ^ sync_cmd_fifo_toggle.stable;
+
+            sync_tx_data_fifo_toggle.metastable <= tx_data_fifo_toggle;
+            sync_tx_data_fifo_toggle.stable <= sync_tx_data_fifo_toggle.metastable;
+            sync_tx_data_fifo_toggle.last <= sync_tx_data_fifo_toggle.stable;
+            tx_data_fifo_toggle_detected = sync_tx_data_fifo_toggle.last ^ sync_tx_data_fifo_toggle.stable;
+
+            sync_status_fifo_toggle.metastable <= status_fifo_toggle;
+            sync_status_fifo_toggle.stable <= sync_status_fifo_toggle.metastable;
+            sync_status_fifo_toggle.last <= sync_status_fifo_toggle.stable;
+            status_fifo_toggle_detected = sync_status_fifo_toggle.last ^ sync_status_fifo_toggle.stable;
+
+            sync_rx_data_fifo_toggle.metastable <= rx_data_fifo_toggle;
+            sync_rx_data_fifo_toggle.stable <= sync_rx_data_fifo_toggle.metastable;
+            sync_rx_data_fifo_toggle.last <= sync_rx_data_fifo_toggle.stable;
+            rx_data_fifo_toggle_detected = sync_rx_data_fifo_toggle.last ^ sync_rx_data_fifo_toggle.stable;
+        }
+
+    /*b Config control
+     */
+    config "Configuration control":
+        {
+            if (io_slot_cfg_write)
+            {
+                io_slot_cfg <= io_slot_cfg_data;
+            }
+        }
+
+    /*b Tx data and command control
+     */
+    tx_data_and_cmd "Tx data and command control":
+        {
+            cmd_fifo_empty = !io_slot_egr_cmd_ready;
+            io_slot_egr_data_cmd = tx_data_fifo_cmd; // could register this if it makes the 'timing' easier - it is an async signal modified by 'req' - mux externally to match the presented request
+
+            if (io_slot_egr_cmd_write && io_slot_egr_slot_select)
+            {
+                io_slot_egr_cmd_ready <= 1;
+                cmd_fifo_data <= io_slot_egr_data;
+            }
+            if (cmd_fifo_toggle_detected)
+            {
+                io_slot_egr_cmd_ready <= 0;
+            }
+
+            if (tx_data_fifo_toggle_detected)
+            {
+                io_slot_egr_data_req <= 1;
+            }
+            if (io_slot_egr_data_ack)
+            {
+                io_slot_egr_data_req <= 0;
+            }
+
+            if (io_slot_egr_data_write && io_slot_egr_slot_select)
+            {
+                tx_data_fifo_data <= io_slot_egr_data;
+                if (io_slot_cfg[io_slot_cfg_endian_swap])
+                {
+                    tx_data_fifo_data[8; 0] <= io_slot_egr_data[8;24];
+                    tx_data_fifo_data[8; 8] <= io_slot_egr_data[8;16];
+                    tx_data_fifo_data[8;16] <= io_slot_egr_data[8; 8];
+                    tx_data_fifo_data[8;24] <= io_slot_egr_data[8; 0];
+                }
+            }
+        }
+
+    /*b Rx data and status control
+     */
+    rx_data_and_status "Rx data and status control":
+        {
+            if (status_fifo_toggle_detected)
+            {
+                status_pending <= 1;
+            }
+            if (io_slot_ingr_status_req && io_slot_ingr_ack)
+            {
+                status_pending <= 0;
+            }
+            if (rx_data_fifo_toggle_detected)
+            {
+                rx_data_pending <= 1;
+            }
+            if (io_slot_ingr_data_req && io_slot_ingr_ack)
+            {
+                rx_data_pending <= 0;
+            }
+
+            io_slot_ingr_status_req = 0;
+            io_slot_ingr_data_req = rx_data_pending;
+            io_slot_ingr_data = rx_data_fifo_data;
+            if (io_slot_cfg[io_slot_cfg_endian_swap])
+            {
+                io_slot_ingr_data[8;0]  = rx_data_fifo_data[8;24];
+                io_slot_ingr_data[8;8]  = rx_data_fifo_data[8;16];
+                io_slot_ingr_data[8;16] = rx_data_fifo_data[8;8];
+                io_slot_ingr_data[8;24] = rx_data_fifo_data[8;0];
+            }
+            if (status_pending)
+            {
+                io_slot_ingr_status_req = 1;
+                io_slot_ingr_data_req = 0; // status has higher priority
+                io_slot_ingr_data = status_fifo_data;
+            }
+            rx_data_fifo_full = io_slot_ingr_data_full;
+        }
+
+    /*b -------------------- Done
+     */
+}

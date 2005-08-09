@@ -323,7 +323,7 @@ module io_ingress_fifos( clock int_clock "Internal system clock",
                     {
                     case io_fifo_op_write_cfg:
                     {
-                        print("Writing status config");
+                        //print("Writing status config");
                         sfifo_state[fifo_to_access] <= { empty=1, full=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
                         sfifo_cfg[fifo_to_access] <= { base_address=cfg_base_address[io_sram_log_size-1;0], size_m_one=cfg_size_m_one[io_sram_log_size-1;0] };
                     }
@@ -349,7 +349,7 @@ module io_ingress_fifos( clock int_clock "Internal system clock",
                     {
                     case io_fifo_op_write_cfg:
                     {
-                        print("Writing Rx data config");
+                        //print("Writing Rx data config");
                         dfifo_state[fifo_to_access] <= { empty=1, full=0, watermark=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
                         dfifo_cfg[fifo_to_access] <= { base_address=cfg_base_address, size_m_one=cfg_size_m_one, watermark=cfg_watermark };
                     }

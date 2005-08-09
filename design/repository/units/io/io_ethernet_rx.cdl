@@ -47,23 +47,38 @@ typedef enum [3]
     status_to_write_fifo_overrun,
     status_to_write_odd_nybbles,
     status_to_write_rx_err,
+    status_to_write_etx_passthrough
 } t_status_to_write;
+
+/*t t_sync
+ */
+typedef struct
+{
+    bit metastable;
+    bit stable;
+    bit last;
+} t_sync;
 
 /*a io_ethernet_rx module
  */
 module io_ethernet_rx( clock io_clock,
-                    input bit io_reset,
+                       input bit io_reset,
 
-                    output bit[32] data_fifo_data,
-                    output bit data_fifo_toggle,
-                    input bit data_fifo_full,
+                       output bit[32] data_fifo_data,
+                       output bit data_fifo_toggle,
+                       input bit data_fifo_full,
 
-                    output bit[32] status_fifo_data,
-                    output bit status_fifo_toggle,
+                       output bit[32] status_fifo_data,
+                       output bit status_fifo_toggle,
 
-                    input bit mii_dv, // goes high during the preamble OR at the latest at the start of the SFD
-                    input bit mii_err, // if goes high with dv, then abort the receive; wait until dv goes low
-                    input bit[4] mii_data
+                       input bit mii_dv, // goes high during the preamble OR at the latest at the start of the SFD
+                       input bit mii_err, // if goes high with dv, then abort the receive; wait until dv goes low
+                       input bit[4] mii_data,
+
+                       input bit etx_status_fifo_toggle, // for passing etx status through to our fifo
+                       input bit[32] etx_status_fifo_data,
+
+                       input bit[2] cfg_padding
  )
 
     /*b Documentation
@@ -90,6 +105,16 @@ FIFO OVERRUN? Do not let the FIFO overrun, as the best approach; however, data f
 7. Send final word of data to FIFO (if there is some), and write status; wait for 8 clocks, then return to idle.
 
 Framing errors occurring in the packet or data FIFO overun (bad SFD, data valid going away mid-byte) cause the framing error state to be entered; this sends a status message indicating the number of words written, and the reason for the framing error; it waits for 8 cycles then returns to idle.
+
+
+The status from the etx can be piped in through here to allow a full ethernet to run on a single IO slot
+To do this the etx status must be written when the rx will not require the bus
+Now, the rx will only write a status for completion or error after sitting in the data_fsm_packet_complete or data_fsm_framing_error states for 8 clocks, so we do not pass through in those states
+Also the rx may write out a block complete if it is in data_fsm_reading_data or data_fsm_reading_data_last_nybble_of_word and the bytes in the block indicates block completion, so we must avoid that.
+So we pass through etx in the following circumstances:
+ idle and its been >8 ticks since status (to allow for other status to be written)
+ wait_for_end_of_sfd and its been >8 cycles since status
+ data (inc last nybble of word) and its been >8 ticks since status and we are >8 ticks (nybbles) = 4 bytes before the end of a block (bytes_in_block<60)
 
 "
 {
@@ -128,74 +153,126 @@ Framing errors occurring in the packet or data FIFO overun (bad SFD, data valid 
     clocked bit status_write = 0 "Asserted if we should write status to the status FIFO; should always have at least 7 clock ticks between assertions";
     clocked t_status_to_write status_to_write = status_to_write_block      "Status we should write if status_write is high";
     clocked t_status_to_write status_being_written = status_to_write_block "Status type we are writing";
+    clocked bit[3]status_wait = 0 "If non-zero then must wait before writing status (for etx particularly - the rest should be clean by design)";
 
-registers:
-    {
-        r_mii_rx_data <= mii_data;
-        r_mii_rx_dv <= mii_dv;
-        r_mii_rx_err <= mii_err;
+    comb bit status_block_etx_passthrough "Asserted if etx status data cannot be written as other status has been or may be";
+    comb bit status_write_passthrough "Asserted if etx status data should be written";
+    clocked bit status_etx_passthrough_pending = 0 "Asserted if etx status passthrough is pending - we detected a toggle and have not forwarded the status yet";
+    clocked t_sync sync_etx_status_fifo_toggle = {metastable=0, stable=0, last=0};
+    comb bit etx_status_fifo_toggle_detected;
 
-        next_data_register[4; 0] = data_register[4; 4];
-        next_data_register[4; 4] = r_mii_rx_data;
-        next_data_register[4; 8] = data_register[4;12];
-        next_data_register[4;12] = data_register[4; 0];
-        next_data_register[4;16] = data_register[4;20];
-        next_data_register[4;20] = data_register[4; 8];
-        next_data_register[4;24] = data_register[4;28];
-        next_data_register[4;28] = data_register[4;16];
-
-        data_register <= next_data_register;
-
-        if (word_complete)
+    /*b Etx passthrough logic
+     */
+    etx_passthrough "ETX passthrough logic":
         {
-            data_fifo_data <= next_data_register;
-            data_fifo_toggle <= ~data_fifo_toggle;
+            sync_etx_status_fifo_toggle.metastable <= etx_status_fifo_toggle;
+            sync_etx_status_fifo_toggle.stable <= sync_etx_status_fifo_toggle.metastable;
+            sync_etx_status_fifo_toggle.last <= sync_etx_status_fifo_toggle.stable;
+            etx_status_fifo_toggle_detected = sync_etx_status_fifo_toggle.last ^ sync_etx_status_fifo_toggle.stable;
+
+            if (etx_status_fifo_toggle_detected)
+            {
+                status_etx_passthrough_pending <= 1;
+            }
+            if (status_write_passthrough)
+            {
+                status_etx_passthrough_pending <= 0;
+            }
         }
 
-        if (status_write)
+    /*b Registers? Needs new documentation 
+     */
+    registers "I/O registers and data fifo interface":
         {
-            status_fifo_toggle <= ~status_fifo_toggle;
-            status_being_written <= status_to_write;
+            r_mii_rx_data <= mii_data;
+            r_mii_rx_dv <= mii_dv;
+            r_mii_rx_err <= mii_err;
+
+            next_data_register[4; 0] = data_register[4; 4];
+            next_data_register[4; 4] = r_mii_rx_data;
+            next_data_register[4; 8] = data_register[4;12];
+            next_data_register[4;12] = data_register[4; 0];
+            next_data_register[4;16] = data_register[4;20];
+            next_data_register[4;20] = data_register[4; 8];
+            next_data_register[4;24] = data_register[4;28];
+            next_data_register[4;28] = data_register[4;16];
+
+            data_register <= next_data_register;
+
+            if (word_complete)
+            {
+                data_fifo_data <= next_data_register;
+                data_fifo_toggle <= ~data_fifo_toggle;
+            }
         }
-        if (data_fsm.state==data_fsm_idle)
+
+    /*b Status FIFO interface
+     */
+    status_fifo_interface "Status FIFO interface":
         {
-            status_being_written <= status_to_write_block; // So we hold stable outputs
-        }
-        status_fifo_data = 0;
-        status_fifo_data[io_eth_rx_block_byte_length_bits; io_eth_rx_sfd_block_byte_length_start_bit] = 0;
-        status_fifo_data[6; io_eth_rx_sfd_block_byte_length_start_bit] = data_fsm.bytes_in_block;
-        status_fifo_data[io_eth_rx_packet_byte_length_bits; io_eth_rx_sfd_packet_length_start_bit] = 0;
-        status_fifo_data[6; io_eth_rx_sfd_packet_length_start_bit] = data_fsm.bytes_in_block;
-        status_fifo_data[10; io_eth_rx_sfd_packet_length_start_bit+6] = data_fsm.blocks_in_packet;
-        full_switch (status_being_written)
+            status_write_passthrough = 0;
+            if ((!status_block_etx_passthrough) && (status_etx_passthrough_pending))
             {
-            case status_to_write_block: // Only mid-packet; always have received 64 bytes!, and the state in data_fsm is unstable and so should be blocked from status FIFO
+                status_write_passthrough = 1;
+            }
+
+            if (status_write || status_write_passthrough)
             {
-                status_fifo_data[io_eth_rx_block_byte_length_bits; io_eth_rx_sfd_block_byte_length_start_bit] = 64;
-                status_fifo_data[6; io_eth_rx_sfd_packet_length_start_bit] = 0;
-                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_block_complete;
+                status_fifo_toggle <= ~status_fifo_toggle;
+                if (status_write_passthrough)
+                {
+                    status_being_written <= status_to_write_etx_passthrough;
+                }
+                else
+                {
+                    status_being_written <= status_to_write;
+                }
+                status_wait <= 7;
             }
-            case status_to_write_packet_fcs_bad: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+            if (status_wait!=0)
             {
-                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_fcs_bad;
+                status_wait <= status_wait-1;
             }
-            case status_to_write_packet_fcs_ok: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
-            {
-                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_fcs_ok;
-            }
-            case status_to_write_fifo_overrun: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
-            {
-                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_fifo_overrun;
-            }
-            case status_to_write_odd_nybbles: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
-            {
-                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_odd_nybbles;
-            }
-            case status_to_write_rx_err:
-            {
-                status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_block_complete;
-            }
-            }
+            status_fifo_data = 0;
+            status_fifo_data[io_eth_rx_block_byte_length_bits; io_eth_rx_sfd_block_byte_length_start_bit] = 0;
+            status_fifo_data[6; io_eth_rx_sfd_block_byte_length_start_bit] = data_fsm.bytes_in_block;
+            status_fifo_data[io_eth_rx_packet_byte_length_bits; io_eth_rx_sfd_packet_length_start_bit] = 0;
+            status_fifo_data[6; io_eth_rx_sfd_packet_length_start_bit] = data_fsm.bytes_in_block;
+            status_fifo_data[10; io_eth_rx_sfd_packet_length_start_bit+6] = data_fsm.blocks_in_packet;
+            full_switch (status_being_written)
+                {
+                case status_to_write_block: // Only mid-packet; always have received 64 bytes!, and the state in data_fsm is unstable and so should be blocked from status FIFO
+                {
+                    status_fifo_data[io_eth_rx_block_byte_length_bits; io_eth_rx_sfd_block_byte_length_start_bit] = 64;
+                    status_fifo_data[6; io_eth_rx_sfd_packet_length_start_bit] = 0;
+                    status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_block_complete;
+                }
+                case status_to_write_packet_fcs_bad: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+                {
+                    status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_fcs_bad;
+                }
+                case status_to_write_packet_fcs_ok: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+                {
+                    status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_fcs_ok;
+                }
+                case status_to_write_fifo_overrun: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+                {
+                    status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_fifo_overrun;
+                }
+                case status_to_write_odd_nybbles: // At end of packet; guaranteed to have stable bytes_in_block and blocks_in_packet
+                {
+                    status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_packet_complete_odd_nybbles;
+                }
+                case status_to_write_rx_err:
+                {
+                    status_fifo_data[io_eth_rx_block_status_bits; io_eth_rx_sfd_block_status_start_bit] = io_eth_rx_status_block_complete;
+                }
+                case status_to_write_etx_passthrough:
+                {
+                    status_fifo_data = etx_status_fifo_data;
+                    status_fifo_data[31] = 1;
+                }
+                }
     }
 
     /*b Data FSM, block_complete and word_complete indications; block_complete is a subset of word_complete
@@ -206,9 +283,10 @@ registers:
             data_fsm <= next_data_fsm;
             word_complete = 0;
             status_write <= 0;
+            status_block_etx_passthrough = (status_wait!=0);
             full_switch (data_fsm.state)
                 {
-                case data_fsm_idle:
+                case data_fsm_idle: // if there is good data then start receiving it; if there is bad data then its a framing error; do not block etx status pass-through
                 {
                     next_data_fsm.counter = 0;
                     if ( r_mii_rx_dv )
@@ -227,11 +305,34 @@ registers:
                         }
                     }
                 }
-                case data_fsm_wait_for_end_of_sfd:
+                case data_fsm_wait_for_end_of_sfd: // if there is more sfd then stay, else end of sfd then start receiving data with appropriate padding skip; do not block etx status pass-through
                 {
                     next_data_fsm.counter = 0;
                     next_data_fsm.bytes_in_block = 0;
                     next_data_fsm.blocks_in_packet = 0;
+                    full_switch (cfg_padding)
+                    {
+                    case 0:
+                    {
+                        next_data_fsm.counter = 0;
+                        next_data_fsm.bytes_in_block = 0;
+                    }
+                    case 1:
+                    {
+                        next_data_fsm.counter = 2;
+                        next_data_fsm.bytes_in_block = 1;
+                    }
+                    case 2:
+                    {
+                        next_data_fsm.counter = 4;
+                        next_data_fsm.bytes_in_block = 2;
+                    }
+                    case 3:
+                    {
+                        next_data_fsm.counter = 6;
+                        next_data_fsm.bytes_in_block = 3;
+                    }
+                    }
                     if ( r_mii_rx_dv )
                     {
                         if (r_mii_rx_err)
@@ -256,8 +357,12 @@ registers:
                         next_data_fsm.state = data_fsm_idle;
                     }
                 }
-                case data_fsm_reading_data:
+                case data_fsm_reading_data: // read data until last nybble received, but handle next-to-last nybble of word by punting; block etx status pass-through if we are near the end of a block
                 {
+                    if (data_fsm.bytes_in_block[3;3]==7) // if there are 56 to 63 bytes in our current block then block the etx passthrough
+                    {
+                        status_block_etx_passthrough = 1;
+                    }
                     if ( !r_mii_rx_dv )
                     {
                         if (data_fsm.counter[0]==0)
@@ -295,6 +400,10 @@ registers:
                 }
                 case data_fsm_reading_data_last_nybble_of_word: // 7th nybble of a word should be ready; if not we have a framing error, if we do write the word and a status if we hit the 16th word
                 {
+                    if (data_fsm.bytes_in_block[3;3]==7) // if there are 56 to 63 bytes in our current block then block the etx passthrough
+                    {
+                        status_block_etx_passthrough = 1;
+                    }
                     next_data_fsm.counter = 0;
                     if ( !r_mii_rx_dv ) // Data valid taken away mid-byte
                     {
@@ -331,6 +440,7 @@ registers:
                 }
                 case data_fsm_packet_complete_waiting: // Shifting the data up - guarantees a gap between last word write/block write and next one, also; we sit in here for from 1 to 7 cycles
                 {
+                    // there will be enough time before the complete status goes, so we do not need to block etx status passthrough
                     if (data_fsm.counter == 7)
                     {
                         next_data_fsm.state = data_fsm_packet_complete;
@@ -342,13 +452,11 @@ registers:
                 }
                 case data_fsm_packet_complete: // Always entered with counter of 0. Wrote a whole packet except last word; write last word (if any bytes ready) and write status giving full status of packet
                 {
-                    if (data_fsm.counter==0)
-                    {
-                        status_write <= 1; // Guaranteed to be 8 cycles or more from last block_complete
-                    }
+                    status_block_etx_passthrough = 1; // there will not be enough time
                     if (data_fsm.counter==7)
                     {
                         next_data_fsm.state = data_fsm_idle;
+                        status_write <= 1; // Guaranteed to be 8 cycles or more from last block_complete or etx passthrough
                     }
                 }
                 case data_fsm_framing_error: // Framing error; we enter with counter of 0, and wait for 8 cycles, then we present a status. Wait for status and data FIFO to complete any pending writes, then write last word (if any bytes ready) and write status
@@ -356,9 +464,11 @@ registers:
                     if (r_mii_rx_dv)
                     {
                         next_data_fsm.counter = 0;
+                        // there will be enough time from here to our framing error status write since we reset the counter here - so dont block etx passthrough
                     }
                     else
                     {
+                        status_block_etx_passthrough = 1; // there will not be enough time if dv stays away, so block passthrough
                         if (data_fsm.counter == 7)
                         {
                             next_data_fsm.state = data_fsm_idle;

@@ -403,13 +403,13 @@ module io_egress_fifos( clock int_clock "Internal system clock",
                 {
                     if (fifo_op_to_cmd)
                     {
-                        print("Writing command config");
+                        //print("Writing command config");
                         sfifo_state[fifo_to_access] <= { empty=1, full=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
                         sfifo_cfg[fifo_to_access] <= { base_address=cfg_base_address[io_sram_log_size-1;0], size_m_one=cfg_size_m_one[io_sram_log_size-1;0] };
                     }
                     else
                     {
-                        print("Writing Tx data config");
+                        //print("Writing Tx data config");
                         dfifo_state[fifo_to_access] <= { empty=1, full=0, watermark=0, overflowed=0, underflowed=0, read_ptr=0, commit_ptr=0, write_ptr=0 };
                         dfifo_cfg[fifo_to_access] <= { base_address=cfg_base_address, size_m_one=cfg_size_m_one, watermark=cfg_watermark };
                     }
@@ -418,42 +418,42 @@ module io_egress_fifos( clock int_clock "Internal system clock",
                 {
                     if (fifo_op_to_cmd)
                     {
-                        print("Command fifo reset");
+                        //print("Command fifo reset");
                         sfifo_state[fifo_to_access] <= { empty=1, full=0, overflowed=0, underflowed=0, read_ptr=0, write_ptr=0 };
                     }
                     else
                     {
-                        print("Data fifo reset");
+                        //print("Data fifo reset");
                         dfifo_state[fifo_to_access] <= { empty=1, full=0, watermark=0, overflowed=0, underflowed=0, read_ptr=0, commit_ptr=0, write_ptr=0 };
                     }
                 }
                 case io_fifo_op_inc_write_ptr:
                 {
-                    print("Inc write");
+                    //print("Inc write");
                     ptr_op = ptr_op_inc_write_ptr;
                     set_flags = 1;
                 }
                 case io_fifo_op_inc_read_ptr:
                 {
-                    print("Inc read with commit");
+                    //print("Inc read with commit");
                     ptr_op = ptr_op_inc_read_ptr_commit;
                     set_flags = 1;
                 }
                 case io_fifo_op_inc_read_ptr_without_commit:
                 {
-                    print("Inc read without commit");
+                    //print("Inc read without commit");
                     ptr_op = ptr_op_inc_read_ptr_no_commit;
                     set_flags = 1;
                 }
                 case io_fifo_op_commit_read_ptr:
                 {
-                    print("Committing read ptr");
+                    //print("Committing read ptr");
                     ptr_op = ptr_op_commit_read_ptr;
                     set_flags = 1;
                 }
                 case io_fifo_op_revert_read_ptr:
                 {
-                    print("Reverting read ptr");
+                    //print("Reverting read ptr");
                     ptr_op = ptr_op_revert_read_ptr;
                     set_flags = 1;
                 }

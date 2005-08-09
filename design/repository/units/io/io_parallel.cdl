@@ -352,7 +352,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
      */
     comb bit counter_zero;
     clocked t_counter[3] counter = {{value=0,zero=1}};
-    comb bit[12] counter_decrement;
+    comb bit[12] counter_decremented;
     comb bit counter_will_be_zero;
 
     /*b Interface FSM combinatorials
@@ -551,8 +551,8 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     counters "Counters":
         {
             counter_zero = (counter[state_data.counter_number].zero);
-            counter_decrement = counter[state_data.counter_number].value-1;
-            counter_will_be_zero = (counter_decrement==0);
+            counter_decremented = counter[state_data.counter_number].value-1;
+            counter_will_be_zero = (counter_decremented==0) || counter_zero;
 
             if (action_counter_load)
             {
@@ -560,7 +560,14 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             }
             if (action_counter_dec)
             {
-                counter[state_data.counter_number] <= {value=counter_decrement, zero=counter_will_be_zero};
+                if (counter_will_be_zero)
+                {
+                    counter[state_data.counter_number] <= {value=0, zero=1};
+                }
+                else
+                {
+                    counter[state_data.counter_number] <= {value=counter_decremented, zero=0};
+                }
             }
         }
 
@@ -758,7 +765,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
         {
             if ((rx_status_fifo_pending!=rx_status_pending_none) && (status_fifo_holdoff==0))
             {
-                if (rx_status_fifo_pending == rx_status_pending_final)
+                if (rx_status_fifo_pending == rx_status_pending_intermediate)
                 {
                     status_fifo_data <= 0;
                     status_fifo_data[24;0] <= data_counter;

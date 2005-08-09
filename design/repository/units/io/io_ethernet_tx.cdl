@@ -78,23 +78,25 @@ typedef struct {
 /*a io_ethernet_tx module
  */
 module io_ethernet_tx( clock io_clock,
-                    input bit io_reset,
+                       input bit io_reset,
 
-                    input bit[32] data_fifo_data,
-                    output t_io_tx_data_fifo_cmd data_fifo_cmd,
-                    output bit data_fifo_toggle,
+                       input bit[32] data_fifo_data,
+                       output t_io_tx_data_fifo_cmd data_fifo_cmd,
+                       output bit data_fifo_toggle,
 
-                    input bit cmd_fifo_empty,
-                    input bit[32] cmd_fifo_data,
-                    output bit cmd_fifo_toggle,
+                       input bit cmd_fifo_empty,
+                       input bit[32] cmd_fifo_data,
+                       output bit cmd_fifo_toggle,
 
-                    output bit status_fifo_toggle,
-                    output bit[32] status_fifo_data,
+                       output bit status_fifo_toggle,
+                       output bit[32] status_fifo_data,
 
-                    output bit mii_enable,
-                    output bit[4] mii_data,
-                    input bit mii_crs,
-                    input bit mii_col
+                       output bit mii_enable,
+                       output bit[4] mii_data,
+                       input bit mii_crs,
+                       input bit mii_col,
+
+                       input bit[2] cfg_padding
  )
 
     /*b Documentation
@@ -127,6 +129,8 @@ There is a length counter in the data FSM area which decrements as bytes are tra
 The command FIFO data interface is responsible for holding the transmit command for a packet throughout that packet's transmission time; its length and other details are not stored within this module.
 
 The data FIFO must holds its data until a new request is given. The data FSM contains a 16-bit buffer for data to be transmitted, and it also maintains the 32-bit FCS. The data in the FIFO is treated as big-endian; that is, bits[31:24] contain the first octet to be transmitted.
+The timing this requires from the data interface is toggle and record 16 bits of data in clock 0, data required in clock 4.
+Given a max turnround of around 12 internal clock cycles for data request to data, that means our clock must run slower than internal clock/3
 
 The basic data FSM flow is:
 
@@ -190,6 +194,9 @@ For backoff we need a random number up to 10 bits long, with a long-term average
 
 {
 
+    /*b -------------------- Registers, nets and combinatorials
+     */
+
     /*b Clock and reset
      */
     default clock io_clock;
@@ -197,7 +204,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
 
     /*b State for I/O fifo interfaces
      */
-    clocked t_sync sync_cmd_fifo_empty = {regs=0, value=0};
+    clocked t_sync sync_cmd_fifo_empty = {regs=1, value=1};
     clocked t_io_tx_data_fifo_cmd         data_fifo_cmd = io_tx_data_fifo_cmd_read_fifo;
     clocked bit                           data_fifo_toggle = 0;
     comb t_data_fifo_op                   data_fifo_op;
@@ -264,6 +271,9 @@ For backoff we need a random number up to 10 bits long, with a long-term average
     comb bit[io_eth_tx_packet_retry_count_bits] packet_retry_count;
     comb bit half_duplex;
     comb bit transmit_fcs;
+
+    /*b -------------------- Logic
+     */
 
     /*b Fifo interfaces
      */
@@ -390,16 +400,36 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                         next_data_fsm_counter = 0;
                     }
                 }                 
-                case data_fsm_output_sfd:
+                case data_fsm_output_sfd: // depending on padding we have to drop in to a state where we have 'sent' padding bytes already
                 {
+                    next_data_fsm_state = data_fsm_output_first_two_bytes_of_word; // only in sfd for one tick as preamble has sent the 15 '5' nybbles and there is just 1 'd' nybble to send
+                    next_data_fsm_counter = 0;
+                    full_switch (cfg_padding)
+                        {
+                        case 0: // no padding, so assume no nybbles sent yet
+                        {
+                            next_data_fsm_state = data_fsm_output_first_two_bytes_of_word;
+                            next_data_fsm_counter = 0;
+                        }
+                        case 1: // one byte of padding, so assume two nybbles sent already - but assume the byte length is reduced by the client
+                        {
+                            next_data_fsm_state = data_fsm_output_first_two_bytes_of_word;
+                            next_data_fsm_counter = 2;
+                        }
+                        case 2: // two bytes of padding, so assume four nybbles sent already - but assume the byte length is reduced by the client
+                        {
+                            next_data_fsm_state = data_fsm_output_last_two_bytes_of_word;
+                            next_data_fsm_counter = 4;
+                        }
+                        case 3: // three byte of padding, so assume six nybbles sent already - but assume the byte length is reduced by the client
+                        {
+                            next_data_fsm_state = data_fsm_output_last_two_bytes_of_word;
+                            next_data_fsm_counter = 6;
+                        }
+                        }
                     if (collision_detected)
                     {
                         next_data_fsm_state = data_fsm_permitted_collision_occurred;
-                        next_data_fsm_counter = 0;
-                    }
-                    else // SFD is 1 octet but we pushed the first nybble out in the preamble state, so we are just one nybble
-                    {
-                        next_data_fsm_state = data_fsm_output_first_two_bytes_of_word;
                         next_data_fsm_counter = 0;
                     }
                 }
@@ -525,16 +555,36 @@ For backoff we need a random number up to 10 bits long, with a long-term average
 
             part_switch (data_fsm_state)
                 {
-                case data_fsm_output_preamble:
+                case data_fsm_output_preamble: // counter is 0 through 14 inclusive for this state
                 {
                     if (data_fsm_counter==0) // Read data FIFO on first cycle of preamble
                     {
                         data_fifo_op = data_fifo_op_read_uncommitted;
                     }
-                }
-                case data_fsm_output_sfd:
-                {
-                    data_tx_buffer <= data_fifo_data[16;16]; // Get first two bytes to transmit from data FIFO data
+                    if (data_fsm_counter==6) // give 6 clocks to get the data here - why not, its safe, as the body of the FSM gives only 4
+                    {
+                        full_switch (cfg_padding)
+                            {
+                            case 0:
+                            {
+                                data_tx_buffer <= data_fifo_data[16;16]; // Get first two bytes to transmit from data FIFO data 
+                            }
+                            case 1:
+                            {
+                                data_tx_buffer <= data_fifo_data[16;16]; // Padding of 1, but we set counter to 1 on entry to data states to handle the correct selection
+                            }
+                            case 2:
+                            {
+                                data_tx_buffer <= data_fifo_data[16;0]; // Get first two bytes to transmit from data FIFO data 
+                                data_fifo_op = data_fifo_op_read_uncommitted;
+                            }
+                            case 3:
+                            {
+                                data_tx_buffer <= data_fifo_data[16;0]; // Get first two bytes to transmit from data FIFO data 
+                                data_fifo_op = data_fifo_op_read_uncommitted;
+                            }
+                            }
+                    }
                 }
                 case data_fsm_output_first_two_bytes_of_word:
                 {
@@ -801,6 +851,6 @@ For backoff we need a random number up to 10 bits long, with a long-term average
             packet_fsm_counter <= next_packet_fsm_counter;
         }
 
-    /*b All done
+    /*b -------------------- Done
      */
 }

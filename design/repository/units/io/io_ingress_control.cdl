@@ -35,10 +35,10 @@ typedef enum [3] {
 module io_ingress_control( clock int_clock "Internal system clock",
                            input bit int_reset "Internal system reset",
 
-                           input bit[4] status_req "Requests from status command toggles",
-                           output bit[4] status_ack "Acknowledges to status toggles",
-                           input bit[4] rx_data_req "Requests from Rx data toggles",
-                           output bit[4] rx_data_ack "Acknowledges to rx data toggles",
+                           input bit status_req "Request from status - only one of these two will be asserted",
+                           input bit rx_data_req "Request from rx data - only one of these two will be asserted",
+                           input bit[2] status_rx_data_fifo "Number of FIFO the request is for",
+                           output bit status_rx_data_will_be_acked "Indicates that if a request is made then it would be acked - this acts as the ack",
 
                            input bit postbus_req "Request from the postbus master",
                            output bit postbus_ack "Acknowledge to the postbus master",
@@ -58,7 +58,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
                            output t_io_fifo_event_type ingress_fifo_event_type "Type of flag event that should be flagged to the postbus system",
 
                            output t_io_sram_data_op ingress_sram_data_op,
-                           output t_io_sram_data_reg_op ingress_sram_data_reg_op,
+                           output bit ingress_sram_data_reg_hold,
                            output t_io_sram_address_op ingress_sram_address_op
 
     )
@@ -85,29 +85,12 @@ module io_ingress_control( clock int_clock "Internal system clock",
     clocked t_ingress_source_type ingress_source_type = ingress_source_type_none "Current source of transaction occurring";
     comb bit[2] next_ingress_fifo_to_access "Next FIFO to be accessed";
     clocked bit[2] ingress_fifo_to_access = 0 "FIFO to be accessed in this cycle";
-    comb bit status_op_requesting  "Asserted if a status op is not being serviced and if a status request is outstanding";
-    comb bit rx_data_op_requesting "Asserted if a data op is not being serviced and if a data request is outstanding";
-
-    /*b Combine request inputs
-     */
-    combine_requests "Combine requests":
-        {
-            status_op_requesting = (status_req!=0);
-            rx_data_op_requesting = (rx_data_req!=0);
-            if ( (ingress_state==ingress_state_status_data_write) || (ingress_state == ingress_state_status_timer_write) )
-            {
-                status_op_requesting = 0;
-            }
-            if (ingress_state==ingress_state_rx_data_write)
-            {
-                rx_data_op_requesting = 0;
-            }
-        }
 
     /*b Control state machine
      */
     control_state_machine "Control state machine":
         {
+            status_rx_data_will_be_acked = 1;
             full_switch (ingress_state)
                 {
                 case ingress_state_idle:
@@ -116,11 +99,12 @@ module io_ingress_control( clock int_clock "Internal system clock",
                 case ingress_state_postbus_action:
                 {
                     next_ingress_state = ingress_state_idle;
-                    if (status_op_requesting)
+                    if (status_req)
                     {
                         next_ingress_state = ingress_state_status_timer_write;
+                        status_rx_data_will_be_acked = 0;
                     }
-                    elsif (rx_data_op_requesting)
+                    elsif (rx_data_req)
                         {
                             next_ingress_state = ingress_state_rx_data_write;
                         }
@@ -128,7 +112,6 @@ module io_ingress_control( clock int_clock "Internal system clock",
                         {
                             next_ingress_state = ingress_state_postbus_action;
                         }
-
                 }
                 case ingress_state_status_timer_write:
                 {
@@ -152,19 +135,13 @@ module io_ingress_control( clock int_clock "Internal system clock",
                 }
                 case ingress_state_rx_data_write:
                 {
-                    ingress_source_type <= ingress_source_type_rx_data;
-                    if (rx_data_req[3]) { next_ingress_fifo_to_access = 3; }
-                    if (rx_data_req[2]) { next_ingress_fifo_to_access = 2; }
-                    if (rx_data_req[1]) { next_ingress_fifo_to_access = 1; }
-                    if (rx_data_req[0]) { next_ingress_fifo_to_access = 0; }
-                }
+                    ingress_source_type <= ingress_source_type_rx_data; 
+                    next_ingress_fifo_to_access = status_rx_data_fifo;
+               }
                 case ingress_state_status_timer_write:
                 {
                     ingress_source_type <= ingress_source_type_status;
-                    if (status_req[3]) { next_ingress_fifo_to_access = 3; }
-                    if (status_req[2]) { next_ingress_fifo_to_access = 2; }
-                    if (status_req[1]) { next_ingress_fifo_to_access = 1; }
-                    if (status_req[0]) { next_ingress_fifo_to_access = 0; }
+                    next_ingress_fifo_to_access = status_rx_data_fifo;
                 }
                 case ingress_state_status_data_write:
                 {
@@ -191,22 +168,12 @@ module io_ingress_control( clock int_clock "Internal system clock",
             ingress_fifo_event_type = io_fifo_event_type_none;
 
             ingress_sram_data_op = io_sram_data_op_none;
-            ingress_sram_data_reg_op = io_sram_data_reg_op_hold;
+            ingress_sram_data_reg_hold = 0;
             ingress_sram_address_op = io_sram_address_op_fifo_ptr;
 
-            status_ack = 0;
-            rx_data_ack = 0;
             postbus_ack = 0;
             part_switch (next_ingress_state)
                 {
-                case ingress_state_status_data_write:
-                {
-                    status_ack[next_ingress_fifo_to_access] = 1;
-                }
-                case ingress_state_rx_data_write:
-                {
-                    rx_data_ack[next_ingress_fifo_to_access] = 1;
-                }
                 case ingress_state_postbus_action:
                 {
                     postbus_ack = 1;
@@ -234,7 +201,7 @@ module io_ingress_control( clock int_clock "Internal system clock",
                     ingress_fifo_event_type = io_fifo_event_type_none;
                     ingress_fifo_op_to_status = 1;
                     ingress_sram_data_op = io_sram_data_op_write_time;
-                    ingress_sram_data_reg_op = io_sram_data_reg_op_status;
+                    ingress_sram_data_reg_hold = 1;
                     ingress_sram_address_op = io_sram_address_op_fifo_ptr;
                 }
                 case ingress_state_status_data_write:
@@ -262,7 +229,6 @@ module io_ingress_control( clock int_clock "Internal system clock",
                     ingress_fifo_event_type = last_postbus_fifo_event_type;
                     ingress_fifo_op_to_status = last_postbus_fifo_op_to_status;
                     ingress_sram_data_op = last_postbus_sram_data_op;
-                    ingress_sram_data_reg_op = io_sram_data_reg_op_postbus; // this is not effectively used yet as the data_op will not be write_data_reg - need to fix this
                     ingress_sram_address_op = last_postbus_sram_address_op;
                 }
                 }

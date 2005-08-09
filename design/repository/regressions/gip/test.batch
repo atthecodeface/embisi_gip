@@ -352,7 +352,7 @@ setenv "verbose_level" 1
 #   gosub gip_system_io_101
 #   gosub gip_system_io_102
 #   gosub gip_system_io_103
-   gosub gip_system_io_104
+#   gosub gip_system_io_104
    gosub gip_system_io_105
    gosub gip_system_io_106
 return
@@ -420,7 +420,7 @@ return
 gip_system_io_104:
 gosub gip_system_test_init
 set_string test_name "gip_system_io_104 test - ethernet_test_4"
-set run_length 400000
+set run_length 500000
 setenv "extbus_enable" "1"
 setenv "mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
@@ -432,7 +432,7 @@ return
 gip_system_io_105:
 gosub gip_system_test_init
 set_string test_name "gip_system_io_105 test - ethernet_test_5"
-set run_length 400000
+set run_length 500000
 setenv "extbus_enable" "1"
 setenv "mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
@@ -444,7 +444,7 @@ return
 gip_system_io_106:
 gosub gip_system_test_init
 set_string test_name "gip_system_io_106 test - ethernet_test_6"
-set run_length 400000
+set run_length 500000
 setenv "extbus_enable" "1"
 setenv "mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"

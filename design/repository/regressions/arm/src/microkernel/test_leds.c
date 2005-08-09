@@ -48,7 +48,7 @@ static void timer_int_start ( void )
     MK_INT_DIS();
     GIP_TIMER_DISABLE();
     GIP_ATOMIC_MAX_BLOCK();
-    GIP_CLEAR_SEMAPHORES_ATOMIC(0xf<<28);
+    GIP_CLEAR_SEMAPHORES(0xf<<28);
     GIP_SET_THREAD(7,timer_int,0x11); // set thread 7 startup to be ARM, on semaphore 28 set, and the entry point
     GIP_SET_LOCAL_EVENTS_CFG( 0xf ); // set config so that timer 1 (event 0) -> high priority thread 7
     GIP_READ_AND_SET_SEMAPHORES(s,0x1<<28); // fire the thread

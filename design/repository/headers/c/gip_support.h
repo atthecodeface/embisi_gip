@@ -10,7 +10,7 @@
  */
 #define NOP { __asm__ volatile(" movnv r0, r0"); }
 #define NOP_WRINT { NOP; NOP; NOP; }
-#define NOP_WREXT { NOP_WRINT; NOP_WRINT; NOP_WRINT; NOP_WRINT; }
+#define NOP_WREXT { int i; for (i=0; i<60; i++) NOP_WRINT;}
 #define GIP_SET_THREAD(thread,pc,data) { unsigned int s_pc=((unsigned int)(pc))|1, s_data=((unsigned int)(data))|0x100; __asm__ volatile (".word 0xec00c84e \n mov r0, %0 \n .word 0xec00c85e \n mov r0, %1 \n .word 0xec00c86e \n mov r0, %2 " : : "r" (thread), "r" (s_pc), "r" (s_data) ); }
 
 /*b Deschedule, block, atomic

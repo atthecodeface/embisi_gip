@@ -50,7 +50,7 @@ static int command_flash_download( void *handle, int argc, unsigned int *args )
     {
         return 1;
     }
-//    mon_flash_download();
+    flash_download();
     return 0;
 }
 

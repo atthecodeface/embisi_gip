@@ -110,6 +110,8 @@ test dram ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync
                         ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_gipeth \
                         common:wrapper_download common:support_download
 
+#test dram_high ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync_serial drivers:gipeth drivers:gipeth_asm \
+
 #drivers:ethernet ethmonitor:ethernet
 test dram ethmonitor_noeth drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm \
                         ethmonitor:flash ethmonitor:uart ethmonitor:timer_int ethmonitor:regs \

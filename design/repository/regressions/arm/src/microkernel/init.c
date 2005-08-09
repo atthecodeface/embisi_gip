@@ -60,7 +60,7 @@ extern void __init microkernel_init( void )
     GIP_ATOMIC_MAX_BLOCK();
     GIP_SET_SCHED_CFG( 0x40000 );
     GIP_ATOMIC_MAX_BLOCK();
-    GIP_CLEAR_SEMAPHORES_ATOMIC(0xf<<(4*MICROKERNEL_THREAD)); // clear microkernels semaphores
+    GIP_CLEAR_SEMAPHORES(0xf<<(4*MICROKERNEL_THREAD)); // clear microkernels semaphores
     GIP_SET_THREAD( MICROKERNEL_THREAD, microkernel_thread_start, MICROKERNEL_THREAD_INIT_FLAGS); // microkernel thread kicks off on any of its semaphores in ARM mode
     GIP_READ_AND_SET_SEMAPHORES( s, 2<<(4*MICROKERNEL_THREAD) );
     GIP_BLOCK_ALL(); // ends the atomic section and blocks until the semaphores are written

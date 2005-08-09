@@ -36,6 +36,9 @@ static t_eth_data eth;
 /*a Command functions
  */
 /*f udp_reply
+  the data contents of the buffer have been replaced
+  but the rest of the UDP packet are untouched
+  that is buffer->data[0] through [10] inclusive untouched
  */
 static void udp_reply( t_eth_buffer *buffer, unsigned int byte_length )
 {
@@ -47,59 +50,62 @@ static void udp_reply( t_eth_buffer *buffer, unsigned int byte_length )
 
     udp_byte_length = byte_length+8;
     data = (unsigned int *)(buffer->data);
-    data[0] = (data[1]<<16) | (data[2]>>16);
-    data[1] = (data[2]<<16) | eth.hwaddress_high16;
-    data[2] = eth.hwaddress_low32;
-    udp_src_port = data[8]&0xffff;
-    data[4] = ((udp_byte_length+20)<<16) | (data[4]&0xffff); // length
-    data[5] = 0x40004011; // reset TTL, fragment, and protocol (UDP)
-    data[8] = (data[7]&0xffff0000) | (data[9]>>16); // new source port, bottom of dest IP
-    data[7] = (data[6]&0xffff) | (eth.ip_address<<16); // top of dest IP, bottom of src IP
-    data[6] = (eth.ip_address>>16); // top of src IP; note hdr csum cleared
-    data[9] = (udp_src_port<<16) | udp_byte_length;
-    data[10] = data[10]&0xffff; // clear UDP csum
+
+    data[0] = (data[2]>>16);
+    data[1] = (data[2]<<16) | (data[3]>>16);
+    data[2] = eth.hwaddress_high32;
+    data[3] = (eth.hwaddress_low16<<16) | 0x0800;
+
+    data[4] = (0x4500<<16) | (udp_byte_length+20); // VHSS length
+    data[5] = (data[5]&0xffff0000) | 0x4000; // reset fragment
+    data[6] = 0x4011<<16; // TTL, and protocol (UDP), clear csum
+
+    udp_src_port = data[9]>>16;
+    data[8] = data[7]; // dest IP is previous source
+    data[7] = eth.ip_address; // source IP is us
+    data[9] = ((data[9]&0xffff)<<16) | (udp_src_port); // swap ports
+    data[10] =  udp_byte_length << 16; // clear UDP csum
+
     // now do both csums
-    csum = data[3]&0xffff;
+    csum = 0;
     csum_data = data+4;
     CSUM32( csum, csum_data ); // data[4]
     CSUM32( csum, csum_data ); // data[5]
     CSUM32( csum, csum_data ); // data[6]
     CSUM32( csum, csum_data ); // data[7]
-    csum = csum+(data[8]>>16);
+    CSUM32( csum, csum_data ); // data[8]
     csum = (csum>>16)+(csum&0xffff);
     csum = (csum>>16)+(csum&0xffff);
-    data[6] = ((~csum)<<16) | (data[6]&0xffff);
+    data[6] = data[6] | ((~csum)&0xffff);
 
-    csum = data[6]&0xffff; // source IP low to start
-    csum += 0x11; // protocol in pseudo header
+    csum = 0x11; // protocol in pseudo header
     csum += udp_byte_length; // length in pseudo header
     csum_data = data+7;
-    for (i=0; i<(1+udp_byte_length/4); i++) // do 1+(byte_length/4) words from data[7] - for zero data (byte_length==8) this means data[7] thru data[9] - we still need 2 more bytes!
+    for (i=0; i<(2+udp_byte_length/4); i++) // do 2+(byte_length/4) words from data[7] - for zero data (byte_length==8) this means data[7] thru data[10] - we got it all!
     {
         CSUM32( csum , csum_data );
     }
-    // byte length=8/12/14 implies 2 more bytes; 9/13/17 implies 3 more bytes, 10 implies 4 more bytes, 11 implies 5 more bytes
-    csum += (csum_data[0]>>16);
+    // byte length=8/12/14 implies 0 more bytes; 9/13/17 implies 1 more bytes, 10 implies 2 more bytes, 11 implies 3 more bytes
     switch (udp_byte_length&3)
     {
     case 0:
         break;
     case 1:
-        csum += csum_data[0]&0xff00;
+        csum += (csum_data[0]>>16)&0xff00;
         break;
     case 2:
-        csum += csum_data[0]&0xffff;
+        csum += (csum_data[0]>>16)&0xffff;
         break;
     case 3:
-        csum += csum_data[0]&0xffff;
-        csum += (csum_data[1]>>16)&0xff00;
+        csum += (csum_data[0]>>16)&0xffff;
+        csum += (csum_data[0])&0xff00;
         break;
     }
     csum = (csum>>16)+(csum&0xffff);
     csum = (csum>>16)+(csum&0xffff);
     csum = ~csum;
     if (csum==0) csum=0xffff;
-    data[10] = (csum<<16) | data[10];
+    data[10] = data[10] | (csum&0xffff);
 
     buffer->buffer_size = 34+udp_byte_length; // 20 for IP header, 14 for eth header
     if (buffer->buffer_size<64)
@@ -107,6 +113,11 @@ static void udp_reply( t_eth_buffer *buffer, unsigned int byte_length )
         buffer->buffer_size = 64;
     }
     ethernet_tx_buffer( buffer );
+
+//0000  00 05 5d 49 31 1e 12 34 56 78 9a bc 08 00 45 00   ..]I1..4Vx....E.
+//0010  00 26 2d eb 40 00 ff ff 30 d4 0a 01 64 05 0a 01   .&-.@...0...d...
+//0020  64 01 09 2a 83 4f 00 12 97 47 00 01 00 00 00 00   d..*.O...G......
+//0030  00 00 00 00 ff 00 00 00 00 ff 00 01 0b fe 39 3d   ..............9=
 }
 
 /*f mon_ethernet_cmd_done
@@ -533,14 +544,19 @@ extern void mon_ethernet_init( unsigned int eth_address_hi, unsigned int eth_add
     eth.hwaddress_low16  = (eth.hwaddress_low32&0xffff);
     ethernet_init( IO_A_SLOT_ETHERNET_0, 0, 2 ); // we use padding of 2 to align IP addresses etc with words, as ethernet has a 14 byte protocol header
     sync_serial_init( IO_A_SLOT_SYNC_SERIAL_0 );
+
     // set auto-neg to 10FD only
     // clock MDC 32 times with MDIO high, then send command
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0xffffffff ); 
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0x58920040 );
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0xffffffff ); 
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x58920040 ); // 0101 10001 0010010 0000 0000 0100 0000 - address is 0x11
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0xffffffff ); 
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x51920040 ); // 0101 00011 0010010 0000 0000 0100 0000 - address is 0x03
     // restart auto-neg
     // clock MDC 32 times with MDIO high, then send command
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0xffffffff ); 
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0x58821340 );
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0xffffffff ); 
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x58821340 ); // 0101 10001 0000010 0001 0011 0100 0000 - address is 0x11
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0xffffffff ); 
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x51821340 ); // 0101 00011 0010010 0000 0000 0100 0000 - address is 0x03
 
     ethernet_set_tx_callback( tx_callback, NULL );
     ethernet_set_rx_callback( rx_callback, NULL );

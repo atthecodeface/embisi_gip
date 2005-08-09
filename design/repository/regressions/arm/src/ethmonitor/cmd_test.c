@@ -30,57 +30,6 @@ typedef struct t_data_type
 
 /*a Static functions
  */
-/*f command_test_eth
- totaltx size_each max_in_queue
- */
-static int outstanding_tx;
-static void tst_rx_callback( void *handle, t_eth_buffer *buffer, int rxed_byte_length )
-{
-    buffer->buffer_size = 2048;
-    ethernet_add_rx_buffer( buffer );
-}
-static void tst_tx_callback( void *handle, t_eth_buffer *buffer )
-{
-    uart_tx_string("V");
-    outstanding_tx--;
-}
-static int command_test_eth( void *handle, int argc, unsigned int *args )
-{
-    t_eth_buffer buffers[16];
-    int i;
-
-    if (argc<3)
-        return 1;
-    if (args[2]>16)
-        return 1;
-
-    ethernet_set_tx_callback( tst_tx_callback, NULL );
-    ethernet_set_rx_callback( tst_rx_callback, NULL );
-
-    outstanding_tx = 0;
-    for (i=0; i<args[0]; )
-    {
-        if (outstanding_tx<args[2])
-        {
-            uart_tx_string("^");
-            buffers[i&0xf].buffer_size = args[1];
-            buffers[i&0xf].data = (char *)command_test_eth;
-            ethernet_tx_buffer( &buffers[i&0xf] );
-            outstanding_tx++;
-            i++;
-        }
-        mon_uart_poll();
-        mon_ethernet_poll();
-    }
-    while (outstanding_tx>0)
-    {
-        mon_uart_poll();
-        mon_ethernet_poll();
-    }
-    uart_tx_string_nl("Done");
-    return 0;
-}
-
 /*f command_timer_read
  */
 static int command_timer_read( void *handle, int argc, unsigned int *args )
@@ -223,7 +172,7 @@ static void timer_int_start ( void )
     led_cfg |= 0x30; GIP_LED_OUTPUT_CFG_WRITE( led_cfg );
     GIP_TIMER_DISABLE();
     GIP_ATOMIC_MAX_BLOCK();
-    GIP_CLEAR_SEMAPHORES_ATOMIC(0xf<<28);
+    GIP_CLEAR_SEMAPHORES(0xf<<28);
     GIP_SET_THREAD(7,timer_int,0x11); // set thread 7 startup to be ARM, on semaphore 28 set, and the entry point
     GIP_SET_LOCAL_EVENTS_CFG( 0xf ); // set config so that timer 1 (event 0) -> high priority thread 7
     GIP_READ_AND_SET_SEMAPHORES(s,0x1<<28); // fire the thread
@@ -274,7 +223,6 @@ static int command_test_regs( void *handle, int argc, unsigned int *args )
 extern const t_command monitor_cmds_test[];
 const t_command monitor_cmds_test[] =
 {
-    {"testeth", command_test_eth},
     {"tmrd", command_timer_read},
     {"tmen", command_timer_enable},
     {"tmld", command_timer_leds},

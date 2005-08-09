@@ -10,6 +10,7 @@ MODEL_LIST := $(SRC_ROOT)/scripts/model_list
 PREFIX_OBJ_DIR := simulation/
 
 #a Include standard build makefile
+#define BUILD_DEBUG to build a non-optimized version
 include ${CYCLICITY}/scripts/simulation_build_make
 
 verilog: ${VERILOG_FILES}

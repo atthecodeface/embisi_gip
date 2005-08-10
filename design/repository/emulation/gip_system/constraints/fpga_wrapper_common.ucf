@@ -399,17 +399,12 @@ NET "eb_data<31>" LOC = "AM6"  | IOSTANDARD = "LVTTL";
 //oldavnet NET "analyzer_signals<30>" LOC = "F24"  | IOSTANDARD = "LVTTL";
 //oldavnet NET "analyzer_signals<31>" LOC = "J24"  | IOSTANDARD = "LVTTL";
 
-NET "leds_dual<0>" LOC = "D27"  | IOSTANDARD = "LVTTL";
-NET "leds_dual<1>" LOC = "F27"  | IOSTANDARD = "LVTTL";
-NET "leds_dual<2>" LOC = "E27"  | IOSTANDARD = "LVTTL";
-NET "leds_dual<3>" LOC = "G25"  | IOSTANDARD = "LVTTL";
-NET "leds_dual<4>" LOC = "E28"  | IOSTANDARD = "LVTTL";
-NET "leds_dual<5>" LOC = "G26"  | IOSTANDARD = "LVTTL";
-NET "leds_dual<6>" LOC = "C29"  | IOSTANDARD = "LVTTL";
-NET "leds_dual<7>" LOC = "H26"  | IOSTANDARD = "LVTTL";
-
 //b Parallel interface
-NET "par_clock"               LOC = "H35"  | IOSTANDARD = "LVTTL";
+// gen io 1 - 41 43 45 47 49 -> d27 e27 e28 c29 d29
+// gen io 1 - 31 33 35 37 39 -> j24 d25  h25 c26 e26
+// gen io 1 - 21 23 25 27 29 -> f23 c23 h23 k23 g24
+// video header is 35-49 odd; ck=35, 20=39, d1=41, c1=43, c0=45, gnd=37,47 nc=49
+NET "par_clock"               LOC = "H25"  | IOSTANDARD = "LVTTL";
 NET "par_control_inputs<0>"   LOC = "E28"  | IOSTANDARD = "LVTTL";
 NET "par_control_inputs<1>"   LOC = "E27"  | IOSTANDARD = "LVTTL";
 //NET "par_control_inputs<2>"   LOC = ""  | IOSTANDARD = "LVTTL";

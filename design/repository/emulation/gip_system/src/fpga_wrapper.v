@@ -132,7 +132,6 @@ module fpga_wrapper
 
     leds,
 
-    leds_dual
 
 //    analyzer_clock,
 //    analyzer_signals
@@ -190,26 +189,25 @@ module fpga_wrapper
     output mii_mdc;
 
     //b Parallel interface
-    input par_clock,
-    input [1:0] par_control_inputs,
-    input [1:0] par_data_inputs,
-//    input [2:0] par_control_inputs,
-//    input [15:0] par_data_inputs,
+    input par_clock;
+    input [1:0] par_control_inputs;
+    input [1:0] par_data_inputs;
+//    input [2:0] par_control_inputs;
+//    input [15:0] par_data_inputs;
 
-//    output [3:0] par_control_outputs,
-//    output [3:0] par_control_oes,
-//    output [15:0] par_data_outputs,
-//    output [2:0] par_data_output_width,
-//    output par_data_oe,
- wire [3:0] par_control_outputs,
- wire [3:0] par_control_oes,
- wire [15:0] par_data_outputs,
- wire [2:0] par_data_output_width,
- wire par_data_oe,
+//    output [3:0] par_control_outputs;
+//    output [3:0] par_control_oes;
+//    output [15:0] par_data_outputs;
+//    output [2:0] par_data_output_width;
+//    output par_data_oe;
+ wire [3:0] par_control_outputs;
+ wire [3:0] par_control_oes;
+ wire [15:0] par_data_outputs;
+ wire [2:0] par_data_output_width;
+ wire par_data_oe;
 
     //b Outputs
     output [7:0]leds;
-    output [7:0]leds_dual;
 //    output analyzer_clock;
 //    output [31:0]analyzer_signals;
 wire analyzer_clock;
@@ -506,8 +504,6 @@ assign ssdi[0] = mii_mdio;
 assign ssdi[1] = 0;
 assign eth_rst_n = !system_reset_out;
 assign analyzer_clock = int_logic_slow_clock_buffered;
-assign leds_dual[6:0] = leds[6:0];
-assign leds_dual[7] = drm_input_dq_high[63];
 assign internal_switches = {switches[7:4], ps_done, switches[2:0]};
 assign leds[7:0] = gip_leds_out[7:0];
 gip_system body( .drm_clock(int_drm_clock_buffered),

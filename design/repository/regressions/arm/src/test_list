@@ -34,6 +34,7 @@ cc monitor ethernet
 cc io postbus_config
 cc io ethernet
 cc io sync_serial
+cc io parallel
 cc io ethernet_test_1
 cc io ethernet_test_2
 cc io ethernet_test_3
@@ -42,6 +43,7 @@ cc io ethernet_test_5
 cc io ethernet_test_6
 cc io sync_serial_test_1
 cc io sync_serial_test_2
+cc io parallel_test_1
 
 cc scheduler sched_modes
 cc scheduler sched_preempts
@@ -141,6 +143,9 @@ test regression  sync_serial_test_1 io:sync_serial_test_1 io:postbus_config io:s
                                     common:support_regression common:wrapper_regression
 
 test regression  sync_serial_test_2 io:sync_serial_test_2 io:postbus_config io:sync_serial \
+                                    common:support_regression common:wrapper_regression
+
+test regression  parallel_test_1 io:parallel_test_1 io:postbus_config io:parallel \
                                     common:support_regression common:wrapper_regression
 
 test regression  ethernet_test_1 io:ethernet_test_1 io:postbus_config io:ethernet \

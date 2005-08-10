@@ -59,6 +59,16 @@ module io_slots_eth_ss_par( clock int_clock,
                             input bit[2] ssdi,
                             output bit[8] sscs,
 
+                            clock par_clock,
+                            input bit[3] par_control_inputs,
+                            input bit[16] par_data_inputs,
+
+                            output bit[4] par_control_outputs,
+                            output bit[4] par_control_oes,
+                            output bit[16] par_data_outputs,
+                            output bit[3] par_data_output_width,
+                            output bit par_data_oe,
+
                             input bit[2] analyzer_mux_control,
                             output bit[32] analyzer_signals
                             )
@@ -147,6 +157,41 @@ Slot 3 is parallel
     net bit ssdo;
     net bit ssdo_oe;
     net bit[8] sscs;
+
+    /*b Parallel wiring
+     */
+    net bit[8]                par_slot_cfg;
+
+    net bit[32]               par_tx_data_fifo_data;
+    net t_io_tx_data_fifo_cmd par_tx_data_fifo_cmd;
+    net bit                   par_tx_data_fifo_toggle;
+
+    net bit                   par_cmd_fifo_empty;
+    net bit[32]               par_cmd_fifo_data;
+    net bit                   par_cmd_fifo_toggle;
+
+    net bit                   par_rx_data_fifo_full;  // not really used, but its an output so it must be tied
+    net bit[32]               par_rx_data_fifo_data;
+    net bit                   par_rx_data_fifo_toggle;
+
+    net bit[32]               par_status_fifo_data;
+    net bit                   par_status_fifo_toggle;
+
+    net bit                   par_slot_egr_cmd_ready;
+    net bit                   par_slot_egr_data_req;
+    net t_io_tx_data_fifo_cmd par_slot_egr_data_cmd;
+    net bit[32]               par_slot_ingr_data;
+    net bit                   par_slot_ingr_status_req;
+    net bit                   par_slot_ingr_data_req;
+
+//    net bit[3]                par_control_inputs;
+//    net bit[16]               par_data_inputs;
+
+    net bit[4]                par_control_outputs;
+    net bit[4]                par_control_oes;
+    net bit[16]               par_data_outputs;
+    net bit[3]                par_data_output_width;
+    net bit                   par_data_oe;
 
     /*b -------------------- Instantiations
      */
@@ -316,6 +361,76 @@ Slot 3 is parallel
 
         }
 
+    /*b Parallel instantiation
+     */
+    parallel "Parallel module and slot interface":
+        {
+            io_parallel par( par_clock <- par_clock,
+                             par_reset <= int_reset | !par_slot_cfg[0],
+
+                             tx_data_fifo_data   <= par_tx_data_fifo_data,
+                             tx_data_fifo_cmd    => par_tx_data_fifo_cmd,
+                             tx_data_fifo_toggle => par_tx_data_fifo_toggle,
+
+                             cmd_fifo_empty   <= par_cmd_fifo_empty,
+                             cmd_fifo_data    <= par_cmd_fifo_data,
+                             cmd_fifo_toggle  => par_cmd_fifo_toggle,
+
+                             rx_data_fifo_data   => par_rx_data_fifo_data,
+                             rx_data_fifo_toggle => par_rx_data_fifo_toggle,
+
+                             status_fifo_data   => par_status_fifo_data,
+                             status_fifo_toggle => par_status_fifo_toggle,
+
+                             control_inputs <= par_control_inputs,
+                             data_inputs <= par_data_inputs,
+
+                             control_outputs => par_control_outputs,
+                             control_oes => par_control_oes,
+                             data_outputs => par_data_outputs,
+                             data_output_width => par_data_output_width,
+                             data_oe => par_data_oe );
+
+            io_slot_head par_head( int_clock <- int_clock,
+                                  int_reset <= int_reset,
+
+                                  io_slot_cfg_write <= (io_slot_cfg_write && (io_slot_cfg_slot==2)),
+                                  io_slot_cfg_data <= io_slot_cfg_data,
+                                  io_slot_cfg => par_slot_cfg,
+
+                                  io_slot_egr_cmd_ready => par_slot_egr_cmd_ready,
+                                  io_slot_egr_data_req  => par_slot_egr_data_req,
+                                  io_slot_egr_data_cmd  => par_slot_egr_data_cmd,
+                                  io_slot_egr_data_ack  <= (io_slot_egr_data_ack && (io_slot_egr_data_slot==2)),
+
+                                  io_slot_egr_data        <= io_slot_egr_data,
+                                  io_slot_egr_slot_select <= (io_slot_egr_slot==2),
+                                  io_slot_egr_cmd_write   <= io_slot_egr_cmd_write,
+                                  io_slot_egr_data_write  <= io_slot_egr_data_write,
+
+                                  io_slot_ingr_data       => par_slot_ingr_data,
+                                  io_slot_ingr_status_req => par_slot_ingr_status_req,
+                                  io_slot_ingr_data_req   => par_slot_ingr_data_req,
+                                  io_slot_ingr_ack        <= (io_slot_ingr_ack && (io_slot_ingr_slot==2)),
+                                  io_slot_ingr_data_full  <= io_slot_ingr_data_full[2],
+
+                                  tx_data_fifo_data => par_tx_data_fifo_data,
+                                  tx_data_fifo_cmd <= par_tx_data_fifo_cmd,
+                                  tx_data_fifo_toggle <= par_tx_data_fifo_toggle,
+
+                                  cmd_fifo_empty => par_cmd_fifo_empty,
+                                  cmd_fifo_data => par_cmd_fifo_data,
+                                  cmd_fifo_toggle <= par_cmd_fifo_toggle,
+
+                                  rx_data_fifo_data <= par_rx_data_fifo_data,
+                                  rx_data_fifo_toggle <= par_rx_data_fifo_toggle,
+                                  rx_data_fifo_full => par_rx_data_fifo_full,
+
+                                  status_fifo_toggle <= par_status_fifo_toggle,
+                                  status_fifo_data <= par_status_fifo_data );
+
+        }
+
     /*b -------------------- Logic
      */
 
@@ -326,9 +441,16 @@ Slot 3 is parallel
             io_slot_egr_cmd_ready = 0;
             io_slot_egr_cmd_ready[0] = eth_slot_egr_cmd_ready;
             io_slot_egr_cmd_ready[1] = ss_slot_egr_cmd_ready;
+            io_slot_egr_cmd_ready[2] = par_slot_egr_cmd_ready;
 
             io_slot_egr_data_req = 0;
             io_slot_egr_data_slot = 0; // our internal priority encoded select
+            if (par_slot_egr_data_req) // this is the priority encoding for tx data requests
+            {
+                io_slot_egr_data_req = 1;
+                io_slot_egr_data_cmd = par_slot_egr_data_cmd;
+                io_slot_egr_data_slot = 2;
+            }
             if (ss_slot_egr_data_req) // this is the priority encoding for tx data requests
             {
                 io_slot_egr_data_req = 1;
@@ -346,6 +468,13 @@ Slot 3 is parallel
             io_slot_ingr_data = eth_slot_ingr_data;
             io_slot_ingr_status_req = 0;
             io_slot_ingr_data_req = 0;
+            if (par_slot_ingr_status_req || par_slot_ingr_data_req)
+            {
+                io_slot_ingr_data = par_slot_ingr_data;
+                io_slot_ingr_status_req = par_slot_ingr_status_req;
+                io_slot_ingr_data_req = par_slot_ingr_data_req;
+                io_slot_ingr_slot = 2;
+            }
             if (ss_slot_ingr_status_req || ss_slot_ingr_data_req)
             {
                 io_slot_ingr_data = ss_slot_ingr_data;

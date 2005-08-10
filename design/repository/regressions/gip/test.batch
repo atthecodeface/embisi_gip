@@ -346,15 +346,20 @@ gip_system_io:
 printf "gip_system_io tests"
 setenv "verbose_level" 1
 
-# gip_system_io_1, gip_system_io_2, gip_system_io_101, gip_system_io_102, gip_system_io_103, gip_system_io_104, gip_system_io_105, gip_system_io_106 are regression worthy
-#   gosub gip_system_io_1
-#   gosub gip_system_io_2
-#   gosub gip_system_io_101
-#   gosub gip_system_io_102
+# Regression worthy tests...
+#   sync_serial - gip_system_io_1, gip_system_io_2
+#   ethernet    - gip_system_io_101, gip_system_io_102, gip_system_io_103, gip_system_io_104, gip_system_io_105, gip_system_io_106
+#   parallel    - gip_system_io_201
+
+   gosub gip_system_io_1
+   gosub gip_system_io_2
+   gosub gip_system_io_101
+   gosub gip_system_io_102
 #   gosub gip_system_io_103
 #   gosub gip_system_io_104
-   gosub gip_system_io_105
-   gosub gip_system_io_106
+#   gosub gip_system_io_105
+#   gosub gip_system_io_106
+   gosub gip_system_io_201
 return
 
 #b gip_system_io_1 - sync_serial_test_1
@@ -383,7 +388,7 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_101 test - ethernet_test_1"
 set run_length 650000
 setenv "extbus_enable" "1"
-setenv "mii_enable" "1"
+setenv "rx_mii_enable" "1"
 # () ( (stream_type length header seed value interval delay)* )
 # MII clock is about 400 ticks per clock - so 80 gets us to 32k cycles - and a 64 byte packet is 128 nybbles+ which is about 80k cycles
 # the interval is between requests - we need about 160 nybbles
@@ -398,7 +403,7 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_102 test - ethernet_test_2"
 set run_length 750000
 setenv "extbus_enable" "1"
-setenv "mii_enable" "1"
+setenv "rx_mii_enable" "1"
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 160 80 ) )"
 setenv "ddr_mif" "../arm/bin/ethernet_test_2.regression.dmif"
 gosub gip_system_test
@@ -410,7 +415,7 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_103 test - ethernet_test_3"
 set run_length 650000
 setenv "extbus_enable" "1"
-setenv "mii_enable" "1"
+setenv "rx_mii_enable" "1"
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 160 80 ) )"
 setenv "ddr_mif" "../arm/bin/ethernet_test_3.regression.dmif"
 gosub gip_system_test
@@ -422,7 +427,7 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_104 test - ethernet_test_4"
 set run_length 500000
 setenv "extbus_enable" "1"
-setenv "mii_enable" "1"
+setenv "tx_mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
 setenv "ddr_mif" "../arm/bin/ethernet_test_4.regression.dmif"
 gosub gip_system_test
@@ -434,7 +439,7 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_105 test - ethernet_test_5"
 set run_length 500000
 setenv "extbus_enable" "1"
-setenv "mii_enable" "1"
+setenv "tx_mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
 setenv "ddr_mif" "../arm/bin/ethernet_test_5.regression.dmif"
 gosub gip_system_test
@@ -446,9 +451,20 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_106 test - ethernet_test_6"
 set run_length 500000
 setenv "extbus_enable" "1"
-setenv "mii_enable" "1"
+setenv "tx_mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
 setenv "ddr_mif" "../arm/bin/ethernet_test_6.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_201 - parallel_test_1
+gip_system_io_201:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_201 test - parallel_test_1"
+set run_length 300000
+setenv "par_enable" "1"
+setenv "extbus_enable" "1"
+setenv "ddr_mif" "../arm/bin/parallel_test_1.regression.dmif"
 gosub gip_system_test
 return
 
@@ -500,7 +516,7 @@ gosub gip_system_test_init
 set_string test_name "gip_system_ethernet_0 test"
 set run_length 400000
 #set run_length 32000
-setenv "mii_enable" "1"
+setenv "rx_mii_enable" "1"
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
 setenv "ddr_mif" "../arm/bin/ethernet.regression.dmif"
@@ -512,7 +528,7 @@ gip_system_1:
 gosub gip_system_test_init
 set_string test_name "gip_system_1 test"
 set run_length 40000
-setenv "mii_enable" "1"
+setenv "rx_mii_enable" "1"
 setenv "mii_rx_sources" "( ) ( ( i 64 0x1234 0 0 ) )"
 setenv "uart_exec_file" "src/gip_ddr_uart_0.ef"
 setenv "ddr_mif" "../arm/bin/ethernet.regression.dmif"
@@ -524,7 +540,7 @@ gip_system_ethernet_reset:
 gosub gip_system_test_init
 set_string test_name "gip_system_ethernet_reset test"
 set run_length 280000
-setenv "mii_enable" "1"
+setenv "rx_mii_enable" "1"
 setenv "mii_rx_sources" "( ) ( ( c 144 0x1234 0x55555555 0 10000 0 ) )"
 # We need this to wait >1250 cycles (>120,000ns) before checking it has run twice; the eth packet takes about that to get in
 setenv "ddr_mif" "../arm/bin/inc_wait_test.regression.dmif"
@@ -558,8 +574,10 @@ return
 gip_system_test_init:
 set_string test_name "<no test name given>"
 setenv "ss_enable" "0"
+setenv "par_enable" "0"
 setenv "uart_exec_file" "src/end.ef"
-setenv "mii_enable" "0"
+setenv "rx_mii_enable" "0"
+setenv "tx_mii_enable" "0"
 setenv "mii_rx_sources" ""
 setenv "mii_tx_sinks" ""
 #setenv "extbus_enable" "1" is needed for test pass/fail messages

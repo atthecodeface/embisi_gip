@@ -110,6 +110,28 @@ static t_sl_error_level rf_1r_1w_32_32_instance_fn( c_engine *engine, void *engi
     return error_level_okay;
 }
 
+/*f rf_1r_1w_16_32_instance_fn
+*/
+static t_sl_error_level rf_1r_1w_16_32_instance_fn( c_engine *engine, void *engine_handle )
+{
+    c_rf *mod;
+    mod = new c_rf( engine, engine_handle, 16, 32, 1, 1 );
+    if (!mod)
+        return error_level_fatal;
+    return error_level_okay;
+}
+
+/*f rf_1r_1w_16_4_instance_fn
+*/
+static t_sl_error_level rf_1r_1w_16_4_instance_fn( c_engine *engine, void *engine_handle )
+{
+    c_rf *mod;
+    mod = new c_rf( engine, engine_handle, 16, 4, 1, 1 );
+    if (!mod)
+        return error_level_fatal;
+    return error_level_okay;
+}
+
 /*f rf_2r_1w_32_32_instance_fn
 */
 static t_sl_error_level rf_2r_1w_32_32_instance_fn( c_engine *engine, void *engine_handle )
@@ -351,6 +373,8 @@ t_sl_error_level c_rf::clock_posedge_int_clock( void )
 extern void c_rf__init( void )
 {
     se_external_module_register( 1, "rf_1r_1w_32_32", rf_1r_1w_32_32_instance_fn );
+    se_external_module_register( 1, "rf_1r_1w_16_32", rf_1r_1w_16_32_instance_fn );
+    se_external_module_register( 1, "rf_1r_1w_16_4",  rf_1r_1w_16_4_instance_fn );
     se_external_module_register( 1, "rf_2r_1w_32_32", rf_2r_1w_32_32_instance_fn );
 }
 

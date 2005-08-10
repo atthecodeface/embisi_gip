@@ -291,6 +291,16 @@ module gip_system( clock drm_clock,
                    input bit[2] ssdi,
                    output bit[8] sscs,
 
+                   clock par_clock,
+                   input bit[3] par_control_inputs,
+                   input bit[16] par_data_inputs,
+
+                   output bit[4] par_control_outputs,
+                   output bit[4] par_control_oes,
+                   output bit[16] par_data_outputs,
+                   output bit[3] par_data_output_width,
+                   output bit par_data_oe,
+
                    clock analyzer_clock,
                    output bit analyzer_async_trace_valid,
                    output bit[32] analyzer_async_trace_out
@@ -397,6 +407,12 @@ module gip_system( clock drm_clock,
     net bit ssdo;
     net bit ssdo_oe;
     net bit[8] sscs;
+
+    net bit[4]                par_control_outputs;
+    net bit[4]                par_control_oes;
+    net bit[16]               par_data_outputs;
+    net bit[3]                par_data_output_width;
+    net bit                   par_data_oe;
 
     comb bit[8] local_events_in;
 
@@ -679,6 +695,16 @@ module gip_system( clock drm_clock,
                                         ssdo_oe => ssdo_oe,
                                         ssdi <= ssdi,
                                         sscs => sscs,
+
+                                        par_clock <- par_clock,
+                                        par_control_inputs <= par_control_inputs,
+                                        par_data_inputs <= par_data_inputs,
+
+                                        par_control_outputs => par_control_outputs,
+                                        par_control_oes => par_control_oes,
+                                        par_data_outputs => par_data_outputs,
+                                        par_data_output_width => par_data_output_width,
+                                        par_data_oe => par_data_oe,
 
                                         analyzer_mux_control <= analyzer_mux_control[2;0],
                                         analyzer_signals => ios_analyzer_signals );

@@ -2,6 +2,9 @@
  */
 
 /*a To do
+  intermediate status
+  final data write copiing with arbitrary capture size
+  data outputs
  */
 
 /*a Includes
@@ -339,13 +342,13 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     clocked t_rx_status_pending rx_status_fifo_pending = rx_status_pending_none;
     clocked bit rx_data_fifo_pending = 0;
     clocked bit tx_data_fifo_pending = 0;
-    clocked bit[4] status_fifo_holdoff = 0;
-    clocked bit[4] rx_data_fifo_holdoff = 0;
+    clocked bit[6] status_fifo_holdoff = 0;
+    clocked bit[6] rx_data_fifo_holdoff = 0;
 
     /*b Command interface management
      */
     clocked bit cmd_start_fsm_running = 0;
-    clocked bit[4] cmd_fifo_holdoff = 0;
+    clocked bit[6] cmd_fifo_holdoff = 0;
     clocked bit cmd_last_was_rf_0 = 0;
 
     /*b Internal counters
@@ -440,7 +443,8 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             if (!sync_cmd_fifo_empty.stable && (cmd_fifo_holdoff==0))
             {
                 cmd_fifo_toggle <= ~cmd_fifo_toggle; // and ignore empty for a holdoff period - our toggle is synced to internal domain which sets cmd_fifo_empty, so if we are <4xinternal then ignore for 3 internal + our 2 or 14 cycles - 16 should be plenty
-                cmd_fifo_holdoff <= 4hf;
+                cmd_fifo_holdoff <= -1;
+                cmd_fifo_holdoff[4;2] <= cfg_status_holdoff;
                 cmd_last_was_rf_0 <= 0;
                 part_switch (cmd_type)
                     {
@@ -605,11 +609,11 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
         {
             fsm_take_arc_0 = 0;
             fsm_take_arc_1 = 0;
-            if (arc_conditions[state_data.arc0_condition[2;1]] ^ state_data.arc0_condition[0])
+            if (arc_conditions[state_data.arc0_condition[2;0]] ^ state_data.arc0_condition[2])
             {
                 fsm_take_arc_0 = 1;
             }
-            if (arc_conditions[state_data.arc1_condition[2;1]] ^ state_data.arc1_condition[0])
+            if (arc_conditions[state_data.arc1_condition[2;0]] ^ state_data.arc1_condition[2])
             {
                 fsm_take_arc_1 = 1;
             }
@@ -635,6 +639,8 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             action_finish_fsm = 0;
             action_counter_load = 0;
             action_counter_dec = 0;
+            action_int_status = 0;
+            action_final_status = 0;
             full_switch (action) // transition always occurs, possibly by 0 for no actual transition
                 {
                 case io_parallel_action_idle:
@@ -643,6 +649,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                 }
                 case io_parallel_action_end:
                 {
+                    action_final_status = 1;
                     action_finish_fsm = 1;
                 }
                 case io_parallel_action_idlecnt_capture:
@@ -732,7 +739,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                     }
                     }
             }
-            if (action_finish_fsm && (data_counter!=0) && cfg_data_capture_enabled)
+            if (action_finish_fsm && (data_counter[5;0]!=0) && cfg_data_capture_enabled)
             {
                 rx_data_will_be_ready = 1;
             }
@@ -746,7 +753,8 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             {
                 rx_data_fifo_data <= rx_data_register;
                 rx_data_fifo_toggle <= ~rx_data_fifo_toggle;
-                rx_data_fifo_holdoff <= cfg_data_holdoff;
+                rx_data_fifo_holdoff <= -1;
+                rx_data_fifo_holdoff[4;2] <= cfg_data_holdoff;
                 rx_data_fifo_pending <= 0;
             }
             if (rx_data_will_be_ready)
@@ -779,7 +787,8 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                     status_fifo_data[31] <= 0;
                 }
                 status_fifo_toggle <= ~status_fifo_toggle;
-                status_fifo_holdoff <= cfg_status_holdoff;
+                status_fifo_holdoff <= -1;
+                status_fifo_holdoff[4;2] <= cfg_status_holdoff;
                 rx_status_fifo_pending <= rx_status_pending_none;
             }
             if (action_int_status)

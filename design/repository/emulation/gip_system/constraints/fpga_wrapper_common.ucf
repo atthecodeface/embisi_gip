@@ -408,6 +408,37 @@ NET "leds_dual<5>" LOC = "G26"  | IOSTANDARD = "LVTTL";
 NET "leds_dual<6>" LOC = "C29"  | IOSTANDARD = "LVTTL";
 NET "leds_dual<7>" LOC = "H26"  | IOSTANDARD = "LVTTL";
 
+//b Parallel interface
+NET "par_clock"               LOC = "H35"  | IOSTANDARD = "LVTTL";
+NET "par_control_inputs<0>"   LOC = "E28"  | IOSTANDARD = "LVTTL";
+NET "par_control_inputs<1>"   LOC = "E27"  | IOSTANDARD = "LVTTL";
+//NET "par_control_inputs<2>"   LOC = ""  | IOSTANDARD = "LVTTL";
+NET "par_data_inputs<0>"      LOC = "E26"  | IOSTANDARD = "LVTTL";
+NET "par_data_inputs<1>"      LOC = "D27"  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<2>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<3>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<4>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<5>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<6>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<7>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<8>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<9>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<10>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<11>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<12>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<13>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<14>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_data_inputs<15>"     LOC = ""  | IOSTANDARD = "LVTTL";
+
+//NET "par_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
+//    par_control_oes,
+//    par_data_outputs,
+//    par_data_output_width,
+//    par_data_oe,
+
 //a Placements
 INST "ckgen_drm_input_clock_buffer"  LOC = "BUFGMUX0P" ;
 INST "ckgen_drm_clock_90_buffer"     LOC = "BUFGMUX5S" ;

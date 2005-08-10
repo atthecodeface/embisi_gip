@@ -120,6 +120,16 @@ module fpga_wrapper
     mii_mdio,
     mii_mdc,
 
+    par_clock,
+    par_control_inputs,
+    par_data_inputs,
+
+//    par_control_outputs,
+//    par_control_oes,
+//    par_data_outputs,
+//    par_data_output_width,
+//    par_data_oe,
+
     leds,
 
     leds_dual
@@ -178,6 +188,24 @@ module fpga_wrapper
     input mii_rx_er;
     inout mii_mdio;
     output mii_mdc;
+
+    //b Parallel interface
+    input par_clock,
+    input [1:0] par_control_inputs,
+    input [1:0] par_data_inputs,
+//    input [2:0] par_control_inputs,
+//    input [15:0] par_data_inputs,
+
+//    output [3:0] par_control_outputs,
+//    output [3:0] par_control_oes,
+//    output [15:0] par_data_outputs,
+//    output [2:0] par_data_output_width,
+//    output par_data_oe,
+ wire [3:0] par_control_outputs,
+ wire [3:0] par_control_oes,
+ wire [15:0] par_data_outputs,
+ wire [2:0] par_data_output_width,
+ wire par_data_oe,
 
     //b Outputs
     output [7:0]leds;
@@ -520,6 +548,14 @@ gip_system body( .drm_clock(int_drm_clock_buffered),
                  .ext_bus_oe( ext_bus_oe ),
                  .ext_bus_ce( ext_bus_ce ),
 
+                 .par_clock( par_clock ),
+                 .par_control_inputs({1'b0,par_control_inputs}),
+                 .par_data_inputs({14'b0,par_data_inputs}),
+                 .par_control_outputs(par_control_outputs),
+                 .par_control_oes(par_control_oes),
+                 .par_data_outputs(par_data_outputs),
+                 .par_data_output_width(par_data_output_width),
+                 .par_data_oe(par_data_oe),
 
                  .cke_last_of_logic( cke_last_of_logic ),
 

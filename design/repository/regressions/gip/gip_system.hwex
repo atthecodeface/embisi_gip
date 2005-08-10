@@ -48,6 +48,14 @@ option_string "outputs" "ssdi[2]"
 option_string "filename" "ss.th"
 module se_test_harness "ss_th"
 
+#b Parallel test harness
+option_string enable env_string("par_enable")
+option_string "clock" "par_clock"
+option_string "inputs" "par_control_outputs[4] par_control_oes[4] par_data_outputs[16] par_data_output_width[3] par_data_oe"
+option_string "outputs" "par_control_inputs[3] par_data_inputs[16]"
+option_string "filename" "par.th"
+module se_test_harness "par_th"
+
 #b Add DDR pin logic
 option_string "clock" "ddr_clock"
 option_string "inputs" "next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4] dq_to_ctl[32] dqs_to_ctl[4]"
@@ -65,6 +73,7 @@ clock ddr_x4_clock 0 1 1
 clock ddr_clock 0 4 4
 clock logic_clock 0 48 48
 clock eth_clock 0 200 200
+clock par_clock 0 15 15
 clock never_clock 0 0x7ffffff 0x7fffffff
 
 drive ddrth.ddr_clock ddr_clock
@@ -81,14 +90,28 @@ extbus_enabled:
 drive extbusth.extbus_clock logic_clock
 extbus_clocked:
 
-beq env_int("mii_enable") 1 mii_enabled
-drive gip_simple.eth_mii_tx_clock never_clock
+int clock_mii
+set clock_mii 0
+beq env_int("rx_mii_enable") 1 rx_mii_enabled
 drive gip_simple.eth_mii_rx_clock never_clock
+goto rx_mii_clocked
+rx_mii_enabled:
+drive gip_simple.eth_mii_rx_clock eth_clock
+set clock_mii 1
+rx_mii_clocked:
+
+beq env_int("tx_mii_enable") 1 tx_mii_enabled
+drive gip_simple.eth_mii_tx_clock never_clock
+goto tx_mii_clocked
+tx_mii_enabled:
+drive gip_simple.eth_mii_tx_clock eth_clock
+set clock_mii 1
+tx_mii_clocked:
+
+beq clock_mii 1 mii_enabled
 drive mii.int_clock never_clock
 goto mii_clocked
 mii_enabled:
-drive gip_simple.eth_mii_tx_clock eth_clock
-drive gip_simple.eth_mii_rx_clock eth_clock
 drive mii.int_clock eth_clock
 mii_clocked:
 
@@ -98,6 +121,15 @@ goto ss_clocked
 ss_enabled:
 drive ss_th.ss_clock logic_clock
 ss_clocked:
+
+beq env_int("par_enable") 1 par_enabled
+drive par_th.par_clock never_clock
+drive gip_simple.par_clock never_clock
+goto par_clocked
+par_enabled:
+drive par_th.par_clock par_clock
+drive gip_simple.par_clock par_clock
+par_clocked:
 
 #b Add wires
 wire system_reset
@@ -117,6 +149,9 @@ wire ext_bus_read_data[32] ext_bus_write_data[32] ext_bus_write_data_enable
 
 wire eth_mii_rx_dv eth_mii_rx_d[4] eth_mii_rx_er
 wire eth_mii_tx_en eth_mii_tx_d[4]
+
+wire par_control_outputs[4] par_control_oes[4] par_data_outputs[16] par_data_output_width[3] par_data_oe
+wire par_control_inputs[3] par_data_inputs[16]
 
 wire eth_mii_col
 wire eth_mii_crs
@@ -197,6 +232,15 @@ drive sscl_oe gip_simple.sscl_oe
 drive sscs    gip_simple.sscs
 drive gip_simple.ssdi ssdi
 
+drive par_control_outputs         gip_simple.par_control_outputs
+drive par_control_oes             gip_simple.par_control_oes
+drive par_data_outputs            gip_simple.par_data_outputs
+drive par_data_output_width       gip_simple.par_data_output_width
+drive par_data_oe                 gip_simple.par_data_oe
+ 
+drive gip_simple.par_control_inputs  par_control_inputs
+drive gip_simple.par_data_inputs     par_data_inputs
+
 #b Wire up DDR model
 drive ddr.dqm     dqm
 drive ddr.dq_in   dq_to_ddr
@@ -249,11 +293,20 @@ drive mii.mon_mii_col        eth_mii_rx_er
 drive mii.mon_mii_crs        eth_mii_tx_en
 drive mii.mon_mii_data       eth_mii_tx_d
 drive mii.mon_mii_enable     eth_mii_tx_en
+beq env_int("rx_mii_enable") 0 rx_mii_tb_disable
 drive eth_mii_rx_d           mii.rx_mii_data
 drive eth_mii_rx_dv          mii.rx_mii_dv
 drive eth_mii_rx_er          mii.rx_mii_err
+goto rx_mii_tb_enable
+rx_mii_tb_disable:
+assign eth_mii_rx_d 0
+assign eth_mii_rx_dv 0
+assign eth_mii_rx_er 0
+rx_mii_tb_enable:
+beq env_int("tx_mii_enable") 0 tx_mii_tb_disable
 drive mii.tx_mii_data        eth_mii_tx_d
 drive mii.tx_mii_enable      eth_mii_tx_en
+tx_mii_tb_disable:
 
 #b Wire up UART testbench
 drive uart_testbench.uart_clock logic_clock
@@ -268,6 +321,17 @@ drive ss_th.sscl       sscl
 drive ss_th.sscl_oe    sscl_oe
 drive ss_th.sscs       sscs
 drive ssdi             ss_th.ssdi
+
+#b Wire up parallel testbench
+drive par_th.par_control_outputs         par_control_outputs
+drive par_th.par_control_oes             par_control_oes
+drive par_th.par_data_outputs            par_data_outputs
+drive par_th.par_data_output_width       par_data_output_width
+drive par_th.par_data_oe                 par_data_oe
+ 
+drive par_control_inputs  par_th.par_control_inputs
+drive par_data_inputs     par_th.par_data_inputs
+
 
 #b End
 end

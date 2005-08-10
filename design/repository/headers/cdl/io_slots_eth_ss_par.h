@@ -51,6 +51,16 @@ extern module io_slots_eth_ss_par( clock int_clock,
                                    input bit[2] ssdi,
                                    output bit[8] sscs,
 
+                                   clock par_clock,
+                                   input bit[3] par_control_inputs,
+                                   input bit[16] par_data_inputs,
+
+                                   output bit[4] par_control_outputs,
+                                   output bit[4] par_control_oes,
+                                   output bit[16] par_data_outputs,
+                                   output bit[3] par_data_output_width,
+                                   output bit par_data_oe,
+
                                    input bit[2] analyzer_mux_control,
                                    output bit[32] analyzer_signals
     )
@@ -76,6 +86,9 @@ extern module io_slots_eth_ss_par( clock int_clock,
 
     timing from rising clock int_clock sscl, sscl_oe, ssdo, ssdo_oe, sscs;
     timing to rising clock int_clock ssdi;
+
+    timing to rising clock par_clock par_control_inputs, par_data_inputs;
+    timing from rising clock par_clock par_control_outputs, par_control_oes, par_data_outputs, par_data_output_width, par_data_oe;
 
     timing from rising clock int_clock analyzer_signals;
     timing from rising clock etx_clock analyzer_signals;

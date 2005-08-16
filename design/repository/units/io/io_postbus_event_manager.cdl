@@ -6,8 +6,8 @@
 
 /*a Constants
  */
-constant integer number_events=4;
-constant integer log_number_events=2;
+constant integer number_events=8;
+constant integer log_number_events=3;
 
 /*a Includes
  */
@@ -191,7 +191,7 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                     }
                     else
                     {
-                        events[target_write_address[2;2]] <= {
+                        events[target_write_address[3;1]] <= {
                             fifo                = target_write_data[2;0],
                             ingress             = target_write_data[2],
                             cmd_status          = target_write_data[3],
@@ -200,7 +200,7 @@ module io_postbus_event_manager ( clock int_clock "main system clck",
                             pending             = 0,
                             valid               = 1
                         };
-                        event_cmds[target_write_address[2;2]] <= {
+                        event_cmds[target_write_address[3;1]] <= {
                             op                  = target_write_data[2;postbus_command_source_io_cmd_op_start],
                             length              = target_write_data[5;postbus_command_source_io_length_start],
                             header_route_number = target_write_data[0],

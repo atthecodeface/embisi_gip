@@ -83,6 +83,7 @@ module io_ethernet_tx( clock io_clock,
                        input bit[32] data_fifo_data,
                        output t_io_tx_data_fifo_cmd data_fifo_cmd,
                        output bit data_fifo_toggle,
+                       input bit data_fifo_empty,
 
                        input bit cmd_fifo_empty,
                        input bit[32] cmd_fifo_data,
@@ -205,8 +206,10 @@ For backoff we need a random number up to 10 bits long, with a long-term average
     /*b State for I/O fifo interfaces
      */
     clocked t_sync sync_cmd_fifo_empty = {regs=1, value=1};
+    clocked t_sync sync_data_fifo_empty = {regs=1, value=1};
     clocked t_io_tx_data_fifo_cmd         data_fifo_cmd = io_tx_data_fifo_cmd_read_fifo;
     clocked bit                           data_fifo_toggle = 0;
+    clocked bit                           data_fifo_underrun = 0;
     comb t_data_fifo_op                   data_fifo_op;
 
     clocked bit                           cmd_fifo_toggle = 0;
@@ -279,9 +282,15 @@ For backoff we need a random number up to 10 bits long, with a long-term average
      */
     fifo_interfaces "Fifo interfaces":
         {
+            sync_data_fifo_empty <= { regs=data_fifo_empty, value=regs };
+
             if (data_fifo_op != data_fifo_op_none)
             {
                 data_fifo_toggle <= ~data_fifo_toggle;
+                if (sync_data_fifo_empty.value)
+                {
+                    data_fifo_underrun <= 1;
+                }
                 full_switch( data_fifo_op )
                     {
                     case data_fifo_op_read_committed:
@@ -306,6 +315,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
             if (cmd_fifo_read)
             {
                 cmd_fifo_toggle <= ~cmd_fifo_toggle;
+                data_fifo_underrun <= 0;
             }
 
             if (status_fifo_write != status_fifo_write_none)
@@ -313,6 +323,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                 status_fifo_toggle <= ~status_fifo_toggle;
                 status_fifo_data <= cmd_fifo_data;
                 status_fifo_data[ io_eth_tx_packet_retry_count_bits; io_eth_tx_cfd_packet_retry_count_start_bit ] <= retry_counter;
+                status_fifo_data[ io_eth_tx_cfd_packet_underrun_bit ] <= data_fifo_underrun;
                 full_switch( status_fifo_write )
                     {
                     case status_fifo_write_transmit_ok:

@@ -76,6 +76,7 @@ module io_block( clock int_clock,
                  output bit[2]   io_slot_egr_slot "indicates which slot the egress data is for, registered here; ",
                  output bit      io_slot_egr_cmd_write  "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client",
                  output bit      io_slot_egr_data_write "asserted if the data on the bus in this cycle is for the data side interface",
+                 output bit[4]  io_slot_egr_data_empty  "for use by I/O",
 
                  input bit[32]  io_slot_ingr_data       "muxed in slot head from clients, ANDed with a select from io_slot_ing_number",
                  input bit      io_slot_ingr_status_req "OR of status requests, masked by pending acknowledgements",
@@ -413,6 +414,18 @@ to I/O     io_slot_ingr_data_full  (for use by the I/O)
                     analyzer_signals[17] <= status_req;
                     analyzer_signals[io_sram_log_size;18] <= ingress_sram_address;
                 }
+                case 2: // postbus target signals
+                {
+                    analyzer_signals <= postbus_tgt_data;
+                    analyzer_signals[31]   <= postbus_tgt_ack[0];
+                    analyzer_signals[2;29] <= postbus_tgt_type;
+                }
+                case 3: // postbus target signals
+                {
+                    analyzer_signals <= postbus_src_data;
+                    analyzer_signals[31]   <= postbus_src_ack[0];
+                    analyzer_signals[2;29] <= postbus_src_type;
+                }
                 }
         }
 
@@ -647,6 +660,7 @@ to I/O     io_slot_ingr_data_full  (for use by the I/O)
                 io_slot_egr_data_write <= 1;
                 io_slot_egr_data <= egress_sram_read_data;
             }
+            io_slot_egr_data_empty = tx_data_fifo_empty;
         }
 
     /*b Command and TxData FIFO ptrs and their arbiter

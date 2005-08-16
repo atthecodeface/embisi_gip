@@ -316,6 +316,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     comb bit[3] cmd_cfg_capture_size;
     comb bit[4] cmd_cfg_data_holdoff;
     comb bit[4] cmd_cfg_status_holdoff;
+    comb bit[2] cmd_cfg_interim_status;
 
     /*b Configuration data
      */
@@ -327,6 +328,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     clocked bit[3] cfg_capture_size = 0;
     clocked bit[4] cfg_data_holdoff = 0;
     clocked bit[4] cfg_status_holdoff = 0;
+    clocked bit[2] cfg_interim_status = 0; // no interim status
 
     /*b RFW breakouts and registers
      */
@@ -425,6 +427,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             cmd_cfg_capture_size = cmd_fifo_data[ io_parallel_cfg_capture_size_bits ; io_parallel_cfd_capture_size_start_bit ];
             cmd_cfg_data_holdoff = cmd_fifo_data[ io_parallel_cfg_data_holdoff_bits ; io_parallel_cfd_data_holdoff_start_bit ];
             cmd_cfg_status_holdoff = cmd_fifo_data[ io_parallel_cfg_status_holdoff_bits ; io_parallel_cfd_status_holdoff_start_bit ];
+            cmd_cfg_interim_status = cmd_fifo_data[ io_parallel_cfg_interim_status_bits ; io_parallel_cfd_interim_status_start_bit ];
 
             cmd_cfg_rf_0 = cmd_fifo_data[ io_parallel_rf_0_bits ; 0 ];
             cmd_cfg_rf_1 = cmd_fifo_data[ io_parallel_rf_1_bits ; 0 ];
@@ -467,6 +470,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                         cfg_status_holdoff                <= cmd_cfg_status_holdoff;
                         cfg_data_capture_enabled          <= cmd_cfg_data_capture_enabled;
                         cfg_auto_restart_fsm              <= cmd_cfg_auto_restart_fsm;
+                        cfg_interim_status                <= cmd_cfg_interim_status;
                     }
                     case io_parallel_cmd_type_enable:
                     {
@@ -685,9 +689,34 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
      */
     data_counter "Data counter":
         {
+            action_int_status = 0;
             if (action_capture_rx_data || 0)
             {
                 data_counter <= data_counter+1;
+                part_switch (cfg_interim_status)
+                    {
+                    case 1: // every 64 writes
+                    {
+                        if (data_counter[6;0]==-1)
+                        {
+                            action_int_status = 1;
+                        }
+                    }
+                    case 2: // every 256 writes
+                    {
+                        if (data_counter[8;0]==-1)
+                        {
+                            action_int_status = 1;
+                        }
+                    }
+                    case 4: // every 1024 writes
+                    {
+                        if (data_counter[10;0]==-1)
+                        {
+                            action_int_status = 1;
+                        }
+                    }
+                    }
             }
             if (reset_par_fsm)
             {

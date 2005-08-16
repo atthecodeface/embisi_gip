@@ -136,6 +136,14 @@ There is another variant of this that allows two I/O blobs to plug in to a singl
             sync_rx_data_fifo_toggle.stable <= sync_rx_data_fifo_toggle.metastable;
             sync_rx_data_fifo_toggle.last <= sync_rx_data_fifo_toggle.stable;
             rx_data_fifo_toggle_detected = sync_rx_data_fifo_toggle.last ^ sync_rx_data_fifo_toggle.stable;
+
+            if (!io_slot_cfg[0]) // always reset the block - with async reset using this signal we don't want their resetting toggles to count as actual toggles
+            {
+                cmd_fifo_toggle_detected = 0;
+                tx_data_fifo_toggle_detected = 0;
+                status_fifo_toggle_detected = 0;
+                rx_data_fifo_toggle_detected = 0;
+            }
         }
 
     /*b Config control

@@ -364,25 +364,9 @@ mkt_basic_system_mode_interrupt:
     orr r8, r14, #1<<30 // system mode, interrupts enabled
     str r8, [r13, #16*4] // preserve flags
 
-    // Change the emulated thread's PC to be the interrupt vector
-    ldr r8, = microkernel_thread_vectors
-    gip_extrn 0x11
-    tst r1, #2 // 
-    ldreq r8, [r8] // ignore which status bit for now - only use vector 0
-    ldrne r8, [r8, #4] // ignore which status bit for now - only use vector 0
+    b mkt_take_interrupt
 
-    gip_atomic 2
-    gip_mov_full_imm 0x84, #EMULATION_THREAD // spec4 <= EMULATION_THREAD
-    gip_extrd 0x85
-    orr r0, r8, #1 // set restart address for emulated thread, spec5 <= pc | 1
 
-    // change to interrupt disabled mode - clear INTEN semaphore, set restart to be mkt_int_dis_system_mode dependent on trap and inten
-    gip_clear_semaphores (HWINT_SEM | INTEN_SEM), 4*MICROKERNEL_THREAD
-    restart_at_int_dis_system
-
-    // deschedule, blocking first for cleanliness
-    gip_deschedule_block
-    nop
     
     // System mode, not a trap, no interrupt sources claim to be pending, so we can clear the hardware interrupt, check sources again (in case one came in since between reading the hwint bit and clearing it)
 mkt_basic_system_mode_interrupt_no_interrupts:
@@ -504,24 +488,7 @@ mkt_user_mode_interrupt:
     orr r8, r14, #3<<30 // user mode, interrupts enabled
     str r8, [r13, #16*4] // preserve flags
 
-    // Change the emulated thread's PC to be the interrupt vector
-    ldr r8, = microkernel_thread_vectors
-    gip_extrn 0x11
-    tst r1, #2 // 
-    ldreq r8, [r8] // ignore which status bit for now - only use vector 0
-    ldrne r8, [r8, #4] // ignore which status bit for now - only use vector 0
-    gip_atomic 2
-    gip_mov_full_imm 0x84, #EMULATION_THREAD // spec4 <= EMULATION_THREAD
-    gip_extrd 0x85
-    orr r0, r8, #1 // set restart address for emulated thread, spec5 <= pc | 1
-
-    // change to interrupt disabled mode - clear INTEN semaphore, set restart to be mkt_int_dis_system_mode dependent on trap and inten
-    gip_clear_semaphores (HWINT_SEM | INTEN_SEM), 4*MICROKERNEL_THREAD
-    restart_at_int_dis_system
-
-    // deschedule, blocking first for cleanliness
-    gip_deschedule_block
-    nop
+    b mkt_take_interrupt
     
     // User mode, not a trap, no interrupt sources claim to be pending, so we can clear the hardware interrupt, check sources again (in case one came in since between reading the hwint bit and clearing it)
 mkt_user_mode_interrupt_no_interrupts:
@@ -542,7 +509,38 @@ mkt_user_mode_interrupt_no_interrupts:
     
     
 
+
     
+
+    // r17 is the interrupts
+    // r13 (system sp) contains a complete stack frame ready to return to
+mkt_take_interrupt:
+    // Change the emulated thread's PC to be the interrupt vector
+    gip_extrm 0x11
+    mov r9, r1
+    ldr r8, = microkernel_thread_vectors
+    ldr r7, [r8] // vector 0
+    tst r9, #2
+    ldrne r7, [r8, #4] // vector 1
+    tst r9, #4
+    ldrne r7, [r8, #8] // vector 2
+
+    gip_atomic 2
+    gip_mov_full_imm 0x84, #EMULATION_THREAD // spec4 <= EMULATION_THREAD
+    gip_extrd 0x85
+    orr r0, r7, #1 // set restart address for emulated thread, spec5 <= pc | 1
+
+    // change to interrupt disabled mode - clear INTEN semaphore, set restart to be mkt_int_dis_system_mode dependent on trap and inten
+    gip_clear_semaphores (HWINT_SEM | INTEN_SEM), 4*MICROKERNEL_THREAD
+    restart_at_int_dis_system
+
+    // deschedule, blocking first for cleanliness
+    gip_deschedule_block
+    nop
+
+
+
+        
         
    	.global mkt_unknown_trap
    // fatal unknown trap - reboot!

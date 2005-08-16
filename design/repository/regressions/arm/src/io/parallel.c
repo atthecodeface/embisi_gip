@@ -168,7 +168,8 @@ extern void parallel_frame_capture_init( int slot, int nlines, int init_gap, int
                                                           (1<<io_parallel_cfd_use_registered_data_inputs_start_bit) |
                                                           (15<<io_parallel_cfd_data_holdoff_start_bit) |
                                                           (15<<io_parallel_cfd_status_holdoff_start_bit) |
-                                                          (1<<io_parallel_cfd_data_capture_enabled_start_bit) ) );
+                                                          (1<<io_parallel_cfd_data_capture_enabled_start_bit) |
+                                                          (1<<io_parallel_cfd_interim_status_start_bit) ));
     fc_data[0] = nlines-1;
     fc_data[1] = pixels_per_line-1;
     fc_data[2] = init_gap-2;
@@ -202,12 +203,13 @@ static void parallel_frame_capture_wait_for_status( int slot )
     }
 }
 
-extern int parallel_frame_capture_buffer( int slot, unsigned int *buffer, int *capture_time  )
+extern int parallel_frame_capture_buffer( int slot, unsigned int *buffer, int *capture_time, int *num_status )
 {
     unsigned int status, time;
     int final_status;
     int words_so_far, data_captured, words_captured;
 
+    *num_status = 0;
     words_so_far = 0;
     do
     {
@@ -217,6 +219,9 @@ extern int parallel_frame_capture_buffer( int slot, unsigned int *buffer, int *c
         do { GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<31 ); } while (s==0);
         GIP_POST_RXD_0(time);
         GIP_POST_RXD_0(status);
+
+        GIP_EXTBUS_DATA_WRITE( status );
+        (*num_status)++;
 
         final_status = !(status&0x80000000);
         data_captured = status&0xffffff; // data captured in samples, each of which is 2 bits at present, so number of words is data_captured/16

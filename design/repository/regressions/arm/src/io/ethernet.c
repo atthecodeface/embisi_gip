@@ -265,7 +265,6 @@ static void handle_rx_status( unsigned int status )
 static void handle_tx_status_fifo( void )
 {
     unsigned int status, time;
-    t_eth_buffer *buffer;
 
     /*b Read the status and time
      */
@@ -290,8 +289,7 @@ static void handle_tx_status_fifo( void )
  */
 static void handle_rx_status_fifo( void )
 {
-    unsigned int status, time, size_so_far, block_size, reason;
-    unsigned char *data;
+    unsigned int status, time;
 
     /*b Read the status and time
      */
@@ -315,8 +313,7 @@ static void handle_rx_status_fifo( void )
  */
 static void handle_eth_status_fifo( void )
 {
-    unsigned int status, time, size_so_far, block_size, reason;
-    unsigned char *data;
+    unsigned int status, time;
 
     /*b Read the status and time
      */
@@ -474,12 +471,12 @@ extern void ethernet_init( int slot, int endian_swap, int padding )
     GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x11 );
     NOP;NOP;NOP;NOP;NOP;NOP;
     GIP_POST_TXD_0( (eth.rx_slot<<0) | (1<<2) | (1<<3) | (1<<4) | (0<<5) | (0<<postbus_command_source_io_cmd_op_start) | (0<<postbus_command_source_io_length_start) | (3<<postbus_command_target_gip_rx_semaphore_start) ); // ingress=1, cmd_status=1, fifo=0, empty_not_watermark=1, level=0, length=0, cmd_op=0 (read data length 0)
-    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x14 );
+    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x12 );
     NOP;NOP;NOP;NOP;NOP;NOP;
     if (eth.tx_slot != eth.rx_slot)
     {
         GIP_POST_TXD_0( (eth.tx_slot<<0) | (1<<2) | (1<<3) | (1<<4) | (0<<5) | (0<<postbus_command_source_io_cmd_op_start) | (0<<postbus_command_source_io_length_start) | (3<<postbus_command_target_gip_rx_semaphore_start) ); // ingress=1, cmd_status=1, fifo=1, empty_not_watermark=1, level=0, length=0, cmd_op=0 (read data length 0)
-        GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x18 );
+        GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x14 );
         NOP;NOP;NOP;NOP;NOP;NOP;
     }
 

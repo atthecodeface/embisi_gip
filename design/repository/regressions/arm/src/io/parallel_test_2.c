@@ -37,7 +37,7 @@ extern int test_entry_point( void )
     GIP_EXTBUS_ADDRESS_WRITE( 0xc0000002 ); // Debug display address
     GIP_BLOCK_ALL();
 
-    parallel_frame_capture_init( IO_A_SLOT_PARALLEL_0, 8, 12, 3, 16 ); // capture frames of 8 lines, 6 pixels front porch, three gaps between each pixel, and 16 pixels per line
+    parallel_frame_capture_init( IO_A_SLOT_PARALLEL_0, 32, 12, 3, 16 ); // capture frames of 32 lines, 6 pixels front porch, three gaps between each pixel, and 16 pixels per line - we expect interim statuses at every 64 pixel reads, so one or two
     parallel_frame_capture_start( IO_A_SLOT_PARALLEL_0, 0x01000000 );
     frame_size = parallel_frame_capture_buffer( IO_A_SLOT_PARALLEL_0, (unsigned int *)buffer, &capture_time, &num_status );
 
@@ -46,44 +46,17 @@ extern int test_entry_point( void )
     do
     {
         int i;
-        if (num_status!=3) break;
+        if (num_status!=9) break;
         failure++;
         GIP_EXTBUS_DATA_WRITE( frame_size );
-        if (frame_size!=32) break; // 8*16 pixels = 128 pixels = 32 bytes at 2bpp
+        if (frame_size!=128) break; // 32*16 pixels = 512 pixels = 128 bytes at 2bpp
         failure++;
-        for (i=0; i<32; i++)
+        for (i=0; i<128; i++)
         {
             if (buffer[i]!=0xaa) break; // check all pixels match the expected value
             failure++;
         }
-        if (i<32) break;
-        failure = 0;
-    } while (0);
-    if (failure)
-    {
-        return failure;
-    }
-
-    parallel_frame_capture_init( IO_A_SLOT_PARALLEL_0, 8, 15, 3, 16 ); // capture frames of 8 lines, 6 pixels front porch, three gaps between each pixel, and 16 pixels per line
-    parallel_frame_capture_start( IO_A_SLOT_PARALLEL_0, 0x01000000 );
-    frame_size = parallel_frame_capture_buffer( IO_A_SLOT_PARALLEL_0, (unsigned int *)buffer, &capture_time, &num_status );
-
-    GIP_EXTBUS_DATA_WRITE( num_status );
-    failure = 100;
-    do
-    {
-        int i;
-        if (num_status!=3) break;
-        failure++;
-        GIP_EXTBUS_DATA_WRITE( frame_size );
-        if (frame_size!=32) break; // 8*16 pixels = 128 pixels = 32 bytes at 2bpp
-        failure++;
-        for (i=0; i<32; i++)
-        {
-            if (buffer[i]!=0x55) break; // check all pixels match the expected value
-            failure++;
-        }
-        if (i<32) break;
+        if (i<128) break;
         failure = 0;
     } while (0);
     return failure;

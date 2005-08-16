@@ -43,5 +43,6 @@ enum
     io_parallel_cfd_capture_size_start_bit      = 9,
     io_parallel_cfd_data_capture_enabled_start_bit = 12,
     io_parallel_cfd_use_registered_control_inputs_start_bit = 13,
-    io_parallel_cfd_use_registered_data_inputs_start_bit = 14
+    io_parallel_cfd_use_registered_data_inputs_start_bit = 14,
+    io_parallel_cfd_interim_status_start_bit = 15
 };

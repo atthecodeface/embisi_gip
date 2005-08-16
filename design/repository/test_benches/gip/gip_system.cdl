@@ -371,6 +371,7 @@ module gip_system( clock drm_clock,
     net bit[2]   io_slot_egr_slot "indicates which slot the egress data is for, registered here; ";
     net bit      io_slot_egr_cmd_write  "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client";
     net bit      io_slot_egr_data_write "asserted if the data on the bus in this cycle is for the data side interface";
+    net bit[4]   io_slot_egr_data_empty "indicates egress data fifo states for the slots";
 
     net bit[32]  io_slot_ingr_data       "muxed in slot head from clients, ANDed with a select from io_slot_ing_number";
     net bit      io_slot_ingr_status_req "OR of status requests, masked by pending acknowledgements";
@@ -634,12 +635,13 @@ module gip_system( clock drm_clock,
                           io_slot_egr_cmd_ready <= io_slot_egr_cmd_ready,
                           io_slot_egr_data_req <= io_slot_egr_data_req,
                             io_slot_egr_data_cmd <= io_slot_egr_data_cmd,
-                          io_slot_egr_data_slot <= io_slot_egr_data_slot,
-                          io_slot_egr_data_ack => io_slot_egr_data_ack,
-                          io_slot_egr_data => io_slot_egr_data,
-                          io_slot_egr_slot => io_slot_egr_slot,
-                          io_slot_egr_cmd_write => io_slot_egr_cmd_write,
-                          io_slot_egr_data_write => io_slot_egr_data_write,
+                            io_slot_egr_data_slot <= io_slot_egr_data_slot,
+                            io_slot_egr_data_ack => io_slot_egr_data_ack,
+                            io_slot_egr_data => io_slot_egr_data,
+                            io_slot_egr_slot => io_slot_egr_slot,
+                            io_slot_egr_cmd_write => io_slot_egr_cmd_write,
+                            io_slot_egr_data_write => io_slot_egr_data_write,
+                            io_slot_egr_data_empty => io_slot_egr_data_empty,
 
                           io_slot_ingr_data <= io_slot_ingr_data,
                           io_slot_ingr_status_req <= io_slot_ingr_status_req,
@@ -667,6 +669,7 @@ module gip_system( clock drm_clock,
                                         io_slot_egr_slot <= io_slot_egr_slot,
                                         io_slot_egr_cmd_write <= io_slot_egr_cmd_write,
                                         io_slot_egr_data_write <= io_slot_egr_data_write,
+                                        io_slot_egr_data_empty <= io_slot_egr_data_empty,
 
                                         io_slot_ingr_data => io_slot_ingr_data,
                                         io_slot_ingr_status_req => io_slot_ingr_status_req,
@@ -716,7 +719,7 @@ module gip_system( clock drm_clock,
         {
 
             analyzer_signals <= iob_analyzer_signals;
-            part_switch (analyzer_mux_control)
+            part_switch (analyzer_mux_control[3;0])
                 {
                 case 0:
                 {
@@ -756,6 +759,17 @@ module gip_system( clock drm_clock,
                 case 5:
                 {
                     analyzer_signals <= gip_mem_read_data;
+                }
+                }
+            part_switch (analyzer_mux_control[3;8])
+                {
+                case 1: // 0 is GIP - don't override
+                {
+                    analyzer_signals <= iob_analyzer_signals;
+                }
+                case 2:
+                {
+                    analyzer_signals <= ios_analyzer_signals;
                 }
                 }
             analyzer logic_analyzer( analyzer_clock <- int_clock,

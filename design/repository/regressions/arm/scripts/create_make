@@ -83,7 +83,7 @@ foreach $asm (@asms) {
     ($dir, $file, $opts) = split(/ /,$asm);
     $opts =~ s/@/ /g;
     print make "obj/$dir.$file.o: src/$dir/$file.S\n";
-    print make "\t\${ARM_CC} \${ARM_AS_FLAGS} -c src/$dir/$file.S $opts -o obj/$dir.$file.o\n";
+    print make "\t\${Q}\${ARM_CC} \${ARM_AS_FLAGS} -c src/$dir/$file.S $opts -o obj/$dir.$file.o\n";
     print make "\n";
 }
 
@@ -93,7 +93,7 @@ foreach $cc (@ccs) {
     $opts =~ s/@/ /g;
     $opts = "\${ARM_CC_FLAGS}" if ($opts eq "");
     print make "obj/$dir.$file.o: src/$dir/$file.c\n";
-    print make "\t\${ARM_CC} $opts \${ARM_CC_INCLUDES} -c src/$dir/$file.c -o obj/$dir.$file.o\n";
+    print make "\t\${Q}\${ARM_CC} $opts \${ARM_CC_INCLUDES} -c src/$dir/$file.c -o obj/$dir.$file.o\n";
     print make "\n";
 }
 
@@ -108,7 +108,7 @@ foreach $i (@tests) {
         }
     }
     print make "\t\tscripts/build.$type.script\n";
-    print make "\t\${ARM_LD} -T scripts/build.$type.script --Map bin/$test.$type.map -o obj/$test.$type.elf \\\n";
+    print make "\t\${Q}\${ARM_LD} -T scripts/build.$type.script --Map bin/$test.$type.map -o obj/$test.$type.elf \\\n";
     foreach $obj (split(/@@@/,$objs)) {
         next if ($obj=~/^\s*$/);
         if ($obj=~/^([^:]*):(.*)/) {
@@ -116,18 +116,18 @@ foreach $i (@tests) {
         }
     }
     print make "\n";
-    print make "\t\${ARM_STRIP} --output-target=binary -o bin/$test.$type.bin obj/$test.$type.elf";
+    print make "\t\${Q}\${ARM_STRIP} --output-target=binary -o bin/$test.$type.bin obj/$test.$type.elf";
     print make "\n";
     print make "\n";
     print make "bin/$test.$type.mif: bin/$test.$type.bin\n";
-    print make "\t\${BIN_TO_MIF} -f bin/$test.$type.bin -o bin/$test.$type.mif\n";
-    print make "\t\${MIF_TO_CDL} -a 12 -f bin/$test.$type.mif -o bin/$test.$type.cdl\n";
+    print make "\t\${Q}\${BIN_TO_MIF} -f bin/$test.$type.bin -o bin/$test.$type.mif\n";
+    print make "\t\${Q}\${MIF_TO_CDL} -a 12 -f bin/$test.$type.mif -o bin/$test.$type.cdl\n";
     print make "\n";
     print make "bin/$test.$type.dmif: bin/$test.$type.bin\n";
-    print make "\t\${BIN_TO_MIF} -f bin/$test.$type.bin -d -o bin/$test.$type.dmif\n";
+    print make "\t\${Q}\${BIN_TO_MIF} -f bin/$test.$type.bin -d -o bin/$test.$type.dmif\n";
     print make "\n";
     print make "bin/$test.$type.coe: bin/$test.$type.bin\n";
-    print make "\t\${BIN_TO_MIF} -c -f bin/$test.$type.bin -o bin/$test.$type.coe\n";
+    print make "\t\${Q}\${BIN_TO_MIF} -c -f bin/$test.$type.bin -o bin/$test.$type.coe\n";
     print make "\n";
 
 }

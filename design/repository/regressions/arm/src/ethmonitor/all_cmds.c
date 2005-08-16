@@ -5,8 +5,9 @@
 #include "cmd_extbus.h"
 #include "cmd_flash.h"
 #include "cmd_leds.h"
+#include "cmd_video.h"
 #include "cmd_test.h"
-#include "cmd_gipeth.h"
+#include "cmd_driver_test.h"
 #include "cmd_control.h"
 #include "cmd_analyzer.h"
 
@@ -16,8 +17,9 @@ static t_command_chain monitor_cmds_postbus_chain;
 static t_command_chain monitor_cmds_extbus_chain;
 static t_command_chain monitor_cmds_flash_chain;
 static t_command_chain monitor_cmds_leds_chain;
+static t_command_chain monitor_cmds_video_chain;
 static t_command_chain monitor_cmds_test_chain;
-static t_command_chain monitor_cmds_gipeth_chain;
+static t_command_chain monitor_cmds_driver_test_chain;
 static t_command_chain monitor_cmds_control_chain;
 static t_command_chain monitor_cmds_analyzer_chain;
 extern void chain_extra_cmds( t_command_chain *chain )
@@ -47,15 +49,20 @@ extern void chain_extra_cmds( t_command_chain *chain )
     monitor_cmds_leds_chain.cmds = &monitor_cmds_leds[0];
     chain = &monitor_cmds_leds_chain;
 
+    chain->next = &monitor_cmds_video_chain;
+    monitor_cmds_video_chain.next = NULL;
+    monitor_cmds_video_chain.cmds = &monitor_cmds_video[0];
+    chain = &monitor_cmds_video_chain;
+
     chain->next = &monitor_cmds_test_chain;
     monitor_cmds_test_chain.next = NULL;
     monitor_cmds_test_chain.cmds = &monitor_cmds_test[0];
     chain = &monitor_cmds_test_chain;
 
-    chain->next = &monitor_cmds_gipeth_chain;
-    monitor_cmds_gipeth_chain.next = NULL;
-    monitor_cmds_gipeth_chain.cmds = &monitor_cmds_gipeth[0];
-    chain = &monitor_cmds_gipeth_chain;
+    chain->next = &monitor_cmds_driver_test_chain;
+    monitor_cmds_driver_test_chain.next = NULL;
+    monitor_cmds_driver_test_chain.cmds = &monitor_cmds_driver_test[0];
+    chain = &monitor_cmds_driver_test_chain;
 
     chain->next = &monitor_cmds_control_chain;
     monitor_cmds_control_chain.next = NULL;

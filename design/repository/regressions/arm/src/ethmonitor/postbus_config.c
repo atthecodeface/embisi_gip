@@ -39,21 +39,21 @@ extern void postbus_config( int rx_0, int tx_0, int rx_1, int tx_1 )
     // egress fifo sram (2kx32) split as etxcmd 32, sscmd 32, ssdata 32, gap, etx 1920 (rest)
     GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 0,  0/2,   15, 3 );  // eth tx cmd - unused - note status size and base are in entries, not words
     GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 1, 32/2,   15, 3 );  // ss cmd
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 2,  0/2,   15, 3 );  // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 2, 64/2,   15, 3 );  // par cmd
     GIP_POSTBUS_IO_FIFO_CFG( 0, 0, 3,  0/2,   15, 3 );  // unused
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 0,  128, 1919, 3 );  // eth tx data
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 0,  128, 1919,96 );  // eth tx data - watermark gives at least 512 bytes of space, and is not too close to empty
     GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 1,   64,   31, 3 );  // ss txd
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 2,    0,   31, 3 );  // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 2,    0,   31, 3 );  // par txd, not used yet
     GIP_POSTBUS_IO_FIFO_CFG( 1, 0, 3,    0,   31, 3 );  // unused
 
     // ingress fifo sram (2kx32) split as erx status 32, etx status 32, ss status 32, ss rxd 32, erx 1920 (rest)
     GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 0,  0/2,   15, 3 ); // eth status - note status size and base are in entries, not words
     GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 1, 32/2,   15, 3 ); // ss status
-    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 2,  0/2,   15, 3 ); // unused
+    GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 2, 64/2,   15, 3 ); // par status
     GIP_POSTBUS_IO_FIFO_CFG( 0, 1, 3,  0/2,   15, 3 ); // unused
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 0,  128, 1919, 3 ); // erx data
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 0,  128,  511, 3 ); // erx data - 2kB is plenty
     GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 1,   96,   31, 3 ); // ss rx data
-    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 2,    0,   31, 3 ); // etx data - unused
+    GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 2,  640, 1023,64 ); // par rxdata - watermark indicates >256 bytes in the FIFO
     GIP_POSTBUS_IO_FIFO_CFG( 1, 1, 3,    0,   31, 3 ); // unused
 
 }

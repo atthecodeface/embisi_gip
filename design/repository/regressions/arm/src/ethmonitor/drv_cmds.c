@@ -6,17 +6,17 @@
 #include "cmd_flash.h"
 #include "cmd_leds.h"
 #include "cmd_test.h"
-#include "cmd_gipeth.h"
+#include "cmd_driver_test.h"
 
 #include <stdio.h>
 static t_command_chain monitor_cmds_memory_chain;
-static t_command_chain monitor_cmds_gipeth_chain;
+static t_command_chain monitor_cmds_driver_test_chain;
 extern void chain_extra_cmds( t_command_chain *chain )
 {
-    chain->next = &monitor_cmds_gipeth_chain;
-    monitor_cmds_gipeth_chain.next = NULL;
-    monitor_cmds_gipeth_chain.cmds = &monitor_cmds_gipeth[0];
-    chain = &monitor_cmds_gipeth_chain;
+    chain->next = &monitor_cmds_driver_test_chain;
+    monitor_cmds_driver_test_chain.next = NULL;
+    monitor_cmds_driver_test_chain.cmds = &monitor_cmds_driver_test[0];
+    chain = &monitor_cmds_driver_test_chain;
 
     chain->next = &monitor_cmds_memory_chain;
     monitor_cmds_memory_chain.next = NULL;

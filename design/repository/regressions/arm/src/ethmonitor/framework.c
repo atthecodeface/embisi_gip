@@ -5,6 +5,7 @@
 #include "../common/wrapper.h"
 #include "postbus_config.h"
 #include "ethernet.h"
+#include "flash.h"
 #include "uart.h"
 #include "memory.h"
 #include "cmd.h"
@@ -25,14 +26,14 @@ typedef struct t_config
  */
 extern int test_entry_point()
 {
-    int i;
     t_config config = {0x1234, 0x56789abc, 0x0a016405 };
     {
-        unsigned int s;
+        unsigned int s, pc;
         GIP_GPIO_INPUT_STATUS(s);
-        if (s&1)
+        __asm__ volatile ("mov %0, pc" : "=r" (pc) );
+        if ((s&1) && ((pc&0x80000000)==0))
         {
-            mon_flash_boot( 0, 1, &config, sizeof(config) );
+            mon_flash_boot( 0, 1, (unsigned char *)&config, sizeof(config) );
         }
     }
     postbus_config( 16, 16, 0, 0 ); // use 16 for tx and 16 for rx, no sharing

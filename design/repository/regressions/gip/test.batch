@@ -351,6 +351,9 @@ setenv "verbose_level" 1
 #   ethernet    - gip_system_io_101, gip_system_io_102, gip_system_io_103, gip_system_io_104, gip_system_io_105, gip_system_io_106
 #   parallel    - gip_system_io_201
 
+#   gosub gip_system_io_104
+#    return
+
    gosub gip_system_io_1
    gosub gip_system_io_2
    gosub gip_system_io_101
@@ -358,8 +361,10 @@ setenv "verbose_level" 1
 #   gosub gip_system_io_103
 #   gosub gip_system_io_104
 #   gosub gip_system_io_105
-#   gosub gip_system_io_106
+   gosub gip_system_io_106
+   gosub gip_system_io_120
    gosub gip_system_io_201
+   gosub gip_system_io_202
 return
 
 #b gip_system_io_1 - sync_serial_test_1
@@ -427,6 +432,8 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_104 test - ethernet_test_4"
 set run_length 500000
 setenv "extbus_enable" "1"
+# Note rx_mii_enable is required to clock the ERX with shared status
+setenv "rx_mii_enable" "1"
 setenv "tx_mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
 setenv "ddr_mif" "../arm/bin/ethernet_test_4.regression.dmif"
@@ -439,6 +446,8 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_105 test - ethernet_test_5"
 set run_length 500000
 setenv "extbus_enable" "1"
+# Note rx_mii_enable is required to clock the ERX with shared status
+setenv "rx_mii_enable" "1"
 setenv "tx_mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
 setenv "ddr_mif" "../arm/bin/ethernet_test_5.regression.dmif"
@@ -451,9 +460,25 @@ gosub gip_system_test_init
 set_string test_name "gip_system_io_106 test - ethernet_test_6"
 set run_length 500000
 setenv "extbus_enable" "1"
+# Note rx_mii_enable is required to clock the ERX with shared status
+setenv "rx_mii_enable" "1"
 setenv "tx_mii_enable" "1"
 setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
 setenv "ddr_mif" "../arm/bin/ethernet_test_6.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_120 - ethernet_test_tx_underrun
+gip_system_io_120:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_120 test - ethernet_test_tx_underrun"
+set run_length 150000
+setenv "extbus_enable" "1"
+# Note rx_mii_enable is required to clock the ERX with shared status
+setenv "rx_mii_enable" "1"
+setenv "tx_mii_enable" "1"
+#setenv "mii_tx_sinks" "( ) ( ( i 68 0xfeedbeef 0 0 ) )"
+setenv "ddr_mif" "../arm/bin/ethernet_test_tx_underrun.regression.dmif"
 gosub gip_system_test
 return
 
@@ -461,10 +486,21 @@ return
 gip_system_io_201:
 gosub gip_system_test_init
 set_string test_name "gip_system_io_201 test - parallel_test_1"
-set run_length 300000
+set run_length 650000
 setenv "par_enable" "1"
 setenv "extbus_enable" "1"
 setenv "ddr_mif" "../arm/bin/parallel_test_1.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_202 - parallel_test_2
+gip_system_io_202:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_202 test - parallel_test_2"
+set run_length 650000
+setenv "par_enable" "1"
+setenv "extbus_enable" "1"
+setenv "ddr_mif" "../arm/bin/parallel_test_2.regression.dmif"
 gosub gip_system_test
 return
 

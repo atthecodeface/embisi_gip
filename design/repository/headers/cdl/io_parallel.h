@@ -11,6 +11,7 @@ constant integer io_parallel_cfg_capture_size_bits = 3; // both related?
 constant integer io_parallel_cfg_data_capture_enabled_bits = 1; // capture related
 constant integer io_parallel_cfg_use_registered_control_inputs_bits = 1; // capture related
 constant integer io_parallel_cfg_use_registered_data_inputs_bits = 1; // capture related
+constant integer io_parallel_cfg_interim_status_bits = 2; // both related
 
 constant integer io_parallel_cfd_type_start_bit = 24;
 
@@ -24,6 +25,7 @@ constant integer io_parallel_cfd_capture_size_start_bit                  = io_pa
 constant integer io_parallel_cfd_data_capture_enabled_start_bit          = io_parallel_cfd_capture_size_start_bit + io_parallel_cfg_capture_size_bits;
 constant integer io_parallel_cfd_use_registered_control_inputs_start_bit = io_parallel_cfd_data_capture_enabled_start_bit + io_parallel_cfg_data_capture_enabled_bits;
 constant integer io_parallel_cfd_use_registered_data_inputs_start_bit    = io_parallel_cfd_use_registered_control_inputs_start_bit + io_parallel_cfg_use_registered_control_inputs_bits;
+constant integer io_parallel_cfd_interim_status_start_bit                = io_parallel_cfd_use_registered_data_inputs_start_bit + io_parallel_cfg_use_registered_data_inputs_bits;
 
 /*a Types
  */

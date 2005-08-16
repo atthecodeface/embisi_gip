@@ -26,6 +26,7 @@ extern module io_block( clock int_clock,
                         output bit[2]   io_slot_egr_slot "indicates which slot the egress data is for, registered here; ",
                         output bit      io_slot_egr_cmd_write  "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client",
                         output bit      io_slot_egr_data_write "asserted if the data on the bus in this cycle is for the data side interface",
+                        output bit[4]  io_slot_egr_data_empty  "for use by I/O",
 
                         input bit[32]  io_slot_ingr_data       "muxed in slot head from clients, ANDed with a select from io_slot_ing_number",
                         input bit      io_slot_ingr_status_req "OR of status requests, masked by pending acknowledgements",
@@ -46,7 +47,7 @@ extern module io_block( clock int_clock,
     timing from rising clock int_clock io_slot_cfg_write, io_slot_cfg_data, io_slot_cfg_slot;
 
     timing to rising clock int_clock io_slot_egr_cmd_ready, io_slot_egr_data_req, io_slot_egr_data_cmd, io_slot_egr_data_slot;
-    timing from rising clock int_clock io_slot_egr_data_ack;
+    timing from rising clock int_clock io_slot_egr_data_ack, io_slot_egr_data_empty;
     timing from rising clock int_clock io_slot_egr_data, io_slot_egr_slot, io_slot_egr_cmd_write, io_slot_egr_data_write;
 
     timing to rising clock int_clock io_slot_ingr_data, io_slot_ingr_status_req, io_slot_ingr_data_req, io_slot_ingr_slot;

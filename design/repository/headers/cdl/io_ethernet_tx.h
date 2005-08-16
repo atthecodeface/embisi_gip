@@ -2,6 +2,7 @@
  */
 // We break out the command FIFO data
 // We need a packet length, a retry count, FCS required, full-duplex (ignore collisions), and possibly deferral time; deferral time is 9.6us at 100Mbps/25MHz/40ns, or 240 bits, so we need 8-bits for deferral.
+// return status is status, retries, byte length
 constant integer io_eth_tx_max_packet_byte_length_bits = 16;
 constant integer io_eth_tx_packet_retry_count_bits = 4;
 constant integer io_eth_tx_deferral_value_bits = 8;
@@ -12,6 +13,7 @@ constant integer io_eth_tx_cfd_deferral_restart_value_bit = io_eth_tx_cfd_packet
 constant integer io_eth_tx_cfd_half_duplex_bit            = io_eth_tx_cfd_deferral_restart_value_bit + io_eth_tx_deferral_value_bits;
 constant integer io_eth_tx_cfd_transmit_fcs_bit           = io_eth_tx_cfd_half_duplex_bit + 1;
 constant integer io_eth_tx_cfd_packet_status_start_bit    = io_eth_tx_cfd_packet_retry_count_start_bit         + io_eth_tx_packet_retry_count_bits; // For receive
+constant integer io_eth_tx_cfd_packet_underrun_bit        = io_eth_tx_cfd_packet_status_start_bit         + io_eth_tx_packet_status_bits; // For receive
 
 constant integer io_eth_tx_max_counter_for_permitted_collision = 64;
 
@@ -34,6 +36,7 @@ extern module io_ethernet_tx( clock io_clock,
                               input bit[32] data_fifo_data,
                               output t_io_tx_data_fifo_cmd data_fifo_cmd,
                               output bit data_fifo_toggle,
+                              input bit data_fifo_empty,
 
                               input bit cmd_fifo_empty,
                               input bit[32] cmd_fifo_data,
@@ -50,7 +53,7 @@ extern module io_ethernet_tx( clock io_clock,
 {
     timing to rising clock io_clock io_reset;
 
-    timing to rising clock io_clock data_fifo_data;
+    timing to rising clock io_clock data_fifo_data, data_fifo_empty;
     timing from rising clock io_clock data_fifo_cmd, data_fifo_toggle;
 
     timing to rising clock io_clock cmd_fifo_empty, cmd_fifo_data;

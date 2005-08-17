@@ -10,4 +10,4 @@ enum
 
 extern int mon_flash_read_object( unsigned int address, unsigned int *csum, char *buffer, int *offset, int max_length, int verbose );
 extern int mon_flash_boot( unsigned int address, int verbose, unsigned char *config, int config_size );
-
+extern int flash_download( void );

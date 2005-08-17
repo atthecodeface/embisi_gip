@@ -22,8 +22,6 @@
 extern int test_entry_point( void )
 {
     unsigned int time, status, read_data;
-    unsigned int last_time;
-    int second_time, third_time, fourth_time;
 
     postbus_config( 16, 16, 0, 0 ); // use 16 for tx and 16 for rx, no sharing
     GIP_CLEAR_SEMAPHORES( -1 );

@@ -41,9 +41,11 @@ cc io ethernet_test_3
 cc io ethernet_test_4
 cc io ethernet_test_5
 cc io ethernet_test_6
+cc io ethernet_test_tx_underrun
 cc io sync_serial_test_1
 cc io sync_serial_test_2
 cc io parallel_test_1
+cc io parallel_test_2
 
 cc scheduler sched_modes
 cc scheduler sched_preempts
@@ -53,8 +55,11 @@ cc drivers ethernet
 cc drivers uart
 cc drivers flash
 cc drivers sync_serial
+cc drivers parallel
 cc drivers gipeth
 asm drivers gipeth_asm
+cc drivers gip_video_capture
+asm drivers gip_video_capture_asm
 
 cc microkernel init
 asm microkernel microkernel_thread
@@ -80,7 +85,8 @@ cc ethmonitor cmd_extbus
 cc ethmonitor cmd_flash
 cc ethmonitor cmd_test
 cc ethmonitor cmd_leds
-cc ethmonitor cmd_gipeth
+cc ethmonitor cmd_video
+cc ethmonitor cmd_driver_test
 cc ethmonitor cmd_analyzer
 cc ethmonitor cmd_control
 cc ethmonitor cmd
@@ -105,21 +111,24 @@ test dram monitor_full  monitor:monitor monitor:all_cmds monitor:memory monitor:
 test dram monitor_extra monitor:monitor monitor:bonus_cmds monitor:memory monitor:ethernet monitor:flash monitor:uart \
                          common:wrapper_download common:support_download
 
-test dram ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync_serial drivers:gipeth drivers:gipeth_asm \
+test dram ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync_serial drivers:parallel \
+                        drivers:gipeth drivers:gipeth_asm drivers:gip_video_capture drivers:gip_video_capture_asm \
                         ethmonitor:postbus_config ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:timer_int ethmonitor:regs \
                         ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd \
                         ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash \
-                        ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_gipeth \
+                        ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_video ethmonitor:cmd_driver_test \
                         common:wrapper_download common:support_download
 
-#test dram_high ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync_serial drivers:gipeth drivers:gipeth_asm \
+#test dram_high ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync_serial \
+#                        drivers:gipeth drivers:gipeth_asm drivers:gip_video_capture drivers:gip_video_capture_asm \
 
 #drivers:ethernet ethmonitor:ethernet
-test dram ethmonitor_noeth drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm drivers:sync_serial \
-                        ethmonitor:flash ethmonitor:uart ethmonitor:timer_int ethmonitor:regs \
+test dram ethmonitor_noeth drivers:flash drivers:uart drivers:sync_serial drivers:parallel \
+                        drivers:gipeth drivers:gipeth_asm drivers:gip_video_capture drivers:gip_video_capture_asm \
+                        ethmonitor:postbus_config ethmonitor:flash ethmonitor:uart ethmonitor:timer_int ethmonitor:regs \
                         ethmonitor:framework_noeth ethmonitor:all_cmds ethmonitor:cmd \
                         ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash \
-                        ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_gipeth \
+                        ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_video ethmonitor:cmd_driver_test \
                         common:wrapper_download common:support_download
 
 test rom ethmonitor     drivers:flash drivers:uart drivers:ethernet drivers:sync_serial \
@@ -130,7 +139,7 @@ test rom ethmonitor     drivers:flash drivers:uart drivers:ethernet drivers:sync
 
 #test sram ethmonitor drivers:flash drivers:uart ethmonitor:uart ethmonitor:framework_noeth ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd common:wrapper_download common:support_download
 test sram dram_setup ethmonitor:dram_setup common:wrapper_download common:support_download
-#test dram drivertest drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm ethmonitor:uart ethmonitor:framework_noeth ethmonitor:drv_cmds ethmonitor:cmd_memory ethmonitor:cmd_gipeth ethmonitor:cmd common:wrapper_download common:support_download
+#test dram drivertest drivers:flash drivers:uart drivers:gipeth drivers:gipeth_asm ethmonitor:uart ethmonitor:framework_noeth ethmonitor:drv_cmds ethmonitor:cmd_memory ethmonitor:cmd_driver_test ethmonitor:cmd common:wrapper_download common:support_download
 
 test dram  factorial factorial:factorial ethmonitor:regs common:wrapper_download common:support_download
 test dram  alu alu:alu alu:alu_call common:wrapper_download common:support_download
@@ -146,6 +155,9 @@ test regression  sync_serial_test_2 io:sync_serial_test_2 io:postbus_config io:s
                                     common:support_regression common:wrapper_regression
 
 test regression  parallel_test_1 io:parallel_test_1 io:postbus_config io:parallel \
+                                    common:support_regression common:wrapper_regression
+
+test regression  parallel_test_2 io:parallel_test_2 io:postbus_config io:parallel \
                                     common:support_regression common:wrapper_regression
 
 test regression  ethernet_test_1 io:ethernet_test_1 io:postbus_config io:ethernet \
@@ -164,6 +176,9 @@ test regression  ethernet_test_5 io:ethernet_test_5 io:postbus_config io:etherne
                                     common:support_regression common:wrapper_regression
 
 test regression  ethernet_test_6 io:ethernet_test_6 io:postbus_config io:ethernet \
+                                    common:support_regression common:wrapper_regression
+
+test regression  ethernet_test_tx_underrun io:ethernet_test_tx_underrun io:postbus_config io:ethernet \
                                     common:support_regression common:wrapper_regression
 
 test regression  scheduler_modes   scheduler:sched_modes \

@@ -436,7 +436,7 @@ static const t_test_vector test_vectors[] =
  */
 /*f external alu_call
  */
-extern void alu_call( t_test_vector *test_vector, t_test_vector_result *result );
+extern void alu_call( const t_test_vector *test_vector, t_test_vector_result *result );
 
 /*f test_entry_point
  */

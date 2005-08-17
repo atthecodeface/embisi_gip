@@ -146,7 +146,7 @@ extern void cmd_obey( void *handle, char *buffer, int length, int max_result_len
 {
 #define MAX_ARGS (8)
     int i, j, k, l;
-    t_command *cmd;
+    const t_command *cmd;
     int argc;
     unsigned int args[MAX_ARGS];
     t_command_chain *chain;
@@ -165,7 +165,7 @@ extern void cmd_obey( void *handle, char *buffer, int length, int max_result_len
     /*b Parse the string
      */
     for (i=0; buffer[i]==' '; i++);
-    cmd = (t_command *)0;
+    cmd = (const t_command *)0;
     for (chain = &cmd_chain; (!cmd) && chain; chain=chain->next)
     {
         for (j=0; (!cmd) && (chain->cmds[j].name); j++)

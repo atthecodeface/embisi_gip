@@ -17,8 +17,6 @@
  */
 extern int test_entry_point()
 {
-    int i;
-
     mon_uart_init();
     extra_init();
     cmd_init(NULL); // after extra_init()

@@ -40,6 +40,7 @@ static void timer_operation_wrapper( void )
 {
     __asm__ volatile ( "bl timer_operation" );
     MK_RETURN_TO_STACK_FRAME();
+    timer_operation(); // remove warning
 }
 
 /*f timer_int_start
@@ -65,8 +66,6 @@ static void timer_int_start ( void )
  */
 extern int test_entry_point ( void )
 {
-    int i;
-
     NOP;NOP;NOP;NOP;
     GIP_EXTBUS_CONFIG_WRITE( 0x111 );
     NOP;NOP;NOP;NOP;

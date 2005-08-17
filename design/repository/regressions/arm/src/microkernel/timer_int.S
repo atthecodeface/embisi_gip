@@ -85,4 +85,4 @@ timer_int:
     .word 0xec00d111
     bic r1, r1, #1
     mov r0, sp
-#endif    
+#endif

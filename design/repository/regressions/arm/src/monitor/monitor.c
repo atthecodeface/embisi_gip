@@ -37,7 +37,7 @@ static int command_read_location( int argc, unsigned int *args )
             {
                 uart_tx_nl();
             }
-            uart_tx_hex8( ptr+i*sizeof(int) );
+            uart_tx_hex8( (unsigned int)(ptr+i*sizeof(int)) );
             uart_tx(':');
         }
         else
@@ -281,9 +281,9 @@ extern int test_entry_point()
                 }
             }
         }
+        argc=0;
         if (cmd)
         {
-            argc=0;
             while (buffer[i] && (argc<MAX_ARGS))
             {
                 for (; (buffer[i]!=' ') && (buffer[i]); i++); // skip to white space

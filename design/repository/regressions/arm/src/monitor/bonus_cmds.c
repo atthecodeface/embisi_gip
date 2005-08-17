@@ -4,7 +4,7 @@
 #include "ethernet.h"
 
 #include <stdio.h>
-static t_command_chain monitor_memory_chain;
+//static t_command_chain monitor_memory_chain;
 static t_command_chain monitor_ethernet_chain;
 extern void chain_extra_cmds( t_command_chain *chain )
 {

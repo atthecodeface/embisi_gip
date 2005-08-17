@@ -50,4 +50,5 @@ extern int test_entry_point()
 
     for (i=0; i<1000; i++);
 
+    return 0;
 }

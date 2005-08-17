@@ -20,27 +20,13 @@
 #include <gip_macros.h>
 #include <gip_system.h>
 #include <postbus_asm.h>
+#include "gipeth.h"
 #else
 #include <asm/gip_macros.h>
 #include <asm/gip_system.h>
 #include <asm/postbus_asm.h>
+#include "gipeth.h"
 #endif    
-
-#define t_gipeth__rx_next_buffer_to_reuse (0*4)
-#define t_gipeth__rx_buffer_in_hand       (1*4)
-#define t_gipeth__rx_length_so_far        (2*4)
-#define t_gipeth__tx_next_buffer_to_tx    (3*4)
-#define t_gipeth__tx_buffer_in_hand       (4*4)
-#define t_gipeth__tx_length               (5*4)
-#define t_gipeth__regs                    (6*4)
-
-#define t_gipeth_buffer__next_in_list     (0*4)
-#define t_gipeth_buffer__data             (1*4)
-#define t_gipeth_buffer__length           (2*4)
-#define t_gipeth_buffer__ready            (3*4)
-#define t_gipeth_buffer__done             (4*4)
-
-#define GIPETH_BUFFER_LENGTH (2048)
 
 #ifdef DEBUG    
 #define debug_ch(a) gip_utximm a
@@ -73,19 +59,19 @@ ENTRY(gipeth_hw_thread)
     /*b Read and clear semaphores 24,26,27 - don't clear 25 unless we add to the tx data fifo, as otherwise it is invalid
     */
     mov r12, #0
-    gip_read_and_clear_semaphores (SEM_STATUS_VNE | SEM_SOFT_IRQ | SEM_POSTBUS )>>24, 24, 13
-    tst r13, #SEM_STATUS_VNE
+    gip_read_and_clear_semaphores (SEM_ETH_STATUS_VNE | SEM_ETH_SOFT_IRQ | SEM_ETH_POSTBUS )>>24, 24, 13
+    tst r13, #SEM_ETH_STATUS_VNE
     blne gipeth_hw_thread_handle_eth_status
-    tst r13, #SEM_SOFT_IRQ
+    tst r13, #SEM_ETH_SOFT_IRQ
     blne gipeth_hw_thread_handle_soft_irq
-    tst r13, #SEM_TX_DATA_VWM
+    tst r13, #SEM_ETH_TX_DATA_VWM
     blne gipeth_hw_thread_handle_tx_data // now if there is room in the tx fifo and we have data for tx, then transmit it    
 
     /*b If we care have data to transmit then wait for space in the FIFO, else don't
     */
     tst r12, #2
-    mov r0,   #(((SEM_STATUS_VNE | SEM_SOFT_IRQ)>>24)<<4)|1                   // set our flag dependencies and restart mode - don't depend on txd watermark semaphore if no data to send
-    movne r0, #(((SEM_STATUS_VNE | SEM_SOFT_IRQ | SEM_TX_DATA_VWM)>>24)<<4)|1 // set our flag dependencies and restart mode - depend on txd watermark semaphore if data to send
+    mov r0,   #(((SEM_ETH_STATUS_VNE | SEM_ETH_SOFT_IRQ)>>24)<<4)|1                   // set our flag dependencies and restart mode - don't depend on txd watermark semaphore if no data to send
+    movne r0, #(((SEM_ETH_STATUS_VNE | SEM_ETH_SOFT_IRQ | SEM_ETH_TX_DATA_VWM)>>24)<<4)|1 // set our flag dependencies and restart mode - depend on txd watermark semaphore if data to send
     gip_extrd 0x86
     mov r0, r0
 
@@ -200,49 +186,79 @@ txd_length               .req r11 // note these 3 must be in order
     bic txd_temp, txd_length, #0xff000000 // mask out flags
     cmp txd_temp, #512
     movge txd_temp, #512
-    movs txd_burst, txd_temp
-    mov txd_temp2, #8
-    beq not_first_burst_of_packet // only if we have 0 left to go, which is a bug in the caller
 
-txd_send_data_word: // txd_buffer_in_hand->data, txd_temp2 is number of words left in lump, txd_temp is number of bytes left in burst
+    movs txd_temp2, txd_temp, lsr #5 // number of 32 byte / 8 word lumps
+    beq txd_not_full_burst
+    
+    // we have 'txd_temp2' bursts of 32 bytes to send
+    // set the semaphore as we know the last command has been sent
+    gip_set_semaphores 1, SEM_NUM_ETH_POSTBUS
+txd_large_burst_loop:       
+    // fill the data FIFO while any previous command is still being sent - it has room for double buffering
     gip_extrd 0x60    // extrd postbus tx d fifo 0
     ldr r0, [txd_buffer_in_hand], #4
+    gip_extrd 0x60    // extrd postbus tx d fifo 0
+    ldr r0, [txd_buffer_in_hand], #4
+    gip_extrd 0x60    // extrd postbus tx d fifo 0
+    ldr r0, [txd_buffer_in_hand], #4
+    gip_extrd 0x60    // extrd postbus tx d fifo 0
+    ldr r0, [txd_buffer_in_hand], #4
+
+    gip_extrd 0x60    // extrd postbus tx d fifo 0
+    ldr r0, [txd_buffer_in_hand], #4
+    gip_extrd 0x60    // extrd postbus tx d fifo 0
+    ldr r0, [txd_buffer_in_hand], #4
+    gip_extrd 0x60    // extrd postbus tx d fifo 0
+    ldr r0, [txd_buffer_in_hand], #4
+    gip_extrd 0x60    // extrd postbus tx d fifo 0
+    ldr r0, [txd_buffer_in_hand], #4
+
+    debug_ch('B')
+    gip_clear_semaphores 1, SEM_NUM_ETH_TX_DATA_VWM
+    // wait for the semaphore to be set to indicate the last command has gone
+4:  
+    gip_test_semaphores 1, SEM_NUM_ETH_POSTBUS
+    beq 4b
+    gip_clear_semaphores 1, SEM_NUM_ETH_POSTBUS
+
+    // Send the next command
+    gip_extrd 0x6c    // extrd postbus tx c 0
+    ldr r0, write_tx_data_8_cmd // send 8 words
+    sub txd_temp, txd_temp, #32
     subs txd_temp2, txd_temp2, #1
-    beq txd_start_burst
-txd_sent_data_word:    
+    bgt txd_large_burst_loop
+
+4:  
+    gip_test_semaphores 1, SEM_NUM_ETH_POSTBUS
+    beq 4b
+    gip_clear_semaphores 1, SEM_NUM_ETH_POSTBUS
+    
+txd_not_full_burst:     // we have txd_temp bytes left in our burst, at txd_buffer_in_hand
+    movs txd_burst, txd_temp
+    beq txd_no_final_partial_burst // if the packet (or burst of packet) was 32n bytes long
+
+    mov txd_temp2, #-1 // number of words-1
+txd_send_data_word: // txd_buffer_in_hand->data, txd_temp is number of bytes left in burst
+    gip_extrd 0x60    // extrd postbus tx d fifo 0
+    ldr r0, [txd_buffer_in_hand], #4
+    add txd_temp2, txd_temp2, #1
     subs txd_temp, txd_temp, #4
     bgt txd_send_data_word
-    b txd_sent_burst
 
-txd_start_burst:  
-    debug_ch('B')    
-    gip_clear_semaphores 1, SEM_NUM_TX_DATA_VWM
-    gip_extrd 0x6c    // extrd postbus tx c 0
-    ldr r0, write_tx_data_8_cmd
-4:  
-    gip_test_semaphores 1, SEM_NUM_POSTBUS
-    beq 4b
-    gip_clear_semaphores 1, SEM_NUM_POSTBUS
-    mov txd_temp2, #8
-    b txd_sent_data_word
-
-txd_sent_burst:
-    rsbs txd_temp2, txd_temp2, #7 // txd_temp2 = (8-number of words pushed)-1
-    blt txd_no_final_partial_burst
     debug_ch('P')    
-    gip_clear_semaphores 1, SEM_NUM_TX_DATA_VWM
+    gip_clear_semaphores 1, SEM_NUM_ETH_TX_DATA_VWM
     ldr txd_temp, write_tx_data_n_cmd
     gip_extrd 0x6c    // extrd postbus tx c 0
     orr r0, txd_temp, txd_temp2, lsl #postbus_command_source_gip_tx_length_start
 
 4:  
-    gip_test_semaphores 1, SEM_NUM_POSTBUS
+    gip_test_semaphores 1, SEM_NUM_ETH_POSTBUS
     beq 4b
-    gip_clear_semaphores 1, SEM_NUM_POSTBUS
+    gip_clear_semaphores 1, SEM_NUM_ETH_POSTBUS
     
 txd_no_final_partial_burst: 
 
-    /*b Sent a burst of data - send 'tx packet' command if this is first burst of a packet
+    /*b Sent a burst of data - up to 512 bytes of 'txd_length' - send 'tx packet' command if this is first burst of a packet
     */
     debug_ch('T')    
     tst txd_length, #1<<31
@@ -259,9 +275,9 @@ txd_no_final_partial_burst:
     ldr r0, write_tx_cmd_cmd
 
 4:  
-    gip_test_semaphores 1, SEM_NUM_POSTBUS
+    gip_test_semaphores 1, SEM_NUM_ETH_POSTBUS
     beq 4b
-    gip_clear_semaphores 1, SEM_NUM_POSTBUS
+    gip_clear_semaphores 1, SEM_NUM_ETH_POSTBUS
 
 not_first_burst_of_packet:
 
@@ -303,11 +319,11 @@ packet_still_in_progress:
     /*b Numbers we need
     */
 write_tx_data_8_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((8-1)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((0|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
+    .word    ((0)<<postbus_command_route_start) | ((8-1)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_ETH_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((0|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
 write_tx_data_n_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((0)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((0|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
+    .word    ((0)<<postbus_command_route_start) | ((0)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_ETH_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((0|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
 write_tx_cmd_cmd: 
-    .word    ((0)<<postbus_command_route_start) | ((2-1)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((8|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
+    .word    ((0)<<postbus_command_route_start) | ((2-1)<<postbus_command_source_gip_tx_length_start) | ((SEM_NUM_ETH_POSTBUS)<<postbus_command_source_gip_tx_signal_start) | ((8|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_fifo_start) | (2<<postbus_command_target_io_dest_type_start)
 
 /*f gipeth_hw_thread_handle_eth_status
     on entry - r12 = need to set soft irq
@@ -344,14 +360,14 @@ rx_length               .req r10 // note these 3 must be in order
     ldmia rx_temp, {rx_next_buffer_to_reuse, rx_buffer_in_hand, rx_length}
 
 0:
-    gip_test_semaphores 1, SEM_NUM_POSTBUS
+    gip_test_semaphores 1, SEM_NUM_ETH_POSTBUS
     beq 0b
     
     gip_extrm 0x60 // postbus rx d 0
     mov eth_time, r0 // time
     gip_extrm 0x60 // postbus rx d 0
     mov eth_status, r0 // status
-    gip_clear_semaphores 1, SEM_NUM_POSTBUS
+    gip_clear_semaphores 1, SEM_NUM_ETH_POSTBUS
 
     /*b Check for ethernet TX status
     */
@@ -441,7 +457,7 @@ receive_data:
     beq check_status
 
 2:  
-    gip_test_semaphores 1, SEM_NUM_POSTBUS
+    gip_test_semaphores 1, SEM_NUM_ETH_POSTBUS
     beq 2b
 
     cmp rx_dest, #0
@@ -518,11 +534,11 @@ handle_error_status:
     /*b Numbers we need
     */
 read_rx_status_data: 
-    .word    (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (SEM_NUM_POSTBUS<<postbus_command_target_gip_rx_semaphore_start)
+    .word    (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (SEM_NUM_ETH_POSTBUS<<postbus_command_target_gip_rx_semaphore_start)
 read_rx_status_cmd: 
     .word    ((0)<<postbus_command_route_start) | ((1-1)<<postbus_command_source_gip_tx_length_start) | ((0)<<postbus_command_source_gip_tx_signal_start) | ((12|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_dest_start) | (0<<postbus_command_target_io_dest_type_start)
 read_rx_data_data:      
-    .word (0<<postbus_command_source_io_cmd_op_start) | (SEM_NUM_POSTBUS<<postbus_command_target_gip_rx_semaphore_start)
+    .word (0<<postbus_command_source_io_cmd_op_start) | (SEM_NUM_ETH_POSTBUS<<postbus_command_target_gip_rx_semaphore_start)
 read_rx_data_cmd: 
     .word    ((0)<<postbus_command_route_start) | ((1-1)<<postbus_command_source_gip_tx_length_start) | ((0)<<postbus_command_source_gip_tx_signal_start) | ((4|IO_A_SLOT_ETHERNET_0)<<postbus_command_target_io_dest_start) | (0<<postbus_command_target_io_dest_type_start)
 

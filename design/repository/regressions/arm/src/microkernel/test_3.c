@@ -2,6 +2,7 @@
  */
 #include "microkernel.h"
 #include "gip_support.h"
+#include "../common/wrapper.h"
 
 /*a Defines
  */
@@ -25,6 +26,7 @@ static void timer_operation_wrapper( void )
 {
     __asm__ volatile ( "bl timer_operation" );
     MK_RETURN_TO_STACK_FRAME();
+    timer_operation(); // remove warning
 }
 
 /*f timer_int_start
@@ -115,7 +117,7 @@ extern int test_entry_point ( void )
     timer_int_start();
     MK_INT_DIS();
     for (i=1; i<200; i++) { __asm__ volatile ("mov r0, r0"); };
-    dprintf("Test passed");
+    dprintf("Test passed",0,0,0);
     GIP_TIMER_DISABLE(); // enable the timer
     return 0;
 }

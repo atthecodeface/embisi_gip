@@ -1,6 +1,9 @@
 // This is taken from the Linux source. It did not work! My bug, not theirs
-
+// Linux has __ARMEB__ set - the compiler sets it, but we need to make sure here
+#ifndef __ARMEB__
 #define __ARMEB__
+#endif
+    
 #ifndef __ARMEB__
 ql	.req	r0			@ quotient low
 qh	.req	r1			@ quotient high

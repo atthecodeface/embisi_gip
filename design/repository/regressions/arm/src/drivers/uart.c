@@ -143,5 +143,6 @@ extern int uart_init( void )
 {
     rx_rdy = 0;
     tx_av = 1000;
+    return 1;
 }
 

@@ -254,7 +254,7 @@ static int command_mem_write_location( void *handle, int argc, unsigned int *arg
  */
 static int command_mem_push_phase( void *handle, int argc, unsigned int *args )
 {
-    int i, j;
+    int i;
     int dirn;
     if (argc<2) return 1;
     dirn = (args[1]!=0);
@@ -366,14 +366,10 @@ static int command_mem_rep_test( void *handle, int argc, unsigned int *args )
  */
 static int command_mem_find( void *handle, int argc, unsigned int *args )
 {
-    int i, j, k;
+    int i;
     volatile unsigned int *ptr;
     int length, finds, end_after;
-    unsigned int value, mask, read;
-    int errors, last_error;
-    int errored_bits[32];
-
-    static const unsigned int test_values[] = {0, 0xffffffff, 0x55555555, 0x00000001, 0xfffffffe, 0x11111111, 0xf, 0xff };
+    unsigned int value, mask;
 
     if (argc<2)
         return 1;

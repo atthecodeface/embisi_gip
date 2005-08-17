@@ -157,6 +157,7 @@ static void timer_operation_wrapper( void )
 {
     __asm__ volatile ( "bl timer_operation" );
     MK_RETURN_TO_STACK_FRAME();
+    timer_operation(); // removes warning
 }
 
 /*f timer_int_start

@@ -2,6 +2,7 @@
  */
 #include "cmd.h"
 #include "gip_support.h"
+#include "../drivers/uart.h"
 
 /*a Defines
  */

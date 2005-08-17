@@ -96,7 +96,7 @@ extern int test_entry_point()
     int i;
     char *dest;
     __asm__ volatile( "mov sp, #0x80000000 ; orr sp, sp, #0x00310000 ; orr sp, sp, #0x00008000" );
-    dest = 0x80220000;
+    dest = (char *)0x80220000;
     for (i=0; i<((char *)test_entry_point)-((char *)vsnprintf); i++)
     {
         dest[i] = ((char *)vsnprintf) [i];

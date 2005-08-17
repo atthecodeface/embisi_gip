@@ -52,12 +52,14 @@ static void timer_1_entry( void )
     // deschedule
     GIP_DESCHEDULE();
     NOP;NOP;NOP;
+    int i;
+    i = timer_1_reg_store[0]; // removes warning
 }
 
 static int command_leds( void *handle, int argc, unsigned int *args )
 {
     unsigned int s;
-    uart_tx_string_nl("A");
+//    uart_tx_string_nl("A");
     __asm__ volatile( " mov r0, sp ; bl uart_tx_hex8 " : : : "r0" );
     __asm__ volatile( " mov r0, lr ; bl uart_tx_hex8 " : : : "r0" );
     __asm__ volatile (".word 0xec00c83e \n mov r0, %0" : : "r" (0x40000) ); // set special (4) reg gip_config (3) to 0x40000 (preemptive, prioritized, no privilege, 4 arm trap semaphore)

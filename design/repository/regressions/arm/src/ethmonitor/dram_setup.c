@@ -13,8 +13,7 @@
  */
 extern int test_entry_point()
 {
-    int i, j;
-    int dirn;
+    int i;
     GIP_LED_OUTPUT_CFG_WRITE(0);
     for (i=0; i<100; i++)
     {
@@ -25,4 +24,5 @@ extern int test_entry_point()
         DELAY(10000);
     }
     __asm__ volatile ("mov pc, #0");
+    return 0;
 }

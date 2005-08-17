@@ -1,13 +1,16 @@
 /*a Includes
  */
-#include <stdlib.h> // for NULL
+//#include <stdlib.h> // for NULL
+#ifdef REGRESSION
 #include "gip_support.h"
 #include "postbus.h"
-#include "../common/wrapper.h"
+#else
+#include <asm/gip_support.h>
+#include <asm/postbus.h>
+#endif
 
 /*a Defines
  */
-#define DEBUG
 
 /*a Types
  */

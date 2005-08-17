@@ -20,14 +20,14 @@ typedef void (*t_memory_fn)( char *src, char *dest );
  */
 typedef struct t_test_vector
 {
-    char *src_data;
+    const char *src_data;
     int src_size;
     int src_offset;
     int dest_offset;
     t_memory_fn memory_fn;
-    char *compare_data;
+    const char *compare_data;
     int compare_size;
-    char *text;
+    const char *text;
 } t_test_vector;
 
 /*a Test functions
@@ -50,7 +50,6 @@ static void move_bytes_32( char *src, char *dest )
  */
 static void move_burst_64( char *src, char *dest )
 {
-    register unsigned int result;
     __asm__ volatile (
         "ldmia %0!, {r6, r7} ; stmia %1!, {r6, r7}; add %0, %0, #4; add %1, %1, #4 ; \
         ldmda %0, {r6, r7 }  ; stmda %1, {r6, r7} ; \
@@ -71,7 +70,6 @@ static void move_burst_64( char *src, char *dest )
  */
 static void move_signeds( char *src, char *dest )
 {
-    register unsigned int result;
     __asm__ volatile (
         " mov r8, #32; \n0: \
             ldrsh r6, [%0], #2 ; sub %0, %0, #2 ; ldrsh r7, [%0, #2] ; \
@@ -138,7 +136,6 @@ static const t_test_vector test_vectors[] =
 extern int test_entry_point()
 {
     int i, j;
-    int test;
     int failure;
 
     int memory_block[1024];

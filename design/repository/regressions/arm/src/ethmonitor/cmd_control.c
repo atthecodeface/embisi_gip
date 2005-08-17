@@ -17,6 +17,7 @@
 static int command_control_pc( void *handle, int argc, unsigned int *args )
 {
     __asm__ volatile ("mov lr, pc ; mov pc, %0 ; mov r0, r0" : : "r"(args[0]) );
+    return 1;
 }
 
 /*f command_control_regs
@@ -25,6 +26,7 @@ static int command_control_pc( void *handle, int argc, unsigned int *args )
 static int command_control_regs( void *handle, int argc, unsigned int *args )
 {
     __asm__ volatile ("mov r0, %0 ; ldmia r0, {r0-pc}" : : "r"(args[0]) );
+    return 1;
 }
 
 /*a External variables

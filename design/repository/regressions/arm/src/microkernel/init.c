@@ -66,7 +66,7 @@ extern void __init microkernel_init( void )
     GIP_BLOCK_ALL(); // ends the atomic section and blocks until the semaphores are written
 
     for (i=0; i<32; i++)
-        microkernel_thread_vectors[i] = (unsigned int *)(mkt_unknown_trap);
+        microkernel_thread_vectors[i] = (unsigned int)(mkt_unknown_trap);
 
 }
 

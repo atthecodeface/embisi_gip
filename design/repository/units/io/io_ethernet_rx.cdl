@@ -211,7 +211,7 @@ So we pass through etx in the following circumstances:
     status_fifo_interface "Status FIFO interface":
         {
             status_write_passthrough = 0;
-            if ((!status_block_etx_passthrough) && (status_etx_passthrough_pending))
+            if ((!status_block_etx_passthrough) && (status_etx_passthrough_pending) && !(status_write))
             {
                 status_write_passthrough = 1;
             }

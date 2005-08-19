@@ -709,7 +709,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                             action_int_status = 1;
                         }
                     }
-                    case 4: // every 1024 writes
+                    case 3: // every 1024 writes
                     {
                         if (data_counter[10;0]==-1)
                         {

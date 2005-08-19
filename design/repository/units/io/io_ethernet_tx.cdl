@@ -273,6 +273,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
     comb bit[io_eth_tx_packet_retry_count_bits] packet_retry_count;
     comb bit half_duplex;
     comb bit transmit_fcs;
+    clocked bit[io_eth_tx_max_packet_byte_length_bits] held_packet_length=0;
 
     /*b -------------------- Logic
      */
@@ -366,6 +367,11 @@ For backoff we need a random number up to 10 bits long, with a long-term average
             packet_retry_count      = cmd_fifo_data[ io_eth_tx_packet_retry_count_bits; io_eth_tx_cfd_packet_retry_count_start_bit ];
             half_duplex             = cmd_fifo_data[ io_eth_tx_cfd_half_duplex_bit ];
             transmit_fcs            = cmd_fifo_data[ io_eth_tx_cfd_transmit_fcs_bit ];
+
+            if (cmd_fifo_read)
+            {
+                held_packet_length <= packet_length;
+            }
         }
 
     /*b Data FSM machine - data_fsm_state, data_fsm_counter, data_fsm_bytes_left_in_packet
@@ -385,8 +391,8 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                     next_data_fsm_bytes_left_in_packet = 0;
                     if (start_data_fsm)
                     {
-                        next_data_fsm_bytes_left_in_packet = packet_length;
-                        if (packet_length!=0)
+                        next_data_fsm_bytes_left_in_packet = held_packet_length;
+                        if (held_packet_length!=0)
                         {
                             next_data_fsm_state = data_fsm_output_preamble;
                         }
@@ -792,6 +798,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                     if (!sync_cmd_fifo_empty.value)
                     {
                         next_packet_fsm_state = packet_fsm_ensure_deferral_met;
+                        cmd_fifo_read = 1;
                         retry_counter <= 0;
                     }
                 }
@@ -810,7 +817,6 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                     case data_fsm_late_collision_occurred:
                     {
                         next_packet_fsm_state = packet_fsm_return_status;
-                        cmd_fifo_read = 1;
                         status_fifo_write = status_fifo_write_late_collision;
                     }
                     case data_fsm_permitted_collision_occurred:

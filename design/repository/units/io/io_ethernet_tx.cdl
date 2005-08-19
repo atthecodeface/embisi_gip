@@ -38,7 +38,6 @@ typedef fsm {
  */
 typedef fsm {
     packet_fsm_idle "Idle packet state, waiting for a command in the command FIFO";
-    packet_fsm_reading_command "Waiting for command to come from the FIFO";
     packet_fsm_ensure_deferral_met "Waiting for DEFERRAL timer to complete";
     packet_fsm_transmit "Waiting for the data FSM to return some form of completion";
     packet_fsm_return_status;
@@ -792,16 +791,8 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                     next_packet_fsm_counter = 0;
                     if (!sync_cmd_fifo_empty.value)
                     {
-                        next_packet_fsm_state = packet_fsm_reading_command;
-                        retry_counter <= 0;
-                    }
-                }
-                case packet_fsm_reading_command:
-                {
-                    cmd_fifo_read = (packet_fsm_counter==0);
-                    if (packet_fsm_counter==4)
-                    {
                         next_packet_fsm_state = packet_fsm_ensure_deferral_met;
+                        retry_counter <= 0;
                     }
                 }
                 case packet_fsm_ensure_deferral_met:
@@ -819,6 +810,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                     case data_fsm_late_collision_occurred:
                     {
                         next_packet_fsm_state = packet_fsm_return_status;
+                        cmd_fifo_read = 1;
                         status_fifo_write = status_fifo_write_late_collision;
                     }
                     case data_fsm_permitted_collision_occurred:
@@ -827,6 +819,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                     }
                     case data_fsm_complete_transmission:
                     {
+                        cmd_fifo_read = 1;
                         next_packet_fsm_state = packet_fsm_return_status;
                         status_fifo_write = status_fifo_write_transmit_ok;
                     }
@@ -841,6 +834,7 @@ For backoff we need a random number up to 10 bits long, with a long-term average
                     retry_counter <= retry_counter+1;
                     if (retry_counter==packet_retry_count)
                     {
+                        cmd_fifo_read = 1;
                         next_packet_fsm_state = packet_fsm_return_status;
                         status_fifo_write = status_fifo_write_retries_exceeded;
                     }

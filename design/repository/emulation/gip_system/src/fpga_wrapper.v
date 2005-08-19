@@ -498,10 +498,13 @@ wire [7:0]sscs;
 wire [7:0]internal_switches;
 wire [31:0]analyzer_async_trace_out;
 
+// We need to use at least one input pin on bank 7 else the voltage reference is not used and pulled low, which pulls it low for bank 6, so the DRAM reads just 1's
+assign ssdi[1] = drm_input_dq_high[63];
+
 assign mii_mdc = sscl[0];
 assign mii_mdio = ssdo_oe ? ssdo : 1'bz; //'
 assign ssdi[0] = mii_mdio;
-assign ssdi[1] = 0;
+//assign ssdi[1] = 0;
 assign eth_rst_n = !system_reset_out;
 assign analyzer_clock = int_logic_slow_clock_buffered;
 assign internal_switches = {switches[7:4], ps_done, switches[2:0]};

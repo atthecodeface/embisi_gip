@@ -11,7 +11,7 @@
  *  Low-level vector interface routines
  *
  */
-//#define DEBUG
+#define DEBUG
     
 #define ENTRY(name) \
   .globl name; \
@@ -96,7 +96,7 @@ ENTRY(gipeth_hw_thread)
     */
     nop
     nop
- debug_ch('D')
+ debug_ch('X')
     nop
     nop
  debug_ch('\n')
@@ -175,18 +175,23 @@ txd_length               .req r11 // note these 3 must be in order
     ldmia txd_temp, {txd_next_buffer_to_tx, txd_buffer_in_hand, txd_length}
 
     /*b If there is no data to send, then just bail
+    on entry - next_buffer_to_tx, buffer_in_hand, length
+    on exit - next_buffer_to_tx, buffer_in_hand, length
     */
     cmp txd_buffer_in_hand, #0
     moveq pc, lr
 
     /*b Data to send and room for 512 bytes
         Send up to 512 bytes from the current packet - do no more than the current packet
+    on entry - next_buffer_to_tx, buffer_in_hand, length (original)
+    on exit - next_buffer_to_tx, buffer_in_hand, length (original), burst, txd_temp (size left in burst)
     */
     debug_ch('D')    
     bic txd_temp, txd_length, #0xff000000 // mask out flags
     cmp txd_temp, #512
     movge txd_temp, #512
-
+    mov txd_burst, txd_temp
+    
     movs txd_temp2, txd_temp, lsr #5 // number of 32 byte / 8 word lumps
     beq txd_not_full_burst
     
@@ -233,8 +238,12 @@ txd_large_burst_loop:
     beq 4b
     gip_clear_semaphores 1, SEM_NUM_ETH_POSTBUS
     
+    /*b <512 bytes left to send in burst
+    on entry - next_buffer_to_tx, buffer_in_hand, length (original), burst, txd_temp (size left in burst)
+    on exit - next_buffer_to_tx, buffer_in_hand, length (original), burst
+    */
 txd_not_full_burst:     // we have txd_temp bytes left in our burst, at txd_buffer_in_hand
-    movs txd_burst, txd_temp
+    cmp txd_temp, #0
     beq txd_no_final_partial_burst // if the packet (or burst of packet) was 32n bytes long
 
     mov txd_temp2, #-1 // number of words-1
@@ -259,6 +268,8 @@ txd_send_data_word: // txd_buffer_in_hand->data, txd_temp is number of bytes lef
 txd_no_final_partial_burst: 
 
     /*b Sent a burst of data - up to 512 bytes of 'txd_length' - send 'tx packet' command if this is first burst of a packet
+    on entry - next_buffer_to_tx, buffer_in_hand, length  (original), burst
+    on exit - next_buffer_to_tx, buffer_in_hand, length (original), burst
     */
     debug_ch('T')    
     tst txd_length, #1<<31
@@ -282,6 +293,8 @@ txd_no_final_partial_burst:
 not_first_burst_of_packet:
 
     /*b Reduce length to send - if packet completes, then move to next packet
+    on entry - next_buffer_to_tx, buffer_in_hand, length  (original), burst
+    on exit - next_buffer_to_tx, buffer_in_hand, length
     */
     debug_ch('L')    
     sub txd_length, txd_length, txd_burst

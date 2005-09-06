@@ -1,0 +1,209 @@
+#a Copyright
+#  
+#  This file 'par.th' copyright Gavin J Stark 2003, 2004
+#  
+
+#a PS2 interface
+bne env_int("enable") 0 enabled
+printf "Parallel PS2 test harness not enabled"
+end
+
+enabled:
+
+int oes
+int ctls
+int tst
+int ins
+int cin
+int din
+int clk_des
+int bitnum
+int data
+int clk_out
+int data_out
+int cntr
+int shf
+
+# control output 0 is clock, output 2 is data
+# control input 0 is then clock - always drive it with output[0] if oe[0] is asserted
+# control input 2 is then data - always drive it with output[2] if oe[2] is asserted
+set cin 1
+set din 1
+set clk_out 1
+set data_out 1
+reset "par_control_inputs" 0xf
+reset "par_data_inputs" 0
+set data 0
+
+printf "Parallel PS2 test harness running"
+wait 10
+
+spawn open_collector_thread open_collector 10
+
+#a Receive then transmit back
+#b Receive - watch for clock data or clock low
+idle_state:
+set bitnum 0
+wait 1
+beq cin 1 idle_clock_high
+printf "PS2 clock went low unexpectedly %d0%" global_cycle()
+idle_clock_high:
+
+beq din 0 idle_data_low
+goto idle_state
+
+idle_data_low:
+printf "PS2 data went low at %d0%" global_cycle()
+goto bit_start_clk_high
+
+bit_start_clk_high:
+wait 1
+beq cin 0 bit_clock_went_low
+goto bit_start_clk_high
+
+bit_clock_went_low:
+printf "PS2 clock went low at %d0%" global_cycle()
+
+bit_clock_low:
+wait 1
+beq cin 1 bit_clock_went_high
+goto bit_clock_low
+
+bit_clock_went_high:
+beq din 0 data_zero
+set tst 0x400
+data_zero:
+div data data 2
+add data data tst
+add bitnum bitnum 1
+printf "PS2 clocked data bit at %d0% %d1% now %x2% (bit %d3%)" global_cycle() tst data bitnum
+beq bitnum 11 data_byte_received
+goto bit_start_clk_high
+
+#b Data received - attempt to transmit
+data_byte_received:
+printf "Received data byte at %d0%  %x1%" global_cycle() data
+
+#b Transmit start - clock low, then data low, then clock high, and wait for clock to be pulled low by host
+printf "Attempting to transmit its inverse back"
+tx_start:
+
+printf "Tx start at %d0%" global_cycle()
+# the start bit we do by hand, so take it out of the data here
+div shf data 2
+
+#100 is 20us
+set clk_out 1
+set data_out 1
+wait 100
+set clk_out 0
+wait 200
+set data_out 0
+wait 10
+set clk_out 1
+wait 2
+
+#b
+set bitnum 0
+
+set cntr 0
+tx_bit_loop:
+
+set clk_des 0
+gosub wait_for_clock
+bne cin clk_des tx_abort_and_retry
+
+wait 1
+and data_out shf 1
+div shf shf 2
+wait 2
+
+set clk_des 1
+gosub wait_for_clock
+bne cin clk_des tx_abort_and_retry
+
+add bitnum bitnum 1
+bne bitnum 10 tx_bit_loop
+
+#all bits done - wait for clk low on ack
+set clk_des 0
+gosub wait_for_clock
+bne cin clk_des tx_abort_and_retry
+bne din 0 tx_abort_and_retry
+
+# wait for clk high on ack
+set clk_des 1
+gosub wait_for_clock
+bne cin clk_des tx_abort_and_retry
+bne din 0 tx_abort_and_retry
+
+# wait for data high
+wait_for_data_high:
+wait 1
+beq din 0 wait_for_data_high
+printf "Transmit success at %d0%" global_cycle()
+goto idle_state
+
+#f wait_for_clock - wait at least one cycle for clock to be clk_des
+wait_for_clock:
+set cntr 0
+wait_for_clock_loop:
+wait 1
+beq cin clk_des waited_for_clock
+add cntr cntr 1
+bne cntr 100 wait_for_clock_loop
+waited_for_clock:
+return
+
+
+
+tx_abort_and_retry:
+printf "Tx abort at %d0%" global_cycle()
+set clk_out 1
+set data_out 1
+tx_abort_and_retry_loop:
+wait 1
+beq cin 0 tx_abort_and_retry_loop
+beq din 0 tx_abort_and_retry_loop
+wait 50
+goto tx_start
+
+#a Open collector thread
+open_collector:
+#set oes 0
+printf "OEs started %d0%" global_cycle()
+while 1
+wait 1
+set cin clk_out
+set din data_out
+set oes input("par_control_oes") 
+set ctls input("par_control_outputs")
+and tst oes 1
+bne tst 1 oc_oe_0_off
+and tst ctls 1
+beq tst 1 oc_oe_0_off
+set cin 0
+oc_oe_0_off:
+and tst oes 4
+bne tst 4 oc_oe_2_off
+and tst ctls 4
+beq tst 4 oc_oe_2_off
+set din 0
+oc_oe_2_off:
+set ins din
+add ins ins ins
+add ins ins ins
+add ins ins cin
+drive "par_control_inputs" ins
+drive "par_data_inputs" din
+#printf "Drive ins %d0% %d1% %d2% %d3%" global_cycle() ins oes ctls
+endwhile
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

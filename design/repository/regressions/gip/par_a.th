@@ -1,0 +1,66 @@
+#a Copyright
+#  
+#  This file 'par.th' copyright Gavin J Stark 2003, 2004
+#  
+
+#a Parallel frame capture
+bne env_int("enable") 0 enabled
+printf "Parallel frame capture test harness not enabled"
+end
+
+enabled:
+
+int data
+int point_in_line
+int clocks_per_line
+int front_porch
+int end_data_per_line
+
+reset "par_control_inputs" 0
+reset "par_data_inputs" 0
+set data 0
+
+set point_in_line 0
+set front_porch 12
+add end_data_per_line front_porch 64
+add clocks_per_line end_data_per_line 20
+
+printf "Parallel test harness running"
+wait 100
+
+start_line:
+set data 2
+set point_in_line 1
+
+drive "par_data_inputs" 0
+drive "par_control_inputs" 1
+wait 1
+drive "par_control_inputs" 0
+
+do_front_porch:
+wait 1
+add point_in_line point_in_line 1
+blt point_in_line front_porch do_front_porch
+
+do_body:
+wait 1
+drive "par_data_inputs" data
+add data data 1
+add point_in_line point_in_line 1
+blt point_in_line end_data_per_line do_body
+
+finish_line:
+wait 1
+add point_in_line point_in_line 1
+blt point_in_line clocks_per_line finish_line
+
+goto start_line
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

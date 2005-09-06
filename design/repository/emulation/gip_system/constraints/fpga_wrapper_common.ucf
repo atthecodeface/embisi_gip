@@ -404,35 +404,38 @@ NET "eb_data<31>" LOC = "AM6"  | IOSTANDARD = "LVTTL";
 // gen io 1 - 31 33 35 37 39 -> j24 d25  h25 c26 e26
 // gen io 1 - 21 23 25 27 29 -> f23 c23 h23 k23 g24
 // video header is 35-49 odd; ck=35, 20=39, d1=41, c1=43, c0=45, gnd=37,47 nc=49
-NET "par_clock"               LOC = "H25"  | IOSTANDARD = "LVTTL";
-NET "par_control_inputs<0>"   LOC = "E28"  | IOSTANDARD = "LVTTL";
-NET "par_control_inputs<1>"   LOC = "E27"  | IOSTANDARD = "LVTTL";
-//NET "par_control_inputs<2>"   LOC = ""  | IOSTANDARD = "LVTTL";
-NET "par_data_inputs<0>"      LOC = "E26"  | IOSTANDARD = "LVTTL";
-NET "par_data_inputs<1>"      LOC = "D27"  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<2>"      LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<3>"      LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<4>"      LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<5>"      LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<6>"      LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<7>"      LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<8>"      LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<9>"      LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<10>"     LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<11>"     LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<12>"     LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<13>"     LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<14>"     LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_data_inputs<15>"     LOC = ""  | IOSTANDARD = "LVTTL";
+NET "par_a_clock"             LOC = "H25"  | IOSTANDARD = "LVTTL";
+NET "par_a_control_inputs<0>" LOC = "E28"  | IOSTANDARD = "LVTTL";
+NET "par_a_control_inputs<1>" LOC = "E27"  | IOSTANDARD = "LVTTL";
+//NET "par_a_control_inputs<2>" LOC = ""  | IOSTANDARD = "LVTTL";
+NET "par_a_data_inputs<0>"      LOC = "E26"  | IOSTANDARD = "LVTTL";
+NET "par_a_data_inputs<1>"      LOC = "D27"  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<2>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<3>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<4>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<5>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<6>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<7>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<8>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<9>"      LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<10>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<11>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<12>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<13>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<14>"     LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_data_inputs<15>"     LOC = ""  | IOSTANDARD = "LVTTL";
 
-//NET "par_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
-//NET "par_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
-//    par_control_oes,
-//    par_data_outputs,
-//    par_data_output_width,
-//    par_data_oe,
+//NET "par_a_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "par_a_control_outputs<0>"  LOC = ""  | IOSTANDARD = "LVTTL";
+//    par_a_control_oes,
+//    par_a_data_outputs,
+//    par_a_data_output_width,
+//    par_a_data_oe,
+// other header is 34-48 even; ck=48, gnd=44, data=40
+NET "ps2_clock"              LOC = "H26"  | IOSTANDARD = "LVTTL";
+NET "ps2_data"               LOC = "F26"  | IOSTANDARD = "LVTTL";
 
 //a Placements
 INST "ckgen_drm_input_clock_buffer"  LOC = "BUFGMUX0P" ;

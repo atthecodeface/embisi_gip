@@ -341,6 +341,8 @@ c_memory::~c_memory()
 */
 t_sl_error_level c_memory::delete_instance( void )
 {
+    if (data) free(data);
+    data = NULL;
     return error_level_okay;
 }
 

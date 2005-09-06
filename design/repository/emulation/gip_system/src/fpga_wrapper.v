@@ -120,15 +120,26 @@ module fpga_wrapper
     mii_mdio,
     mii_mdc,
 
-    par_clock,
-    par_control_inputs,
-    par_data_inputs,
+    par_a_clock,
+    par_a_control_inputs,
+    par_a_data_inputs,
 
-//    par_control_outputs,
-//    par_control_oes,
-//    par_data_outputs,
-//    par_data_output_width,
-//    par_data_oe,
+//    par_a_control_outputs,
+//    par_a_control_oes,
+//    par_a_data_outputs,
+//    par_a_data_output_width,
+//    par_a_data_oe,
+
+//    par_b_clock,
+//    par_b_control_inputs,
+//    par_b_data_inputs,
+//    par_b_control_outputs,
+//    par_b_control_oes,
+//    par_b_data_outputs,
+//    par_b_data_output_width,
+//    par_b_data_oe,
+    ps2_clock,
+    ps2_data,
 
     leds,
 
@@ -188,23 +199,43 @@ module fpga_wrapper
     inout mii_mdio;
     output mii_mdc;
 
-    //b Parallel interface
-    input par_clock;
-    input [1:0] par_control_inputs;
-    input [1:0] par_data_inputs;
-//    input [2:0] par_control_inputs;
-//    input [15:0] par_data_inputs;
+    //b Parallel interfaces
+    input par_a_clock;
+    input [1:0] par_a_control_inputs;
+    input [1:0] par_a_data_inputs;
+//    input [2:0] par_a_control_inputs;
+//    input [15:0] par_a_data_inputs;
 
-//    output [3:0] par_control_outputs;
-//    output [3:0] par_control_oes;
-//    output [15:0] par_data_outputs;
-//    output [2:0] par_data_output_width;
-//    output par_data_oe;
- wire [3:0] par_control_outputs;
- wire [3:0] par_control_oes;
- wire [15:0] par_data_outputs;
- wire [2:0] par_data_output_width;
- wire par_data_oe;
+//    output [3:0] par_a_control_outputs;
+//    output [3:0] par_a_control_oes;
+//    output [15:0] par_a_data_outputs;
+//    output [2:0] par_a_data_output_width;
+//    output par_a_data_oe;
+ wire [3:0] par_a_control_outputs;
+ wire [3:0] par_a_control_oes;
+ wire [15:0] par_a_data_outputs;
+ wire [2:0] par_a_data_output_width;
+ wire par_a_data_oe;
+
+    inout ps2_clock;
+    inout ps2_data;
+//    input par_b_clock;
+//    input [2:0] par_b_control_inputs;
+//    input [15:0] par_b_data_inputs;
+
+//    output [3:0] par_b_control_outputs;
+//    output [3:0] par_b_control_oes;
+//    output [15:0] par_b_data_outputs;
+//    output [2:0] par_b_data_output_width;
+//    output par_b_data_oe;
+wire par_b_clock;
+wire [2:0] par_b_control_inputs;
+wire [15:0] par_b_data_inputs;
+wire [3:0] par_b_control_outputs;
+wire [3:0] par_b_control_oes;
+wire [15:0] par_b_data_outputs;
+wire [2:0] par_b_data_output_width;
+wire par_b_data_oe;
 
     //b Outputs
     output [7:0]leds;
@@ -509,6 +540,15 @@ assign eth_rst_n = !system_reset_out;
 assign analyzer_clock = int_logic_slow_clock_buffered;
 assign internal_switches = {switches[7:4], ps_done, switches[2:0]};
 assign leds[7:0] = gip_leds_out[7:0];
+
+assign par_b_clock = int_logic_slow_clock_buffered;
+assign par_b_control_inputs[0] = ps2_clock;
+assign par_b_control_inputs[2] = ps2_data;
+assign par_b_data_inputs[0] = ps2_data;
+assign par_b_data_inputs[15:1] = 0;
+assign ps2_clock = par_b_control_oes[0] ? par_b_control_outputs[0] : 1'bz;
+assign ps2_data  = par_b_control_oes[2] ? par_b_control_outputs[2] : 1'bz;
+
 gip_system body( .drm_clock(int_drm_clock_buffered),
                  .int_clock(int_logic_slow_clock_buffered),
 
@@ -547,14 +587,23 @@ gip_system body( .drm_clock(int_drm_clock_buffered),
                  .ext_bus_oe( ext_bus_oe ),
                  .ext_bus_ce( ext_bus_ce ),
 
-                 .par_clock( par_clock ),
-                 .par_control_inputs({1'b0,par_control_inputs}),
-                 .par_data_inputs({14'b0,par_data_inputs}),
-                 .par_control_outputs(par_control_outputs),
-                 .par_control_oes(par_control_oes),
-                 .par_data_outputs(par_data_outputs),
-                 .par_data_output_width(par_data_output_width),
-                 .par_data_oe(par_data_oe),
+                 .par_a_clock( par_a_clock ),
+                 .par_a_control_inputs({1'b0,par_a_control_inputs}),
+                 .par_a_data_inputs({14'b0,par_a_data_inputs}),
+                 .par_a_control_outputs(par_a_control_outputs),
+                 .par_a_control_oes(par_a_control_oes),
+                 .par_a_data_outputs(par_a_data_outputs),
+                 .par_a_data_output_width(par_a_data_output_width),
+                 .par_a_data_oe(par_a_data_oe),
+
+                 .par_b_clock( par_b_clock ),
+                 .par_b_control_inputs({1'b0,par_b_control_inputs}),
+                 .par_b_data_inputs({14'b0,par_b_data_inputs}),
+                 .par_b_control_outputs(par_b_control_outputs),
+                 .par_b_control_oes(par_b_control_oes),
+                 .par_b_data_outputs(par_b_data_outputs),
+                 .par_b_data_output_width(par_b_data_output_width),
+                 .par_b_data_oe(par_b_data_oe),
 
                  .cke_last_of_logic( cke_last_of_logic ),
 

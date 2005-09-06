@@ -17,7 +17,8 @@ int vcd_signals_gip
 int vcd_signals_io
 int vcd_signals_eth
 int vcd_signals_ss
-int vcd_signals_par
+int vcd_signals_par_a
+int vcd_signals_par_b
 int vcd_signals_analyzer
 int vcd_signals_apb
 string vcd_full_filename
@@ -35,7 +36,8 @@ set vcd_signals_gip env_int("vcd_signals_gip")
 set vcd_signals_io env_int("vcd_signals_io")
 set vcd_signals_eth env_int("vcd_signals_eth")
 set vcd_signals_ss env_int("vcd_signals_ss")
-set vcd_signals_par env_int("vcd_signals_par")
+set vcd_signals_par_a env_int("vcd_signals_par_a")
+set vcd_signals_par_b env_int("vcd_signals_par_b")
 set vcd_signals_analyzer env_int("vcd_signals_analyzer")
 set vcd_signals_apb env_int("vcd_signals_apb")
 
@@ -349,22 +351,25 @@ setenv "verbose_level" 1
 # Regression worthy tests...
 #   sync_serial - gip_system_io_1, gip_system_io_2
 #   ethernet    - gip_system_io_101, gip_system_io_102, gip_system_io_103, gip_system_io_104, gip_system_io_105, gip_system_io_106
-#   parallel    - gip_system_io_201
+#   parallel    - gip_system_io_201 gip_system_io_202
+#   ps2         - gip_system_io_301
 
-#   gosub gip_system_io_104
-#    return
+   gosub gip_system_io_201
+   gosub gip_system_io_202
+    return
 
    gosub gip_system_io_1
    gosub gip_system_io_2
    gosub gip_system_io_101
    gosub gip_system_io_102
-#   gosub gip_system_io_103
-#   gosub gip_system_io_104
-#   gosub gip_system_io_105
+   gosub gip_system_io_103
+   gosub gip_system_io_104
+   gosub gip_system_io_105
    gosub gip_system_io_106
    gosub gip_system_io_120
    gosub gip_system_io_201
    gosub gip_system_io_202
+   gosub gip_system_io_301
 return
 
 #b gip_system_io_1 - sync_serial_test_1
@@ -487,7 +492,7 @@ gip_system_io_201:
 gosub gip_system_test_init
 set_string test_name "gip_system_io_201 test - parallel_test_1"
 set run_length 650000
-setenv "par_enable" "1"
+setenv "par_a_enable" "1"
 setenv "extbus_enable" "1"
 setenv "ddr_mif" "../arm/bin/parallel_test_1.regression.dmif"
 gosub gip_system_test
@@ -498,9 +503,20 @@ gip_system_io_202:
 gosub gip_system_test_init
 set_string test_name "gip_system_io_202 test - parallel_test_2"
 set run_length 650000
-setenv "par_enable" "1"
+setenv "par_a_enable" "1"
 setenv "extbus_enable" "1"
 setenv "ddr_mif" "../arm/bin/parallel_test_2.regression.dmif"
+gosub gip_system_test
+return
+
+#b gip_system_io_test_301 - ps2_test_1
+gip_system_io_301:
+gosub gip_system_test_init
+set_string test_name "gip_system_io_301 test - ps2_test_1"
+set run_length 600000
+setenv "par_b_enable" "1"
+setenv "extbus_enable" "1"
+setenv "ddr_mif" "../arm/bin/ps2_test_1.regression.dmif"
 gosub gip_system_test
 return
 
@@ -610,7 +626,8 @@ return
 gip_system_test_init:
 set_string test_name "<no test name given>"
 setenv "ss_enable" "0"
-setenv "par_enable" "0"
+setenv "par_a_enable" "0"
+setenv "par_b_enable" "0"
 setenv "uart_exec_file" "src/end.ef"
 setenv "rx_mii_enable" "0"
 setenv "tx_mii_enable" "0"
@@ -661,14 +678,13 @@ beq vcd_signals_io 0 gip_system_test_vcd_signals_io_no
 vcd_file_add "allsignals" "gip_simple.iob_a.pst.src"
 vcd_file_add "allsignals" "gip_simple.iob_a.pst.tgt"
 vcd_file_add "allsignals" "gip_simple.iob_a.pst.event_mgr"
-vcd_file_add "allsignals" "gip_simple.iob_a"
 vcd_file_add "allsignals" "gip_simple.iob_a.ingress_fifos"
 vcd_file_add "allsignals" "gip_simple.iob_a.egress_fifos"
-vcd_file_add "allsignals" "gip_simple.ios_a"
+#vcd_file_add "allsignals" "gip_simple.iob_a"
+#vcd_file_add "allsignals" "gip_simple.ios_a"
 gip_system_test_vcd_signals_io_no:
 
 beq vcd_signals_eth 0 gip_system_test_vcd_signals_eth_no
-vcd_file_add "allsignals" "mii"
 vcd_file_add "allsignals" "gip_simple.ios_a.erx"
 vcd_file_add "allsignals" "gip_simple.ios_a.erx_head"
 vcd_file_add "allsignals" "gip_simple.ios_a.etx"
@@ -680,10 +696,19 @@ vcd_file_add "allsignals" "gip_simple.ios_a.ss"
 vcd_file_add "allsignals" "gip_simple.ios_a.ss_head"
 gip_system_test_vcd_signals_ss_no:
 
-beq vcd_signals_par 0 gip_system_test_vcd_signals_par_no
-vcd_file_add "allsignals" "gip_simple.ios_a.par"
-vcd_file_add "allsignals" "gip_simple.ios_a.par_head"
-gip_system_test_vcd_signals_par_no:
+beq vcd_signals_par_a 0 gip_system_test_vcd_signals_par_a_no
+vcd_file_add "allsignals" "gip_simple.ios_a.par_a"
+vcd_file_add "allsignals" "gip_simple.ios_a.par_a_head"
+vcd_file_add "allsignals" "gip_simple.ios_a.par_b"
+vcd_file_add "allsignals" "gip_simple.ios_a.par_b_head"
+gip_system_test_vcd_signals_par_a_no:
+
+beq vcd_signals_par_b 0 gip_system_test_vcd_signals_par_b_no
+vcd_file_add "allsignals" "gip_simple.ios_a.par_b"
+vcd_file_add "allsignals" "gip_simple.ios_a.par_b_head"
+vcd_file_add "allsignals" "gip_simple.ios_a.par_b"
+vcd_file_add "allsignals" "gip_simple.ios_a.par_b_head"
+gip_system_test_vcd_signals_par_b_no:
 
 beq vcd_signals_analyzer 0 gip_system_test_vcd_signals_analyzer_no
 vcd_file_add "allsignals" "gip_simple.logic_analyzer"

@@ -14,6 +14,7 @@
 #define IO_A_SLOT_ETHERNET_0 (0)
 #define IO_A_SLOT_SYNC_SERIAL_0 (1)
 #define IO_A_SLOT_PARALLEL_0    (2)
+#define IO_A_SLOT_PARALLEL_1    (3)
 
 #define SEM_NUM_MICROKERNEL_TRAP    (4)
 #define SEM_NUM_MICROKERNEL_INT_EN  (5)

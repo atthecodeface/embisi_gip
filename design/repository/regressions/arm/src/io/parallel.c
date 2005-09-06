@@ -92,6 +92,7 @@ extern void parallel_mdio_read( int slot, int clock_divider, unsigned int value 
   We require no outputs from this state machine, so the output enables are all low.
  */
 static const char fc_conds[16]="1357135713571357";
+static const char fc_ctl_out[16]="0000000000000000"; // ctl outs always low for now
 static unsigned int fc_data[4];
 typedef struct t_par_action
 {
@@ -110,22 +111,22 @@ typedef struct t_par_state
 
 static const t_par_state fc_states[] =
 {
-    {&fc_data[0], 0, {2,1,io_parallel_action_setcnt_nocapture},    {4,0,io_parallel_action_idle}, },             // 0 = frame start,  fc_data[0] must hold nlines
-    {&fc_data[1], 1, {0,2,io_parallel_action_setcnt_nocapture},    {4,0,io_parallel_action_idle}, },             // 1 = line start,   fc_data[1] must hold pixels per line
-    {&fc_data[2], 2, {0,3,io_parallel_action_setcnt_nocapture},    {4,0,io_parallel_action_idle}, },             // 2                 fc_data[2] must hold initial pixels gap-2
-    {&fc_data[3], 2, {1,4,io_parallel_action_setcnt_capture},      {0,3,io_parallel_action_deccnt_nocapture}, }, // 3 = pixel wait,   fc_data[3] must hold interpixel gap-1
-    {       NULL, 1, {1,5,io_parallel_action_idle},                {0,3,io_parallel_action_deccnt_nocapture}, }, // 4 = count pixels,
-    {       NULL, 0, {1,6,io_parallel_action_end},                 {2,1,io_parallel_action_deccnt_nocapture}, }, // 5 = count lines
+    {&fc_data[0], 0, {2,1,io_parallel_action_setcnt},              {4,0,io_parallel_action_idle}, },             // 0 = frame start,  fc_data[0] must hold nlines
+    {&fc_data[1], 1, {0,2,io_parallel_action_setcnt},              {4,0,io_parallel_action_idle}, },             // 1 = line start,   fc_data[1] must hold pixels per line
+    {&fc_data[2], 2, {0,3,io_parallel_action_setcnt},              {4,0,io_parallel_action_idle}, },             // 2                 fc_data[2] must hold initial pixels gap-2
+    {&fc_data[3], 2, {1,4,io_parallel_action_setcnt_capture},      {0,3,io_parallel_action_deccnt}, },           // 3 = pixel wait,   fc_data[3] must hold interpixel gap-1
+    {       NULL, 1, {1,5,io_parallel_action_idle},                {0,3,io_parallel_action_deccnt}, },           // 4 = count pixels,
+    {       NULL, 0, {1,6,io_parallel_action_end},                 {2,1,io_parallel_action_deccnt}, },           // 5 = count lines
 };
 
 static void parallel_config( int slot, t_io_parallel_cmd_type type, int data )
 {
     GIP_POST_TXD_0( 0x01000000 ); // immediate
-    GIP_POST_TXD_0( (type<<24) | data );
+    GIP_POST_TXD_0( (type<<28) | (data&~0xf0000000) );
     GIP_POST_TXC_0_IO_FIFO_DATA( 0,1,0, slot,0,1 ); // add to egress cmd fifo ; note this may overflow the FIFO if we rush things
 }
 
-static void parallel_config_fsm( int slot, int nstates, const t_par_state *states, const char *conds )
+static void parallel_config_fsm( int slot, int nstates, const t_par_state *states, const char *conds, const char *ctl_out )
 {
     int i;
     unsigned int rf0, rf1;
@@ -139,17 +140,17 @@ static void parallel_config_fsm( int slot, int nstates, const t_par_state *state
         if (i<nstates)
         {
             unsigned int arc0, arc1;
-            arc0 = (states[i].arc0.condition<<0) | (states[i].arc0.action<<3) | (((states[i].arc0.next_state-i)&7)<<6);
-            arc1 = (states[i].arc1.condition<<0) | (states[i].arc1.action<<3) | (((states[i].arc1.next_state-i)&7)<<6);
+            arc0 = (states[i].arc0.condition<<0) | (states[i].arc0.action<<3) | (((states[i].arc0.next_state-i)&7)<<7);
+            arc1 = (states[i].arc1.condition<<0) | (states[i].arc1.action<<3) | (((states[i].arc1.next_state-i)&7)<<7);
             rf0 = 0;
             if (states[i].counter_value)
             {
-                rf0 = (states[i].counter_value[0]<<0);
+                rf0 = (states[i].counter_value[0]<<rf_state_counter_value_start);
             }
-            rf0 |= (states[i].counter_number<<12) | (arc0<<14) | ((arc1&1)<<23);
-            rf1 = arc1>>1;
+            rf0 |= (states[i].counter_number<<rf_state_counter_number_start) | (arc0<<rf_state_arc0_condition) | (arc1<<rf_state_arc1_condition);
+            rf1 = arc1>>(28-rf_state_arc1_condition);
         }
-        rf1 |= (i<<16) | ((conds[i]&0xf)<<8);
+        rf1 |= (i<<24) | ((conds[i]&0xf)<<8) | ((ctl_out[i]&0xf)<<12);
         parallel_config( slot, io_parallel_cmd_type_rf_0, rf0 );
         parallel_config( slot, io_parallel_cmd_type_rf_1, rf1 );
     }
@@ -163,18 +164,25 @@ extern void parallel_frame_capture_init( int slot, int nlines, int init_gap, int
     GIP_POST_TXC_0_IO_CFG(0,0,slot);   // do I/O configuration
 
     // parallel_config issues an immediate command to the parallel I/O interface of the specified type with specified data content
-    parallel_config( slot, io_parallel_cmd_type_config, ( (io_parallel_cfg_capture_size_2<<io_parallel_cfd_capture_size_start_bit) | 
+    parallel_config( slot, io_parallel_cmd_type_config, ( (io_parallel_cfg_data_size_2<<io_parallel_cfd_data_size_start_bit) | 
                                                           (1<<io_parallel_cfd_use_registered_control_inputs_start_bit) |
                                                           (1<<io_parallel_cfd_use_registered_data_inputs_start_bit) |
-                                                          (15<<io_parallel_cfd_data_holdoff_start_bit) |
-                                                          (15<<io_parallel_cfd_status_holdoff_start_bit) |
+                                                          (15<<io_parallel_cfd_holdoff_start_bit) |
                                                           (1<<io_parallel_cfd_data_capture_enabled_start_bit) |
-                                                          (1<<io_parallel_cfd_interim_status_start_bit) ));
+                                                          (1<<io_parallel_cfd_interim_status_start_bit) |
+                                                          (0<<io_parallel_cfd_reset_state_start_bit) |
+                                                          (0<<io_parallel_cfd_ctl_out_state_override_start_bit) | // just use state for ctl out
+                                                          (0<<io_parallel_cfd_data_out_enable_start_bit) | // disable data out
+                                                          (0<<io_parallel_cfd_data_out_use_ctl3_start_bit) | // and don't use ctl3 as data oe
+                                                          (io_parallel_ctl_oe_both_hiz<<io_parallel_cfd_ctl_oe01_start_bit) | // both ctrl_out[0,1] hiz
+                                                          (io_parallel_ctl_oe_both_hiz<<io_parallel_cfd_ctl_oe23_start_bit) // both ctrl_out[2,3] hiz
+                         ));
+
     fc_data[0] = nlines-1;
     fc_data[1] = pixels_per_line-1;
     fc_data[2] = init_gap-2;
     fc_data[3] = pixel_gap-1;
-    parallel_config_fsm( slot, 6, fc_states, fc_conds );
+    parallel_config_fsm( slot, 6, fc_states, fc_conds, fc_ctl_out );
 
  }
 

@@ -2,9 +2,13 @@
  */
 
 /*a To do
-  intermediate status
-  final data write copiing with arbitrary capture size
-  data outputs
+  shorter holdoffs than 3 as a minimum in case we clock this interface slowly
+  data holdoff of 1 is required for tx, though, minimum
+  note... if data capture enabled then count is of samples received, else of samples transmitted
+
+  add clocking of control outputs as an option
+
+  is it right for auto_restart_fsm (which goes through a period of not runnning) to not drive the output enables during the non-running period?
  */
 
 /*a Includes
@@ -17,38 +21,56 @@ include "io_parallel.h"
 constant integer rf_state_counter_value_start  = 0;   // 12 bits
 constant integer rf_state_counter_number_start = 12;  // 2 bits
 constant integer rf_state_arc0_condition       = 14;  // 3 bits which condition
-constant integer rf_state_arc0_action          = 17;     // 3 bits: 1 bit capture, 2 bits counter action
-constant integer rf_state_arc0_rel_state       = 20;  // 3 bits: adds n-3, for n=0 to 7
-constant integer rf_state_arc1_condition       = 23;  // 3 bits which condition
-constant integer rf_state_arc1_action          = 26;     // 3 bits: 1 bit capture, 2 bits counter action
-constant integer rf_state_arc1_rel_state       = 29;  // 3 bits: adds n-3, for n=0 to 7
+constant integer rf_state_arc0_action          = 17;  // 4 bits: 1 bit capture, 1 bit transmit, 2 bits counter action
+constant integer rf_state_arc0_rel_state       = 21;  // 3 bits: adds n-3, for n=0 to 7
+constant integer rf_state_arc1_condition       = 24;  // 3 bits which condition
+constant integer rf_state_arc1_action          = 27;  // 4 bits: 1 bit capture, 1 bit trasmit, 2 bits counter action - counter of '11' does other things, though
+constant integer rf_state_arc1_rel_state       = 31;  // 3 bits: adds n-3, for n=0 to 7
 
 /*a Types
  */
+/*t t_io_parallel_ctl_oe
+ */
+typedef enum [2]
+{
+    io_parallel_ctl_oe_both_hiz      = 0,
+    io_parallel_ctl_oe_drive_one     = 1,
+    io_parallel_ctl_oe_drive_both    = 2,
+    io_parallel_ctl_oe_controlled    = 3,
+} t_io_parallel_ctl_oe;
+
 /*t t_io_parallel_action
  */
-typedef enum [3]
+typedef enum [4]
 {
-    io_parallel_action_idle = 0,
-    io_parallel_action_idlecnt_capture = 1,
-    io_parallel_action_setcnt_nocapture = 2,
-    io_parallel_action_setcnt_capture = 3,
-    io_parallel_action_deccnt_nocapture = 4,
-    io_parallel_action_deccnt_capture = 5,
-    io_parallel_action_spare = 6,
-    io_parallel_action_end = 7
+    io_parallel_action_idle            = 0,
+    io_parallel_action_capture         = 1,
+    io_parallel_action_transmit        = 2,
+    io_parallel_action_both            = 3,
+
+    io_parallel_action_deccnt          = 4,
+    io_parallel_action_deccnt_capture  = 5,
+    io_parallel_action_deccnt_transmit = 6,
+    io_parallel_action_deccnt_both     = 7,
+
+    io_parallel_action_setcnt          = 8,
+    io_parallel_action_setcnt_capture  = 9,
+    io_parallel_action_setcnt_transmit = 10,
+    io_parallel_action_setcnt_both     = 11,
+
+    io_parallel_action_end             = 12
 } t_io_parallel_action;
 
 /*t t_io_parallel_cmd_type
  */
-typedef enum [8]
+typedef enum [4]
 {
-    io_parallel_cmd_type_reset = 8h00,
-    io_parallel_cmd_type_rf_0 = 8h10,
-    io_parallel_cmd_type_rf_1 = 8h20,
-    io_parallel_cmd_type_config = 8h30,
-    io_parallel_cmd_type_go = 8h40,
-    io_parallel_cmd_type_enable = 8h65
+    io_parallel_cmd_type_reset  = 4h0,
+    io_parallel_cmd_type_rf_0   = 4h1,
+    io_parallel_cmd_type_rf_1   = 4h2,
+    io_parallel_cmd_type_config = 4h4,
+    io_parallel_cmd_type_go     = 4h5,
+    io_parallel_cmd_type_enable = 4hf
 } t_io_parallel_cmd_type;
 
 /*t t_rx_status_pending
@@ -60,16 +82,16 @@ typedef enum [2]
     rx_status_pending_final
 } t_rx_status_pending;
 
-/*t t_cfg_capture_size
+/*t t_cfg_data_size
  */
 typedef enum [3]
 {
-    cfg_capture_size_1  = 0,
-    cfg_capture_size_2  = 1,
-    cfg_capture_size_4  = 2,
-    cfg_capture_size_8  = 3,
-    cfg_capture_size_16 = 4,
-} t_cfg_capture_size;
+    cfg_data_size_1  = 0,
+    cfg_data_size_2  = 1,
+    cfg_data_size_4  = 2,
+    cfg_data_size_8  = 3,
+    cfg_data_size_16 = 4,
+} t_cfg_data_size;
 
 /*t t_state_data
  */
@@ -78,10 +100,10 @@ typedef struct
     bit[12] counter_value;
     bit[ 2]counter_number;
     bit[ 3]arc0_condition;
-    bit[ 3]arc0_action;
+    bit[ 4]arc0_action;
     bit[ 3]arc0_rel_state;
     bit[ 3]arc1_condition;
-    bit[ 3]arc1_action;
+    bit[ 4]arc1_action;
     bit[ 3]arc1_rel_state;
 } t_state_data;
 
@@ -145,6 +167,7 @@ module io_parallel( clock par_clock,
                        input bit[32] tx_data_fifo_data,
                        output t_io_tx_data_fifo_cmd tx_data_fifo_cmd,
                        output bit tx_data_fifo_toggle,
+                    input bit tx_data_fifo_empty,
 
                        output bit[32] rx_data_fifo_data,
                        output bit rx_data_fifo_toggle,
@@ -294,8 +317,10 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
 
     /*b State for I/O fifo interfaces
      */
-    clocked t_io_tx_data_fifo_cmd         tx_data_fifo_cmd = io_tx_data_fifo_cmd_read_and_commit_fifo;
+//    comb t_io_tx_data_fifo_cmd         tx_data_fifo_cmd; 
+//    fix_for_xilinx: { tx_data_fifo_cmd= io_tx_data_fifo_cmd_read_and_commit_fifo; } - has empty sensitivity list, so we'll put this further down
     clocked bit                           tx_data_fifo_toggle = 0;
+    clocked bit                           tx_data_fifo_ready = 0;
 
     clocked bit                           cmd_fifo_toggle = 0;
 
@@ -307,45 +332,58 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
 
     /*b Breakout of command data (combinatorial)
      */
-    comb bit[8] cmd_type;
-    comb bit cmd_cfg_enabled;
+    comb bit[4] cmd_type;
     comb bit cmd_cfg_auto_restart_fsm;
+    comb bit[3] cmd_cfg_data_size;
     comb bit cmd_cfg_data_capture_enabled;
     comb bit cmd_cfg_use_registered_control_inputs;
     comb bit cmd_cfg_use_registered_data_inputs;
-    comb bit[3] cmd_cfg_capture_size;
-    comb bit[4] cmd_cfg_data_holdoff;
-    comb bit[4] cmd_cfg_status_holdoff;
+    comb bit[4] cmd_cfg_holdoff;
     comb bit[2] cmd_cfg_interim_status;
+    comb bit[4] cmd_cfg_reset_state;
+    comb bit[4] cmd_cfg_ctl_out_state_override;
+    comb bit cmd_cfg_data_out_enable;
+    comb bit cmd_cfg_data_out_use_ctl3;
+    comb t_io_parallel_ctl_oe cmd_cfg_ctl_oe01;
+    comb t_io_parallel_ctl_oe cmd_cfg_ctl_oe23;
 
     /*b Configuration data
      */
     clocked bit cfg_enabled = 0;
     clocked bit cfg_auto_restart_fsm = 0;
+    clocked bit[3] cfg_data_size = 0;
     clocked bit cfg_data_capture_enabled = 0;
     clocked bit cfg_use_registered_control_inputs = 0;
     clocked bit cfg_use_registered_data_inputs = 0;
-    clocked bit[3] cfg_capture_size = 0;
-    clocked bit[4] cfg_data_holdoff = 0;
-    clocked bit[4] cfg_status_holdoff = 0;
+    clocked bit[4] cfg_holdoff = 4hf;
     clocked bit[2] cfg_interim_status = 0; // no interim status
+    clocked bit[4] cfg_reset_state = 0;
+    clocked bit[4] cfg_ctl_out_state_override = 0;
+    clocked bit cfg_data_out_enable = 0;
+    clocked bit cfg_data_out_use_ctl3 = 0;
+    clocked t_io_parallel_ctl_oe cfg_ctl_oe01 = io_parallel_ctl_oe_both_hiz;
+    clocked t_io_parallel_ctl_oe cfg_ctl_oe23 = io_parallel_ctl_oe_both_hiz;
 
     /*b RFW breakouts and registers
      */
     comb bit[io_parallel_rf_0_bits] cmd_cfg_rf_0;
     comb bit[io_parallel_rf_1_bits] cmd_cfg_rf_1;
+    comb bit[4] cmd_rfw_addr;
     clocked bit cmd_rfw = 0;
     clocked bit[io_parallel_rf_0_bits] cmd_rf_0 = 0;
     clocked bit[io_parallel_rf_1_bits] cmd_rf_1 = 0;
-    comb bit[32] fsm_rf_wr_data;
+    comb bit[32] fsm_rf_wr_data_low;
+    comb bit[4] fsm_rf_wr_data_high;
 
     /*b IO fifo interaction registers
      */
+    clocked t_sync sync_tx_data_fifo_empty = {metastable=1, stable=1} "Synchronizer for IO tx FIFO empty";
     clocked t_rx_status_pending rx_status_fifo_pending = rx_status_pending_none;
-    clocked bit rx_data_fifo_pending = 0;
-    clocked bit tx_data_fifo_pending = 0;
     clocked bit[6] status_fifo_holdoff = 0;
+    clocked bit rx_data_fifo_pending = 0;
     clocked bit[6] rx_data_fifo_holdoff = 0;
+    clocked bit tx_data_fifo_pending = 0;
+    clocked bit[6] tx_data_fifo_holdoff = 0;
 
     /*b Command interface management
      */
@@ -366,7 +404,8 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     clocked bit par_fsm_running = 0;
 
     clocked bit[4] interface_state = 0;
-    net bit[32] rf_state_data;
+    net bit[32] rf_state_data_low;
+    net bit[4] rf_state_data_high;
     comb t_state_data state_data;
 
     comb bit[4] arc_cnd_address;
@@ -378,13 +417,18 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     comb t_io_parallel_action action;
 
     comb bit action_capture_rx_data;
+    comb bit action_transmit_tx_data;
     comb bit action_finish_fsm;
     comb bit action_counter_load;
     comb bit action_counter_dec;
     comb bit action_int_status;
     comb bit action_final_status;
 
+    comb bit[4] ctl_out_address;
+    net bit[4] ctl_out_data;
+
     clocked bit[24] data_counter = 0;
+    clocked bit[5] data_out_counter = 0; // output data counter only, to determine when the shift register empties
 
     /*b Control and data input management
      */
@@ -392,6 +436,12 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
 
     comb bit[16] rx_data_to_store;
     clocked bit[16] data_inputs_registered = 0;
+
+    /*b Output data shift register(s)
+     */
+    clocked bit[32] tx_shift_register = 0;
+    clocked bit tx_shift_register_empty = 1;
+    comb bit tx_shift_register_emptying;
 
     /*b Input data shift and store registers
      */
@@ -419,15 +469,19 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     breakout_cmd_fifo_data "Breakout cmd_fifo_data":
         {
             cmd_type         = cmd_fifo_data[ io_parallel_type_bits;         io_parallel_cfd_type_start_bit ];
-            cmd_cfg_enabled = cmd_fifo_data[ io_parallel_cfg_data_capture_enabled_bits ; io_parallel_cfd_data_capture_enabled_start_bit ];
             cmd_cfg_auto_restart_fsm = cmd_fifo_data[ io_parallel_cfg_auto_restart_fsm_bits ; io_parallel_cfd_auto_restart_fsm_start_bit ];
-            cmd_cfg_data_capture_enabled = cmd_fifo_data[ io_parallel_cfg_data_capture_enabled_bits ; io_parallel_cfd_data_capture_enabled_start_bit ];
+            cmd_cfg_data_capture_enabled   = cmd_fifo_data[ io_parallel_cfg_data_capture_enabled_bits ; io_parallel_cfd_data_capture_enabled_start_bit ];
             cmd_cfg_use_registered_control_inputs = cmd_fifo_data[ io_parallel_cfg_use_registered_control_inputs_bits ; io_parallel_cfd_use_registered_control_inputs_start_bit ];
             cmd_cfg_use_registered_data_inputs = cmd_fifo_data[ io_parallel_cfg_use_registered_data_inputs_bits ; io_parallel_cfd_use_registered_data_inputs_start_bit ];
-            cmd_cfg_capture_size = cmd_fifo_data[ io_parallel_cfg_capture_size_bits ; io_parallel_cfd_capture_size_start_bit ];
-            cmd_cfg_data_holdoff = cmd_fifo_data[ io_parallel_cfg_data_holdoff_bits ; io_parallel_cfd_data_holdoff_start_bit ];
-            cmd_cfg_status_holdoff = cmd_fifo_data[ io_parallel_cfg_status_holdoff_bits ; io_parallel_cfd_status_holdoff_start_bit ];
-            cmd_cfg_interim_status = cmd_fifo_data[ io_parallel_cfg_interim_status_bits ; io_parallel_cfd_interim_status_start_bit ];
+            cmd_cfg_data_size              = cmd_fifo_data[ io_parallel_cfg_data_size_bits ; io_parallel_cfd_data_size_start_bit ];
+            cmd_cfg_holdoff                = cmd_fifo_data[ io_parallel_cfg_holdoff_bits ; io_parallel_cfd_holdoff_start_bit ];
+            cmd_cfg_interim_status         = cmd_fifo_data[ io_parallel_cfg_interim_status_bits ; io_parallel_cfd_interim_status_start_bit ];
+            cmd_cfg_reset_state            = cmd_fifo_data[ io_parallel_cfg_reset_state_bits             ; io_parallel_cfd_reset_state_start_bit ];
+            cmd_cfg_ctl_out_state_override = cmd_fifo_data[ io_parallel_cfg_ctl_out_state_override_bits  ; io_parallel_cfd_ctl_out_state_override_start_bit ];
+            cmd_cfg_data_out_enable        = cmd_fifo_data[ io_parallel_cfg_data_out_enable_bits         ; io_parallel_cfd_data_out_enable_start_bit ];
+            cmd_cfg_data_out_use_ctl3      = cmd_fifo_data[ io_parallel_cfg_data_out_use_ctl3_bits       ; io_parallel_cfd_data_out_use_ctl3_start_bit ];
+            cmd_cfg_ctl_oe01               = cmd_fifo_data[ io_parallel_cfg_ctl_oe01_bits                ; io_parallel_cfd_ctl_oe01_start_bit ];
+            cmd_cfg_ctl_oe23               = cmd_fifo_data[ io_parallel_cfg_ctl_oe23_bits                ; io_parallel_cfd_ctl_oe23_start_bit ];
 
             cmd_cfg_rf_0 = cmd_fifo_data[ io_parallel_rf_0_bits ; 0 ];
             cmd_cfg_rf_1 = cmd_fifo_data[ io_parallel_rf_1_bits ; 0 ];
@@ -438,6 +492,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     configuration_and_cmds "Configuration and commands":
         {
             cmd_rfw <= 0;
+            cmd_rfw_addr = cmd_rf_1[4;24];
             cmd_start_fsm_running <= 0;
 
             sync_cmd_fifo_empty.metastable <= cmd_fifo_empty;
@@ -447,7 +502,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             {
                 cmd_fifo_toggle <= ~cmd_fifo_toggle; // and ignore empty for a holdoff period - our toggle is synced to internal domain which sets cmd_fifo_empty, so if we are <4xinternal then ignore for 3 internal + our 2 or 14 cycles - 16 should be plenty
                 cmd_fifo_holdoff <= -1;
-                cmd_fifo_holdoff[4;2] <= cfg_status_holdoff;
+                cmd_fifo_holdoff[4;2] <= cfg_holdoff;
                 cmd_last_was_rf_0 <= 0;
                 part_switch (cmd_type)
                     {
@@ -463,14 +518,19 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                     }
                     case io_parallel_cmd_type_config:
                     {
-                        cfg_capture_size                  <= cmd_cfg_capture_size;// (8/4/2/1); // we need 16 for the ADC in, what about a 16-bit DAC? or 32-bit DAC?
+                        cfg_data_size                  <= cmd_cfg_data_size;// (8/4/2/1); // we need 16 for the ADC in, what about a 16-bit DAC? or 32-bit DAC?
                         cfg_use_registered_control_inputs <= cmd_cfg_use_registered_control_inputs;
                         cfg_use_registered_data_inputs    <= cmd_cfg_use_registered_data_inputs;
-                        cfg_data_holdoff                  <= cmd_cfg_data_holdoff;
-                        cfg_status_holdoff                <= cmd_cfg_status_holdoff;
+                        cfg_holdoff                       <= cmd_cfg_holdoff;
                         cfg_data_capture_enabled          <= cmd_cfg_data_capture_enabled;
                         cfg_auto_restart_fsm              <= cmd_cfg_auto_restart_fsm;
                         cfg_interim_status                <= cmd_cfg_interim_status;
+                        cfg_reset_state                   <= cmd_cfg_reset_state;
+                        cfg_ctl_out_state_override        <= cmd_cfg_ctl_out_state_override;
+                        cfg_data_out_enable               <= cmd_cfg_data_out_enable;
+                        cfg_data_out_use_ctl3             <= cmd_cfg_data_out_use_ctl3;
+                        cfg_ctl_oe01                      <= cmd_cfg_ctl_oe01;
+                        cfg_ctl_oe23                      <= cmd_cfg_ctl_oe23;
                     }
                     case io_parallel_cmd_type_enable:
                     {
@@ -506,8 +566,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                 if (cmd_start_fsm_running || (!par_fsm_running && cfg_auto_restart_fsm))
                 {
                     if ( (rx_status_fifo_pending==rx_status_pending_none) &&
-                         !rx_data_fifo_pending &&
-                         !tx_data_fifo_pending )
+                         !rx_data_fifo_pending )
                     {
                         par_fsm_running <= 1;
                         reset_par_fsm = 1;
@@ -525,32 +584,42 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
      */
     interface_fsm_state "Interface FSM state and RF":
         {
-            fsm_rf_wr_data[24;0] = cmd_rf_0[24;0];
-            fsm_rf_wr_data[8;24] = cmd_rf_1[8;0];
-            rf_1r_1w_16_32 parfsm_rf( rf_clock <- par_clock,
-                                      rf_reset <= par_reset,
-                                      rf_rd_addr_0 <= interface_state,
-                                      rf_rd_data_0 => rf_state_data,
-                                      rf_wr_enable <= cmd_rfw,
-                                      rf_wr_addr <= cmd_rf_1[4;16],
-                                      rf_wr_data <= fsm_rf_wr_data );
+            fsm_rf_wr_data_low[28;0] = cmd_rf_0[28;0];
+            fsm_rf_wr_data_low[4;28] = cmd_rf_1[4;0];
+            fsm_rf_wr_data_high[4;0] = cmd_rf_1[4;4];
+            rf_1r_1w_16_32 parfsm_low_rf( rf_clock <- par_clock,
+                                          rf_reset <= par_reset,
+                                          rf_rd_addr_0 <= interface_state,
+                                          rf_rd_data_0 => rf_state_data_low,
+                                          rf_wr_enable <= cmd_rfw,
+                                          rf_wr_addr <= cmd_rfw_addr,
+                                          rf_wr_data <= fsm_rf_wr_data_low );
+            rf_1r_1w_16_4 parfsm_high_rf( rf_clock <- par_clock,
+                                          rf_reset <= par_reset,
+                                          rf_rd_addr_0 <= interface_state,
+                                          rf_rd_data_0 => rf_state_data_high,
+                                          rf_wr_enable <= cmd_rfw,
+                                          rf_wr_addr <= cmd_rfw_addr,
+                                          rf_wr_data <= fsm_rf_wr_data_high );
 
-            state_data.counter_value    = rf_state_data[12;rf_state_counter_value_start];   // 12 bits
-            state_data.counter_number   = rf_state_data[ 2;rf_state_counter_number_start];  // 2 bits
-            state_data.arc0_condition   = rf_state_data[ 3;rf_state_arc0_condition];  // 3 bits which condition
-            state_data.arc0_action      = rf_state_data[ 3;rf_state_arc0_action];     // 3 bits: 1 bit capture, 2 bits counter action
-            state_data.arc0_rel_state   = rf_state_data[ 3;rf_state_arc0_rel_state];  // 3 bits: adds n-3, for n=0 to 7
-            state_data.arc1_condition   = rf_state_data[ 3;rf_state_arc1_condition];  // 3 bits which condition
-            state_data.arc1_action      = rf_state_data[ 3;rf_state_arc1_action];     // 3 bits: 1 bit capture, 2 bits counter action
-            state_data.arc1_rel_state   = rf_state_data[ 3;rf_state_arc1_rel_state];  // 3 bits: adds n-3, for n=0 to 7
+            state_data.counter_value    = rf_state_data_low[12;rf_state_counter_value_start];   // 12 bits
+            state_data.counter_number   = rf_state_data_low[ 2;rf_state_counter_number_start];  // 2 bits
+            state_data.arc0_condition   = rf_state_data_low[ 3;rf_state_arc0_condition];  // 3 bits which condition
+            state_data.arc0_action      = rf_state_data_low[ 4;rf_state_arc0_action];     // 4 bits: 1 bit capture, 2 bits counter action
+            state_data.arc0_rel_state   = rf_state_data_low[ 3;rf_state_arc0_rel_state];  // 3 bits: adds n-3, for n=0 to 7
+            state_data.arc1_condition   = rf_state_data_low[ 3;rf_state_arc1_condition];  // 3 bits which condition
+            state_data.arc1_action      = rf_state_data_low[ 4;rf_state_arc1_action];     // 4 bits: 1 bit capture, 2 bits counter action
+            state_data.arc1_rel_state = 0;
+            state_data.arc1_rel_state[0]  = rf_state_data_low[ 1;rf_state_arc1_rel_state];  // 3 bits: adds n-3, for n=0 to 7
+            state_data.arc1_rel_state[2;1]  = rf_state_data_high[ 2;0];                     // 3 bits: adds n-3, for n=0 to 7
 
             if (par_fsm_running)
-            {
+           {
                 interface_state <= interface_state+rel_state;
             }
             if (reset_par_fsm)
             {
-                interface_state <= 0;
+                interface_state <= cfg_reset_state;
             }
         }
 
@@ -579,7 +648,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             }
         }
 
-    /*b Set arc conditions
+    /*b Set arc conditions - handles control inputs too
      */
     set_arc_conditions "Set ARC conditions and handle inputs":
         {
@@ -603,7 +672,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                                   rf_rd_addr_0 <= arc_cnd_address,
                                   rf_rd_data_0 => arc_conditions,
                                   rf_wr_enable <= cmd_rfw,
-                                  rf_wr_addr <= cmd_rf_1[4;16],
+                                  rf_wr_addr <= cmd_rfw_addr,
                                   rf_wr_data <= cmd_rf_1[4;8] );
         }
 
@@ -639,58 +708,79 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                 action = state_data.arc1_action;
             }
 
-            action_capture_rx_data = 0;
             action_finish_fsm = 0;
-            action_counter_load = 0;
-            action_counter_dec = 0;
-            action_int_status = 0;
             action_final_status = 0;
-            full_switch (action) // transition always occurs, possibly by 0 for no actual transition
+            part_switch (action) // transition always occurs, possibly by 0 for no actual transition
                 {
-                case io_parallel_action_idle:
-                {
-                    action_finish_fsm = 0; 
-                }
                 case io_parallel_action_end:
                 {
                     action_final_status = 1;
                     action_finish_fsm = 1;
                 }
-                case io_parallel_action_idlecnt_capture:
-                {
-                    action_capture_rx_data = cfg_data_capture_enabled;
                 }
+
+            action_capture_rx_data = 0;
+            action_transmit_tx_data = 0;
+            part_switch (action) // transition always occurs, possibly by 0 for no actual transition
+                {
+                case io_parallel_action_capture:
                 case io_parallel_action_setcnt_capture:
-                {
-                    action_capture_rx_data = cfg_data_capture_enabled;
-                    action_counter_load = 1;
-                }
-                case io_parallel_action_setcnt_nocapture:
-                {
-                    action_counter_load = 1;
-                }
                 case io_parallel_action_deccnt_capture:
                 {
-                    action_capture_rx_data = cfg_data_capture_enabled;
-                    action_counter_dec = 1;
+                    action_capture_rx_data = 1;
                 }
-                case io_parallel_action_deccnt_nocapture:
+                case io_parallel_action_transmit:
+                case io_parallel_action_setcnt_transmit:
+                case io_parallel_action_deccnt_transmit:
+                {
+                    action_transmit_tx_data = 1;
+                }
+                case io_parallel_action_both:
+                case io_parallel_action_setcnt_both:
+                case io_parallel_action_deccnt_both:
+                {
+                    action_capture_rx_data = 1;
+                    action_transmit_tx_data = 1;
+                }
+                }
+
+            action_counter_load = 0;
+            action_counter_dec = 0;
+            part_switch (action) // transition always occurs, possibly by 0 for no actual transition
+                {
+                case io_parallel_action_setcnt:
+                case io_parallel_action_setcnt_capture:
+                case io_parallel_action_setcnt_transmit:
+                case io_parallel_action_setcnt_both:
+                {
+                    action_counter_load = 1;
+                }
+                case io_parallel_action_deccnt:
+                case io_parallel_action_deccnt_capture:
+                case io_parallel_action_deccnt_transmit:
+                case io_parallel_action_deccnt_both:
                 {
                     action_counter_dec = 1;
                 }
-                case io_parallel_action_spare:
-                {
-                    action_finish_fsm = 0; 
                 }
-                }
+            if (!par_fsm_running)
+            {
+                action_final_status = 0;
+                action_finish_fsm = 0;
+                action_capture_rx_data = 0;
+                action_transmit_tx_data = 0;
+                action_counter_load = 0;
+                action_counter_dec = 0;
+            }
         }
 
-    /*b Data counter
+    /*b Data counter - count received data if capture enabled, else transmit data
      */
     data_counter "Data counter":
         {
             action_int_status = 0;
-            if (action_capture_rx_data || 0)
+            if ( (action_capture_rx_data && cfg_data_capture_enabled) ||
+                 (action_transmit_tx_data && !cfg_data_capture_enabled) )
             {
                 data_counter <= data_counter+1;
                 part_switch (cfg_interim_status)
@@ -724,6 +814,196 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             }
         }
 
+    /*b Handle data output buffer and shift register
+      operation with holdoff=1
+      cycle  desc            action               io_slot empty_flag
+      0      !ready          toggle!                    ne
+      1      !ready,pend,ho     -                        flag valid, sync wrong (our clk>16 int clk)
+      2      !ready,pend        -                  metastable valid, other wrong
+      3      ready           take buffer                all valid
+      4      !ready           toggle!
+      5      !ready,pend,ho     -                        flag valid, sync wrong (our clk>16 int clk)
+      6      !ready,pend        -                  metastable valid, other wrong
+      7      ready           take buffer                all valid
+     */
+    handle_data_outputs "Handle data outputs (buffer and shift register)":
+        {
+            /*b synchronize tx_data_fifo_empty
+             */
+            sync_tx_data_fifo_empty <= { metastable=tx_data_fifo_empty, stable=metastable };
+
+            /*b handle the shift register and determine if it is emptying
+             */
+            tx_shift_register_emptying = 0;
+            if (action_transmit_tx_data)
+            {
+                full_switch (cfg_data_size)
+                    {
+                    case cfg_data_size_8:
+                    {
+                        tx_shift_register[24;0] <= tx_shift_register[24;8];
+                        tx_shift_register_emptying = (data_out_counter[2;0]==3);
+                    }
+                    case cfg_data_size_4: // note this will miscapture ethernet rx data as it is transmitted bits 0-3, then 4-7, of octects
+                    {
+                        tx_shift_register[28;0] <= tx_shift_register[28;4];
+                        tx_shift_register_emptying = (data_out_counter[3;0]==7);
+                    }
+                    case cfg_data_size_2:
+                    {
+                        tx_shift_register[30;0] <= tx_shift_register[30;2];
+                        tx_shift_register_emptying = (data_out_counter[4;0]==15);
+                    }
+                    case cfg_data_size_1:
+                    {
+                        tx_shift_register[31;0] <= tx_shift_register[31;1];
+                        tx_shift_register_emptying = (data_out_counter[5;0]==31);
+                    }
+                    }
+                data_out_counter <= data_out_counter+1;
+            }
+            if (action_finish_fsm && cfg_data_out_enable)
+            {
+                tx_shift_register_emptying=1;
+            }
+            if (reset_par_fsm)
+            {
+                data_out_counter <= 0;
+            }
+
+            /*b Request data from the FIFO, if empty
+             */
+            // fill buffer if toggle occurred and holdoff over
+            tx_data_fifo_cmd = io_tx_data_fifo_cmd_read_and_commit_fifo;//    fix_for_xilinx - its constant, so we're okay
+            if (tx_data_fifo_pending && (tx_data_fifo_holdoff==0))
+            {
+                tx_data_fifo_ready <= 1;
+                tx_data_fifo_pending <= 0;
+            }
+            if ( (!tx_data_fifo_ready) &&
+                 (!tx_data_fifo_pending) &&
+                 (!sync_tx_data_fifo_empty.stable) )
+            {
+                tx_data_fifo_pending <= 1;
+                tx_data_fifo_toggle <= ~tx_data_fifo_toggle;
+                tx_data_fifo_holdoff <= -1;
+                tx_data_fifo_holdoff[4;2] <= cfg_holdoff;
+            }
+            if (tx_data_fifo_holdoff!=0)
+            {
+                tx_data_fifo_holdoff <= tx_data_fifo_holdoff-1;
+            }
+
+            if (tx_shift_register_emptying)
+            {
+                tx_shift_register_empty <= 1;
+            }
+            if ( tx_data_fifo_ready &&
+                 (tx_shift_register_empty || tx_shift_register_emptying) )
+            {
+                tx_shift_register <= tx_data_fifo_data;
+                tx_shift_register_empty <= 0;
+                tx_data_fifo_ready <= 0;
+            }
+        }
+
+    /*b Handle control outputs, data oe
+     */
+    handle_control_outputs "Handle control outputs and data oe":
+        {
+            /*b Control outputs and oes
+             */
+            ctl_out_address = interface_state;
+            if (cfg_ctl_out_state_override[0])
+            {
+                ctl_out_address[0] = tx_shift_register[0];
+            }
+            if (cfg_ctl_out_state_override[1])
+            {
+                ctl_out_address[1] = cfg_use_registered_control_inputs ? control_inputs_registered[0] : control_inputs[0];
+            }
+            if (cfg_ctl_out_state_override[2])
+            {
+                ctl_out_address[2] = cfg_use_registered_control_inputs ? control_inputs_registered[1] : control_inputs[1];
+            }
+            if (cfg_ctl_out_state_override[3])
+            {
+                ctl_out_address[3] = cfg_use_registered_control_inputs ? control_inputs_registered[2] : control_inputs[2];
+            }
+
+            rf_1r_1w_16_4 ctl_out_rf( rf_clock <- par_clock,
+                                      rf_reset <= par_reset,
+                                      rf_rd_addr_0 <= ctl_out_address,
+                                      rf_rd_data_0 => ctl_out_data,
+                                      rf_wr_enable <= cmd_rfw,
+                                      rf_wr_addr <= cmd_rfw_addr,
+                                      rf_wr_data <= cmd_rf_1[4;12] );
+
+            control_outputs = ctl_out_data[4;0];
+            control_oes = 0;
+            full_switch (cfg_ctl_oe01)
+                {
+                case io_parallel_ctl_oe_both_hiz:
+                {
+                    control_oes[2;0] = 0;
+                }
+                case io_parallel_ctl_oe_drive_one:
+                {
+                    control_oes[0] = 1;
+                }
+                case io_parallel_ctl_oe_drive_both:
+                {
+                    control_oes[0] = 1;
+                    control_oes[1] = 1;
+                }
+                case io_parallel_ctl_oe_controlled:
+                {
+                    control_oes[0] = ctl_out_data[1]; // use out1 as oe for 0
+                }
+                }
+
+            full_switch (cfg_ctl_oe23)
+                {
+                case io_parallel_ctl_oe_both_hiz:
+                {
+                    control_oes[2;2] = 0;
+                }
+                case io_parallel_ctl_oe_drive_one:
+                {
+                    control_oes[2] = 1;
+                }
+                case io_parallel_ctl_oe_drive_both:
+                {
+                    control_oes[2] = 1;
+                    control_oes[3] = 1;
+                }
+                case io_parallel_ctl_oe_controlled:
+                {
+                    control_oes[2] = ctl_out_data[3]; // use out3 as oe for 2
+                }
+                }
+            if (!par_fsm_running)
+            {
+                control_oes = 0;
+            }            
+
+            /*b data_oe
+             */
+            data_oe = 0;
+            if (cfg_data_out_enable)
+            {
+                data_oe = 1;
+                if (cfg_data_out_use_ctl3)
+                {
+                    data_oe = ctl_out_data[3];
+                }
+            }
+            if (!par_fsm_running)
+            {
+                data_oe = 0;
+            }            
+        }
+
     /*b Handle data inputs - generate data_will_be_ready and data_register
      */
     handle_data_inputs "Handle data inputs":
@@ -738,29 +1018,29 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                 rx_data_to_store = data_inputs;
             }
             rx_data_will_be_ready = 0;
-            if (action_capture_rx_data)
+            if (action_capture_rx_data && cfg_data_capture_enabled)
             {
-                full_switch (cfg_capture_size)
+                full_switch (cfg_data_size)
                     {
-                    case cfg_capture_size_8:
+                    case cfg_data_size_8:
                     {
                         rx_data_register[24;0] <= rx_data_register[24;8];
                         rx_data_register[8;24] <= rx_data_to_store[8;0];
                         rx_data_will_be_ready = (data_counter[2;0]==3);
                     }
-                    case cfg_capture_size_4: // note this will miscapture ethernet rx data as it is transmitted bits 0-3, then 4-7, of octects
+                    case cfg_data_size_4: // note this will miscapture ethernet rx data as it is transmitted bits 0-3, then 4-7, of octects
                     {
                         rx_data_register[28;0] <= rx_data_register[28;4];
                         rx_data_register[4;28] <= rx_data_to_store[4;0];
                         rx_data_will_be_ready = (data_counter[3;0]==7);
                     }
-                    case cfg_capture_size_2:
+                    case cfg_data_size_2:
                     {
                         rx_data_register[30;0] <= rx_data_register[30;2];
                         rx_data_register[2;30] <= rx_data_to_store[2;0];
                         rx_data_will_be_ready = (data_counter[4;0]==15);
                     }
-                    case cfg_capture_size_1:
+                    case cfg_data_size_1:
                     {
                         rx_data_register[31;0] <= rx_data_register[31;1];
                         rx_data_register[31] <= rx_data_to_store[0];
@@ -783,7 +1063,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                 rx_data_fifo_data <= rx_data_register;
                 rx_data_fifo_toggle <= ~rx_data_fifo_toggle;
                 rx_data_fifo_holdoff <= -1;
-                rx_data_fifo_holdoff[4;2] <= cfg_data_holdoff;
+                rx_data_fifo_holdoff[4;2] <= cfg_holdoff;
                 rx_data_fifo_pending <= 0;
             }
             if (rx_data_will_be_ready)
@@ -817,7 +1097,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                 }
                 status_fifo_toggle <= ~status_fifo_toggle;
                 status_fifo_holdoff <= -1;
-                status_fifo_holdoff[4;2] <= cfg_status_holdoff;
+                status_fifo_holdoff[4;2] <= cfg_holdoff;
                 rx_status_fifo_pending <= rx_status_pending_none;
             }
             if (action_int_status)

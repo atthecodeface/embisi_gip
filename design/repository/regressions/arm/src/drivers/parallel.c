@@ -111,17 +111,17 @@ typedef struct t_par_state
 
 static const t_par_state fc_states[] =
 {
-    /* 0 */ {&fc_data[4], 0, {7,1,io_parallel_action_setcnt_nocapture},    {4,0,io_parallel_action_idle}, },             // wait for vsync to be low (asserted)
+    /* 0 */ {&fc_data[4], 0, {7,1,io_parallel_action_setcnt},              {4,0,io_parallel_action_idle}, },             // wait for vsync to be low (asserted)
     /* 1 */ {       NULL, 0, {3,2,io_parallel_action_idle},                {4,1,io_parallel_action_idle}, },             // wait for vsync to be high (deasserted)
-    /* 2 */ {       NULL, 0, {1,4,io_parallel_action_idle},                {2,3,io_parallel_action_deccnt_nocapture}, }, // if counter 0 then go to frame start, else wait for hsync to be high, counting down the lines to skip
+    /* 2 */ {       NULL, 0, {1,4,io_parallel_action_idle},                {2,3,io_parallel_action_deccnt}, },           // if counter 0 then go to frame start, else wait for hsync to be high, counting down the lines to skip
     /* 3 */ {       NULL, 0, {6,2,io_parallel_action_idle},                {4,3,io_parallel_action_idle}, },             // wait for hsync to be low, and go back to 2
-    /* 4 */ {&fc_data[0], 0, {2,5,io_parallel_action_setcnt_nocapture},    {4,4,io_parallel_action_idle}, },             // 0 = frame start,  fc_data[0] must hold nlines
-    /* 5 */ {&fc_data[1], 1, {6,6,io_parallel_action_setcnt_nocapture},    {4,5,io_parallel_action_idle}, },             // 1 = line start,   fc_data[1] must hold pixels per line, hsync low->next
-    /* 6 */ {&fc_data[2], 2, {0,7,io_parallel_action_setcnt_nocapture},    {4,6,io_parallel_action_idle}, },             // 2                 fc_data[2] must hold initial pixels gap-2
-    /* 7 */ {&fc_data[3], 2, {1,8,io_parallel_action_setcnt_capture},      {0,7,io_parallel_action_deccnt_nocapture}, }, // 3 = pixel wait,   fc_data[3] must hold interpixel gap-1
-    /* 8 */ {       NULL, 1, {1,9,io_parallel_action_idle},                {0,7,io_parallel_action_deccnt_nocapture}, }, // 4 = count pixels,
-    /* 9 */ {       NULL, 0, {1,10,io_parallel_action_end},                {2,5,io_parallel_action_deccnt_nocapture}, }, // 5 = count lines,  done->end, hsync high->line start
-    /*10 */ {       NULL, 0, {4,10,io_parallel_action_idle},               {4,10,io_parallel_action_idle}, }, // 5 = count lines,  done->end, hsync high->line start
+    /* 4 */ {&fc_data[0], 0, {2,5,io_parallel_action_setcnt},              {4,4,io_parallel_action_idle}, },             // 0 = frame start,  fc_data[0] must hold nlines
+    /* 5 */ {&fc_data[1], 1, {6,6,io_parallel_action_setcnt},              {4,5,io_parallel_action_idle}, },             // 1 = line start,   fc_data[1] must hold pixels per line, hsync low->next
+    /* 6 */ {&fc_data[2], 2, {0,7,io_parallel_action_setcnt},              {4,6,io_parallel_action_idle}, },             // 2                 fc_data[2] must hold initial pixels gap-2
+    /* 7 */ {&fc_data[3], 2, {1,8,io_parallel_action_setcnt_capture},      {0,7,io_parallel_action_deccnt}, },           // 3 = pixel wait,   fc_data[3] must hold interpixel gap-1
+    /* 8 */ {       NULL, 1, {1,9,io_parallel_action_idle},                {0,7,io_parallel_action_deccnt}, },           // 4 = count pixels,
+    /* 9 */ {       NULL, 0, {1,10,io_parallel_action_end},                {2,5,io_parallel_action_deccnt}, },           // 5 = count lines,  done->end, hsync high->line start
+    /*10 */ {       NULL, 0, {4,10,io_parallel_action_idle},               {4,10,io_parallel_action_idle}, },            // 5 = count lines,  done->end, hsync high->line start
 };
 
 static void parallel_config( int slot, t_io_parallel_cmd_type type, int data )
@@ -172,11 +172,10 @@ extern void parallel_frame_capture_init( int slot, int line_skip, int nlines, in
     parallel_config( slot, io_parallel_cmd_type_reset, 0 );
 
     // parallel_config issues an immediate command to the parallel I/O interface of the specified type with specified data content
-    parallel_config( slot, io_parallel_cmd_type_config, ( (io_parallel_cfg_capture_size_2<<io_parallel_cfd_capture_size_start_bit) | 
+    parallel_config( slot, io_parallel_cmd_type_config, ( (io_parallel_cfg_data_size_2<<io_parallel_cfd_data_size_start_bit) | 
                                                           (1<<io_parallel_cfd_use_registered_control_inputs_start_bit) |
                                                           (1<<io_parallel_cfd_use_registered_data_inputs_start_bit) |
-                                                          (15<<io_parallel_cfd_data_holdoff_start_bit) |
-                                                          (15<<io_parallel_cfd_status_holdoff_start_bit) |
+                                                          (15<<io_parallel_cfd_holdoff_start_bit) |
                                                           (1<<io_parallel_cfd_data_capture_enabled_start_bit) ) );
     fc_data[0] = nlines-1;
     fc_data[1] = pixels_per_line-1;

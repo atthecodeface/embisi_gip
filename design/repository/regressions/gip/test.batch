@@ -354,8 +354,9 @@ setenv "verbose_level" 1
 #   parallel    - gip_system_io_201 gip_system_io_202
 #   ps2         - gip_system_io_301
 
-   gosub gip_system_io_201
-   gosub gip_system_io_202
+   gosub gip_system_io_301
+#   gosub gip_system_io_201
+#   gosub gip_system_io_202
     return
 
    gosub gip_system_io_1

@@ -194,7 +194,6 @@ extern int test_entry_point()
                     (4<<io_parallel_cfd_holdoff_start_bit) |
                     (1<<io_parallel_cfd_data_capture_enabled_start_bit) |
                     (1<<io_parallel_cfd_interim_status_start_bit) |
-                    (0<<io_parallel_cfd_reset_state_start_bit) |
                     (1<<io_parallel_cfd_ctl_out_state_override_start_bit) |
                     (1<<io_parallel_cfd_data_out_enable_start_bit) |
                     (0<<io_parallel_cfd_data_out_use_ctl3_start_bit) |
@@ -220,8 +219,7 @@ extern int test_entry_point()
     /*b Transmit a byte
      */
     action_number = 0;
-    parallel_config( action_array, &action_number, io_parallel_cmd_type_config, base_config | (5<<io_parallel_cfd_reset_state_start_bit) ); // 2 for rx poll, 5 for tx - must set before enable
-    parallel_config( action_array, &action_number, io_parallel_cmd_type_go, 0 );
+    parallel_config( action_array, &action_number, io_parallel_cmd_type_go, 5 ); // 5 for tx
     GIP_POST_TXD_0( (0<<0) | (0x41<<1) | (1<<9) | (0xff<<10) ); // letter A, odd parity -> parity of 1
     GIP_POST_TXC_0_IO_FIFO_DATA( 0,1-1,31, IO_A_SLOT_PARALLEL_1,0,0 ); // add j words to etx fifo (egress data fifo 0)
     GIP_EXTBUS_DATA_WRITE( action_number );
@@ -247,11 +245,11 @@ extern int test_entry_point()
     /*b Set up for poll
      */
     action_number = 0;
-    parallel_config( action_array, &action_number, io_parallel_cmd_type_config, base_config | (2<<io_parallel_cfd_reset_state_start_bit) ); // 2 for rx poll, 5 for tx - must set before enable
-    parallel_config( action_array, &action_number, io_parallel_cmd_type_go, 0 );
+    parallel_config( action_array, &action_number, io_parallel_cmd_type_go, 2 ); // 2 for rx
 
     /*b Do a poll - expect it to fail
      */
+    {int i; for (i=0; i<20; i++) NOP;}
     GIP_POST_TXD_0( 0xf7ff ); // ACK low only
     GIP_POST_TXC_0_IO_FIFO_DATA( 0,1-1,31, IO_A_SLOT_PARALLEL_1,0,0 ); // add j words to etx fifo (egress data fifo 0)
     GIP_EXTBUS_DATA_WRITE( action_number );
@@ -312,8 +310,7 @@ extern int test_entry_point()
     /*b Transmit a byte - expect it to pass
      */
     action_number = 0;
-    parallel_config( action_array, &action_number, io_parallel_cmd_type_config, base_config | (5<<io_parallel_cfd_reset_state_start_bit) ); // 2 for rx poll, 5 for tx - must set before enable
-    parallel_config( action_array, &action_number, io_parallel_cmd_type_go, 0 );
+    parallel_config( action_array, &action_number, io_parallel_cmd_type_go, 5 ); // 5 for tx
     GIP_POST_TXD_0( (0<<0) | (0x41<<1) | (1<<9) | (0xff<<10) ); // letter A, odd parity -> parity of 1
     GIP_POST_TXC_0_IO_FIFO_DATA( 0,1-1,31, IO_A_SLOT_PARALLEL_1,0,0 ); // add j words to etx fifo (egress data fifo 0)
     GIP_EXTBUS_DATA_WRITE( action_number );

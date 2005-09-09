@@ -11,7 +11,6 @@ constant integer io_parallel_cfg_data_capture_enabled_bits = 1; // capture relat
 constant integer io_parallel_cfg_use_registered_control_inputs_bits = 1; // capture related
 constant integer io_parallel_cfg_use_registered_data_inputs_bits = 1; // capture related
 constant integer io_parallel_cfg_interim_status_bits = 2; // both related
-constant integer io_parallel_cfg_reset_state_bits = 4; // both related
 constant integer io_parallel_cfg_ctl_out_state_override_bits  = 4;
 constant integer io_parallel_cfg_data_out_enable_bits         = 1;
 constant integer io_parallel_cfg_data_out_use_ctl3_bits       = 1;
@@ -29,12 +28,11 @@ constant integer io_parallel_cfd_data_capture_enabled_start_bit          = io_pa
 constant integer io_parallel_cfd_use_registered_control_inputs_start_bit = io_parallel_cfd_data_capture_enabled_start_bit   + io_parallel_cfg_data_capture_enabled_bits; // 9
 constant integer io_parallel_cfd_use_registered_data_inputs_start_bit    = io_parallel_cfd_use_registered_control_inputs_start_bit + io_parallel_cfg_use_registered_control_inputs_bits; // 10
 constant integer io_parallel_cfd_interim_status_start_bit                = io_parallel_cfd_use_registered_data_inputs_start_bit + io_parallel_cfg_use_registered_data_inputs_bits; // 11
-constant integer io_parallel_cfd_reset_state_start_bit                   = io_parallel_cfd_interim_status_start_bit          + io_parallel_cfg_interim_status_bits; //13
-constant integer io_parallel_cfd_ctl_out_state_override_start_bit        = io_parallel_cfd_reset_state_start_bit             + io_parallel_cfg_reset_state_bits; // 17
-constant integer io_parallel_cfd_data_out_enable_start_bit               = io_parallel_cfd_ctl_out_state_override_start_bit  + io_parallel_cfg_ctl_out_state_override_bits; // 21
-constant integer io_parallel_cfd_data_out_use_ctl3_start_bit             = io_parallel_cfd_data_out_enable_start_bit         + io_parallel_cfg_data_out_enable_bits; // 22
-constant integer io_parallel_cfd_ctl_oe01_start_bit                      = io_parallel_cfd_data_out_use_ctl3_start_bit       + io_parallel_cfg_data_out_use_ctl3_bits; // 23
-constant integer io_parallel_cfd_ctl_oe23_start_bit                      = io_parallel_cfd_ctl_oe01_start_bit                + io_parallel_cfg_ctl_oe01_bits; // 25
+constant integer io_parallel_cfd_ctl_out_state_override_start_bit        = io_parallel_cfd_interim_status_start_bit          + io_parallel_cfg_interim_status_bits; //13
+constant integer io_parallel_cfd_data_out_enable_start_bit               = io_parallel_cfd_ctl_out_state_override_start_bit  + io_parallel_cfg_ctl_out_state_override_bits; // 17
+constant integer io_parallel_cfd_data_out_use_ctl3_start_bit             = io_parallel_cfd_data_out_enable_start_bit         + io_parallel_cfg_data_out_enable_bits; // 18
+constant integer io_parallel_cfd_ctl_oe01_start_bit                      = io_parallel_cfd_data_out_use_ctl3_start_bit       + io_parallel_cfg_data_out_use_ctl3_bits; // 19
+constant integer io_parallel_cfd_ctl_oe23_start_bit                      = io_parallel_cfd_ctl_oe01_start_bit                + io_parallel_cfg_ctl_oe01_bits; // 21
 
 /*a Types
  */
@@ -66,7 +64,10 @@ extern module io_parallel( clock par_clock,
                            output bit[4] control_oes,
                            output bit[16] data_outputs,
                            output bit[3] data_output_width,
-                           output bit data_oe
+                           output bit data_oe,
+
+                           input bit[2] analyzer_mux_control,
+                           output bit[32] analyzer_signals
     )
 
 {
@@ -84,5 +85,7 @@ extern module io_parallel( clock par_clock,
     timing to rising clock par_clock control_inputs, data_inputs;
     timing from rising clock par_clock control_outputs, control_oes, data_outputs, data_output_width, data_oe;
 
+    timing to rising clock par_clock analyzer_mux_control;
+    timing from rising clock par_clock analyzer_signals;
     timing comb input par_reset;
 }

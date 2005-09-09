@@ -170,7 +170,6 @@ extern void parallel_frame_capture_init( int slot, int nlines, int init_gap, int
                                                           (15<<io_parallel_cfd_holdoff_start_bit) |
                                                           (1<<io_parallel_cfd_data_capture_enabled_start_bit) |
                                                           (1<<io_parallel_cfd_interim_status_start_bit) |
-                                                          (0<<io_parallel_cfd_reset_state_start_bit) |
                                                           (0<<io_parallel_cfd_ctl_out_state_override_start_bit) | // just use state for ctl out
                                                           (0<<io_parallel_cfd_data_out_enable_start_bit) | // disable data out
                                                           (0<<io_parallel_cfd_data_out_use_ctl3_start_bit) | // and don't use ctl3 as data oe

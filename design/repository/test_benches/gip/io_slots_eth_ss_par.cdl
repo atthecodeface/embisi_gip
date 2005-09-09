@@ -80,7 +80,7 @@ module io_slots_eth_ss_par( clock int_clock,
                             output bit[3] par_b_data_output_width,
                             output bit par_b_data_oe,
 
-                            input bit[2] analyzer_mux_control,
+                            input bit[4] analyzer_mux_control,
                             output bit[32] analyzer_signals
                             )
 
@@ -205,6 +205,7 @@ Slot 3 is parallel
     net bit[16]               par_a_data_outputs;
     net bit[3]                par_a_data_output_width;
     net bit                   par_a_data_oe;
+    net bit[32]               par_a_analyzer_signals;
 
     /*b Parallel B wiring
      */
@@ -241,13 +242,14 @@ Slot 3 is parallel
     net bit[16]               par_b_data_outputs;
     net bit[3]                par_b_data_output_width;
     net bit                   par_b_data_oe;
+    net bit[32]               par_b_analyzer_signals;
 
     /*b -------------------- Instantiations
      */
 
     /*b Analyzer signals
      */
-    clocked bit[2] analyzer_mux_control_reg = 0;
+    clocked bit[4] analyzer_mux_control_reg = 0;
     analyzer_signal_setting "Analyzer signals":
         {
             analyzer_mux_control_reg <= analyzer_mux_control;
@@ -256,6 +258,17 @@ Slot 3 is parallel
             analyzer_signals[13] = 0;
             analyzer_signals[14] = eth_tx_data_fifo_toggle;
             analyzer_signals[15] = 0;
+            part_switch( analyzer_mux_control_reg[2;2] )
+                {
+                case 2:
+                {
+                    analyzer_signals = par_a_analyzer_signals;
+                }
+                case 3:
+                {
+                    analyzer_signals = par_b_analyzer_signals;
+                }
+                }
         }
 
     /*b Ethernet transmit and receive 0 instantiation
@@ -440,7 +453,11 @@ Slot 3 is parallel
                              control_oes => par_a_control_oes,
                              data_outputs => par_a_data_outputs,
                              data_output_width => par_a_data_output_width,
-                             data_oe => par_a_data_oe );
+                               data_oe => par_a_data_oe,
+
+                               analyzer_mux_control <= analyzer_mux_control[2;0],
+                               analyzer_signals => par_a_analyzer_signals );
+
 
             io_slot_head par_a_head( int_clock <- int_clock,
                                   int_reset <= int_reset,
@@ -511,7 +528,10 @@ Slot 3 is parallel
                              control_oes => par_b_control_oes,
                              data_outputs => par_b_data_outputs,
                              data_output_width => par_b_data_output_width,
-                             data_oe => par_b_data_oe );
+                             data_oe => par_b_data_oe,
+
+                               analyzer_mux_control <= analyzer_mux_control[2;0],
+                               analyzer_signals => par_b_analyzer_signals );
 
             io_slot_head par_b_head( int_clock <- int_clock,
                                   int_reset <= int_reset,

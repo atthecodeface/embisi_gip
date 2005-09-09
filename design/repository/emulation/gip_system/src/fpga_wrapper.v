@@ -543,6 +543,7 @@ assign leds[7:0] = gip_leds_out[7:0];
 
 assign par_b_clock = int_logic_slow_clock_buffered;
 assign par_b_control_inputs[0] = ps2_clock;
+assign par_b_control_inputs[1] = 0;
 assign par_b_control_inputs[2] = ps2_data;
 assign par_b_data_inputs[0] = ps2_data;
 assign par_b_data_inputs[15:1] = 0;
@@ -597,8 +598,8 @@ gip_system body( .drm_clock(int_drm_clock_buffered),
                  .par_a_data_oe(par_a_data_oe),
 
                  .par_b_clock( par_b_clock ),
-                 .par_b_control_inputs({1'b0,par_b_control_inputs}),
-                 .par_b_data_inputs({14'b0,par_b_data_inputs}),
+                 .par_b_control_inputs(par_b_control_inputs),
+                 .par_b_data_inputs(par_b_data_inputs),
                  .par_b_control_outputs(par_b_control_outputs),
                  .par_b_control_oes(par_b_control_oes),
                  .par_b_data_outputs(par_b_data_outputs),

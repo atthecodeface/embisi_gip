@@ -735,7 +735,7 @@ module gip_system( clock drm_clock,
                                         par_b_data_output_width => par_b_data_output_width,
                                         par_b_data_oe => par_b_data_oe,
 
-                                        analyzer_mux_control <= analyzer_mux_control[2;0],
+                                        analyzer_mux_control <= analyzer_mux_control[4;0],
                                         analyzer_signals => ios_analyzer_signals );
         }
 

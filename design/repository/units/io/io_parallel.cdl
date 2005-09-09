@@ -9,6 +9,7 @@
   add clocking of control outputs as an option
 
   is it right for auto_restart_fsm (which goes through a period of not runnning) to not drive the output enables during the non-running period?
+  auto_restart_fsm may be difficult to use without a starting state - how about getting rid of it, and instead allowing a forced status write as an action?
  */
 
 /*a Includes
@@ -162,31 +163,33 @@ extern module rf_1r_1w_16_4( clock rf_clock,
 /*a io_parallel module
  */
 module io_parallel( clock par_clock,
-                       input bit par_reset,
+                    input bit par_reset,
 
-                       input bit[32] tx_data_fifo_data,
-                       output t_io_tx_data_fifo_cmd tx_data_fifo_cmd,
-                       output bit tx_data_fifo_toggle,
+                    input bit[32] tx_data_fifo_data,
+                    output t_io_tx_data_fifo_cmd tx_data_fifo_cmd,
+                    output bit tx_data_fifo_toggle,
                     input bit tx_data_fifo_empty,
 
-                       output bit[32] rx_data_fifo_data,
-                       output bit rx_data_fifo_toggle,
+                    output bit[32] rx_data_fifo_data,
+                    output bit rx_data_fifo_toggle,
 
-                       input bit cmd_fifo_empty,
-                       input bit[32] cmd_fifo_data,
-                       output bit cmd_fifo_toggle,
+                    input bit cmd_fifo_empty,
+                    input bit[32] cmd_fifo_data,
+                    output bit cmd_fifo_toggle,
 
-                       output bit status_fifo_toggle,
-                       output bit[32] status_fifo_data,
+                    output bit status_fifo_toggle,
+                    output bit[32] status_fifo_data,
 
-                       input bit[3] control_inputs,
-                       input bit[16] data_inputs,
+                    input bit[3] control_inputs,
+                    input bit[16] data_inputs,
 
                     output bit[4] control_outputs,
                     output bit[4] control_oes,
                     output bit[16] data_outputs,
                     output bit[3] data_output_width,
-                    output bit data_oe
+                    output bit data_oe,
+                    input bit[2] analyzer_mux_control,
+                    output bit[32] analyzer_signals
                        )
 
     /*b Documentation
@@ -340,12 +343,16 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     comb bit cmd_cfg_use_registered_data_inputs;
     comb bit[4] cmd_cfg_holdoff;
     comb bit[2] cmd_cfg_interim_status;
-    comb bit[4] cmd_cfg_reset_state;
     comb bit[4] cmd_cfg_ctl_out_state_override;
     comb bit cmd_cfg_data_out_enable;
     comb bit cmd_cfg_data_out_use_ctl3;
     comb t_io_parallel_ctl_oe cmd_cfg_ctl_oe01;
     comb t_io_parallel_ctl_oe cmd_cfg_ctl_oe23;
+
+    comb bit[io_parallel_rf_0_bits] cmd_cfg_rf_0;
+    comb bit[io_parallel_rf_1_bits] cmd_cfg_rf_1;
+
+    comb bit[4] cmd_cfg_start_state;
 
     /*b Configuration data
      */
@@ -357,7 +364,6 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     clocked bit cfg_use_registered_data_inputs = 0;
     clocked bit[4] cfg_holdoff = 4hf;
     clocked bit[2] cfg_interim_status = 0; // no interim status
-    clocked bit[4] cfg_reset_state = 0;
     clocked bit[4] cfg_ctl_out_state_override = 0;
     clocked bit cfg_data_out_enable = 0;
     clocked bit cfg_data_out_use_ctl3 = 0;
@@ -366,8 +372,6 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
 
     /*b RFW breakouts and registers
      */
-    comb bit[io_parallel_rf_0_bits] cmd_cfg_rf_0;
-    comb bit[io_parallel_rf_1_bits] cmd_cfg_rf_1;
     comb bit[4] cmd_rfw_addr;
     clocked bit cmd_rfw = 0;
     clocked bit[io_parallel_rf_0_bits] cmd_rf_0 = 0;
@@ -387,7 +391,6 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
 
     /*b Command interface management
      */
-    clocked bit cmd_start_fsm_running = 0;
     clocked bit[6] cmd_fifo_holdoff = 0;
     clocked bit cmd_last_was_rf_0 = 0;
 
@@ -400,7 +403,9 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
 
     /*b Interface FSM combinatorials
      */
-    comb bit reset_par_fsm;
+    comb bit reset_par_fsm "Asserted if not enabled or when start requested by cmd";
+    comb bit start_par_fsm "Asserted if start requested by cmd";
+    comb bit cmd_start_fsm_running "Asserted if start requested and enabled and if FSM is not running and is ready";
     clocked bit par_fsm_running = 0;
 
     clocked bit[4] interface_state = 0;
@@ -448,6 +453,18 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     comb bit rx_data_will_be_ready;
     clocked bit[32] rx_data_register = 0;
 
+    /*b Analyzer
+     */
+    analyzer_interface "Analyzer interface":
+        {
+            analyzer_signals[4;0] = interface_state;
+            analyzer_signals[3;4] = control_inputs_registered;
+            analyzer_signals[4;8] = control_outputs;
+            analyzer_signals[4;12] = control_oes;
+            analyzer_signals[1;16] = data_oe;
+            analyzer_signals[15;17] = data_outputs[15;0];
+        }
+
     /*b Break out cmd_fifo_data
       We need back-to-back commands of correct type to configure a word of the rf's, which is 32 bits plus 2 4 bits = 40 bits plus address of 4 bits = 44 bits, of 64 bits => 8 bits type at top for each
       then we also need to be able to reset and start the fsm
@@ -476,7 +493,6 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
             cmd_cfg_data_size              = cmd_fifo_data[ io_parallel_cfg_data_size_bits ; io_parallel_cfd_data_size_start_bit ];
             cmd_cfg_holdoff                = cmd_fifo_data[ io_parallel_cfg_holdoff_bits ; io_parallel_cfd_holdoff_start_bit ];
             cmd_cfg_interim_status         = cmd_fifo_data[ io_parallel_cfg_interim_status_bits ; io_parallel_cfd_interim_status_start_bit ];
-            cmd_cfg_reset_state            = cmd_fifo_data[ io_parallel_cfg_reset_state_bits             ; io_parallel_cfd_reset_state_start_bit ];
             cmd_cfg_ctl_out_state_override = cmd_fifo_data[ io_parallel_cfg_ctl_out_state_override_bits  ; io_parallel_cfd_ctl_out_state_override_start_bit ];
             cmd_cfg_data_out_enable        = cmd_fifo_data[ io_parallel_cfg_data_out_enable_bits         ; io_parallel_cfd_data_out_enable_start_bit ];
             cmd_cfg_data_out_use_ctl3      = cmd_fifo_data[ io_parallel_cfg_data_out_use_ctl3_bits       ; io_parallel_cfd_data_out_use_ctl3_start_bit ];
@@ -485,6 +501,8 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
 
             cmd_cfg_rf_0 = cmd_fifo_data[ io_parallel_rf_0_bits ; 0 ];
             cmd_cfg_rf_1 = cmd_fifo_data[ io_parallel_rf_1_bits ; 0 ];
+
+            cmd_cfg_start_state =  cmd_fifo_data[ 4 ; 0 ];
         }
 
     /*b Configuration and command obeying
@@ -493,7 +511,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
         {
             cmd_rfw <= 0;
             cmd_rfw_addr = cmd_rf_1[4;24];
-            cmd_start_fsm_running <= 0;
+            cmd_start_fsm_running = 0;
 
             sync_cmd_fifo_empty.metastable <= cmd_fifo_empty;
             sync_cmd_fifo_empty.stable <= sync_cmd_fifo_empty.metastable;
@@ -518,14 +536,13 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                     }
                     case io_parallel_cmd_type_config:
                     {
-                        cfg_data_size                  <= cmd_cfg_data_size;// (8/4/2/1); // we need 16 for the ADC in, what about a 16-bit DAC? or 32-bit DAC?
+                        cfg_data_size                     <= cmd_cfg_data_size;// (8/4/2/1); // we need 16 for the ADC in, what about a 16-bit DAC? or 32-bit DAC?
                         cfg_use_registered_control_inputs <= cmd_cfg_use_registered_control_inputs;
                         cfg_use_registered_data_inputs    <= cmd_cfg_use_registered_data_inputs;
                         cfg_holdoff                       <= cmd_cfg_holdoff;
                         cfg_data_capture_enabled          <= cmd_cfg_data_capture_enabled;
                         cfg_auto_restart_fsm              <= cmd_cfg_auto_restart_fsm;
                         cfg_interim_status                <= cmd_cfg_interim_status;
-                        cfg_reset_state                   <= cmd_cfg_reset_state;
                         cfg_ctl_out_state_override        <= cmd_cfg_ctl_out_state_override;
                         cfg_data_out_enable               <= cmd_cfg_data_out_enable;
                         cfg_data_out_use_ctl3             <= cmd_cfg_data_out_use_ctl3;
@@ -542,7 +559,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                     }
                     case io_parallel_cmd_type_go:
                     {
-                        cmd_start_fsm_running <= cfg_enabled;
+                        cmd_start_fsm_running = cfg_enabled;
                     }
                     }
             }
@@ -557,6 +574,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
     interface_fsm_control "Interface FSM control":
         {
             reset_par_fsm = 0;
+            start_par_fsm = 0;
             if (cfg_enabled)
             {
                 if (action_finish_fsm)
@@ -569,6 +587,7 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
                          !rx_data_fifo_pending )
                     {
                         par_fsm_running <= 1;
+                        start_par_fsm = 1;
                         reset_par_fsm = 1;
                     }
                 }
@@ -617,9 +636,9 @@ Note that ethernet transmits octets bits 0-3 first, then bits 4-7 = this means w
            {
                 interface_state <= interface_state+rel_state;
             }
-            if (reset_par_fsm)
+            if (start_par_fsm)
             {
-                interface_state <= cfg_reset_state;
+                interface_state <= cmd_cfg_start_state;
             }
         }
 

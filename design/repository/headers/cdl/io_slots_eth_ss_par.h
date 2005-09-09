@@ -72,7 +72,7 @@ extern module io_slots_eth_ss_par( clock int_clock,
                                    output bit[3] par_b_data_output_width,
                                    output bit par_b_data_oe,
 
-                                   input bit[2] analyzer_mux_control,
+                                   input bit[4] analyzer_mux_control,
                                    output bit[32] analyzer_signals
     )
 {

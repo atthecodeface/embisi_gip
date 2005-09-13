@@ -169,6 +169,34 @@ static int command_postbus_ptrs( void *handle, int argc, unsigned int *args )
 
 /*f command_postbus_tx
   .. <command> <data>*
+  pbtx 0c000000 <data> for mdio read
+  pbtx 4c000000 01000000 107e0a20
+
+  pbtx 0c000000 <data> for mdio write
+  pbtx 4c000000 01000000 10700a20
+
+  write data is 58920040 01 01 10001 00100 10 0000 0000 0100 0000 - address is 0x11, reg address 00100, write data is bottom 16 bits
+  read data  is 68900000 01 10 10001 00100 00 0000 0000 0000 0000 - address is 0x11, reg address 00100
+
+pbtx 0c000000 ffffffff
+pbtx 4c000100 01000000 10700a20
+pbtx 0c000000 61900000
+pbtx 4c000100 01000000 107e0a20
+ifgd 5 1
+ifgs d
+ifgd 5 1
+ifgs d
+
+write register 00000 to 10Mbps FD only...
+pbtx 0c000000 ffffffff
+pbtx 4c000100 01000000 10700a20
+pbtx 0c000000 51820100
+pbtx 4c000100 01000000 10700a20
+ifgd 5 1
+ifgs d
+ifgd 5 1
+ifgs d
+
  */
 static int command_postbus_tx( void *handle, int argc, unsigned int *args )
 {

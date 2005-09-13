@@ -179,7 +179,7 @@ mkt_basic_system_mode:
     tst r8, #TRAP_SEM_IN_READ
     beq mkt_basic_system_mode_interrupt
 
-mkt_basic_system_mode_trap: // trap semaphore fired when in system mode - r8 = semaphores, [r13,#-4] = original r8
+mkt_basic_system_mode_trap: // trap semaphore fired when in system mode (interrupts enabled or disable) - r8 = semaphores, [r13,#-4] = original r8
     // about half the traps are system calls, the rest are return from system calls or return from interrupt
     // must set r15 and mode in return block
     gip_extrn 16
@@ -193,6 +193,7 @@ mkt_basic_system_mode_trap_mk:  // microkernel trap occurred - handle appropriat
     bne mkt_basic_system_mode_trap_despatch
     // fall through
 mkt_basic_system_mode_trap_return: // microkernel trap to return to given frame in r13, with correct mode and enables - trap semaphore clear, int enable semaphore high or low
+    // if interrupts are to be reenabled and there is an interrupt pending then we have a stack frame in r13 ready and we can just handle the next interrrupt
     // r13 -> return frame
     //  frame is r0-r12, r13, r14, pc, flags
     //  if flags indicates user, then enable interrupts (set semaphore), recover sp from stack, put r13 after stack pop in to r18, and restart at user
@@ -206,6 +207,9 @@ mkt_basic_system_mode_trap_return: // microkernel trap to return to given frame 
     // enable interrupts if required
     movs r2, r1, lsr #30 // r2 = 0 for system ints disable, 1 for system ints enable, else user
     beq mkt_basic_system_mode_trap_return_ints_disabled
+    gip_extrn 0x11
+    cmp r1, #0
+    bne mkt_take_interrupt
     gip_set_semaphores INTEN_SEM, 4*MICROKERNEL_THREAD
 mkt_basic_system_mode_trap_return_ints_disabled: // semaphores correct, r1=flags, r2 = 0/1 for system else user, r13->return frame
     tst r2, #2
@@ -218,8 +222,8 @@ mkt_basic_system_mode_trap_return_user_mode:
     gip_extrd 18
     add r2, r13, #STACK_FRAME_SIZE // r18 = system stack pointer, after we pop off our frame - only needed for user mode, as otherwise r13 is valid
     ldr r0, [r13, #15*4]
-    tst r0, #0x6000000
-    blne mkt_unknown_trap
+    //tst r0, #0x6000000
+    //blne mkt_unknown_trap
     circular_buffer r0, r8
     circular_buffer r13, r8
     gip_extrm 20
@@ -227,7 +231,9 @@ mkt_basic_system_mode_trap_return_user_mode:
     cmp r0, #0
     beq 0f
     subs r0, r0, #1
-    bleq mkt_unknown_trap
+    gip_extrd 32 // global APB 0 - analyzer config
+    moveq r0, #2
+    //bleq mkt_unknown_trap
     gip_extrd 20
     mov r0, r0
 0:      
@@ -300,16 +306,38 @@ mkt_basic_system_mode_trap_set_swi_handler:
     // System mode (or user mode), interrupts possibly enabled or disabled, microkernel trap performed - r15 = pc to return to, other registers for return
 mkt_basic_system_mode_trap_done_return_to_caller:    
     DEBUG('R')
-    // r15 = pc to return to, other registers were all set
-    // we need to point emulation thread at r15, and it can then run
-    restart_at_basic_system
-    gip_atomic 2     // Atomic while we play with spec4/5
+    // Note that if we get an interrupt at this point that forces us to be scheduled, then we will NOT be preempting the emulation thread!!!
+
+    // SO... stop set mkt to restart in the right place, then stop mkt from scheduling
+    gip_restart_at mkt_basic_system_mode
+    gip_mov_full_imm 0x86, #1 // set our flag dependencies to nothing (just ARM mode)
+    // set emulation thread to restart at emt_return_to_caller
+    gip_atomic 2
     gip_mov_full_imm 0x84, #EMULATION_THREAD // spec4 <= EMULATION_THREAD
-    gip_extrdrn 0x85, 0x0f
-    orr r0, r15, #1 // spec5 <= pc to return to | 1
+    gip_extrd 0x85
+    add r0, pc, #emt_return_to_caller - (.+8) + 1 // spec5:    add 1 so that the restart address is for the selected thread, not mkt
+    // deschedule, blocking first for cleanliness
     gip_deschedule_block
+    
+    // This code is scheduled for the emulation thread to return to a stack frame
+    // r15 = pc to return to, other registers were all set
+    // If interrupts occur between the mkt descheduling and this code running there is no effect
+    // basically this code is an extension of mkt but running in the emulation thread - we effectively single-thread it
+emt_return_to_caller:   
+    // atomic max - we flush at the end anyway
+    gip_atomic 31
+    // atomically set the flag dependencies for mkt to be hardware int and trap
+    gip_mov_full_imm 0x84, #MICROKERNEL_THREAD // spec4 = thread
+    gip_extrd 0x86
+    ldr r0, emt_caller_restart_flags  // spec6 = flags
+    // Now jump to the correct location
+    gip_extrm 0x0f
+    mov pc, r15
+
+emt_caller_restart_flags:  .word    0x100 | ((TRAP_SEM | HWINT_SEM)<<4) | 1
 
 
+    
     // System mode, interrupts possibly enabled or disabled, build stack frame using r13 and call SWI handler - [r13, #-4] = original r8
 mkt_basic_system_mode_trap_swi:
     DEBUG('W')
@@ -324,17 +352,16 @@ mkt_basic_system_mode_trap_swi:
     gip_extrn 0x80
     tst r0, #INTEN_SEM_IN_READ // test for interrupts enabled
     mov r8, #0<<31
-    orrne r8, r8, #1<<30 // set bit 30 to indicate interrupts enabled
+//    orrne r8, r8, #1<<30 // set bit 30 to indicate interrupts enabled
+    orr r8, r8, #1<<30 // set bit 30 to indicate interrupts enabled
     str r8, [r13, #16*4] // preserve flags
 
     ldr r8, = microkernel_thread_vectors
     gip_extrd 15
     ldr r0, [r8, #128] // r15 = swi handler vector
 
-    gip_clear_semaphores INTEN_SEM, 4*MICROKERNEL_THREAD
-    
     gip_extrm 16
-    mov r8, r0 // r8 = SWI number
+    mov r7, r0 // r7 = SWI number
 
     b mkt_basic_system_mode_trap_done_return_to_caller
 
@@ -451,11 +478,9 @@ mkt_user_mode_trap: // trap semaphore fired when in user mode (*must be SWI*) - 
     ldr r8, = microkernel_thread_vectors
     gip_extrd 15
     ldr r0, [r8, #128] // r15 = swi handler vector
-
-    gip_clear_semaphores INTEN_SEM, 4*MICROKERNEL_THREAD
     
     gip_extrm 16
-    mov r8, r0 // r8 = SWI number
+    mov r7, r0 // r7 = SWI number
     
     b mkt_basic_system_mode_trap_done_return_to_caller // we can return as if from system mode, coz we now are
 
@@ -512,18 +537,17 @@ mkt_user_mode_interrupt_no_interrupts:
 
     
 
-    // r17 is the interrupts
+    // r17 is the interrupts, nonzero
     // r13 (system sp) contains a complete stack frame ready to return to
 mkt_take_interrupt:
     // Change the emulated thread's PC to be the interrupt vector
     gip_extrm 0x11
     mov r9, r1
     ldr r8, = microkernel_thread_vectors
-    ldr r7, [r8] // vector 0
-    tst r9, #2
-    ldrne r7, [r8, #4] // vector 1
-    tst r9, #4
-    ldrne r7, [r8, #8] // vector 2
+0:  
+    ldr r7, [r8], #4 // vector 0
+    movs r9, r9, lsr #1
+    bcc 0b
 
     gip_atomic 2
     gip_mov_full_imm 0x84, #EMULATION_THREAD // spec4 <= EMULATION_THREAD

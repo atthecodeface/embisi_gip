@@ -299,16 +299,19 @@ class c_gipdebug_mem_client:
         self.skt = socket.socket( socket.AF_INET, socket.SOCK_DGRAM );
         self.skt.connect( ( server_ip, server_port ) );
     #f send_cmd
-    def send_cmd( self, type, address, length, data ):
+    def send_cmd( self, type, address, length, data, timeout=1 ):
         buffer = struct.pack( "<hll", type, address, length ) + data;
         self.skt.send( buffer );
-        sel = select.select( [self.skt], [], [], 1 );
+        sel = select.select( [self.skt], [], [], timeout );
         if (sel[0] == [self.skt]):
             try:
                 buffer = self.skt.recv( 1300 );
             except:
+                print "No data! How?"
                 buffer = ""
             return buffer
+        print "No response from slave"
+        return ""
     #f mem_read
     def mem_read( self, address, length ):
         return self.send_cmd( 0, address, length, "" ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
@@ -321,7 +324,10 @@ class c_gipdebug_mem_client:
         return self.send_cmd( 8, address, length, buffer ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
     #f flash_write
     def flash_write( self, address, data ):
-        print "address ", address, " length ", len(data)
+        if (address>>17)!=((address+len(data)-1)>>17):
+            print "Inserting erase of address %08x" % ((address+len(data)-1) &~0x1ffff)
+            self.flash_erase( (address+len(data)-1) &~0x1ffff )
+        print "%08x" % address, " length ", len(data)
         if (address&1):
             data = chr(255) + data
         if (len(data)&1):
@@ -329,7 +335,7 @@ class c_gipdebug_mem_client:
         return self.send_cmd( 9, address, len(data), data ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
     #f flash_erase
     def flash_erase( self, address ):
-        return self.send_cmd( 10, address, 0, "" ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
+        return self.send_cmd( 10, address, 0, "", timeout=5 ); #0 rdmem, 1 wrmem, 8 rdflsh, 9 wrflsh, 10 erflsh, 16 ldregs/run
     #f load_regs
     def load_regs( self, regs=[] ):
         data = struct.pack( "<llllllllllllllll", 0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0 );
@@ -348,7 +354,7 @@ class c_gipdebug_mem_client:
 #a c_embview_ui
 class c_embview_ui:
     #f __init__
-    def __init__( self, root=None, ip_address = "10.1.100.5" ):
+    def __init__( self, root=None, ip_address = "10.1.17.80" ):
         #b Grab the root Tk window if necessary
         if (root == None):
             root = Tk()
@@ -386,22 +392,45 @@ class c_embview_ui:
                 time.sleep(3)
         def local_file_boot_mif_eth( self=self ):
             self.boot_mif( self.mem, "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/ethmonitor.dram.mif", 0x80000000, 0x80000000 )
+            #self.boot_mif( self.mem, "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/ethmonitor.dram_high.mif", 0x80200000, 0x80200000 )
         def local_file_boot_mif_eth_sram( self=self ):
             self.boot_mif( self.mem, "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/ethmonitor.sram.mif", 0x10400, 0x10400 )
-        def local_file_flash_bin_eth_sram( self=self ):
-            self.flash_bin( self.mem, 0, "Memtest monitor", "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/ethmonitor.sram.bin", 0x10400, 0x10400 )
+        def local_file_flash_bin_eth_mon( self=self ):
+            self.flash_bin( self.mem, 3, "Eth PHY fix", "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/fix_eth_phy.dram_nowrapper.bin", 0x80200000, 0x80200000 )
             #self.flash_bin( self.mem, 0, "Memtest monitor", "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/simple.rom.bin", 0x10400, 0x10400 )
         def local_file_flash_bin_dram_setup( self=self ):
             self.flash_bin( self.mem, 1, "Dram setup", "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/dram_setup.sram.bin", 0x10400, 0x10400 )
             #self.flash_bin( self.mem, 0, "Memtest monitor", "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/simple.rom.bin", 0x10400, 0x10400 )
+        def local_file_flash_config( self=self ):
+            self.flash_cfg( self.mem, 0, 40, 0x0012, 0x34567890, 0x0a011150 );
+            #self.flash_cfg( self.mem, 0, 40, 0x1234, 0x56789abc, 0x0a016405 );
+            #self.flash_cfg( self.mem, 0, 40, 0x1234, 0x56789abc, 0x0a011164 );
+            #self.flash_bin( self.mem, 0, "Memtest monitor", "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/simple.rom.bin", 0x10400, 0x10400 )
         def local_file_load_initrd( self=self ):
-            self.boot_bin( self.mem, "/home/localgjs/tnbt_cvs_trees/software/os/linux/initrd/image", 0x80380000 )
+            self.boot_bin( self.mem, "/export/image", 0x80380000 )
         def local_file_boot_bin_linux( self=self ):
-            self.boot_bin( self.mem, "/home/localgjs/tnbt_cvs_trees/software/os/linux/vmlinux.stripped", 0x80200000, [(0,0x80380000), (1,0x80380000+256*1024), (15,0x80208000)], 1 )
+            #self.boot_bin( self.mem, "/home/localgjs/tnbt_cvs_trees/software/os/linux/vmlinux.stripped", 0x80200000, [(0,0x80380000), (1,0x80380000+320*1024), (15,0x80208000)], 1 )
+            self.boot_bin( self.mem, "/home/localgjs/tnbt_cvs_trees/software/os/linux-2.6.11.8/vmlinux.fpga.stripped", 0x80400000, [(0,0x80380000), (1,0x80380000+320*1024), (15,0x80408080)], 1 )
         def local_file_boot_mif_set_microkernel( self=self ):
             self.boot_mif( self.mem, "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/microkernel.sram.mif", 0x10400, 0x10400  )
         def local_file_run_linux( self=self ):
             self.mem.load_regs([(15,0x80028000)])
+
+        reg_root = "/home/localgjs/tnbt_cvs_trees/hardware/design/repository/regressions/arm/bin/"
+        linux_root = "/home/localgjs/tnbt_cvs_trees/software/os/linux-2.6.11.8/"
+        def local_file_flash_microkernel( self=self ):
+            self.flash_full( self.mem, 14, "Microkernel",
+                             dram_phase=40, eth_hi=0x1234, eth_lo=0x56789abc, ip_address=0x0a016405,
+                             files = [ (reg_root+"microkernel.sram.bin",0x10400) ],
+                             regs=[(15,0x10400)] );
+        def local_file_flash_linux( self=self ):
+            self.flash_full( self.mem, 15, "Linux",
+                             dram_phase=40, eth_hi=0x1234, eth_lo=0x56789abc, ip_address=0x0a011164,
+                             files = [ (reg_root+"linux_wrapper.plain.bin",0x80000000),
+                                       (reg_root+"microkernel.sram.bin",0x10400),                                       
+                                       (linux_root+"vmlinux.fpga.stripped", 0x80400000) ],
+                             regs=[(0,0x80380000), (1,0x80380000+256*1024), (15,0x80000000)] );
+                             #          (linux_root+"initrd/image", 0x80380000),
 
         self.body_mif_filename      = Label( master=self.body, textvariable="mif_filename" )
         self.body_mif_filename_microkernel       = Button( master=self.body, text="Microkernel", command=local_file_boot_mif_set_microkernel )
@@ -409,8 +438,11 @@ class c_embview_ui:
         self.body_mif_filename_linux             = Button( master=self.body, text="Linux", command=local_file_boot_bin_linux )
         self.body_mif_filename_boot_eth          = Button( master=self.body, text="BootEth", command=local_file_boot_mif_eth )
         self.body_mif_filename_boot_eth_sram     = Button( master=self.body, text="BootEthSram", command=local_file_boot_mif_eth_sram )
-        self.body_mif_filename_flash_eth_sram    = Button( master=self.body, text="FlashEthSram", command=local_file_flash_bin_eth_sram )
+        self.body_mif_filename_flash_config      = Button( master=self.body, text="FlashConfig", command=local_file_flash_config )
+        self.body_mif_filename_flash_eth_mon     = Button( master=self.body, text="FlashEthMon", command=local_file_flash_bin_eth_mon )
         self.body_mif_filename_flash_dram_setup  = Button( master=self.body, text="FlashDramSetup", command=local_file_flash_bin_dram_setup )
+        self.body_mif_filename_flash_microkernel = Button( master=self.body, text="FlashMicrokernel", command=local_file_flash_microkernel )
+        self.body_mif_filename_flash_linux       = Button( master=self.body, text="FlashLinux", command=local_file_flash_linux )
         self.body_mif_filename_boot              = Button( master=self.body, text="BootCur", command=local_file_boot_mif_current )
         self.body_mif_filename_reset             = Button( master=self.body, text="Reset", command=local_file_reset_board )
         self.body_mif_filename_cont_reset        = Button( master=self.body, text="ContReset", command=local_file_cont_reset_board )
@@ -423,8 +455,11 @@ class c_embview_ui:
         self.body_mif_filename_linux.grid( row=3, column=4, sticky="nsew" )
 
         self.body_mif_filename_cont_reset.grid( row=4, column=1, sticky="nsew" )
-        self.body_mif_filename_flash_eth_sram.grid( row=4, column=2, sticky="nsew" )
+        self.body_mif_filename_flash_eth_mon.grid( row=4, column=2, sticky="nsew" )
         self.body_mif_filename_flash_dram_setup.grid( row=4, column=3, sticky="nsew" )
+        self.body_mif_filename_flash_config.grid( row=4, column=4, sticky="nsew" )
+        self.body_mif_filename_flash_microkernel.grid( row=4, column=5, sticky="nsew" )
+        self.body_mif_filename_flash_linux.grid( row=4, column=6, sticky="nsew" )
 
         self.body_mif_filename_boot_eth.grid( row=5, column=1, sticky="nsew" )
         self.body_mif_filename_boot_eth_sram.grid( row=5, column=2 , sticky="nsew" )
@@ -473,17 +508,14 @@ class c_embview_ui:
         mem.send_cmd( 0, 0, 0, buffer )
     #f flash_write_object_calc_csum
     def flash_write_object_calc_csum( self, buffer, csum_so_far, odd ):
-        print "csum in ", ("%04x" %csum_so_far), " length ", len(buffer)
         csum = csum_so_far
         for i in range(len(buffer)):
             if ((i+odd)&1):
                 csum = csum + (ord(buffer[i])<<8)
             else:
                 csum = csum + (ord(buffer[i])<<0)
-        print "csum inner ", ("%08x" %csum)
         csum = (csum&0xffff)+(csum>>16);
         csum = ((csum >> 16) + csum)&0xffff;
-        print "csum out ", ("%04x" %csum)
         return (csum, (odd+len(buffer))&1)
     #f flash_write_object_header
     def flash_write_object_header( self, mem, flash_address, obj_length, csum, type ):
@@ -503,46 +535,54 @@ class c_embview_ui:
         return flash_address+len(buffer)
     #f flash_write_object_bin
     def flash_write_object_bin( self, mem, flash_address, bin_filename, base_address ):
-        buffer = struct.pack("<bl", 2, base_address ); # type of 2
-        (csum, odd) = self.flash_write_object_calc_csum( buffer, 0, 0 )
-        length = 5 # including type and base address
-        pad = 0
-
         bin = open(bin_filename);
+        print "File ", bin_filename
         done = 0
         while (not done):
-            buffer = bin.read(1024);
-            if (len(buffer)>0):
-                length = length + len(buffer)
-                (csum,odd) = self.flash_write_object_calc_csum( buffer, csum, odd )
-            else:
-                done = 1
-        bin.close()
-        if (length&1):
-            pad = 1
-            length = length+1
-            (csum, odd) = self.flash_write_object_calc_csum( "\0", csum, odd )
-        print "csum", ("%04x" %csum)
-        flash_address = self.flash_write_object_header( mem, flash_address, length, csum, 2 )
+            binpos = bin.tell()
+            print "File ", bin_filename, " from ", binpos
 
-        buffer = struct.pack("<l", base_address );
-        mem.flash_write( flash_address, buffer )
-        flash_address = flash_address+4
+            buffer = struct.pack("<bl", 2, base_address+binpos ); # type of 2
+            (csum, odd) = self.flash_write_object_calc_csum( buffer, 0, 0 )
+            length = 5 # including type and base address
+            pad = 0
+
+            amt = 1024
+            byte_size = 0
+            while ((not done) and (byte_size<14*1024)):
+                buffer = bin.read(amt)
+                if (len(buffer)>0):
+                    length = length + len(buffer)
+                    byte_size = byte_size + len(buffer)
+                    (csum,odd) = self.flash_write_object_calc_csum( buffer, csum, odd )
+                else:
+                    done = 1
+            if (length&1):
+                pad = 1
+                length = length+1
+                (csum, odd) = self.flash_write_object_calc_csum( "\0", csum, odd )
+            print "csum", ("%04x" %csum)
+            flash_address = self.flash_write_object_header( mem, flash_address, length, csum, 2 )
+
+            buffer = struct.pack("<l", base_address+binpos );
+            mem.flash_write( flash_address, buffer )
+            flash_address = flash_address+4
         
-        bin = open(bin_filename);
-        done = 0
-        while (not done):
-            buffer = bin.read(1024);
-            if (len(buffer)>0):
-                mem.flash_write( flash_address, buffer )
-                flash_address = flash_address+len(buffer)
-            else:
-                done = 1
-        bin.close()
+            bin.seek(binpos);
+            done = 0
+            byte_size = 0
+            while ((not done) and (byte_size<14*1024)):
+                buffer = bin.read(amt)
+                if (len(buffer)>0):
+                    byte_size = byte_size + len(buffer)
+                    mem.flash_write( flash_address, buffer )
+                    flash_address = flash_address+len(buffer)
+                else:
+                    done = 1
 
-        if (pad):
-            mem.flash_write( flash_address, "\0" )
-            flash_address = flash_address+1
+            if (pad):
+                mem.flash_write( flash_address, "\0" )
+                flash_address = flash_address+1
         return flash_address
     #f flash_bin
     def flash_bin( self, mem, flash_slot, description, bin_filename, base_address, start_address ):
@@ -553,6 +593,32 @@ class c_embview_ui:
         flash_address = self.flash_write_object_bin( mem, flash_address, bin_filename, base_address )
         buffer = struct.pack(">llllllllllll",0x100, 0x101, 0x102, 0x103, 0x104, 0x105, 0x106, 0x107, 0x108, 0x109, 0x10a, start_address )
         flash_address = self.flash_write_object( mem, flash_address, 3, buffer ); # object 3 is registers
+        flash_address = self.flash_write_object( mem, flash_address, 0, "\0\0" ); # object 0 is end
+    #f flash_cfg
+    def flash_cfg( self, mem, flash_slot, dram_phase, eth_hi, eth_lo, ip_address ):
+        flash_address = flash_slot*0x20000
+        mem.flash_erase(flash_address)
+        flash_address = self.flash_write_object( mem, flash_address, 1, "Flash config only"+"\0" ) # object 1 is description
+        flash_address = self.flash_write_object( mem, flash_address, 5, struct.pack(">b",dram_phase) ) # object 5 is dram_phase
+        flash_address = self.flash_write_object( mem, flash_address, 4, struct.pack(">lll",eth_hi,eth_lo,ip_address) ) # object 4 is config
+        flash_address = self.flash_write_object( mem, flash_address, 0, "\0\0" ); # object 0 is end
+    #f flash_full
+    def flash_full( self, mem, flash_slot, description, dram_phase=0, eth_hi=0, eth_lo=0, ip_address=0, files=[], regs=[] ):
+        flash_address = flash_slot*0x20000
+        mem.flash_erase(flash_address)
+        flash_address = self.flash_write_object( mem, flash_address, 1, description+"\0" ) # object 1 is description
+        if (dram_phase!=0):
+            flash_address = self.flash_write_object( mem, flash_address, 5, struct.pack(">b",dram_phase) ) # object 5 is dram_phase
+        if ((eth_hi!=0) or (eth_lo!=0) or (ip_address!=0)):
+            flash_address = self.flash_write_object( mem, flash_address, 4, struct.pack(">lll",eth_hi,eth_lo,ip_address) ) # object 4 is config
+        for file in files:
+            flash_address = self.flash_write_object_bin( mem, flash_address, file[0], file[1] )
+        if (regs !=[]):
+            data = struct.pack( ">llllllllllllllll", 0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0 );
+            for r in regs:
+                data = data[0:r[0]*4] + struct.pack(">l", r[1]) + data[r[0]*4+4:]
+            buffer = data[0:44] + data[60:64]
+            flash_address = self.flash_write_object( mem, flash_address, 3, buffer ); # object 3 is registers
         flash_address = self.flash_write_object( mem, flash_address, 0, "\0\0" ); # object 0 is end
     #f boot_mif
     def boot_mif( self, mem, mif_filename, base_address, start_address, delay=0 ):

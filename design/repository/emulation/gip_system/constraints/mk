@@ -1,3 +1,4 @@
 #!/bin/csh -f
-cpp -E -DNEW_AVNET fpga_wrapper_common.ucf > fpga_wrapper_new_avnet.ucf
-cpp -E -DOLD_AVNET -DCMM_ETH fpga_wrapper_common.ucf > fpga_wrapper_old_avnet.ucf
+cpp -E -DLX60=1                  fpga_wrapper_common.ucf > fpga_wrapper_lx60.ucf
+cpp -E -DNEW_AVNET=1             fpga_wrapper_common.ucf > fpga_wrapper_new_avnet.ucf
+cpp -E -DOLD_AVNET=1 -DCMM_ETH=1 fpga_wrapper_common.ucf > fpga_wrapper_old_avnet.ucf

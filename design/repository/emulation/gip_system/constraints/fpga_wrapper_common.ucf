@@ -1,12 +1,16 @@
+//a Handle CPP stuff
+#ifndef LX60
+#define LX60 0
+#endif
+#ifndef NEW_AVNET
+#define NEW_AVNET 0
+#endif
+#ifndef OLD_AVNET
+#define OLD_AVNET 0
+#endif
+
 //a Old stuff
-// NET "global_clock" TNM_NET = "global_clock"
-// TIMESPEC "TS_global_clock" = PERIOD "global_clock" 40 ns HIGH 50 %
-// TIMESPEC "TS_global_clock" = PERIOD "global_clock" 40 ns HIGH 50 %
-// Clock CLK_FPGA_MAIN po pg 4
-// UART pinout on page 3
-// Switches pinout on page ?
-// LEDS pinout on page 3
-// Flash pinout on page 3 (ctl) 4 (addr/data) (MT28F128J, 16MB flash in schematic, Intel E28F64 on the board?)
+// UCF is used rather than source - in fact, we should not have any of this sort of information in the source
 // NET "flash_ce<0>" LOC="E4"; // pg 14
 // NET "flash_ce<1>" LOC="K6"; // pg 14
 // NET "flash_ce<2>" LOC="M10"; // pg 14
@@ -23,14 +27,23 @@
 //b Clocks in
 // The DRAM output clock feedback is bank 6/7 with VCCO of 2.5V
 // The input clocks are bank 5, so has a VCCO of 3.3V; it should be okay at a 2.5V input drive for a 1, as the spec is 2.0V for Vih
+#if LX60
+NET "sys_drm_clock_in"     LOC = "C13" | IOSTANDARD = "LVCMOS33";
+#else
 NET "sys_drm_clock_in"     LOC = "AK18" | IOSTANDARD = "LVCMOS33";
+#endif
 // NET "sys_drm_clock_fb"     LOC = "AG18" | IOSTANDARD = "LVCMOS33";
 // NET "sys_drm_clock_fb_out" LOC = "AE28" | IOSTANDARD = "LVCMOS25";
 // NET "clk_40MHz_in"         LOC = "AK19" | IOSTANDARD = "LVCMOS33";
 
 //b DRAM pins
-// which is used? ucf or source?    //synthesis attribute IOSTANDARD of ddr_dram_clk_0 is "SSTL2_II";
-#ifdef OLD_AVNET
+#if LX60
+NET "ddr_dram_clk_0"   LOC = "T4"  | IOSTANDARD = SSTL2_I_DCI;
+NET "ddr_dram_clk_0_n" LOC = "T3"  | IOSTANDARD = SSTL2_I_DCI;
+// put these on JP21
+NET "ddr_dram_clk_1"   LOC = "U6"  | IOSTANDARD = SSTL2_I_DCI;
+NET "ddr_dram_clk_1_n" LOC = "U5"  | IOSTANDARD = SSTL2_I_DCI;
+#elif OLD_AVNET
 NET "ddr_dram_clk_0"   LOC = "N27"  | IOSTANDARD = SSTL2_I_DCI;
 NET "ddr_dram_clk_0_n" LOC = "P27"  | IOSTANDARD = SSTL2_I_DCI;
 NET "ddr_dram_clk_1"   LOC = "AF29" | IOSTANDARD = SSTL2_I_DCI;
@@ -42,7 +55,11 @@ NET "ddr_dram_clk_1"   LOC = "AF29" | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_clk_1_n" LOC = "AE29" | IOSTANDARD = "SSTL2_I";
 #endif
 
-#ifdef OLD_AVNET
+#if LX60
+NET "ddr_dram_cke<0>" LOC = "N5"  | IOSTANDARD = "SSTL2_I";
+// put this on JP21
+NET "ddr_dram_cke<1>" LOC = "T8"  | IOSTANDARD = "SSTL2_I";
+#elif OLD_AVNET
 NET "ddr_dram_cke<0>" LOC = "N25"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_cke<1>" LOC = "Y25"  | IOSTANDARD = "SSTL2_I";
 #else
@@ -50,7 +67,11 @@ NET "ddr_dram_cke<0>" LOC = "N25"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_cke<1>" LOC = "AB25"  | IOSTANDARD = "SSTL2_I";
 #endif
 
-#ifdef OLD_AVNET
+#if LX60
+NET "ddr_dram_s_n<0>" LOC = "N3"  | IOSTANDARD = "SSTL2_I";
+// put this on JP21
+NET "ddr_dram_s_n<1>" LOC = "U7"  | IOSTANDARD = "SSTL2_I";
+#elif OLD_AVNET
 NET "ddr_dram_s_n<0>" LOC = "AC29" | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_s_n<1>" LOC = "V29"  | IOSTANDARD = "SSTL2_I";
 #else
@@ -58,7 +79,11 @@ NET "ddr_dram_s_n<0>" LOC = "AC26" | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_s_n<1>" LOC = "Y25"  | IOSTANDARD = "SSTL2_I";
 #endif
 
-#ifdef OLD_AVNET
+#if LX60
+NET "ddr_dram_ras_n"  LOC = "N2"  | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_cas_n"  LOC = "P2"  | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_we_n"   LOC = "N4"  | IOSTANDARD = "SSTL2_I";
+#elif OLD_AVNET
 NET "ddr_dram_ras_n"  LOC = "V25"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_cas_n"  LOC = "W29"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_we_n"   LOC = "AB26" | IOSTANDARD = "SSTL2_I";
@@ -68,7 +93,10 @@ NET "ddr_dram_cas_n"  LOC = "W25"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_we_n"   LOC = "AC25" | IOSTANDARD = "SSTL2_I";
 #endif
 
-#ifdef OLD_AVNET
+#if LX60
+NET "ddr_dram_ba<0>"  LOC = "M4"  | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_ba<1>"  LOC = "M2"  | IOSTANDARD = "SSTL2_I";
+#elif OLD_AVNET
 NET "ddr_dram_ba<0>"  LOC = "AC25" | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_ba<1>"  LOC = "U27"  | IOSTANDARD = "SSTL2_I";
 #else
@@ -76,7 +104,21 @@ NET "ddr_dram_ba<0>"  LOC = "AB27" | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_ba<1>"  LOC = "U27"  | IOSTANDARD = "SSTL2_I";
 #endif
 
-#ifdef OLD_AVNET
+#if LX60
+NET "ddr_dram_a<0>"   LOC = "L1"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<1>"   LOC = "K1"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<2>"   LOC = "J4"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<3>"   LOC = "J2"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<4>"   LOC = "J5"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<5>"   LOC = "J6"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<6>"   LOC = "J7"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<7>"   LOC = "M7"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<8>"   LOC = "M6"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<9>"   LOC = "M5"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<10>"  LOC = "M1"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<11>"  LOC = "N7"      | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_a<12>"  LOC = "R4"      | IOSTANDARD = "SSTL2_I";
+#elif OLD_AVNET
 NET "ddr_dram_a<0>"   LOC = "U26"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_a<1>"   LOC = "AB25" | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_a<2>"   LOC = "U25"  | IOSTANDARD = "SSTL2_I";
@@ -106,6 +148,24 @@ NET "ddr_dram_a<11>"  LOC = "N26"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_a<12>"  LOC = "V29"  | IOSTANDARD = "SSTL2_I";
 #endif
 
+#if LX60
+NET "ddr_dram_dq<0>"  LOC = "V1"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<1>"  LOC = "V2"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<2>"  LOC = "R2"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<3>"  LOC = "P5"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<4>"  LOC = "R1"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<5>"  LOC = "K2"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<6>"  LOC = "K3"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<7>"  LOC = "K4"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<8>"  LOC = "K6"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<9>"  LOC = "K5"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<10>" LOC = "L6"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<11>" LOC = "L7"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<12>" LOC = "N8"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<13>" LOC = "P6"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<14>" LOC = "P7"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dq<15>" LOC = "P8"  | IOSTANDARD = "SSTL2_II";
+#elif ( OLD_AVNET || NEW_AVNET)
 NET "ddr_dram_dq<0>"  LOC = "F30"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dq<1>"  LOC = "G29"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dq<2>"  LOC = "H28"  | IOSTANDARD = "SSTL2_II";
@@ -122,95 +182,101 @@ NET "ddr_dram_dq<12>" LOC = "F32"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dq<13>" LOC = "G32"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dq<14>" LOC = "H31"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dq<15>" LOC = "H32"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<16>" LOC = "L30"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<17>" LOC = "N30"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<18>" LOC = "N31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<19>" LOC = "P30"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<20>" LOC = "J31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<21>" LOC = "J32"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<22>" LOC = "K31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<23>" LOC = "L31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<24>" LOC = "P31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<25>" LOC = "P26"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<26>" LOC = "R32"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<27>" LOC = "R26"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<28>" LOC = "L32"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<29>" LOC = "M31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<30>" LOC = "M32"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<31>" LOC = "N29"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<16>" LOC = "L30"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<17>" LOC = "N30"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<18>" LOC = "N31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<19>" LOC = "P30"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<20>" LOC = "J31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<21>" LOC = "J32"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<22>" LOC = "K31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<23>" LOC = "L31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<24>" LOC = "P31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<25>" LOC = "P26"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<26>" LOC = "R32"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<27>" LOC = "R26"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<28>" LOC = "L32"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<29>" LOC = "M31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<30>" LOC = "M32"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<31>" LOC = "N29"  | IOSTANDARD = "SSTL2_II";
 
-NET "ddr_dram_dq<32>" LOC = "T32"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<33>" LOC = "T29"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<34>" LOC = "T30"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<35>" LOC = "U31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<36>" LOC = "W32"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<37>" LOC = "AB29" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<38>" LOC = "AB28" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<39>" LOC = "AC28" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<40>" LOC = "U30"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<41>" LOC = "V32"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<42>" LOC = "V31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<43>" LOC = "V30"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<44>" LOC = "AA29" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<45>" LOC = "AC31" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<46>" LOC = "AD31" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<47>" LOC = "AE31" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<48>" LOC = "W30"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<49>" LOC = "Y31"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<50>" LOC = "AA30" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<51>" LOC = "AB30" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<52>" LOC = "AF32" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<53>" LOC = "AF31" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<54>" LOC = "AG32" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<55>" LOC = "AG31" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<56>" LOC = "AD30" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<57>" LOC = "AE30" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<58>" LOC = "AF30" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<59>" LOC = "AG30" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<60>" LOC = "AJ32" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<61>" LOC = "AJ31" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<62>" LOC = "AK31" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dq<63>" LOC = "AL32" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<32>" LOC = "T32"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<33>" LOC = "T29"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<34>" LOC = "T30"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<35>" LOC = "U31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<36>" LOC = "W32"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<37>" LOC = "AB29" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<38>" LOC = "AB28" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<39>" LOC = "AC28" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<40>" LOC = "U30"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<41>" LOC = "V32"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<42>" LOC = "V31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<43>" LOC = "V30"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<44>" LOC = "AA29" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<45>" LOC = "AC31" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<46>" LOC = "AD31" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<47>" LOC = "AE31" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<48>" LOC = "W30"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<49>" LOC = "Y31"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<50>" LOC = "AA30" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<51>" LOC = "AB30" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<52>" LOC = "AF32" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<53>" LOC = "AF31" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<54>" LOC = "AG32" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<55>" LOC = "AG31" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<56>" LOC = "AD30" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<57>" LOC = "AE30" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<58>" LOC = "AF30" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<59>" LOC = "AG30" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<60>" LOC = "AJ32" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<61>" LOC = "AJ31" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<62>" LOC = "AK31" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dq<63>" LOC = "AL32" | IOSTANDARD = "SSTL2_II";
+#endif
 
-
-#ifdef OLD_AVNET
+#if LX60
+NET "ddr_dram_dqm<0>" LOC = "P4"  | IOSTANDARD = "SSTL2_I";
+NET "ddr_dram_dqm<1>" LOC = "K7"  | IOSTANDARD = "SSTL2_I";
+#elif OLD_AVNET
 NET "ddr_dram_dqm<0>" LOC = "K28"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_dqm<1>" LOC = "M28"  | IOSTANDARD = "SSTL2_I";
-NET "ddr_dram_dqm<2>" LOC = "P25"  | IOSTANDARD = "SSTL2_I";
-NET "ddr_dram_dqm<3>" LOC = "V27"  | IOSTANDARD = "SSTL2_I";
-//NET "ddr_dram_dqm<4>" LOC = "AC26"  | IOSTANDARD = "SSTL2_I";
-//NET "ddr_dram_dqm<5>" LOC = "AD29"  | IOSTANDARD = "SSTL2_I";
-//NET "ddr_dram_dqm<6>" LOC = "AF28"  | IOSTANDARD = "SSTL2_I";
-//NET "ddr_dram_dqm<7>" LOC = "AG29"  | IOSTANDARD = "SSTL2_I";
+//NET "ddr_dram_dqm<2>" LOC = "P25"  | IOSTANDARD = "SSTL2_I";
+//NET "ddr_dram_dqm<3>" LOC = "V27"  | IOSTANDARD = "SSTL2_I";
+////NET "ddr_dram_dqm<4>" LOC = "AC26"  | IOSTANDARD = "SSTL2_I";
+////NET "ddr_dram_dqm<5>" LOC = "AD29"  | IOSTANDARD = "SSTL2_I";
+////NET "ddr_dram_dqm<6>" LOC = "AF28"  | IOSTANDARD = "SSTL2_I";
+////NET "ddr_dram_dqm<7>" LOC = "AG29"  | IOSTANDARD = "SSTL2_I";
 #else
 NET "ddr_dram_dqm<0>" LOC = "M28"  | IOSTANDARD = "SSTL2_I";
 NET "ddr_dram_dqm<1>" LOC = "N28"  | IOSTANDARD = "SSTL2_I";
-NET "ddr_dram_dqm<2>" LOC = "T25"  | IOSTANDARD = "SSTL2_I";
-NET "ddr_dram_dqm<3>" LOC = "U25"  | IOSTANDARD = "SSTL2_I";
-//NET "ddr_dram_dqm<4>" LOC = "AC29"  | IOSTANDARD = "SSTL2_I";
-//NET "ddr_dram_dqm<5>" LOC = "AD29"  | IOSTANDARD = "SSTL2_I";
-//NET "ddr_dram_dqm<6>" LOC = "AF28"  | IOSTANDARD = "SSTL2_I";
-//NET "ddr_dram_dqm<7>" LOC = "AG28"  | IOSTANDARD = "SSTL2_I";
+//NET "ddr_dram_dqm<2>" LOC = "T25"  | IOSTANDARD = "SSTL2_I";
+//NET "ddr_dram_dqm<3>" LOC = "U25"  | IOSTANDARD = "SSTL2_I";
+////NET "ddr_dram_dqm<4>" LOC = "AC29"  | IOSTANDARD = "SSTL2_I";
+////NET "ddr_dram_dqm<5>" LOC = "AD29"  | IOSTANDARD = "SSTL2_I";
+////NET "ddr_dram_dqm<6>" LOC = "AF28"  | IOSTANDARD = "SSTL2_I";
+////NET "ddr_dram_dqm<7>" LOC = "AG28"  | IOSTANDARD = "SSTL2_I";
 #endif
 
-#ifdef OLD_AVNET
+#if LX60
+NET "ddr_dram_dqs<0>" LOC = "L4"  | IOSTANDARD = "SSTL2_II";
+NET "ddr_dram_dqs<1>" LOC = "U1"  | IOSTANDARD = "SSTL2_II";
+#elif OLD_AVNET
 NET "ddr_dram_dqs<0>" LOC = "L28"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dqs<1>" LOC = "M25"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<2>" LOC = "R25"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<3>" LOC = "V26"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<4>" LOC = "AC27" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<5>" LOC = "AD27" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<6>" LOC = "AG28" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<7>" LOC = "AH29" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<2>" LOC = "R25"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<3>" LOC = "V26"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<4>" LOC = "AC27" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<5>" LOC = "AD27" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<6>" LOC = "AG28" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<7>" LOC = "AH29" | IOSTANDARD = "SSTL2_II";
 #else
 NET "ddr_dram_dqs<0>" LOC = "K28"  | IOSTANDARD = "SSTL2_II";
 NET "ddr_dram_dqs<1>" LOC = "L28"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<2>" LOC = "P25"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<3>" LOC = "R25"  | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<4>" LOC = "AC27" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<5>" LOC = "AD27" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<6>" LOC = "AG29" | IOSTANDARD = "SSTL2_II";
-NET "ddr_dram_dqs<7>" LOC = "AH29" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<2>" LOC = "P25"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<3>" LOC = "R25"  | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<4>" LOC = "AC27" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<5>" LOC = "AD27" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<6>" LOC = "AG29" | IOSTANDARD = "SSTL2_II";
+//NET "ddr_dram_dqs<7>" LOC = "AH29" | IOSTANDARD = "SSTL2_II";
 #endif
 
 //b Ethernet
@@ -229,7 +295,27 @@ NET "ddr_dram_dqs<7>" LOC = "AH29" | IOSTANDARD = "SSTL2_II";
 // gmii_tx_en pin 62 av data49 pin 14    data_av49  AK22
 // gmii_mdio pin 80 av data33 pin 2     data_av33  AE19
 // gmii_mdc pin 81 av data32 pin 72     data_av32  AL17
-#ifdef CMM_ETH
+#if LX60
+NET "eth_rst_n"  LOC = "AF24" | IOSTANDARD = "LVTTL";
+NET "mii_rx_clk" LOC = "Y5"  | IOSTANDARD = "LVTTL";
+NET "mii_tx_clk" LOC = "Y4"  | IOSTANDARD = "LVTTL";
+NET "mii_crs"    LOC = "AE3" | IOSTANDARD = "LVTTL";
+NET "mii_col"    LOC = "AD4" | IOSTANDARD = "LVTTL";
+NET "mii_rx_er"  LOC = "AA3" | IOSTANDARD = "LVTTL";
+NET "mii_rxd<0>" LOC = "W4"  | IOSTANDARD = "LVTTL";
+NET "mii_rxd<1>" LOC = "W3"  | IOSTANDARD = "LVTTL";
+NET "mii_rxd<2>" LOC = "W1"  | IOSTANDARD = "LVTTL";
+NET "mii_rxd<3>" LOC = "W2"  | IOSTANDARD = "LVTTL";
+NET "mii_rx_dv"  LOC = "Y3"  | IOSTANDARD = "LVTTL";
+NET "mii_tx_er"  LOC = "AA4" | IOSTANDARD = "LVTTL";
+NET "mii_txd<0>" LOC = "AC3" | IOSTANDARD = "LVTTL";
+NET "mii_txd<1>" LOC = "AC4" | IOSTANDARD = "LVTTL";
+NET "mii_txd<2>" LOC = "AD1" | IOSTANDARD = "LVTTL";
+NET "mii_txd<3>" LOC = "AD2" | IOSTANDARD = "LVTTL";
+NET "mii_tx_en"  LOC = "AC2" | IOSTANDARD = "LVTTL";
+NET "mii_mdio"   LOC = "V6" | IOSTANDARD = "LVTTL";
+NET "mii_mdc"    LOC = "V5" | IOSTANDARD = "LVTTL";
+#elif CMM_ETH
 NET "eth_rst_n"  LOC = "AF14" | IOSTANDARD = "LVTTL";
 NET "mii_rx_clk" LOC = "AF18" | IOSTANDARD = "LVTTL";
 NET "mii_tx_clk" LOC = "AJ19" | IOSTANDARD = "LVTTL";
@@ -272,10 +358,25 @@ NET "mii_mdc"    LOC = "F22" | IOSTANDARD = "LVTTL";
 #endif
 
 //b UART
+#if LX60
+NET "rxd"         LOC = "AC1"   | IOSTANDARD = "LVTTL";
+NET "txd"         LOC = "AB1"   | IOSTANDARD = "LVTTL";
+#else
 NET "rxd"         LOC = "M9"   | IOSTANDARD = "LVTTL";
 NET "txd"         LOC = "K5"   | IOSTANDARD = "LVTTL";
+#endif
 
 //b LEDs
+#if LX60
+NET "leds<0>" LOC = "AF3"   | IOSTANDARD = "LVTTL";
+NET "leds<1>" LOC = "AF4"   | IOSTANDARD = "LVTTL";
+NET "leds<2>" LOC = "AE4"   | IOSTANDARD = "LVTTL";
+NET "leds<3>" LOC = "AD5"   | IOSTANDARD = "LVTTL";
+NET "leds<4>" LOC = "AE6"   | IOSTANDARD = "LVTTL";
+NET "leds<5>" LOC = "AF6"   | IOSTANDARD = "LVTTL";
+NET "leds<6>" LOC = "AD6"   | IOSTANDARD = "LVTTL";
+NET "leds<7>" LOC = "AC6"   | IOSTANDARD = "LVTTL";
+#else
 NET "leds<0>" LOC = "N9"   | IOSTANDARD = "LVTTL";
 NET "leds<1>" LOC = "P8"   | IOSTANDARD = "LVTTL";
 NET "leds<2>" LOC = "N8"   | IOSTANDARD = "LVTTL";
@@ -284,8 +385,19 @@ NET "leds<4>" LOC = "M6"   | IOSTANDARD = "LVTTL";
 NET "leds<5>" LOC = "M3"   | IOSTANDARD = "LVTTL";
 NET "leds<6>" LOC = "L6"   | IOSTANDARD = "LVTTL";
 NET "leds<7>" LOC = "L3"   | IOSTANDARD = "LVTTL";
+#endif
 
 //b Switches
+#if LX60
+NET "switches<0>" LOC = "R7"   | IOSTANDARD = "LVTTL";
+NET "switches<1>" LOC = "T6"   | IOSTANDARD = "LVTTL";
+NET "switches<2>" LOC = "U3"   | IOSTANDARD = "LVTTL";
+//NET "switches<3>" LOC = "U4"   | IOSTANDARD = "LVTTL";
+//NET "switches<4>" LOC = "V4"   | IOSTANDARD = "LVTTL";
+NET "switches<5>" LOC = "M8"   | IOSTANDARD = "LVTTL";
+NET "switches<6>" LOC = "L8"  | IOSTANDARD = "LVTTL";
+NET "switches<7>" LOC = "H20"  | IOSTANDARD = "LVTTL";
+#else
 NET "switches<0>" LOC = "AL3"   | IOSTANDARD = "LVTTL";
 NET "switches<1>" LOC = "AK3"   | IOSTANDARD = "LVTTL";
 NET "switches<2>" LOC = "AJ5"   | IOSTANDARD = "LVTTL";
@@ -294,15 +406,83 @@ NET "switches<2>" LOC = "AJ5"   | IOSTANDARD = "LVTTL";
 NET "switches<5>" LOC = "AF7"   | IOSTANDARD = "LVTTL";
 NET "switches<6>" LOC = "AF11"  | IOSTANDARD = "LVTTL";
 NET "switches<7>" LOC = "AE11"  | IOSTANDARD = "LVTTL";
+#endif
 
 //b Expansion bus (addr_av, data_av, and various ce's: flash_ce<3..0> is N10 M10 K6 E4, from page 3/14; flash_we/ce/oe is J6 H7 K4 from pg 3/7/14; flash_rst is L10 from pg 3)
+#if LX60
+NET "eb_oe_n"     LOC = "AB25"   | IOSTANDARD = "LVTTL";
+NET "eb_we_n"     LOC = "AB26"   | IOSTANDARD = "LVTTL";
+
+NET "eb_ce_n<0>" LOC = "Y20" | IOSTANDARD = "LVTTL";
+//NET "eb_ce_n<1>" LOC = "" | IOSTANDARD = "LVTTL";
+//NET "eb_ce_n<2>" LOC = "" | IOSTANDARD = "LVTTL";
+//NET "eb_ce_n<3>" LOC = "" | IOSTANDARD = "LVTTL";
+
+NET "eb_address<0>"  LOC = "W24"  | IOSTANDARD = "LVTTL";
+NET "eb_address<1>"  LOC = "W26"  | IOSTANDARD = "LVTTL";
+NET "eb_address<2>"  LOC = "W23"  | IOSTANDARD = "LVTTL";
+NET "eb_address<3>"  LOC = "W25"  | IOSTANDARD = "LVTTL";
+NET "eb_address<4>"  LOC = "AC22"  | IOSTANDARD = "LVTTL";
+NET "eb_address<5>"  LOC = "Y26"  | IOSTANDARD = "LVTTL";
+NET "eb_address<6>"  LOC = "AD22"  | IOSTANDARD = "LVTTL";
+NET "eb_address<7>"  LOC = "AA26"  | IOSTANDARD = "LVTTL";
+NET "eb_address<8>"  LOC = "V20"  | IOSTANDARD = "LVTTL";
+NET "eb_address<9>"  LOC = "Y25"  | IOSTANDARD = "LVTTL";
+NET "eb_address<10>" LOC = "W20"  | IOSTANDARD = "LVTTL";
+NET "eb_address<11>" LOC = "Y24"  | IOSTANDARD = "LVTTL";
+NET "eb_address<12>" LOC = "W19"  | IOSTANDARD = "LVTTL";
+NET "eb_address<13>" LOC = "Y23"  | IOSTANDARD = "LVTTL";
+NET "eb_address<14>" LOC = "Y19"  | IOSTANDARD = "LVTTL";
+NET "eb_address<15>" LOC = "AA24"  | IOSTANDARD = "LVTTL";
+NET "eb_address<16>" LOC = "AF20"  | IOSTANDARD = "LVTTL";
+NET "eb_address<17>" LOC = "AA23"  | IOSTANDARD = "LVTTL";
+NET "eb_address<18>" LOC = "AF19"  | IOSTANDARD = "LVTTL";
+NET "eb_address<19>" LOC = "AB23"  | IOSTANDARD = "LVTTL";
+NET "eb_address<20>" LOC = "Y18"  | IOSTANDARD = "LVTTL";
+NET "eb_address<21>" LOC = "AA18"  | IOSTANDARD = "LVTTL";
+//NET "eb_address<22>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_address<23>" LOC = ""  | IOSTANDARD = "LVTTL";
+
+NET "eb_data<0>"  LOC = "W21"  | IOSTANDARD = "LVTTL";
+NET "eb_data<1>"  LOC = "W22"  | IOSTANDARD = "LVTTL";
+NET "eb_data<2>"  LOC = "Y22"  | IOSTANDARD = "LVTTL";
+NET "eb_data<3>"  LOC = "AE23"  | IOSTANDARD = "LVTTL";
+NET "eb_data<4>"  LOC = "AC23"  | IOSTANDARD = "LVTTL";
+NET "eb_data<5>"  LOC = "AD25"  | IOSTANDARD = "LVTTL";
+NET "eb_data<6>"  LOC = "AD26"  | IOSTANDARD = "LVTTL";
+NET "eb_data<7>"  LOC = "AB24"  | IOSTANDARD = "LVTTL";
+NET "eb_data<8>"  LOC = "V21"  | IOSTANDARD = "LVTTL";
+NET "eb_data<9>"  LOC = "V22"  | IOSTANDARD = "LVTTL";
+NET "eb_data<10>" LOC = "AB22"  | IOSTANDARD = "LVTTL";
+NET "eb_data<11>" LOC = "AF23"  | IOSTANDARD = "LVTTL";
+NET "eb_data<12>" LOC = "AD23"  | IOSTANDARD = "LVTTL";
+NET "eb_data<13>" LOC = "AC24"  | IOSTANDARD = "LVTTL";
+NET "eb_data<14>" LOC = "AC25"  | IOSTANDARD = "LVTTL";
+NET "eb_data<15>" LOC = "AC26"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<16>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<17>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<18>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<19>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<20>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<21>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<22>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<23>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<24>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<25>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<26>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<27>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<28>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<29>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<30>" LOC = ""  | IOSTANDARD = "LVTTL";
+//NET "eb_data<31>" LOC = ""  | IOSTANDARD = "LVTTL";
+#else
 NET "eb_oe_n"     LOC = "K4"   | IOSTANDARD = "LVTTL";
 NET "eb_we_n"     LOC = "J6"   | IOSTANDARD = "LVTTL";
 
 NET "eb_ce_n<0>" LOC = "H7" | IOSTANDARD = "LVTTL";
-NET "eb_ce_n<1>" LOC = "K6" | IOSTANDARD = "LVTTL";
-NET "eb_ce_n<2>" LOC = "E4" | IOSTANDARD = "LVTTL";
-NET "eb_ce_n<3>" LOC = "N10" | IOSTANDARD = "LVTTL";
+//NET "eb_ce_n<1>" LOC = "K6" | IOSTANDARD = "LVTTL";
+//NET "eb_ce_n<2>" LOC = "E4" | IOSTANDARD = "LVTTL";
+//NET "eb_ce_n<3>" LOC = "N10" | IOSTANDARD = "LVTTL";
 
 NET "eb_address<0>"  LOC = "AK27"  | IOSTANDARD = "LVTTL";
 NET "eb_address<1>"  LOC = "AH26"  | IOSTANDARD = "LVTTL";
@@ -326,8 +506,8 @@ NET "eb_address<18>" LOC = "AF23"  | IOSTANDARD = "LVTTL";
 NET "eb_address<19>" LOC = "AG23"  | IOSTANDARD = "LVTTL";
 NET "eb_address<20>" LOC = "AL22"  | IOSTANDARD = "LVTTL";
 NET "eb_address<21>" LOC = "AH23"  | IOSTANDARD = "LVTTL";
-NET "eb_address<22>" LOC = "AJ22"  | IOSTANDARD = "LVTTL";
-NET "eb_address<23>" LOC = "AL23"  | IOSTANDARD = "LVTTL";
+//NET "eb_address<22>" LOC = "AJ22"  | IOSTANDARD = "LVTTL";
+//NET "eb_address<23>" LOC = "AL23"  | IOSTANDARD = "LVTTL";
 
 NET "eb_data<0>"  LOC = "AE12" | IOSTANDARD = "LVTTL";
 NET "eb_data<1>"  LOC = "AG14" | IOSTANDARD = "LVTTL";
@@ -345,22 +525,23 @@ NET "eb_data<12>" LOC = "AJ11" | IOSTANDARD = "LVTTL";
 NET "eb_data<13>" LOC = "AG12" | IOSTANDARD = "LVTTL";
 NET "eb_data<14>" LOC = "AM11" | IOSTANDARD = "LVTTL";
 NET "eb_data<15>" LOC = "AL11" | IOSTANDARD = "LVTTL";
-NET "eb_data<16>" LOC = "AK10" | IOSTANDARD = "LVTTL";
-NET "eb_data<17>" LOC = "AK11" | IOSTANDARD = "LVTTL";
-NET "eb_data<18>" LOC = "AL10" | IOSTANDARD = "LVTTL";
-NET "eb_data<19>" LOC = "AH10" | IOSTANDARD = "LVTTL";
-NET "eb_data<20>" LOC = "AJ10" | IOSTANDARD = "LVTTL";
-NET "eb_data<21>" LOC = "AL9"  | IOSTANDARD = "LVTTL";
-NET "eb_data<22>" LOC = "AM9"  | IOSTANDARD = "LVTTL";
-NET "eb_data<23>" LOC = "AJ9"  | IOSTANDARD = "LVTTL";
-NET "eb_data<24>" LOC = "AK9"  | IOSTANDARD = "LVTTL";
-NET "eb_data<25>" LOC = "AL8"  | IOSTANDARD = "LVTTL";
-NET "eb_data<26>" LOC = "AH9"  | IOSTANDARD = "LVTTL";
-NET "eb_data<27>" LOC = "AJ8"  | IOSTANDARD = "LVTTL";
-NET "eb_data<28>" LOC = "AM8"  | IOSTANDARD = "LVTTL";
-NET "eb_data<29>" LOC = "AM7"  | IOSTANDARD = "LVTTL";
-NET "eb_data<30>" LOC = "AL6"  | IOSTANDARD = "LVTTL";
-NET "eb_data<31>" LOC = "AM6"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<16>" LOC = "AK10" | IOSTANDARD = "LVTTL";
+//NET "eb_data<17>" LOC = "AK11" | IOSTANDARD = "LVTTL";
+//NET "eb_data<18>" LOC = "AL10" | IOSTANDARD = "LVTTL";
+//NET "eb_data<19>" LOC = "AH10" | IOSTANDARD = "LVTTL";
+//NET "eb_data<20>" LOC = "AJ10" | IOSTANDARD = "LVTTL";
+//NET "eb_data<21>" LOC = "AL9"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<22>" LOC = "AM9"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<23>" LOC = "AJ9"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<24>" LOC = "AK9"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<25>" LOC = "AL8"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<26>" LOC = "AH9"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<27>" LOC = "AJ8"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<28>" LOC = "AM8"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<29>" LOC = "AM7"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<30>" LOC = "AL6"  | IOSTANDARD = "LVTTL";
+//NET "eb_data<31>" LOC = "AM6"  | IOSTANDARD = "LVTTL";
+#endif
 
 //b Logic analyzer
 // on JP16, data on pins 1 thru 32, clock on 50 (GEN_IO1_0 thru 31 and 49)
@@ -400,6 +581,8 @@ NET "eb_data<31>" LOC = "AM6"  | IOSTANDARD = "LVTTL";
 //oldavnet NET "analyzer_signals<31>" LOC = "J24"  | IOSTANDARD = "LVTTL";
 
 //b Parallel interface
+#if LX60
+#else
 // gen io 1 - 41 43 45 47 49 -> d27 e27 e28 c29 d29
 // gen io 1 - 31 33 35 37 39 -> j24 d25  h25 c26 e26
 // gen io 1 - 21 23 25 27 29 -> f23 c23 h23 k23 g24
@@ -436,8 +619,20 @@ NET "par_a_data_inputs<1>"      LOC = "D27"  | IOSTANDARD = "LVTTL";
 // other header is 34-48 even; ck=48, gnd=44, data=40
 NET "ps2_clock"              LOC = "H26"  | IOSTANDARD = "LVTTL";
 NET "ps2_data"               LOC = "F26"  | IOSTANDARD = "LVTTL";
+#endif
 
 //a Placements
+//b Clock related
+#if LX60
+INST "ckgen_clk_phases_gen"     LOC="DCM_ADV_X0Y7";
+INST "ckgen_dram_input_pin_gen" LOC="DCM_ADV_X0Y6";
+
+INST "ckgen_drm_input_clock_buffer"  LOC = "BUFGMUX0P" ;
+INST "ckgen_drm_clock_90_buffer"     LOC = "BUFGMUX5S" ;
+INST "ckgen_drm_clock_buffer"        LOC = "BUFGMUX7S" ;
+INST "ckgen_drm_double_clock_buffer" LOC = "BUFGMUX6P" ;
+INST "ckgen_slow_logic_clock_buffer" LOC = "BUFGMUX3S" ;
+#else
 INST "ckgen_drm_input_clock_buffer"  LOC = "BUFGMUX0P" ;
 INST "ckgen_drm_clock_90_buffer"     LOC = "BUFGMUX5S" ;
 INST "ckgen_drm_clock_buffer"        LOC = "BUFGMUX7S" ;
@@ -445,6 +640,45 @@ INST "ckgen_drm_double_clock_buffer" LOC = "BUFGMUX6P" ;
 INST "ckgen_dram_input_pin_gen"      LOC = "DCM_X3Y0" ;
 INST "ckgen_clk_phases_gen"          LOC = "DCM_X2Y0" ;
 INST "ckgen_slow_logic_clock_buffer" LOC = "BUFGMUX3S" ;
+
+INST "ckgen_divided_clock"   LOC = "SLICE_X70Y0" ;
+INST "ckgen_clock_divider_3" LOC = "SLICE_X74Y0" ;
+INST "ckgen_clock_divider_2" LOC = "SLICE_X74Y0" ;
+INST "ckgen_clock_divider_1" LOC = "SLICE_X72Y0" ;
+INST "ckgen_clock_divider_0" LOC = "SLICE_X72Y0" ;
+INST "ckgen_cke_next_will_be_last_of_logic" LOC = "SLICE_X60Y63" ;
+INST "cke_last_of_logic"     LOC = "SLICE_X10Y80" ;
+
+#endif
+
+//b DRAM related
+#if LX60
+INST "drm_hold_we_n" LOC = "SLICE_X0Y226" ;
+
+INST "drm_hold_s_n_1" LOC = "SLICE_X0Y227" ;
+INST "drm_hold_s_n_0" LOC = "SLICE_X0Y228" ;
+
+INST "drm_hold_ras_n" LOC = "SLICE_X0Y229" ;
+INST "drm_hold_cas_n" LOC = "SLICE_X0Y239" ;
+
+INST "drm_hold_ba_1" LOC = "SLICE_X0Y240" ;
+INST "drm_hold_ba_0" LOC = "SLICE_X0Y241" ;
+
+INST "drm_hold_a_12" LOC = "SLICE_X0Y252" ;
+INST "drm_hold_a_11" LOC = "SLICE_X0Y253" ;
+INST "drm_hold_a_10" LOC = "SLICE_X0Y254" ;
+INST "drm_hold_a_9" LOC = "SLICE_X0Y242" ;
+INST "drm_hold_a_8" LOC = "SLICE_X0Y243" ;
+INST "drm_hold_a_7" LOC = "SLICE_X0Y244" ;
+INST "drm_hold_a_6" LOC = "SLICE_X0Y245" ;
+INST "drm_hold_a_5" LOC = "SLICE_X0Y246" ;
+INST "drm_hold_a_4" LOC = "SLICE_X0Y247" ;
+INST "drm_hold_a_3" LOC = "SLICE_X0Y249" ;
+INST "drm_hold_a_2" LOC = "SLICE_X0Y250" ;
+INST "drm_hold_a_1" LOC = "SLICE_X0Y251" ;
+INST "drm_hold_a_0" LOC = "SLICE_X0Y255" ;
+
+#else
 
 INST "drm_hold_we_n"    LOC = "SLICE_X0Y41" ;
 
@@ -471,16 +705,10 @@ INST "drm_hold_a_2"     LOC = "SLICE_X0Y90" ;
 INST "drm_hold_a_1"     LOC = "SLICE_X0Y59" ;
 INST "drm_hold_a_0"     LOC = "SLICE_X0Y72" ;
 
+#endif
 
-INST "ckgen_divided_clock" LOC = "SLICE_X70Y0" ;
-INST "ckgen_clock_divider_3" LOC = "SLICE_X74Y0" ;
-INST "ckgen_clock_divider_2" LOC = "SLICE_X74Y0" ;
-INST "ckgen_clock_divider_1" LOC = "SLICE_X72Y0" ;
-INST "ckgen_clock_divider_0" LOC = "SLICE_X72Y0" ;
-INST "ckgen_cke_next_will_be_last_of_logic" LOC = "SLICE_X60Y63" ;
-INST "cke_last_of_logic" LOC = "SLICE_X10Y80" ;
 
-// differences between old and new board
+// differences between old and new board (Avnet boards, not LX60)
 // ddr_dram_dqs<6> -> ddr_dram_dqm<7> -> ddr_dram_dqs<6>
 //     AG28             AG29
 //  just pad locs: dqs->AG29, dqm->AG28 
@@ -501,7 +729,57 @@ INST "cke_last_of_logic" LOC = "SLICE_X10Y80" ;
 // ddr_dram_dqm<1> -> ddr_dram_dqm<0> -> ddr_dram_dqs<0> -> ddr_dram_dqs<1> -> ddr_dram_a<8>   -> ddr_dram_dqm<1>
 //      M28               K28                 L28                 M25               N28
 
+//b DRAM DQ pins
+#if LX60
+INST "dqp_00_d_keep" LOC = "SLICE_X0Y211" ;
+INST "body_main_ram/input_dq_buffer_0" LOC = "SLICE_X1Y211" ;
 
+INST "dqp_01_d_keep" LOC = "SLICE_X0Y210" ;
+INST "body_main_ram/input_dq_buffer_1" LOC = "SLICE_X1Y210" ;
+
+INST "dqp_02_d_keep" LOC = "SLICE_X0Y209" ;
+INST "body_main_ram/input_dq_buffer_2" LOC = "SLICE_X1Y209" ;
+
+INST "dqp_03_d_keep" LOC = "SLICE_X0Y208" ;
+INST "body_main_ram/input_dq_buffer_3" LOC = "SLICE_X1Y208" ;
+
+INST "dqp_04_d_keep" LOC = "SLICE_X0Y207" ;
+INST "body_main_ram/input_dq_buffer_4" LOC = "SLICE_X1Y207" ;
+
+INST "dqp_05_d_keep" LOC = "SLICE_X0Y206" ;
+INST "body_main_ram/input_dq_buffer_5" LOC = "SLICE_X1Y206" ;
+
+INST "dqp_06_d_keep" LOC = "SLICE_X0Y205" ;
+INST "body_main_ram/input_dq_buffer_6" LOC = "SLICE_X1Y205" ;
+
+INST "dqp_07_d_keep" LOC = "SLICE_X0Y204" ;
+INST "body_main_ram/input_dq_buffer_7" LOC = "SLICE_X1Y204" ;
+
+INST "dqp_08_d_keep" LOC = "SLICE_X0Y203" ;
+INST "body_main_ram/input_dq_buffer_8" LOC = "SLICE_X1Y203" ;
+
+INST "dqp_09_d_keep" LOC = "SLICE_X0Y202" ;
+INST "body_main_ram/input_dq_buffer_9" LOC = "SLICE_X1Y202" ;
+
+INST "dqp_10_d_keep" LOC = "SLICE_X0Y201" ;
+INST "body_main_ram/input_dq_buffer_10" LOC = "SLICE_X1Y201" ;
+
+INST "dqp_11_d_keep" LOC = "SLICE_X0Y200" ;
+INST "body_main_ram/input_dq_buffer_11" LOC = "SLICE_X1Y200" ;
+
+INST "dqp_12_d_keep" LOC = "SLICE_X0Y199" ;
+INST "body_main_ram/input_dq_buffer_12" LOC = "SLICE_X1Y199" ;
+
+INST "dqp_13_d_keep" LOC = "SLICE_X0Y198" ;
+INST "body_main_ram/input_dq_buffer_13" LOC = "SLICE_X1Y198" ;
+
+INST "dqp_14_d_keep" LOC = "SLICE_X0Y197" ;
+INST "body_main_ram/input_dq_buffer_14" LOC = "SLICE_X1Y197" ;
+
+INST "dqp_15_d_keep" LOC = "SLICE_X0Y196" ;
+INST "body_main_ram/input_dq_buffer_15" LOC = "SLICE_X1Y196" ;
+
+#else
 //synthesis attribute LOC of ddr_dram_dq is "N29 M32 M31 L32 R26 R32 P26 P31 L31 K31 J32 J31 P30 N31 N30 L30 H32 H31 G32 F32 K29 K30 J29 H29 F31 E32 E31 D32 H30 H28 G29 F30";
 //put the keeps (dqp_<n>_d_keep at X1Y..., or in the same slice (same clock, so why not?)
 //DQ0 F30 RPM X0Y317 slice X0Y157
@@ -552,56 +830,73 @@ INST "body_main_ram/input_dq_buffer_14" LOC = "SLICE_X0Y134" ;
 //DQ15 H32 RPM X0Y260 slice X0Y128
 INST "dqp_15_d_keep" LOC = "SLICE_X0Y128" ;
 INST "body_main_ram/input_dq_buffer_15" LOC = "SLICE_X0Y128" ;
-//DQ16 L30 RPM X0Y249 slice X0Y123
-INST "dqp_16_d_keep" LOC = "SLICE_X0Y123" ;
-INST "body_main_ram/input_dq_buffer_16" LOC = "SLICE_X0Y123" ;
-//DQ17 N30 RPM X0Y212 slice X0Y104
-INST "dqp_17_d_keep" LOC = "SLICE_X0Y104" ;
-INST "body_main_ram/input_dq_buffer_17" LOC = "SLICE_X0Y104" ;
-//DQ18 N31 RPM X0Y210 slice X1Y102!
-INST "dqp_18_d_keep" LOC = "SLICE_X1Y102" ;
-INST "body_main_ram/input_dq_buffer_18" LOC = "SLICE_X1Y102" ;
-//DQ19 P30 RPM X0Y213 slice X0Y105
-INST "dqp_19_d_keep" LOC = "SLICE_X0Y105" ;
-INST "body_main_ram/input_dq_buffer_19" LOC = "SLICE_X0Y105" ;
-//DQ20 J31 RPM X0Y275 slice X0Y135
-INST "dqp_20_d_keep" LOC = "SLICE_X0Y135" ;
-INST "body_main_ram/input_dq_buffer_20" LOC = "SLICE_X0Y135" ;
-//DQ21 J32 RPM X0Y261 slice X0Y129
-INST "dqp_21_d_keep" LOC = "SLICE_X0Y129" ;
-INST "body_main_ram/input_dq_buffer_21" LOC = "SLICE_X0Y129" ;
-//DQ22 K31 RPM X0Y259 slice X0Y127
-INST "dqp_22_d_keep" LOC = "SLICE_X0Y127" ;
-INST "body_main_ram/input_dq_buffer_22" LOC = "SLICE_X0Y127" ;
-//DQ23 L31 RPM X0Y244 slice X0Y120
-INST "dqp_23_d_keep" LOC = "SLICE_X0Y120" ;
-INST "body_main_ram/input_dq_buffer_23" LOC = "SLICE_X0Y120" ;
-//DQ24 P31 RPM X0Y211 slice X1Y103!
-INST "dqp_24_d_keep" LOC = "SLICE_X1Y103" ;
-INST "body_main_ram/input_dq_buffer_24" LOC = "SLICE_X1Y103" ;
-//DQ25 P26 RPM X0Y209 slice X0Y103
-INST "dqp_25_d_keep" LOC = "SLICE_X0Y103" ;
-INST "body_main_ram/input_dq_buffer_25" LOC = "SLICE_X0Y103" ;
-//DQ26 R32 RPM X0Y180 slice X0Y88
-INST "dqp_26_d_keep" LOC = "SLICE_X0Y88" ;
-INST "body_main_ram/input_dq_buffer_26" LOC = "SLICE_X0Y88" ;
-//DQ27 R26 RPM X0Y208 slice X0Y102
-INST "dqp_27_d_keep" LOC = "SLICE_X0Y102" ;
-INST "body_main_ram/input_dq_buffer_27" LOC = "SLICE_X0Y102" ;
-//DQ28 L32 RPM X0Y226 slice X0Y110
-INST "dqp_28_d_keep" LOC = "SLICE_X0Y110" ;
-INST "body_main_ram/input_dq_buffer_28" LOC = "SLICE_X0Y110" ;
-//DQ29 M31 RPM X0Y245 slice X0Y121
-INST "dqp_29_d_keep" LOC = "SLICE_X0Y121" ;
-INST "body_main_ram/input_dq_buffer_29" LOC = "SLICE_X0Y121" ;
-//DQ30 M32 RPM X0Y227 slice X0Y111
-INST "dqp_30_d_keep" LOC = "SLICE_X0Y111" ;
-INST "body_main_ram/input_dq_buffer_30" LOC = "SLICE_X0Y111" ;
-//DQ31 N19 RPM X0Y221 slice X0Y109
-INST "dqp_31_d_keep" LOC = "SLICE_X0Y109" ;
-INST "body_main_ram/input_dq_buffer_31" LOC = "SLICE_X0Y109" ;
+////DQ16 L30 RPM X0Y249 slice X0Y123
+//INST "dqp_16_d_keep" LOC = "SLICE_X0Y123" ;
+//INST "body_main_ram/input_dq_buffer_16" LOC = "SLICE_X0Y123" ;
+////DQ17 N30 RPM X0Y212 slice X0Y104
+//INST "dqp_17_d_keep" LOC = "SLICE_X0Y104" ;
+//INST "body_main_ram/input_dq_buffer_17" LOC = "SLICE_X0Y104" ;
+////DQ18 N31 RPM X0Y210 slice X1Y102!
+//INST "dqp_18_d_keep" LOC = "SLICE_X1Y102" ;
+//INST "body_main_ram/input_dq_buffer_18" LOC = "SLICE_X1Y102" ;
+////DQ19 P30 RPM X0Y213 slice X0Y105
+//INST "dqp_19_d_keep" LOC = "SLICE_X0Y105" ;
+//INST "body_main_ram/input_dq_buffer_19" LOC = "SLICE_X0Y105" ;
+////DQ20 J31 RPM X0Y275 slice X0Y135
+//INST "dqp_20_d_keep" LOC = "SLICE_X0Y135" ;
+//INST "body_main_ram/input_dq_buffer_20" LOC = "SLICE_X0Y135" ;
+////DQ21 J32 RPM X0Y261 slice X0Y129
+//INST "dqp_21_d_keep" LOC = "SLICE_X0Y129" ;
+//INST "body_main_ram/input_dq_buffer_21" LOC = "SLICE_X0Y129" ;
+////DQ22 K31 RPM X0Y259 slice X0Y127
+//INST "dqp_22_d_keep" LOC = "SLICE_X0Y127" ;
+//INST "body_main_ram/input_dq_buffer_22" LOC = "SLICE_X0Y127" ;
+////DQ23 L31 RPM X0Y244 slice X0Y120
+//INST "dqp_23_d_keep" LOC = "SLICE_X0Y120" ;
+//INST "body_main_ram/input_dq_buffer_23" LOC = "SLICE_X0Y120" ;
+////DQ24 P31 RPM X0Y211 slice X1Y103!
+//INST "dqp_24_d_keep" LOC = "SLICE_X1Y103" ;
+//INST "body_main_ram/input_dq_buffer_24" LOC = "SLICE_X1Y103" ;
+////DQ25 P26 RPM X0Y209 slice X0Y103
+//INST "dqp_25_d_keep" LOC = "SLICE_X0Y103" ;
+//INST "body_main_ram/input_dq_buffer_25" LOC = "SLICE_X0Y103" ;
+////DQ26 R32 RPM X0Y180 slice X0Y88
+//INST "dqp_26_d_keep" LOC = "SLICE_X0Y88" ;
+//INST "body_main_ram/input_dq_buffer_26" LOC = "SLICE_X0Y88" ;
+////DQ27 R26 RPM X0Y208 slice X0Y102
+//INST "dqp_27_d_keep" LOC = "SLICE_X0Y102" ;
+//INST "body_main_ram/input_dq_buffer_27" LOC = "SLICE_X0Y102" ;
+////DQ28 L32 RPM X0Y226 slice X0Y110
+//INST "dqp_28_d_keep" LOC = "SLICE_X0Y110" ;
+//INST "body_main_ram/input_dq_buffer_28" LOC = "SLICE_X0Y110" ;
+////DQ29 M31 RPM X0Y245 slice X0Y121
+//INST "dqp_29_d_keep" LOC = "SLICE_X0Y121" ;
+//INST "body_main_ram/input_dq_buffer_29" LOC = "SLICE_X0Y121" ;
+////DQ30 M32 RPM X0Y227 slice X0Y111
+//INST "dqp_30_d_keep" LOC = "SLICE_X0Y111" ;
+//INST "body_main_ram/input_dq_buffer_30" LOC = "SLICE_X0Y111" ;
+////DQ31 N19 RPM X0Y221 slice X0Y109
+//INST "dqp_31_d_keep" LOC = "SLICE_X0Y109" ;
+//INST "body_main_ram/input_dq_buffer_31" LOC = "SLICE_X0Y109" ;
+#endif
 
 //a Area constraints
+//b Area placements
+#if LX60
+AREA_GROUP "AG_body_apb" RANGE = SLICE_X78Y153:SLICE_X103Y128 ;
+AREA_GROUP "AG_body_gip_data_ram" RANGE = SLICE_X2Y153:SLICE_X13Y144 ;
+AREA_GROUP "AG_body_gip_gip" RANGE = SLICE_X14Y153:SLICE_X69Y82 ;
+AREA_GROUP "AG_body_gip_gip_apb" RANGE = SLICE_X70Y153:SLICE_X77Y146 ;
+AREA_GROUP "AG_body_gip_prefetch" RANGE = SLICE_X2Y141:SLICE_X13Y104 ;
+AREA_GROUP "AG_body_iob_a_egress_control" RANGE = SLICE_X16Y27:SLICE_X29Y14 ;
+AREA_GROUP "AG_body_iob_a_egress_fifos" RANGE = SLICE_X32Y29:SLICE_X57Y4 ;
+AREA_GROUP "AG_body_iob_a_ingress_control" RANGE = SLICE_X12Y23:SLICE_X15Y18 ;
+AREA_GROUP "AG_body_iob_a_ingress_fifos" RANGE = SLICE_X32Y55:SLICE_X57Y30 ;
+AREA_GROUP "AG_body_iob_a_pst" RANGE = SLICE_X10Y51:SLICE_X31Y28 ;
+AREA_GROUP "AG_body_ios_a_erx" RANGE = SLICE_X16Y13:SLICE_X27Y0 ;
+AREA_GROUP "AG_body_ios_a_etx" RANGE = SLICE_X2Y15:SLICE_X15Y0 ;
+AREA_GROUP "AG_body_main_ram" RANGE = SLICE_X2Y179:SLICE_X11Y168 ;
+#else
 AREA_GROUP "AG_body_gip_data_ram"            RANGE = SLICE_X12Y81:SLICE_X25Y68 ;
 AREA_GROUP "AG_body_gip_gip"                 RANGE = SLICE_X26Y141:SLICE_X81Y70 ;
 AREA_GROUP "AG_body_gip_gip_apb"             RANGE = SLICE_X82Y89:SLICE_X89Y82 ;
@@ -619,7 +914,9 @@ AREA_GROUP "AG_body_ios_a_ss"                RANGE = SLICE_X70Y31:SLICE_X85Y16 ;
 AREA_GROUP "AG_body_logic_analyzer"          RANGE = SLICE_X84Y81:SLICE_X103Y62 ;
 // AREA_GROUP "AG_body_ios_a_eth_head"        RANGE = SLICE_X60Y19:SLICE_X75Y4 ;
 // AREA_GROUP "AG_body_ios_a_ss_head"         RANGE = SLICE_X60Y19:SLICE_X75Y4 ;
+#endif
 
+//b Groupings
 INST "body_gip_data_ram" AREA_GROUP = "AG_body_gip_data_ram" ;
 INST "body_gip_gip" AREA_GROUP = "AG_body_gip_gip" ;
 INST "body_gip_gip_apb" AREA_GROUP = "AG_body_gip_gip_apb" ;

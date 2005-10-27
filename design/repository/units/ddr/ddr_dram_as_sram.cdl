@@ -91,13 +91,13 @@ module ddr_dram_as_sram( clock drm_clock,
                          output bit next_we_n,
                          output bit[13] next_a,
                          output bit[2] next_ba,
-                         output bit[32] next_dq,
-                         output bit[4] next_dqm,
                          output bit next_dqoe,
+                         output bit[32] next_dq "Top 16 bits are for when clock is low, bottom 16 for when clock is high",
+                         output bit[4] next_dqm "Top 2 bits are for when clock is low, bottom 2 for when clock is high",
                          output bit[4] next_dqs_high,
                          output bit[4] next_dqs_low,
-                         input bit[32] input_dq_high,
-                         input bit[32] input_dq_low )
+                         input bit[16] input_dq_high "Clocked when fb clock rises, i.e. the data when the fb clock was low - store it when our (earlier clock) rises",
+                         input bit[16] input_dq_low "Clocked when fb clock falls, i.e. the data when the fb clock was high - store it when our (earlier clock) falls" )
 {
     /*b Default clock and reset
      */
@@ -106,6 +106,7 @@ module ddr_dram_as_sram( clock drm_clock,
 
     /*b SRAM read data out, and low priority wait
      */
+    clocked clock falling drm_clock bit[16] input_dq_buffer_low = 0 "Capture the low data from the fb clock before it goes away - high data can be captured on rising clock";
     clocked bit[32] input_dq_buffer=0; // captures the input_dq_high data, and these registers are placed very close to the pads
     clocked bit sram_low_priority_wait=0; // this is asserted if a refresh is pending
     clocked bit[32] sram_read_data=0;
@@ -460,7 +461,9 @@ module ddr_dram_as_sram( clock drm_clock,
      */
     ddr_dram_fsm "DDR DRAM state machine":
         {
-            input_dq_buffer <= input_dq_high;
+            input_dq_buffer_low <= input_dq_low; // this is on the falling edge, capturing the (earlier) falling edge data
+            input_dq_buffer[16;0] <= input_dq_buffer_low;
+            input_dq_buffer[16;16] <= input_dq_high;
             ddr_refresh_issued = 0;
             ddr_transaction = ddr_transaction_nop;
             full_switch (ddr_dram_state)

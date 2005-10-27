@@ -1,3 +1,12 @@
+/*a Notes - should make it in to the documentation
+  Whenever an instruction is taken by the RF we update our concept of the register currently in the accumulator
+  If that instruction is conditional AND sets the accumulator then the accumulator is invalid
+  If that instruction is conditional AND has a destination that matches the accumulator then the accumulator is invalid
+  If that instruction is a load AND the destination matches the accumulator then the accumulator is invalid
+  If that instruction is unconditional AND sets the accumulator AND is not a load then the accumulator will have the register specified
+  If the state machine is idle then the accumulator is invalid
+ */
+
 /*a Includes
  */
 include "gip.h"
@@ -18,6 +27,14 @@ typedef fsm
     gip_decode_state_preempt_start;
     gip_decode_state_preempt_wait;
 } t_gip_decode_state;
+
+/*t t_acc_track
+ */
+typedef struct
+{
+    bit valid;
+    bit[5] r;
+} t_acc_track;
 
 /*a Module
   Fetch... (for native mode... for ARM mode 'instruction blocked' should be expanded to include 'next cycle of opcode is zero')
@@ -175,9 +192,16 @@ module gip_decode( clock gip_clock,
     comb bit instruction_blocked;
     comb bit[32] branch_pc;
 
+    /*b Signals/registers for accumulator tracking
+     */
+    comb bit updating_acc              "Asserted if the valid instruction begin presented and taken by the RF updates the accumulator";
+    comb bit updating_current_register "Asserted if the valid instruction begin presented and taken by the RF effects the register we believe is in the accumulator";
+    comb bit updating_with_rd          "Asserted if the valid instruction begin presented and taken by the RF writes rd to the accumulator, cleared if it writes something else";
+    clocked t_acc_track register_in_acc = { valid=0, r=0 } "Register believed to be in the accumulator";
+
     /*b Register prefetched instruction
      */
-    prefetched "":
+    prefetched "Register prefetched instruction":
         {
             if (op_state==gip_decode_state_native) // or we are using that decode!
             {
@@ -304,6 +328,9 @@ module gip_decode( clock gip_clock,
                                 extended_rn <= extended_rn,
                                 extended_rm <= extended_rm,
                                 extended_cmd <= extended_cmd,
+
+                                acc_valid <= register_in_acc.valid,
+                                acc_r     <= register_in_acc.r,
 
                                 stored_reg_set <= stored_reg_set,
                                 next_stored_reg_set => next_stored_reg_set
@@ -828,5 +855,86 @@ module gip_decode( clock gip_clock,
              */
             }
         }
+
+    /*b Handle the register in the accumulator
+     */
+    register_in_acc "Handle which register (if any) the accumulator mirrors":
+        {
+            updating_acc = 0;
+            updating_with_rd = 0;
+            updating_current_register = 0;
+
+            /*b Update our register_in_acc if we insert an instruction into the pipeline
+             */
+            if (rfr_accepting_dec_instruction && dec_inst.valid)
+            {
+                /*b If the instruction is writing to the register we think is in the accumulator then invalidate it!
+                 */
+                if ( (dec_inst.gip_ins_rd.type==gip_ins_r_type_register) && (dec_inst.gip_ins_rd.r==register_in_acc.r) )
+                {
+                    updating_current_register = register_in_acc.valid;
+                }
+
+                /*b Determine if writing to a register - if a load then we want to clear this? after all, it is not updating the acc with the given register
+                 */
+                if (dec_inst.gip_ins_rd.type==gip_ins_r_type_register)
+                {
+                    updating_with_rd = 1;
+                }
+
+                /*b Determine if accumulator is updated
+                 */
+                if (dec_inst.a)
+                {
+                    updating_acc = 1;
+                }
+
+                /*b Handle conditional instructions - extra bell here - updating_with_rd is false (as the condition may fail) UNLESS updating with current register
+                 */
+                if (dec_inst.gip_ins_cc != gip_ins_cc_always)
+                {
+                    updating_with_rd = updating_current_register;
+                }
+
+                /*b Handle loads - they may set accumulator, but never with rd
+                 */
+                if (dec_inst.gip_ins_class == gip_ins_class_load)
+                {
+                    updating_with_rd = 0;
+                }
+            }
+
+            /*b Now if we are updating the register we think is in the accumulator (without setting the acc) then the acc contents will be invalid
+             */
+            if (updating_current_register)
+            {
+                register_in_acc.valid <= 0;
+            }
+
+            /*b If we are updating the accumulator, though, we may be doing so to rd or to something else - record which
+             */
+            if (updating_acc)
+            {
+                if (updating_with_rd)
+                {
+                    register_in_acc.valid <= 1;
+                    register_in_acc.r <= dec_inst.gip_ins_rd.r;
+                }
+                else
+                {
+                    register_in_acc.valid <= 0;
+                }
+            }
+
+            /*b All bets are off if we are in idle state, or on a flush
+             */
+            if ( (gip_pipeline_flush) || (op_state == gip_decode_state_idle) )
+            {
+                register_in_acc.valid <= 0;
+            }
+        }
+      
+    /*b All done
+     */
 }
 

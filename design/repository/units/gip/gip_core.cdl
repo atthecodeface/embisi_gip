@@ -1,8 +1,6 @@
 /*a To do
   If the ALU block don't issue multiple memory operations, nor multiple flushes etc
   Remove 'rd' registers further down the pipe if a new operation is executed in ALU stage which updates that 'rd'; only if the 'rd' is an internal register
-  Add descheduling - this should be an option to any potential 'flush' command, so that the next 'flush' does a deschedule
-  Add blocking capability so we can do a 'block all'; this should be used with preemption, and also before APB reads to ensure all writes have been done.
   Add unaligned access support
   Add stack access hint
  */

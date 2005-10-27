@@ -58,6 +58,10 @@ extern module gip_decode_arm( input bit[32] opcode,
                        input t_gip_ins_r extended_rm,
                               input t_gip_ext_cmd extended_cmd,
 
+
+                       input bit acc_valid,
+                       input bit[5] acc_r,
+
                               input bit[16] stored_reg_set,
                               output bit[16] next_stored_reg_set
 
@@ -68,6 +72,8 @@ extern module gip_decode_arm( input bit[32] opcode,
     timing comb output inst, next_cycle_of_opcode, pc_op, arm_branch_offset;
 
     timing comb input extended, extended_immediate, extended_rd, extended_rn, extended_rm, extended_cmd;
+
+    timing comb input acc_valid, acc_r;
 
     timing comb input stored_reg_set;
     timing comb output next_stored_reg_set;

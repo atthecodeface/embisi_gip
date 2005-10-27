@@ -14,6 +14,7 @@ int vcd_create
 int vcd_create
 int vcd_signals_toplevel
 int vcd_signals_gip
+int vcd_signals_ddr
 int vcd_signals_io
 int vcd_signals_eth
 int vcd_signals_ss
@@ -33,6 +34,7 @@ set vcd_create env_int("vcd_create")
 set vcd_skip_length env_int("vcd_skip_length")
 set vcd_signals_toplevel env_int("vcd_signals_toplevel")
 set vcd_signals_gip env_int("vcd_signals_gip")
+set vcd_signals_ddr env_int("vcd_signals_ddr")
 set vcd_signals_io env_int("vcd_signals_io")
 set vcd_signals_eth env_int("vcd_signals_eth")
 set vcd_signals_ss env_int("vcd_signals_ss")
@@ -354,10 +356,10 @@ setenv "verbose_level" 1
 #   parallel    - gip_system_io_201 gip_system_io_202
 #   ps2         - gip_system_io_301
 
-   gosub gip_system_io_301
+#   gosub gip_system_io_301
 #   gosub gip_system_io_201
 #   gosub gip_system_io_202
-    return
+#    return
 
    gosub gip_system_io_1
    gosub gip_system_io_2
@@ -674,6 +676,12 @@ vcd_file_add "allsignals" "gip_simple.data_ram"
 vcd_file_add "allsignals" "gip_simple.boot_rom"
 vcd_file_add "allsignals" "gip_simple.shared_sram"
 gip_system_test_vcd_signals_gip_no:
+
+beq vcd_signals_ddr 0 gip_system_test_vcd_signals_ddr_no
+vcd_file_add "allsignals" "ddr"
+vcd_file_add "allsignals" "ddr_pins"
+vcd_file_add "allsignals" "gip_simple.main_ram"
+gip_system_test_vcd_signals_ddr_no:
 
 beq vcd_signals_io 0 gip_system_test_vcd_signals_io_no
 vcd_file_add "allsignals" "gip_simple.iob_a.pst.src"

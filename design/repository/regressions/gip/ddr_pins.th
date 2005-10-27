@@ -14,6 +14,9 @@
 printf "DDR test pins logic"
 
 int ddr_ck
+int dqs_store
+int dqm_store
+int dq_store
 
 set ddr_ck 1
 reset logic_ck 1
@@ -34,19 +37,32 @@ drive cas_n input("next_cas_n")
 drive we_n input("next_we_n")
 drive ba input("next_ba")
 drive a input("next_a")
-drive dq_out input("next_dq")
-drive dqm input("next_dqm")
 drive dqs_out input("next_dqs_high")
 drive dq_oe_ctl input("next_dqoe")
+
+set dqs_store input("next_dqs_low")
+set dqm_store input("next_dqm")
+set dq_store input("next_dq")
+mult dqm_store dqm_store 0x1111
+rol dq_store dq_store 16
+
 wait 1
 drive dq_in_high input("dq_to_ctl")
+drive dq_out dq_store
+drive dqm dqm_store
+lshr dqm_store dqm_store 2
+rol dq_store dq_store 16
 wait 1
 
 set ddr_ck 0
 
-drive dqs_out input("next_dqs_low")
+
+drive dqs_out dqs_store
+
 wait 1
 drive dq_in_low input("dq_to_ctl")
+drive dq_out dq_store
+drive dqm dqm_store
 wait 1
 endwhile
 

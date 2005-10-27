@@ -24,7 +24,8 @@ module uart_testbench "uart_testbench"
 
 #b Add DDR model
 option_string "filename" env_string("ddr_mif")
-module ddr_16m_x_32 "ddr"
+#module ddr_16m_x_32 "ddr"
+module ddr_32m_x_16 "ddr"
 
 #b Add test harness
 option_string "clock" "ddr_clock"
@@ -66,8 +67,8 @@ module se_test_harness "par_b_th"
 
 #b Add DDR pin logic
 option_string "clock" "ddr_clock"
-option_string "inputs" "next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4] dq_to_ctl[32] dqs_to_ctl[4]"
-option_string "outputs" "cke select_n[2] ras_n cas_n we_n ba[2] a[13] dqs_out[4] dq_out[32] dqm[4] dq_in_low[32] dq_in_high[32] dq_oe_ctl"
+option_string "inputs" "next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4] dq_to_ctl[16] dqs_to_ctl[2]"
+option_string "outputs" "cke select_n[2] ras_n cas_n we_n ba[2] a[13] dqs_out[2] dq_out[16] dqm[2] dq_in_low[16] dq_in_high[16] dq_oe_ctl"
 option_string "filename" "ddr_pins.th"
 module se_test_harness "ddr_pins"
 
@@ -155,9 +156,9 @@ wire leds[8]
 wire txd rxd switches[8]
 wire cke_last_of_logic
 wire next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4]
-wire dqm[4] dq_to_ddr[32] dqs_to_ddr[4] dq_oe_ctl
-wire        dq_to_ctl[32] dqs_to_ctl[4] dq_oe_ddr
-wire dq_to_ctl_high[32] dq_to_ctl_low[32]
+wire dqm[2] dq_to_ddr[16] dqs_to_ddr[2] dq_oe_ctl
+wire        dq_to_ctl[16] dqs_to_ctl[2] dq_oe_ddr
+wire dq_to_ctl_high[16] dq_to_ctl_low[16]
 wire cke a[13] ba[2] we_n cas_n ras_n select_n[2]
 wire select_0
 extract select_0 select_n 0 1

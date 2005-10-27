@@ -3,6 +3,21 @@
 // DCM 1: take 125MHz, generate 250MHz and 125MHz in sync, with gbufs on both, feeding back the 125MHz so it is locked - this is our internal DRAM logic clock (with the 2x so we can regenerate the internal clock on pins out)
 // DCM 2: take 125MHz, generate a phase shifted version for clocking the input data from the DRAM - we have a big read data window (a whole clock) so hitting this should be easy
 //
+// Shifting to using both edges of the clock for data etc means
+// data out must be clocked 1/4 clock after dqs, so we use the 90 clock for that
+// data in can still be clocked with a phase shift. The equivalent of this, though, should be a clock locked to the clock_FB pin; we will use adjustable phase shift to start with
+//
+// Global clocks
+//  sys_drm_clock_in - frequency important, phase irrelevant
+//  int_drm_clock_buffered - frequency locked to input clock, phase fixed - this is our reference clock
+//  int_double_drm_clock_buffered - double frequency of int_drm_clock_buffered, closely locked in phase to int_drm_clock_buffered
+//  int_drm_clock_90_buffered - 90 degree out of phase to int_drm_clock_buffered, subject to subtle clock tree variances; when int_drm_clock_buffered rises, this is low and this rises 90 degrees (1.6-2.5ns, dependent on freq) later
+//  int_input_drm_clock_buffered - adjustable phase shifted version of int_drm_clock_buffered, used for clocking in input data
+//                                 this is expected to rise clk->out + 2*trace + input pad delay after int_drm_clock_buffered, but as close to that as possible - certainly less than 3/4 of a clock period (2.5-3.7ns)
+//
+// Local clocks
+//  int_drm_clock - slightly leads int_drm_clock_buffered and int_double_drm_clock_buffered, so it can be used to regenerate int_drm_clock_buffered by using it as sn input to a flop clocked from int_double_drm_clock_buffered
+//
 // clock out is 2.15-2.17ns int_double_drm_clock_buffered to out (ddr_clocks.twr)
 // control signals 1.8-1.95ns after int_drm_clock_90_buffered, or 3.8-3.95ns after int_drm_clock_buffered
 // data signals are 1.85ns after int_drm_clock_buffered rising/falling
@@ -75,12 +90,11 @@ reg result_psdone;
 DCM clk_phases_gen(       .CLKIN (sys_drm_clock_in),
                           .RST(system_reset_in),
                           .CLKFB (int_drm_clock_buffered), // our reference signal, 4ns high, 4ns low
-                          .CLK0 (int_drm_clock), // -4 to -2ns before int_drm_clock_buffered (dependent on gbuf delay; likely around 2.8ns)
-                          .CLK180 (int_drm_clock_90), // -2ns to +0ns around int_drm_clock_buffered (+2ns from clk0)
-                          .CLK2X (int_double_drm_clock), // -4 to -2ns before int_drm_clock_buffered, (dependent on gbuf delay; likely around 2.8ns)
+                          .CLK0 (int_drm_clock),           // -4 to -2ns before int_drm_clock_buffered (dependent on gbuf delay; likely around 2.8ns)
+                          .CLK90 (int_drm_clock_90),       // -2ns to +0ns around int_drm_clock_buffered (+2ns from clk0)
+                          .CLK2X (int_double_drm_clock),   // -4 to -2ns before int_drm_clock_buffered, (dependent on gbuf delay; likely around 2.8ns)
                           .LOCKED (dcm_locked[0] )
     );
-//synthesis attribute LOC of clk_phases_gen is "DCM_X2Y0";
 
 // synthesis attribute CLK_FEEDBACK of clk_phases_gen is "1X";
 // synthesis attribute CLKIN_PERIOD of clk_phases_gen is 8;
@@ -97,9 +111,9 @@ DCM clk_phases_gen(       .CLKIN (sys_drm_clock_in),
 // synthesis attribute PHASE_SHIFT of clk_phases_gen is 0;
 // synthesis attribute STARTUP_WAIT of clk_phases_gen is 1;
 
-BUFG drm_clock_buffer( .I(int_drm_clock), .O(int_drm_clock_buffered) ); // reference clock, 4ns high, 4ns low
-BUFG drm_clock_90_buffer( .I(int_drm_clock_90), .O(int_drm_clock_90_buffered) ); // +1.5ns to +2.5ns after int_drm_clock_buffered
-BUFG drm_double_clock_buffer( .I(int_double_drm_clock), .O(int_double_drm_clock_buffered) ); // 2ns high, 2ns low, starting -0.5 to +0.5 around int_drm_clock_buffered (skew in gbufs)
+BUFG drm_clock_buffer( .I(int_drm_clock), .O(int_drm_clock_buffered) );                        // reference clock, 4ns high, 4ns low
+BUFG drm_clock_90_buffer( .I(int_drm_clock_90), .O(int_drm_clock_90_buffered) );               // +1.5ns to +2.5ns after int_drm_clock_buffered
+BUFG drm_double_clock_buffer( .I(int_double_drm_clock), .O(int_double_drm_clock_buffered) );   // 2ns high, 2ns low, starting -0.5 to +0.5 around int_drm_clock_buffered (skew in gbufs)
 //synthesis attribute clock_signal of int_double_drm_clock_buffered is yes;
 //synthesis attribute clock_signal of int_drm_clock_buffered is yes;
 //synthesis attribute clock_signal of int_drm_clock_90_buffered is yes;
@@ -125,9 +139,6 @@ DCM dram_input_pin_gen(       .CLKIN (sys_drm_clock_in),
                               .PSDONE(psdone),
                               .LOCKED (dcm_locked[1] )
                     );
-// the LOCs are also in fpga_wrapper.ucf
-// synthesis attribute LOC of dram_input_pin_gen is "DCM_X3Y0";
-
 // synthesis attribute CLK_FEEDBACK of dram_input_pin_gen is "1X"; 
 // synthesis attribute CLKIN_PERIOD of dram_input_pin_gen is 8;
 // synthesis attribute CLKFX_MULTIPLY of dram_input_pin_gen is 2;

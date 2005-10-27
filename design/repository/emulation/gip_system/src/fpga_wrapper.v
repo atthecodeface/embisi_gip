@@ -1,17 +1,18 @@
 //a Modules needed
-//m ddr_in_sdr_out_pin
-module ddr_in_sdr_out_pin
+//m ddr_in_ddr_out_pin
+module ddr_in_ddr_out_pin
 (
     reset,
-    output_clock,
-    next_oe, next_d,
+    output_reg_clock,
+    output_drive_clock,
+    next_oe, next_d_low, next_d_high,
     input_clock,
     d_in_low, d_in_high,
     pad
 );
 input reset;
-input output_clock;
-input next_oe, next_d;
+input output_reg_clock, output_drive_clock;
+input next_oe, next_d_low, next_d_high;
 input input_clock;
 output d_in_low, d_in_high;
 inout pad;
@@ -25,18 +26,18 @@ IFDDRCPE  dqi( .CLR(reset),
                .Q0( d_in_high ),
                .Q1( d_in_low ) );
 
-reg d_keep;
+reg d_low, d_high;
 reg oe_n;
-always @(posedge output_clock) begin oe_n <= !next_oe; end
-always @(posedge output_clock or posedge reset ) begin if (reset) d_keep<=0; else d_keep <= next_d; end
+always @(posedge output_reg_clock) begin oe_n <= !next_oe; end
+always @(posedge output_reg_clock or posedge reset ) begin if (reset) begin d_low<=0; d_high<=0; end else begin d_low<=next_d_low, d_high<=next_d_high; end end
 // synthesis attribute equivalent_register_removal of oe_n is "no" ;
 OFDDRTCPE dqo( .CLR(reset),
                .PRE(1'b0),
                .CE(1'b1),
-               .D0(next_d),
-               .D1(d_keep),
-               .C0(output_clock),
-               .C1(!output_clock),
+               .D0(d_high),
+               .D1(d_low),
+               .C0(output_drive_clock),
+               .C1(!output_drive_clock),
                .T( oe_n ),
                .O( pad ) );
 endmodule
@@ -120,26 +121,26 @@ module fpga_wrapper
     mii_mdio,
     mii_mdc,
 
-    par_a_clock,
-    par_a_control_inputs,
-    par_a_data_inputs,
+//    par_a_clock,
+//    par_a_control_inputs,
+//    par_a_data_inputs,
 
-//    par_a_control_outputs,
-//    par_a_control_oes,
-//    par_a_data_outputs,
-//    par_a_data_output_width,
-//    par_a_data_oe,
+////    par_a_control_outputs,
+////    par_a_control_oes,
+////    par_a_data_outputs,
+////    par_a_data_output_width,
+////    par_a_data_oe,
 
-//    par_b_clock,
-//    par_b_control_inputs,
-//    par_b_data_inputs,
-//    par_b_control_outputs,
-//    par_b_control_oes,
-//    par_b_data_outputs,
-//    par_b_data_output_width,
-//    par_b_data_oe,
-    ps2_clock,
-    ps2_data,
+////    par_b_clock,
+////    par_b_control_inputs,
+////    par_b_data_inputs,
+////    par_b_control_outputs,
+////    par_b_control_oes,
+////    par_b_data_outputs,
+////    par_b_data_output_width,
+////    par_b_data_oe,
+//    ps2_clock,
+//    ps2_data,
 
     leds,
 
@@ -160,11 +161,11 @@ module fpga_wrapper
     output txd;
 
     //b External bus
-    output [3:0]eb_ce_n;
+    output [0:0]eb_ce_n;
     output eb_oe_n;
     output eb_we_n;
-    output [23:0]eb_address;
-    inout [31:0]eb_data;
+    output [21:0]eb_address;
+    inout [15:0]eb_data;
 
     //b Dram
     output ddr_dram_clk_0;
@@ -180,9 +181,9 @@ module fpga_wrapper
     output [1:0]ddr_dram_ba;
     output [12:0]ddr_dram_a;
 
-    inout [63:0]ddr_dram_dq;
-    output [3:0]ddr_dram_dqm;
-    inout [7:0]ddr_dram_dqs;
+    inout [31:0]ddr_dram_dq; // for the old Avnet boards we need to actually use both banks else Vref is unreliable
+    output [1:0]ddr_dram_dqm;
+    inout [1:0]ddr_dram_dqs;
 
     //b Ethernet
     output eth_rst_n;
@@ -200,28 +201,35 @@ module fpga_wrapper
     output mii_mdc;
 
     //b Parallel interfaces
-    input par_a_clock;
-    input [1:0] par_a_control_inputs;
-    input [1:0] par_a_data_inputs;
-//    input [2:0] par_a_control_inputs;
-//    input [15:0] par_a_data_inputs;
+//    input par_a_clock;
+//    input [1:0] par_a_control_inputs;
+//    input [1:0] par_a_data_inputs;
+wire par_a_clock, [1:0]par_a_control_inputs, [1:0] par_a_data_inputs;
+assign par_a_clock = 1'b0;
+assign par_a_control_inputs = 0;
+assign par_a_data_inputs = 0;
+////    input [2:0] par_a_control_inputs;
+////    input [15:0] par_a_data_inputs;
 
-//    output [3:0] par_a_control_outputs;
-//    output [3:0] par_a_control_oes;
-//    output [15:0] par_a_data_outputs;
-//    output [2:0] par_a_data_output_width;
-//    output par_a_data_oe;
+////    output [3:0] par_a_control_outputs;
+////    output [3:0] par_a_control_oes;
+////    output [15:0] par_a_data_outputs;
+////    output [2:0] par_a_data_output_width;
+////    output par_a_data_oe;
  wire [3:0] par_a_control_outputs;
  wire [3:0] par_a_control_oes;
  wire [15:0] par_a_data_outputs;
  wire [2:0] par_a_data_output_width;
  wire par_a_data_oe;
 
-    inout ps2_clock;
-    inout ps2_data;
-//    input par_b_clock;
-//    input [2:0] par_b_control_inputs;
-//    input [15:0] par_b_data_inputs;
+//    inout ps2_clock;
+//    inout ps2_data;
+wire ps2_clock, ps2_data;
+assign ps2_clock=0;
+assign ps2_data=0;
+////    input par_b_clock;
+////    input [2:0] par_b_control_inputs;
+////    input [15:0] par_b_data_inputs;
 
 //    output [3:0] par_b_control_outputs;
 //    output [3:0] par_b_control_oes;
@@ -267,14 +275,15 @@ wire ext_bus_we;
 wire [23:0]ext_bus_address;
 
 assign eb_ce_n[0] = !ext_bus_ce[0];
-assign eb_ce_n[1] = !ext_bus_ce[1];
-assign eb_ce_n[2] = !ext_bus_ce[2];
-assign eb_ce_n[3] = !ext_bus_ce[3];
+//assign eb_ce_n[1] = !ext_bus_ce[1];
+//assign eb_ce_n[2] = !ext_bus_ce[2];
+//assign eb_ce_n[3] = !ext_bus_ce[3];
 assign eb_we_n = !ext_bus_we;
 assign eb_oe_n = !ext_bus_oe;
-assign eb_address = ext_bus_address;
-assign eb_data = ext_bus_write_data_enable ? ext_bus_write_data : 32'bz; //'
-assign ext_bus_read_data = eb_data;
+assign eb_address[21:0] = ext_bus_address[21:0];
+assign eb_data[15:0] = ext_bus_write_data_enable ? ext_bus_write_data[15:0] : 16'bz; //'
+assign ext_bus_read_data[31:16] = 0;
+assign ext_bus_read_data[15:0] = eb_data;
 
 //b DRAM clock outputs
 ddr_dram_clk_pad ddr_clk0( .output_clock(int_drm_clock_buffered), .pad_p( ddr_dram_clk_0 ), .pad_n( ddr_dram_clk_0_n ) );
@@ -361,11 +370,13 @@ assign ddr_dram_cke[1] = drm_cke_1;
 // synthesis attribute equivalent_register_removal of drm_cke_0 is "no" ;
 // synthesis attribute equivalent_register_removal of drm_cke_1 is "no" ;
 
-//b DQM outputs - drive out on drm_clock_buffered
-reg [3:0]ddr_dram_dqm;
+//b DQM outputs and  DQ pads - input registered on posedge and negedge 90 input clocks, outputs kept on int_drm_clock_buffered and driven 90 degress later
+// we don't care about reset too much, but it must match the internals to get the flops colocated - reset only effects the signal values, not the oe
+reg [1:0]ddr_dram_dqm_low, [1:0]ddr_dram_dqm_high;
 wire drm_next_dqoe;
-wire [63:0]drm_next_dq;
-wire [7:0]drm_next_dqm;
+wire [15:0]drm_next_dq_low,  [15:0]drm_next_dq_high;
+wire [15:0]drm_input_dq_low, [15:0]drm_input_dq_high;
+wire [3:0]drm_next_dqm;
 always @(posedge int_drm_clock_buffered or posedge system_reset_in)
 begin
     if (system_reset_in)
@@ -374,121 +385,50 @@ begin
     end
     else
     begin
-        ddr_dram_dqm <= drm_next_dqm; // these are not tristate; we own them
+        ddr_dram_dqm_low <= drm_next_dqm[1:0];
+        ddr_dram_dqm_high <= drm_next_dqm[3:2];
     end
 end
+OFDDRTCPE dqm0( .CLR(reset), .PRE(1'b0), .CE(1'b1), .D0(ddr_dram_dqm_high[0]), .D1(ddr_dram_dqm_low[0]), .C0(int_drm_clock_90_buffered), .C1(!int_drm_clock_90_buffered), .T( 1'b0 ), .O( ddr_dram_dqm[0] ) ); //'
+OFDDRTCPE dqm1( .CLR(reset), .PRE(1'b0), .CE(1'b1), .D0(ddr_dram_dqm_high[1]), .D1(ddr_dram_dqm_low[1]), .C0(int_drm_clock_90_buffered), .C1(!int_drm_clock_90_buffered), .T( 1'b0 ), .O( ddr_dram_dqm[1] ) ); //'
 
-//b DQ pads - input registered on posedge and negedge 90 input clocks, outputs on drm_clock_buffered as we have a long setup and hold on these (we hold them steady as outputs)
-// we don't care about reset too much, but it must match the internals to get the flops colocated - reset only effects the signal values, not the oe
-wire [63:0] drm_input_dq_low;
-wire [63:0] drm_input_dq_high;
+assign drm_next_dq_low  = drm_next_dq[15:0];
+assign drm_next_dq_high = drm_next_dq[31:16];
 
-ddr_in_sdr_out_pin dqp_00( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 0]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 0]), .d_in_high(drm_input_dq_high[ 0]), .pad(ddr_dram_dq[ 0]) );
-ddr_in_sdr_out_pin dqp_01( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 1]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 1]), .d_in_high(drm_input_dq_high[ 1]), .pad(ddr_dram_dq[ 1]) );
-ddr_in_sdr_out_pin dqp_02( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 2]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 2]), .d_in_high(drm_input_dq_high[ 2]), .pad(ddr_dram_dq[ 2]) );
-ddr_in_sdr_out_pin dqp_03( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 3]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 3]), .d_in_high(drm_input_dq_high[ 3]), .pad(ddr_dram_dq[ 3]) );
-ddr_in_sdr_out_pin dqp_04( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 4]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 4]), .d_in_high(drm_input_dq_high[ 4]), .pad(ddr_dram_dq[ 4]) );
-ddr_in_sdr_out_pin dqp_05( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 5]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 5]), .d_in_high(drm_input_dq_high[ 5]), .pad(ddr_dram_dq[ 5]) );
-ddr_in_sdr_out_pin dqp_06( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 6]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 6]), .d_in_high(drm_input_dq_high[ 6]), .pad(ddr_dram_dq[ 6]) );
-ddr_in_sdr_out_pin dqp_07( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 7]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 7]), .d_in_high(drm_input_dq_high[ 7]), .pad(ddr_dram_dq[ 7]) );
-ddr_in_sdr_out_pin dqp_08( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 8]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 8]), .d_in_high(drm_input_dq_high[ 8]), .pad(ddr_dram_dq[ 8]) );
-ddr_in_sdr_out_pin dqp_09( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[ 9]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 9]), .d_in_high(drm_input_dq_high[ 9]), .pad(ddr_dram_dq[ 9]) );
-ddr_in_sdr_out_pin dqp_10( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[10]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[10]), .d_in_high(drm_input_dq_high[10]), .pad(ddr_dram_dq[10]) );
-ddr_in_sdr_out_pin dqp_11( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[11]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[11]), .d_in_high(drm_input_dq_high[11]), .pad(ddr_dram_dq[11]) );
-ddr_in_sdr_out_pin dqp_12( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[12]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[12]), .d_in_high(drm_input_dq_high[12]), .pad(ddr_dram_dq[12]) );
-ddr_in_sdr_out_pin dqp_13( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[13]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[13]), .d_in_high(drm_input_dq_high[13]), .pad(ddr_dram_dq[13]) );
-ddr_in_sdr_out_pin dqp_14( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[14]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[14]), .d_in_high(drm_input_dq_high[14]), .pad(ddr_dram_dq[14]) );
-ddr_in_sdr_out_pin dqp_15( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[15]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[15]), .d_in_high(drm_input_dq_high[15]), .pad(ddr_dram_dq[15]) );
-ddr_in_sdr_out_pin dqp_16( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[16]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[16]), .d_in_high(drm_input_dq_high[16]), .pad(ddr_dram_dq[16]) );
-ddr_in_sdr_out_pin dqp_17( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[17]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[17]), .d_in_high(drm_input_dq_high[17]), .pad(ddr_dram_dq[17]) );
-ddr_in_sdr_out_pin dqp_18( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[18]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[18]), .d_in_high(drm_input_dq_high[18]), .pad(ddr_dram_dq[18]) );
-ddr_in_sdr_out_pin dqp_19( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[19]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[19]), .d_in_high(drm_input_dq_high[19]), .pad(ddr_dram_dq[19]) );
-ddr_in_sdr_out_pin dqp_20( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[20]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[20]), .d_in_high(drm_input_dq_high[20]), .pad(ddr_dram_dq[20]) );
-ddr_in_sdr_out_pin dqp_21( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[21]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[21]), .d_in_high(drm_input_dq_high[21]), .pad(ddr_dram_dq[21]) );
-ddr_in_sdr_out_pin dqp_22( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[22]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[22]), .d_in_high(drm_input_dq_high[22]), .pad(ddr_dram_dq[22]) );
-ddr_in_sdr_out_pin dqp_23( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[23]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[23]), .d_in_high(drm_input_dq_high[23]), .pad(ddr_dram_dq[23]) );
-ddr_in_sdr_out_pin dqp_24( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[24]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[24]), .d_in_high(drm_input_dq_high[24]), .pad(ddr_dram_dq[24]) );
-ddr_in_sdr_out_pin dqp_25( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[25]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[25]), .d_in_high(drm_input_dq_high[25]), .pad(ddr_dram_dq[25]) );
-ddr_in_sdr_out_pin dqp_26( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[26]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[26]), .d_in_high(drm_input_dq_high[26]), .pad(ddr_dram_dq[26]) );
-ddr_in_sdr_out_pin dqp_27( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[27]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[27]), .d_in_high(drm_input_dq_high[27]), .pad(ddr_dram_dq[27]) );
-ddr_in_sdr_out_pin dqp_28( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[28]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[28]), .d_in_high(drm_input_dq_high[28]), .pad(ddr_dram_dq[28]) );
-ddr_in_sdr_out_pin dqp_29( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[29]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[29]), .d_in_high(drm_input_dq_high[29]), .pad(ddr_dram_dq[29]) );
-ddr_in_sdr_out_pin dqp_30( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[30]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[30]), .d_in_high(drm_input_dq_high[30]), .pad(ddr_dram_dq[30]) );
-ddr_in_sdr_out_pin dqp_31( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[31]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[31]), .d_in_high(drm_input_dq_high[31]), .pad(ddr_dram_dq[31]) );
-ddr_in_sdr_out_pin dqp_32( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[32]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[32]), .d_in_high(drm_input_dq_high[32]), .pad(ddr_dram_dq[32]) );
-ddr_in_sdr_out_pin dqp_33( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[33]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[33]), .d_in_high(drm_input_dq_high[33]), .pad(ddr_dram_dq[33]) );
-ddr_in_sdr_out_pin dqp_34( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[34]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[34]), .d_in_high(drm_input_dq_high[34]), .pad(ddr_dram_dq[34]) );
-ddr_in_sdr_out_pin dqp_35( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[35]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[35]), .d_in_high(drm_input_dq_high[35]), .pad(ddr_dram_dq[35]) );
-ddr_in_sdr_out_pin dqp_36( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[36]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[36]), .d_in_high(drm_input_dq_high[36]), .pad(ddr_dram_dq[36]) );
-ddr_in_sdr_out_pin dqp_37( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[37]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[37]), .d_in_high(drm_input_dq_high[37]), .pad(ddr_dram_dq[37]) );
-ddr_in_sdr_out_pin dqp_38( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[38]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[38]), .d_in_high(drm_input_dq_high[38]), .pad(ddr_dram_dq[38]) );
-ddr_in_sdr_out_pin dqp_39( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[39]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[39]), .d_in_high(drm_input_dq_high[39]), .pad(ddr_dram_dq[39]) );
-ddr_in_sdr_out_pin dqp_40( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[40]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[40]), .d_in_high(drm_input_dq_high[40]), .pad(ddr_dram_dq[40]) );
-ddr_in_sdr_out_pin dqp_41( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[41]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[41]), .d_in_high(drm_input_dq_high[41]), .pad(ddr_dram_dq[41]) );
-ddr_in_sdr_out_pin dqp_42( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[42]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[42]), .d_in_high(drm_input_dq_high[42]), .pad(ddr_dram_dq[42]) );
-ddr_in_sdr_out_pin dqp_43( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[43]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[43]), .d_in_high(drm_input_dq_high[43]), .pad(ddr_dram_dq[43]) );
-ddr_in_sdr_out_pin dqp_44( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[44]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[44]), .d_in_high(drm_input_dq_high[44]), .pad(ddr_dram_dq[44]) );
-ddr_in_sdr_out_pin dqp_45( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[45]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[45]), .d_in_high(drm_input_dq_high[45]), .pad(ddr_dram_dq[45]) );
-ddr_in_sdr_out_pin dqp_46( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[46]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[46]), .d_in_high(drm_input_dq_high[46]), .pad(ddr_dram_dq[46]) );
-ddr_in_sdr_out_pin dqp_47( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[47]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[47]), .d_in_high(drm_input_dq_high[47]), .pad(ddr_dram_dq[47]) );
-ddr_in_sdr_out_pin dqp_48( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[48]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[48]), .d_in_high(drm_input_dq_high[48]), .pad(ddr_dram_dq[48]) );
-ddr_in_sdr_out_pin dqp_49( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[49]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[49]), .d_in_high(drm_input_dq_high[49]), .pad(ddr_dram_dq[49]) );
-ddr_in_sdr_out_pin dqp_50( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[50]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[50]), .d_in_high(drm_input_dq_high[50]), .pad(ddr_dram_dq[50]) );
-ddr_in_sdr_out_pin dqp_51( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[51]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[51]), .d_in_high(drm_input_dq_high[51]), .pad(ddr_dram_dq[51]) );
-ddr_in_sdr_out_pin dqp_52( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[52]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[52]), .d_in_high(drm_input_dq_high[52]), .pad(ddr_dram_dq[52]) );
-ddr_in_sdr_out_pin dqp_53( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[53]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[53]), .d_in_high(drm_input_dq_high[53]), .pad(ddr_dram_dq[53]) );
-ddr_in_sdr_out_pin dqp_54( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[54]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[54]), .d_in_high(drm_input_dq_high[54]), .pad(ddr_dram_dq[54]) );
-ddr_in_sdr_out_pin dqp_55( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[55]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[55]), .d_in_high(drm_input_dq_high[55]), .pad(ddr_dram_dq[55]) );
-ddr_in_sdr_out_pin dqp_56( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[56]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[56]), .d_in_high(drm_input_dq_high[56]), .pad(ddr_dram_dq[56]) );
-ddr_in_sdr_out_pin dqp_57( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[57]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[57]), .d_in_high(drm_input_dq_high[57]), .pad(ddr_dram_dq[57]) );
-ddr_in_sdr_out_pin dqp_58( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[58]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[58]), .d_in_high(drm_input_dq_high[58]), .pad(ddr_dram_dq[58]) );
-ddr_in_sdr_out_pin dqp_59( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[59]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[59]), .d_in_high(drm_input_dq_high[59]), .pad(ddr_dram_dq[59]) );
-ddr_in_sdr_out_pin dqp_60( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[60]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[60]), .d_in_high(drm_input_dq_high[60]), .pad(ddr_dram_dq[60]) );
-ddr_in_sdr_out_pin dqp_61( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[61]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[61]), .d_in_high(drm_input_dq_high[61]), .pad(ddr_dram_dq[61]) );
-ddr_in_sdr_out_pin dqp_62( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[62]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[62]), .d_in_high(drm_input_dq_high[62]), .pad(ddr_dram_dq[62]) );
-ddr_in_sdr_out_pin dqp_63( .reset(system_reset_out), .output_clock(int_drm_clock_buffered), .next_oe(drm_next_dqoe), .next_d(drm_next_dq[63]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[63]), .d_in_high(drm_input_dq_high[63]), .pad(ddr_dram_dq[63]) );
+ddr_in_ddr_out_pin dqp_00( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 0]), .next_d_high(drm_next_dq_high[ 0]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 0]), .d_in_high(drm_input_dq_high[ 0]), .pad(ddr_dram_dq[ 0]) );
+ddr_in_ddr_out_pin dqp_01( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 1]), .next_d_high(drm_next_dq_high[ 1]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 1]), .d_in_high(drm_input_dq_high[ 1]), .pad(ddr_dram_dq[ 1]) );
+ddr_in_ddr_out_pin dqp_02( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 2]), .next_d_high(drm_next_dq_high[ 2]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 2]), .d_in_high(drm_input_dq_high[ 2]), .pad(ddr_dram_dq[ 2]) );
+ddr_in_ddr_out_pin dqp_03( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 3]), .next_d_high(drm_next_dq_high[ 3]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 3]), .d_in_high(drm_input_dq_high[ 3]), .pad(ddr_dram_dq[ 3]) );
+ddr_in_ddr_out_pin dqp_04( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 4]), .next_d_high(drm_next_dq_high[ 4]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 4]), .d_in_high(drm_input_dq_high[ 4]), .pad(ddr_dram_dq[ 4]) );
+ddr_in_ddr_out_pin dqp_05( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 5]), .next_d_high(drm_next_dq_high[ 5]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 5]), .d_in_high(drm_input_dq_high[ 5]), .pad(ddr_dram_dq[ 5]) );
+ddr_in_ddr_out_pin dqp_06( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 6]), .next_d_high(drm_next_dq_high[ 6]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 6]), .d_in_high(drm_input_dq_high[ 6]), .pad(ddr_dram_dq[ 6]) );
+ddr_in_ddr_out_pin dqp_07( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 7]), .next_d_high(drm_next_dq_high[ 7]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 7]), .d_in_high(drm_input_dq_high[ 7]), .pad(ddr_dram_dq[ 7]) );
+ddr_in_ddr_out_pin dqp_08( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 8]), .next_d_high(drm_next_dq_high[ 8]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 8]), .d_in_high(drm_input_dq_high[ 8]), .pad(ddr_dram_dq[ 8]) );
+ddr_in_ddr_out_pin dqp_09( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[ 9]), .next_d_high(drm_next_dq_high[ 9]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[ 9]), .d_in_high(drm_input_dq_high[ 9]), .pad(ddr_dram_dq[ 9]) );
+ddr_in_ddr_out_pin dqp_10( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[10]), .next_d_high(drm_next_dq_high[10]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[10]), .d_in_high(drm_input_dq_high[10]), .pad(ddr_dram_dq[10]) );
+ddr_in_ddr_out_pin dqp_11( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[11]), .next_d_high(drm_next_dq_high[11]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[11]), .d_in_high(drm_input_dq_high[11]), .pad(ddr_dram_dq[11]) );
+ddr_in_ddr_out_pin dqp_12( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[12]), .next_d_high(drm_next_dq_high[12]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[12]), .d_in_high(drm_input_dq_high[12]), .pad(ddr_dram_dq[12]) );
+ddr_in_ddr_out_pin dqp_13( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[13]), .next_d_high(drm_next_dq_high[13]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[13]), .d_in_high(drm_input_dq_high[13]), .pad(ddr_dram_dq[13]) );
+ddr_in_ddr_out_pin dqp_14( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[14]), .next_d_high(drm_next_dq_high[14]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[14]), .d_in_high(drm_input_dq_high[14]), .pad(ddr_dram_dq[14]) );
+ddr_in_ddr_out_pin dqp_15( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[15]), .next_d_high(drm_next_dq_high[15]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[15]), .d_in_high(drm_input_dq_high[15]), .pad(ddr_dram_dq[15]) );
 
 //b DQS outputs - individual tristate registers, DDR register in the IOBs; can use drm_clock_buffered to drive them out as skew to the clock should be around 0ns
-wire [3:0] drm_next_dqs_high;
-wire [3:0] drm_next_dqs_low;
+wire [1:0] drm_next_dqs_high;
+wire [1:0] drm_next_dqs_low;
 reg drm_dqs_oe_n_0;
 reg drm_dqs_oe_n_1;
-reg drm_dqs_oe_n_2;
-reg drm_dqs_oe_n_3;
-reg drm_dqs_oe_n_4;
-reg drm_dqs_oe_n_5;
-reg drm_dqs_oe_n_6;
-reg drm_dqs_oe_n_7;
-reg [3:0] drm_dqs_low;
+reg [1:0] drm_dqs_low;
 always @(posedge int_drm_clock_buffered)
 begin
     drm_dqs_low <= drm_next_dqs_low;
     drm_dqs_oe_n_0 <= !drm_next_dqoe;
     drm_dqs_oe_n_1 <= !drm_next_dqoe;
-    drm_dqs_oe_n_2 <= !drm_next_dqoe;
-    drm_dqs_oe_n_3 <= !drm_next_dqoe;
-    drm_dqs_oe_n_4 <= !drm_next_dqoe;
-    drm_dqs_oe_n_5 <= !drm_next_dqoe;
-    drm_dqs_oe_n_6 <= !drm_next_dqoe;
-    drm_dqs_oe_n_7 <= !drm_next_dqoe;
 end
 // synthesis attribute equivalent_register_removal of drm_dqs_oe_n_0 is "no" ;
 // synthesis attribute equivalent_register_removal of drm_dqs_oe_n_1 is "no" ;
-// synthesis attribute equivalent_register_removal of drm_dqs_oe_n_2 is "no" ;
-// synthesis attribute equivalent_register_removal of drm_dqs_oe_n_3 is "no" ;
-// synthesis attribute equivalent_register_removal of drm_dqs_oe_n_4 is "no" ;
-// synthesis attribute equivalent_register_removal of drm_dqs_oe_n_5 is "no" ;
-// synthesis attribute equivalent_register_removal of drm_dqs_oe_n_6 is "no" ;
-// synthesis attribute equivalent_register_removal of drm_dqs_oe_n_7 is "no" ;
 
 OFDDRTCPE dqs_0( .PRE(1'b0), .CLR(system_reset_in), .D0(drm_next_dqs_high[0]), .D1(drm_dqs_low[0]), .C0(int_drm_clock_buffered), .C1(!int_drm_clock_buffered), .CE(1'b1), .O(ddr_dram_dqs[0]), .T(drm_dqs_oe_n_0) );
 OFDDRTCPE dqs_1( .PRE(1'b0), .CLR(system_reset_in), .D0(drm_next_dqs_high[1]), .D1(drm_dqs_low[1]), .C0(int_drm_clock_buffered), .C1(!int_drm_clock_buffered), .CE(1'b1), .O(ddr_dram_dqs[1]), .T(drm_dqs_oe_n_1) );
-OFDDRTCPE dqs_2( .PRE(1'b0), .CLR(system_reset_in), .D0(drm_next_dqs_high[2]), .D1(drm_dqs_low[2]), .C0(int_drm_clock_buffered), .C1(!int_drm_clock_buffered), .CE(1'b1), .O(ddr_dram_dqs[2]), .T(drm_dqs_oe_n_2) );
-OFDDRTCPE dqs_3( .PRE(1'b0), .CLR(system_reset_in), .D0(drm_next_dqs_high[3]), .D1(drm_dqs_low[3]), .C0(int_drm_clock_buffered), .C1(!int_drm_clock_buffered), .CE(1'b1), .O(ddr_dram_dqs[3]), .T(drm_dqs_oe_n_3) );
-OFDDRTCPE dqs_4( .PRE(1'b0), .CLR(system_reset_in), .D0(drm_next_dqs_high[0]), .D1(drm_dqs_low[0]), .C0(int_drm_clock_buffered), .C1(!int_drm_clock_buffered), .CE(1'b1), .O(ddr_dram_dqs[4]), .T(drm_dqs_oe_n_4) );
-OFDDRTCPE dqs_5( .PRE(1'b0), .CLR(system_reset_in), .D0(drm_next_dqs_high[1]), .D1(drm_dqs_low[1]), .C0(int_drm_clock_buffered), .C1(!int_drm_clock_buffered), .CE(1'b1), .O(ddr_dram_dqs[5]), .T(drm_dqs_oe_n_5) );
-OFDDRTCPE dqs_6( .PRE(1'b0), .CLR(system_reset_in), .D0(drm_next_dqs_high[2]), .D1(drm_dqs_low[2]), .C0(int_drm_clock_buffered), .C1(!int_drm_clock_buffered), .CE(1'b1), .O(ddr_dram_dqs[6]), .T(drm_dqs_oe_n_6) );
-OFDDRTCPE dqs_7( .PRE(1'b0), .CLR(system_reset_in), .D0(drm_next_dqs_high[3]), .D1(drm_dqs_low[3]), .C0(int_drm_clock_buffered), .C1(!int_drm_clock_buffered), .CE(1'b1), .O(ddr_dram_dqs[7]), .T(drm_dqs_oe_n_7) );
 
 
 //b Clock generator instance
@@ -547,8 +487,8 @@ assign par_b_control_inputs[1] = 0;
 assign par_b_control_inputs[2] = ps2_data;
 assign par_b_data_inputs[0] = ps2_data;
 assign par_b_data_inputs[15:1] = 0;
-assign ps2_clock = par_b_control_oes[0] ? par_b_control_outputs[0] : 1'bz;
-assign ps2_data  = par_b_control_oes[2] ? par_b_control_outputs[2] : 1'bz;
+//assign ps2_clock = par_b_control_oes[0] ? par_b_control_outputs[0] : 1'bz;
+//assign ps2_data  = par_b_control_oes[2] ? par_b_control_outputs[2] : 1'bz;
 
 gip_system body( .drm_clock(int_drm_clock_buffered),
                  .int_clock(int_logic_slow_clock_buffered),
@@ -615,14 +555,14 @@ gip_system body( .drm_clock(int_drm_clock_buffered),
                  .next_we_n(drm_next_we_n),
                  .next_a(drm_next_a),
                  .next_ba(drm_next_ba),
-                 .next_dq(drm_next_dq[31:0]),     // we run these at clock rate, not ddr; output on int_drm_clock_buffered
-                 .next_dqm(drm_next_dqm[3:0]),   // we run these at clock rate, not ddr; output on int_drm_clock_buffered
-                 .next_dqoe(drm_next_dqoe), // we run these at clock rate, not ddr; it drives dq and dqs; use on int_drm_clock_buffered
-                 .next_dqs_low(drm_next_dqs_low), // dqs strobes for low period of drm_clock (register on int_drm_clock_buffered and drive when that is low)
+                 .next_dq(drm_next_dq[31:0]),       // we run these at clock rate, not ddr; output on int_drm_clock_90_buffered to let dqs strobe them properly
+                 .next_dqm(drm_next_dqm[3:0]),      // we run these at clock rate, not ddr; output on int_drm_clock_90_buffered to let dqs strobe them properly
+                 .next_dqoe(drm_next_dqoe),         // we run these at clock rate, not ddr; it drives dq and dqs; use on int_drm_clock_buffered
+                 .next_dqs_low(drm_next_dqs_low),   // dqs strobes for low period of drm_clock (register on int_drm_clock_buffered and drive when that is low)
                  .next_dqs_high(drm_next_dqs_high), // dqs strobes for high period of drm_clock
 
-                 .input_dq_low(drm_input_dq_low[31:0]), // last dq data during low period of drm_clock - GJS swapped these July 3 2005, but that does not work
-                 .input_dq_high(drm_input_dq_high[31:0]), // last dq data during high period of drm_clock - GJS swapped these July 3 2005
+                 .input_dq_low(drm_input_dq_low[15:0]),   // last dq data during low period of drm_clock
+                 .input_dq_high(drm_input_dq_high[15:0]), // last dq data during high period of drm_clock
 
                  .analyzer_clock(analyzer_clock),
                  .analyzer_async_trace_valid(analyzer_signals_valid),

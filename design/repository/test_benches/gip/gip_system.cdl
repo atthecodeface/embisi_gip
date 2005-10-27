@@ -177,8 +177,8 @@ extern module ddr_dram_as_sram( clock drm_clock,
                                 output bit next_dqoe,
                                 output bit[4] next_dqs_high,
                                 output bit[4] next_dqs_low,
-                                input bit[32] input_dq_high,
-                                input bit[32] input_dq_low )
+                                input bit[16] input_dq_high,
+                                input bit[16] input_dq_low )
 {
     timing to rising clock drm_clock cke_last_of_logic;
     timing to rising clock drm_clock drm_ctl_reset;
@@ -186,6 +186,7 @@ extern module ddr_dram_as_sram( clock drm_clock,
 
     timing from rising clock drm_clock next_cke, next_s_n, next_ras_n, next_cas_n, next_we_n, next_a, next_ba, next_dq, next_dqm, next_dqoe, next_dqs_high, next_dqs_low;
     timing to rising clock drm_clock input_dq_high, input_dq_low;
+    timing to falling clock drm_clock input_dq_high, input_dq_low;
 
 //    timing to rising clock slow_clock sram_priority, sram_read, sram_write, sram_write_byte_enables, sram_address, sram_write_data;
 //    timing from rising clock slow_clock sram_read_data, sram_low_priority_wait;
@@ -268,8 +269,8 @@ module gip_system( clock drm_clock,
                    output bit next_dqoe,
                    output bit[4] next_dqs_high,
                    output bit[4] next_dqs_low,
-                   input bit[32] input_dq_high,
-                   input bit[32] input_dq_low,
+                   input bit[16] input_dq_high,
+                   input bit[16] input_dq_low,
 
                    clock eth_mii_tx_clock,
                    output bit eth_mii_tx_en,

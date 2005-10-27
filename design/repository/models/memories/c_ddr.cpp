@@ -160,6 +160,8 @@ typedef struct t_ddr_biedge_int_clock_state
     unsigned int dq_out[8];
     unsigned int dqs_out;
     unsigned int dq_oe;
+    unsigned int dq_in[8];
+    unsigned int dqm_in;
 } t_ddr_biedge_int_clock_state;
 
 /*t t_ddr_inputs
@@ -191,8 +193,10 @@ public:
     t_sl_error_level c_ddr::clock_posedge_int_clock( void );
     t_sl_error_level c_ddr::preclock_negedge_int_clock( void );
     t_sl_error_level c_ddr::clock_negedge_int_clock( void );
+    void c_ddr::biedge_preclock( void );
     void c_ddr::biedge_clock( void );
 private:
+    void c_ddr::do_write_data( int offset );
     c_engine *engine;
     void *engine_handle;
     t_ddr_inputs inputs;
@@ -230,6 +234,17 @@ static char *ddr_command_name[] =
 
 /*a Static wrapper functions for ddr
 */
+/*f ddr_32m_x_16_instance_fn
+*/
+static t_sl_error_level ddr_32m_x_16_instance_fn( c_engine *engine, void *engine_handle )
+{
+    c_ddr *mod;
+    mod = new c_ddr( engine, engine_handle, 32*1024*1024, 2 ); // 32M words of 4 bytes each
+    if (!mod)
+        return error_level_fatal;
+    return error_level_okay;
+}
+
 /*f ddr_16m_x_32_instance_fn
 */
 static t_sl_error_level ddr_16m_x_32_instance_fn( c_engine *engine, void *engine_handle )
@@ -379,7 +394,7 @@ t_sl_error_level c_ddr::reset( int pass )
                                            "se_internal_module__sram_srw",
                                            0, // address offset 0
                                            (int)ddr_size,
-                                           ddr_int_width*32,
+                                           ((ddr_byte_width<4)?32:(ddr_int_width*32)),
                                            0,
                                            2, // reset style 2
                                            0x11111111, // reset value, add 0x1111111 to each address when storing it in the data
@@ -415,11 +430,16 @@ t_sl_error_level c_ddr::reset( int pass )
     }
     for (j=0; j<8; j++)
     {
-        biedge_int_clock_state.dq_out[i] = 0xdeaddead;
+        biedge_int_clock_state.dq_out[j] = 0xdeaddead;
     }
     biedge_int_clock_state.dqs_out = 0;
     biedge_int_clock_state.dq_oe_fifo = 0; // shift register
     biedge_int_clock_state.dq_oe = 0;
+    for (j=0; j<8; j++)
+    {
+        biedge_int_clock_state.dq_in[j] = 0;
+    }
+    biedge_int_clock_state.dqm_in = 0;
     return error_level_okay;
 }
 
@@ -427,6 +447,10 @@ t_sl_error_level c_ddr::reset( int pass )
 */
 t_sl_error_level c_ddr::preclock_posedge_int_clock( void )
 {
+    /*b First to the biedge stuff
+     */
+    biedge_preclock();
+
     /*b Copy current state to next state
      */
     memcpy( &next_posedge_int_clock_state, &posedge_int_clock_state, sizeof(posedge_int_clock_state) );
@@ -507,6 +531,56 @@ t_sl_error_level c_ddr::preclock_posedge_int_clock( void )
     return error_level_okay;
 }
 
+/*f c_ddr::do_write_data
+ */
+void c_ddr::do_write_data( int offset )
+{
+    int j;
+    unsigned int address = posedge_int_clock_state.write_address;
+    // we were expecting strobe low before the edge, strobe high now. Difficult to verify. But data should be stable for the edge anyway in a cycle simulation
+    // however, we certainly expect it to follow clock, so it should toggle on every edge here
+    // ignore for now
+    // this data is the first of the pair
+    // we 
+    if ( memory &&
+         (address+offset<ddr_size) )
+    {
+        unsigned int mask;
+        int dqm;
+        dqm = biedge_int_clock_state.dqm_in; 
+        if (ddr_byte_width>=4)
+        {
+            address+=offset;
+            for (j=0; j<ddr_int_width; j++)
+            {
+                mask = 0;
+                if (dqm&1) { mask|= 0xff; }
+                if (dqm&2) { mask|= 0xff00; }
+                if (dqm&4) { mask|= 0xff0000; }
+                if (dqm&8) { mask|= 0xff000000; }
+                memory[ address*ddr_int_width+j ] = (memory[ address*ddr_int_width+j ] & mask) | (~mask & biedge_int_clock_state.dq_in[j]);
+                if (0) fprintf(stderr,"Writing %08x/%08x:%08x\n",address, memory[ address*ddr_int_width+j],mask );
+                dqm>>=4;
+            }
+        }
+        else
+        {
+            mask = 0xff;
+            offset *= ddr_byte_width*8;
+            for (j=0; j<ddr_byte_width; j++)
+            {
+                if (!(dqm&1))
+                {
+                    memory[ address ] = (memory[ address ] & ~(mask<<offset)) | ((mask & biedge_int_clock_state.dq_in[0])<<offset);
+                    if (0) fprintf(stderr,"Writing byte %d %08x/%08x:%08x:%d\n",j, address, memory[ address ],mask<<offset,dqm&1 );
+                }
+                dqm>>=1;
+                mask<<=8;
+            }
+        }
+    }
+}
+
 /*f c_ddr::clock_posedge_int_clock
 */
 t_sl_error_level c_ddr::clock_posedge_int_clock( void )
@@ -529,27 +603,7 @@ t_sl_error_level c_ddr::clock_posedge_int_clock( void )
     posedge_int_clock_state.write_data_state_next_cycle = write_data_state_none;
     if (posedge_int_clock_state.write_data_state == write_data_state_pair)
     {
-        unsigned int address = posedge_int_clock_state.write_address;
-        // we were expecting strobe low before the edge, strobe high now. Difficult to verify. But data should be stable for the edge anyway in a cycle simulation
-        // however, we certainly expect it to follow clock, so it should toggle on every edge here
-        // ignore for now
-        // this data is the first of the pair
-        // we 
-        if ( memory &&
-             (address<ddr_size) )
-        {
-            unsigned int mask;
-            for (j=0; j<ddr_int_width; j++)
-            {
-                mask = 0;
-                if (inputs.dqm[0]&1) { mask|= 0xff; }
-                if (inputs.dqm[0]&2) { mask|= 0xff00; }
-                if (inputs.dqm[0]&4) { mask|= 0xff0000; }
-                if (inputs.dqm[0]&8) { mask|= 0xff000000; }
-                memory[ address*ddr_int_width+j ] = (memory[ address*ddr_int_width+j ] & mask) | (~mask & inputs.dq_in[j]);
-                if (0) fprintf(stderr,"Writing %08x/%08x:%08x\n",address, memory[ address*ddr_int_width+j],mask );
-            }
-        }
+        do_write_data( 0 );
     }
 
     /*b Handle DLL
@@ -695,10 +749,18 @@ t_sl_error_level c_ddr::clock_posedge_int_clock( void )
                              (address<ddr_size) )
                         {
                             biedge_int_clock_state.dqs_out_fifo[k+5] = (k&1)?0x0:0xf;
-                            for (j=0; j<ddr_int_width; j++)
+                            if (ddr_byte_width>=4)
                             {
-                                biedge_int_clock_state.dq_out_fifo[(k+5)*8+j] = memory[ (address+k)*ddr_int_width+j ];
-                                if (0) fprintf(stderr,"Reading %08x/%08x\n",(address+k),memory[ (address+k)*ddr_int_width+j ]);
+                                for (j=0; j<ddr_int_width; j++)
+                                {
+                                    biedge_int_clock_state.dq_out_fifo[(k+5)*8+j] = memory[ (address+k)*ddr_int_width+j ];
+                                    if (0) fprintf(stderr,"Reading %08x/%08x\n",(address+k),memory[ (address+k)*ddr_int_width+j ]);
+                                }
+                            }
+                            else
+                            {
+                                biedge_int_clock_state.dq_out_fifo[(k+5)*8] = memory[ address ] >> (k*8*ddr_byte_width);
+                                if (0) fprintf(stderr,"Reading %08x/%08x\n",address,memory[ address ]);
                             }
                         }
                     }
@@ -747,6 +809,10 @@ t_sl_error_level c_ddr::clock_posedge_int_clock( void )
 */
 t_sl_error_level c_ddr::preclock_negedge_int_clock( void )
 {
+    /*b First to the biedge stuff
+     */
+    biedge_preclock();
+
     /*b Copy current state to next state
      */
     memcpy( &next_negedge_int_clock_state, &negedge_int_clock_state, sizeof(negedge_int_clock_state) );
@@ -760,7 +826,6 @@ t_sl_error_level c_ddr::preclock_negedge_int_clock( void )
 */
 t_sl_error_level c_ddr::clock_negedge_int_clock( void )
 {
-    int j;
 
     /*b First to the biedge stuff
      */
@@ -774,32 +839,24 @@ t_sl_error_level c_ddr::clock_negedge_int_clock( void )
      */
     if (posedge_int_clock_state.write_data_state == write_data_state_pair)
     {
-        unsigned int address = posedge_int_clock_state.write_address;
-        // we were expecting strobe high before the edge, strobe low now. Difficult to verify. But data should be stable for the edge anyway in a cycle simulation
-        // however, we certainly expect it to follow clock, so it should toggle on every edge here
-        // ignore for now
-        // this data is the second of the pair
-        address++;
-        if ( memory &&
-             (address<ddr_size) )
-        {
-            unsigned int mask;
-            for (j=0; j<ddr_int_width; j++)
-            {
-                mask = 0;
-                if (inputs.dqm[0]&1) { mask|= 0xff; }
-                if (inputs.dqm[0]&2) { mask|= 0xff00; }
-                if (inputs.dqm[0]&4) { mask|= 0xff0000; }
-                if (inputs.dqm[0]&8) { mask|= 0xff000000; }
-                memory[ address*ddr_int_width+j ] = (memory[ address*ddr_int_width+j ] & mask) | (~mask & inputs.dq_in[j]);
-                if(0) fprintf(stderr,"Writing %08x/%08x:%08x\n",address, memory[ address*ddr_int_width+j],mask );
-            }
-        }
+        do_write_data( 1 );
     }
 
     /*b Done
      */
     return error_level_okay;
+}
+
+/*f c_ddr::biedge_preclock
+*/
+void c_ddr::biedge_preclock( void )
+{
+    int j;
+    for (j=0; j<(int)ddr_int_width; j++)
+    {
+        biedge_int_clock_state.dq_in[j] = inputs.dq_in[j];
+    }
+    biedge_int_clock_state.dqm_in = inputs.dqm[0];
 }
 
 /*f c_ddr::biedge_clock
@@ -825,6 +882,7 @@ void c_ddr::biedge_clock( void )
 extern void c_ddr__init( void )
 {
     se_external_module_register( 1, "ddr_16m_x_32", ddr_16m_x_32_instance_fn );
+    se_external_module_register( 1, "ddr_32m_x_16", ddr_32m_x_16_instance_fn );
 }
 
 /*a Scripting support code

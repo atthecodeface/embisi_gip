@@ -249,7 +249,12 @@ extern int test_entry_point()
 
     /*b Do a poll - expect it to fail
      */
-    {int i; for (i=0; i<20; i++) NOP;}
+    {int i; for (i=0; i<55; i++) NOP;}
+    GIP_TIMER_READ_0(time);
+    GIP_EXTBUS_DATA_WRITE( time );
+    GIP_TIMER_READ_0(time);
+    GIP_EXTBUS_DATA_WRITE( time );
+
     GIP_POST_TXD_0( 0xf7ff ); // ACK low only
     GIP_POST_TXC_0_IO_FIFO_DATA( 0,1-1,31, IO_A_SLOT_PARALLEL_1,0,0 ); // add j words to etx fifo (egress data fifo 0)
     GIP_EXTBUS_DATA_WRITE( action_number );

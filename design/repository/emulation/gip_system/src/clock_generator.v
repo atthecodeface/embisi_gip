@@ -7,6 +7,8 @@
 // data out must be clocked 1/4 clock after dqs, so we use the 90 clock for that
 // data in can still be clocked with a phase shift. The equivalent of this, though, should be a clock locked to the clock_FB pin; we will use adjustable phase shift to start with
 //
+// we have taken out double_clock from the pads, as we use a DDR pad clocked from int_drm_clock_buffered instead; this means double_clock is not actually used
+//
 // Global clocks
 //  sys_drm_clock_in - frequency important, phase irrelevant
 //  int_drm_clock_buffered - frequency locked to input clock, phase fixed - this is our reference clock
@@ -114,9 +116,9 @@ DCM clk_phases_gen(       .CLKIN (sys_drm_clock_in),
 BUFG drm_clock_buffer( .I(int_drm_clock), .O(int_drm_clock_buffered) );                        // reference clock, 4ns high, 4ns low
 BUFG drm_clock_90_buffer( .I(int_drm_clock_90), .O(int_drm_clock_90_buffered) );               // +1.5ns to +2.5ns after int_drm_clock_buffered
 BUFG drm_double_clock_buffer( .I(int_double_drm_clock), .O(int_double_drm_clock_buffered) );   // 2ns high, 2ns low, starting -0.5 to +0.5 around int_drm_clock_buffered (skew in gbufs)
-//synthesis attribute clock_signal of int_double_drm_clock_buffered is yes;
-//synthesis attribute clock_signal of int_drm_clock_buffered is yes;
-//synthesis attribute clock_signal of int_drm_clock_90_buffered is yes;
+//synthesis attribute CLOCK_SIGNAL of int_double_drm_clock_buffered is "YES";
+//synthesis attribute CLOCK_SIGNAL of int_drm_clock_buffered is "YES";
+//synthesis attribute CLOCK_SIGNAL of int_drm_clock_90_buffered is "YES";
 // on rising int_double_drm_clock_buffered, int_drm_clock_buffered toggles, and int_drm_clock contains the value it will toggle to as it leads the buffered version
 // on rising int_double_drm_clock_buffered, if we register int_drm_clock, we will get a copy of int_drm_clock_buffered
 // if we call this int_drm_clock_phase and somebody registers this, then they register it on int_double_drm_clock_buffered, they will get the inverse, as they are a double clock period away (one half of the drm clock)
@@ -157,7 +159,7 @@ DCM dram_input_pin_gen(       .CLKIN (sys_drm_clock_in),
 
 BUFG drm_input_clock_buffer( .I(int_input_drm_clock), .O(int_input_drm_clock_buffered) );
 
-//synthesis attribute clock_signal of int_input_drm_clock_buffered is yes;
+//synthesis attribute CLOCK_SIGNAL of int_input_drm_clock_buffered is "YES";
 
 always @(posedge sys_drm_clock_in)
 begin

@@ -38,6 +38,7 @@ NET "sys_drm_clock_in"     LOC = "AK18" | IOSTANDARD = "LVCMOS33";
 
 //b DRAM pins
 #if LX60
+// at Y=140,141
 NET "ddr_dram_clk_0"   LOC = "T4"  | IOSTANDARD = SSTL2_I_DCI;
 NET "ddr_dram_clk_0_n" LOC = "T3"  | IOSTANDARD = SSTL2_I_DCI;
 // put these on JP21
@@ -389,14 +390,14 @@ NET "leds<7>" LOC = "L3"   | IOSTANDARD = "LVTTL";
 
 //b Switches
 #if LX60
-NET "switches<0>" LOC = "R7"   | IOSTANDARD = "LVTTL";
-NET "switches<1>" LOC = "T6"   | IOSTANDARD = "LVTTL";
-NET "switches<2>" LOC = "U3"   | IOSTANDARD = "LVTTL";
-//NET "switches<3>" LOC = "U4"   | IOSTANDARD = "LVTTL";
-//NET "switches<4>" LOC = "V4"   | IOSTANDARD = "LVTTL";
-NET "switches<5>" LOC = "M8"   | IOSTANDARD = "LVTTL";
-NET "switches<6>" LOC = "L8"  | IOSTANDARD = "LVTTL";
-NET "switches<7>" LOC = "H20"  | IOSTANDARD = "LVTTL";
+NET "switches<0>" LOC = "R7"   | IOSTANDARD = "LVCMOS25";
+NET "switches<1>" LOC = "T6"   | IOSTANDARD = "LVCMOS25";
+NET "switches<2>" LOC = "U3"   | IOSTANDARD = "LVCMOS25";
+//NET "switches<3>" LOC = "U4"   | IOSTANDARD = "LVCMOS25";
+//NET "switches<4>" LOC = "V4"   | IOSTANDARD = "LVCMOS25";
+NET "switches<5>" LOC = "M8"   | IOSTANDARD = "LVCMOS25";
+NET "switches<6>" LOC = "L8"  | IOSTANDARD = "LVCMOS25";
+NET "switches<7>" LOC = "H20"  | IOSTANDARD = "LVCMOS25";
 #else
 NET "switches<0>" LOC = "AL3"   | IOSTANDARD = "LVTTL";
 NET "switches<1>" LOC = "AK3"   | IOSTANDARD = "LVTTL";
@@ -410,6 +411,7 @@ NET "switches<7>" LOC = "AE11"  | IOSTANDARD = "LVTTL";
 
 //b Expansion bus (addr_av, data_av, and various ce's: flash_ce<3..0> is N10 M10 K6 E4, from page 3/14; flash_we/ce/oe is J6 H7 K4 from pg 3/7/14; flash_rst is L10 from pg 3)
 #if LX60
+NET "eb_rst_n"    LOC = "Y21"   | IOSTANDARD = "LVTTL";
 NET "eb_oe_n"     LOC = "AB25"   | IOSTANDARD = "LVTTL";
 NET "eb_we_n"     LOC = "AB26"   | IOSTANDARD = "LVTTL";
 
@@ -624,14 +626,28 @@ NET "ps2_data"               LOC = "F26"  | IOSTANDARD = "LVTTL";
 //a Placements
 //b Clock related
 #if LX60
-INST "ckgen_clk_phases_gen"     LOC="DCM_ADV_X0Y7";
-INST "ckgen_dram_input_pin_gen" LOC="DCM_ADV_X0Y6";
+//NET "sys_drm_clock_in" PERIOD = 10.0;
+//NET "int_drm_clock_buffered" PERIOD = 10.0;
+//NET "int_drm_clock_90_buffered" PERIOD = 10.0;
+//NET "int_logic_slow_clock_buffered" PERIOD = 80.0;
+INST "ckgen_clk_phases_gen"     CLKIN_PERIOD = 8.0;
+INST "ckgen_clk_phases_gen"     LOC="DCM_ADV_X0Y3";
+INST "ckgen_dram_input_pin_gen" LOC="DCM_ADV_X0Y4";
 
-INST "ckgen_drm_input_clock_buffer"  LOC = "BUFGMUX0P" ;
-INST "ckgen_drm_clock_90_buffer"     LOC = "BUFGMUX5S" ;
-INST "ckgen_drm_clock_buffer"        LOC = "BUFGMUX7S" ;
-INST "ckgen_drm_double_clock_buffer" LOC = "BUFGMUX6P" ;
-INST "ckgen_slow_logic_clock_buffer" LOC = "BUFGMUX3S" ;
+INST "ckgen_drm_input_clock_buffer"  LOC = "BUFGCTRL_X0Y31" ;
+INST "ckgen_drm_clock_90_buffer"     LOC = "BUFGCTRL_X0Y30" ;
+INST "ckgen_drm_clock_buffer"        LOC = "BUFGCTRL_X0Y29" ;
+INST "ckgen_drm_double_clock_buffer" LOC = "BUFGCTRL_X0Y28" ;
+INST "ckgen_slow_logic_clock_buffer" LOC = "BUFGCTRL_X0Y27" ;
+
+INST "ckgen_divided_clock"   LOC = "SLICE_X51Y143" ;
+INST "ckgen_clock_divider_3" LOC = "SLICE_X51Y142" ;
+INST "ckgen_clock_divider_2" LOC = "SLICE_X51Y142" ;
+INST "ckgen_clock_divider_1" LOC = "SLICE_X51Y141" ;
+INST "ckgen_clock_divider_0" LOC = "SLICE_X51Y141" ;
+INST "ckgen_cke_next_will_be_last_of_logic" LOC = "SLICE_X51Y140" ;
+INST "cke_last_of_logic"     LOC = "SLICE_X50Y140" ;
+
 #else
 INST "ckgen_drm_input_clock_buffer"  LOC = "BUFGMUX0P" ;
 INST "ckgen_drm_clock_90_buffer"     LOC = "BUFGMUX5S" ;
@@ -653,30 +669,30 @@ INST "cke_last_of_logic"     LOC = "SLICE_X10Y80" ;
 
 //b DRAM related
 #if LX60
-INST "drm_hold_we_n" LOC = "SLICE_X0Y226" ;
+INST "drm_hold_we_n" LOC = "SLICE_X103Y162" ;
 
-INST "drm_hold_s_n_1" LOC = "SLICE_X0Y227" ;
-INST "drm_hold_s_n_0" LOC = "SLICE_X0Y228" ;
+INST "drm_hold_s_n_1" LOC = "SLICE_X103Y130" ;
+INST "drm_hold_s_n_0" LOC = "SLICE_X103Y165" ;
 
-INST "drm_hold_ras_n" LOC = "SLICE_X0Y229" ;
-INST "drm_hold_cas_n" LOC = "SLICE_X0Y239" ;
+INST "drm_hold_ras_n" LOC = "SLICE_X103Y164" ;
+INST "drm_hold_cas_n" LOC = "SLICE_X103Y160" ;
 
-INST "drm_hold_ba_1" LOC = "SLICE_X0Y240" ;
-INST "drm_hold_ba_0" LOC = "SLICE_X0Y241" ;
+INST "drm_hold_ba_1" LOC = "SLICE_X103Y171" ;
+INST "drm_hold_ba_0" LOC = "SLICE_X103Y169" ;
 
-INST "drm_hold_a_12" LOC = "SLICE_X0Y252" ;
-INST "drm_hold_a_11" LOC = "SLICE_X0Y253" ;
-INST "drm_hold_a_10" LOC = "SLICE_X0Y254" ;
-INST "drm_hold_a_9" LOC = "SLICE_X0Y242" ;
-INST "drm_hold_a_8" LOC = "SLICE_X0Y243" ;
-INST "drm_hold_a_7" LOC = "SLICE_X0Y244" ;
-INST "drm_hold_a_6" LOC = "SLICE_X0Y245" ;
-INST "drm_hold_a_5" LOC = "SLICE_X0Y246" ;
-INST "drm_hold_a_4" LOC = "SLICE_X0Y247" ;
-INST "drm_hold_a_3" LOC = "SLICE_X0Y249" ;
-INST "drm_hold_a_2" LOC = "SLICE_X0Y250" ;
-INST "drm_hold_a_1" LOC = "SLICE_X0Y251" ;
-INST "drm_hold_a_0" LOC = "SLICE_X0Y255" ;
+INST "drm_hold_a_12" LOC = "SLICE_X103Y153" ;
+INST "drm_hold_a_11" LOC = "SLICE_X103Y159" ;
+INST "drm_hold_a_10" LOC = "SLICE_X103Y170" ;
+INST "drm_hold_a_9" LOC = "SLICE_X103Y166" ;
+INST "drm_hold_a_8" LOC = "SLICE_X103Y167" ;
+INST "drm_hold_a_7" LOC = "SLICE_X103Y158" ;
+INST "drm_hold_a_6" LOC = "SLICE_X103Y191" ;
+INST "drm_hold_a_5" LOC = "SLICE_X103Y190" ;
+INST "drm_hold_a_4" LOC = "SLICE_X103Y189" ;
+INST "drm_hold_a_3" LOC = "SLICE_X103Y185" ;
+INST "drm_hold_a_2" LOC = "SLICE_X103Y188" ;
+INST "drm_hold_a_1" LOC = "SLICE_X103Y172" ;
+INST "drm_hold_a_0" LOC = "SLICE_X103Y173" ;
 
 #else
 
@@ -731,53 +747,95 @@ INST "drm_hold_a_0"     LOC = "SLICE_X0Y72" ;
 
 //b DRAM DQ pins
 #if LX60
-INST "dqp_00_d_keep" LOC = "SLICE_X0Y211" ;
-INST "body_main_ram/input_dq_buffer_0" LOC = "SLICE_X1Y211" ;
+INST "ddr_dram_dqm_low_0"   LOC = "SLICE_X103Y156" ;
+INST "ddr_dram_dqm_high_0"  LOC = "SLICE_X103Y156" ;
+INST "ddr_dram_dqm_low_1"   LOC = "SLICE_X103Y187" ;
+INST "ddr_dram_dqm_high_1"  LOC = "SLICE_X103Y187" ;
 
-INST "dqp_01_d_keep" LOC = "SLICE_X0Y210" ;
-INST "body_main_ram/input_dq_buffer_1" LOC = "SLICE_X1Y210" ;
+INST "drm_dqs_oe_n_0"  LOC = "SLICE_X103Y177" ;
+INST "drm_dqs_low_0"  LOC = "SLICE_X103Y177" ;
+INST "drm_dqs_oe_n_1"  LOC = "SLICE_X103Y145" ;
+INST "drm_dqs_low_1"  LOC = "SLICE_X103Y145" ;
 
-INST "dqp_02_d_keep" LOC = "SLICE_X0Y209" ;
-INST "body_main_ram/input_dq_buffer_2" LOC = "SLICE_X1Y209" ;
+INST "dqp_00_d_low"  LOC = "SLICE_X103Y132" ;
+INST "dqp_00_d_high" LOC = "SLICE_X103Y132" ;
+INST "body_main_ram/input_dq_buffer_low_0" LOC = "SLICE_X101Y132" ;
+INST "body_main_ram/input_dq_buffer_16" LOC = "SLICE_X102Y132" ;
 
-INST "dqp_03_d_keep" LOC = "SLICE_X0Y208" ;
-INST "body_main_ram/input_dq_buffer_3" LOC = "SLICE_X1Y208" ;
+INST "dqp_01_d_low"  LOC = "SLICE_X103Y133" ;
+INST "dqp_01_d_high" LOC = "SLICE_X103Y133" ;
+INST "body_main_ram/input_dq_buffer_low_1" LOC = "SLICE_X101Y133" ;
+INST "body_main_ram/input_dq_buffer_17" LOC = "SLICE_X102Y133" ;
 
-INST "dqp_04_d_keep" LOC = "SLICE_X0Y207" ;
-INST "body_main_ram/input_dq_buffer_4" LOC = "SLICE_X1Y207" ;
+INST "dqp_02_d_low"  LOC = "SLICE_X103Y149" ;
+INST "dqp_02_d_high" LOC = "SLICE_X103Y149" ;
+INST "body_main_ram/input_dq_buffer_low_2" LOC = "SLICE_X101Y149" ;
+INST "body_main_ram/input_dq_buffer_18" LOC = "SLICE_X102Y149" ;
 
-INST "dqp_05_d_keep" LOC = "SLICE_X0Y206" ;
-INST "body_main_ram/input_dq_buffer_5" LOC = "SLICE_X1Y206" ;
+INST "dqp_03_d_low"  LOC = "SLICE_X103Y157" ;
+INST "dqp_03_d_high" LOC = "SLICE_X103Y157" ;
+INST "body_main_ram/input_dq_buffer_low_3" LOC = "SLICE_X101Y157" ;
+INST "body_main_ram/input_dq_buffer_19" LOC = "SLICE_X102Y157" ;
 
-INST "dqp_06_d_keep" LOC = "SLICE_X0Y205" ;
-INST "body_main_ram/input_dq_buffer_6" LOC = "SLICE_X1Y205" ;
+INST "dqp_04_d_low"  LOC = "SLICE_X103Y148" ;
+INST "dqp_04_d_high" LOC = "SLICE_X103Y148" ;
+INST "body_main_ram/input_dq_buffer_low_4" LOC = "SLICE_X101Y148" ;
+INST "body_main_ram/input_dq_buffer_20" LOC = "SLICE_X102Y148" ;
 
-INST "dqp_07_d_keep" LOC = "SLICE_X0Y204" ;
-INST "body_main_ram/input_dq_buffer_7" LOC = "SLICE_X1Y204" ;
+INST "dqp_05_d_low"  LOC = "SLICE_X103Y178" ;
+INST "dqp_05_d_high" LOC = "SLICE_X103Y178" ;
+INST "body_main_ram/input_dq_buffer_low_5" LOC = "SLICE_X101Y178" ;
+INST "body_main_ram/input_dq_buffer_21" LOC = "SLICE_X102Y178" ;
 
-INST "dqp_08_d_keep" LOC = "SLICE_X0Y203" ;
-INST "body_main_ram/input_dq_buffer_8" LOC = "SLICE_X1Y203" ;
+INST "dqp_06_d_low"  LOC = "SLICE_X103Y179" ;
+INST "dqp_06_d_high" LOC = "SLICE_X103Y179" ;
+INST "body_main_ram/input_dq_buffer_low_6" LOC = "SLICE_X101Y179" ;
+INST "body_main_ram/input_dq_buffer_22" LOC = "SLICE_X102Y179" ;
 
-INST "dqp_09_d_keep" LOC = "SLICE_X0Y202" ;
-INST "body_main_ram/input_dq_buffer_9" LOC = "SLICE_X1Y202" ;
+INST "dqp_07_d_low"  LOC = "SLICE_X103Y180" ;
+INST "dqp_07_d_high" LOC = "SLICE_X103Y180" ;
+INST "body_main_ram/input_dq_buffer_low_7" LOC = "SLICE_X101Y180" ;
+INST "body_main_ram/input_dq_buffer_23" LOC = "SLICE_X102Y180" ;
 
-INST "dqp_10_d_keep" LOC = "SLICE_X0Y201" ;
-INST "body_main_ram/input_dq_buffer_10" LOC = "SLICE_X1Y201" ;
+INST "dqp_08_d_low"  LOC = "SLICE_X103Y186" ;
+INST "dqp_08_d_high" LOC = "SLICE_X103Y186" ;
+INST "body_main_ram/input_dq_buffer_low_8" LOC = "SLICE_X101Y186" ;
+INST "body_main_ram/input_dq_buffer_24" LOC = "SLICE_X102Y186" ;
 
-INST "dqp_11_d_keep" LOC = "SLICE_X0Y200" ;
-INST "body_main_ram/input_dq_buffer_11" LOC = "SLICE_X1Y200" ;
+INST "dqp_09_d_low"  LOC = "SLICE_X103Y181" ;
+INST "dqp_09_d_high" LOC = "SLICE_X103Y181" ;
+INST "body_main_ram/input_dq_buffer_low_9" LOC = "SLICE_X101Y181" ;
+INST "body_main_ram/input_dq_buffer_25" LOC = "SLICE_X102Y181" ;
 
-INST "dqp_12_d_keep" LOC = "SLICE_X0Y199" ;
-INST "body_main_ram/input_dq_buffer_12" LOC = "SLICE_X1Y199" ;
+INST "dqp_10_d_low"  LOC = "SLICE_X103Y182" ;
+INST "dqp_10_d_high" LOC = "SLICE_X103Y182" ;
+INST "body_main_ram/input_dq_buffer_low_10" LOC = "SLICE_X101Y182" ;
+INST "body_main_ram/input_dq_buffer_26" LOC = "SLICE_X102Y182" ;
 
-INST "dqp_13_d_keep" LOC = "SLICE_X0Y198" ;
-INST "body_main_ram/input_dq_buffer_13" LOC = "SLICE_X1Y198" ;
+INST "dqp_11_d_low"  LOC = "SLICE_X103Y183" ;
+INST "dqp_11_d_high" LOC = "SLICE_X103Y183" ;
+INST "body_main_ram/input_dq_buffer_low_11" LOC = "SLICE_X101Y183" ;
+INST "body_main_ram/input_dq_buffer_27" LOC = "SLICE_X102Y183" ;
 
-INST "dqp_14_d_keep" LOC = "SLICE_X0Y197" ;
-INST "body_main_ram/input_dq_buffer_14" LOC = "SLICE_X1Y197" ;
+INST "dqp_12_d_low"  LOC = "SLICE_X103Y154" ;
+INST "dqp_12_d_high" LOC = "SLICE_X103Y154" ;
+INST "body_main_ram/input_dq_buffer_low_12" LOC = "SLICE_X101Y154" ;
+INST "body_main_ram/input_dq_buffer_28" LOC = "SLICE_X102Y154" ;
 
-INST "dqp_15_d_keep" LOC = "SLICE_X0Y196" ;
-INST "body_main_ram/input_dq_buffer_15" LOC = "SLICE_X1Y196" ;
+INST "dqp_13_d_low"  LOC = "SLICE_X103Y150" ;
+INST "dqp_13_d_high" LOC = "SLICE_X103Y150" ;
+INST "body_main_ram/input_dq_buffer_low_13" LOC = "SLICE_X101Y150" ;
+INST "body_main_ram/input_dq_buffer_29" LOC = "SLICE_X102Y150" ;
+
+INST "dqp_14_d_low"  LOC = "SLICE_X103Y151" ;
+INST "dqp_14_d_high" LOC = "SLICE_X103Y151" ;
+INST "body_main_ram/input_dq_buffer_low_14" LOC = "SLICE_X101Y151" ;
+INST "body_main_ram/input_dq_buffer_30" LOC = "SLICE_X102Y151" ;
+
+INST "dqp_15_d_low"  LOC = "SLICE_X103Y155" ;
+INST "dqp_15_d_high" LOC = "SLICE_X103Y155" ;
+INST "body_main_ram/input_dq_buffer_low_15" LOC = "SLICE_X101Y155" ;
+INST "body_main_ram/input_dq_buffer_31"     LOC = "SLICE_X102Y155" ;
 
 #else
 //synthesis attribute LOC of ddr_dram_dq is "N29 M32 M31 L32 R26 R32 P26 P31 L31 K31 J32 J31 P30 N31 N30 L30 H32 H31 G32 F32 K29 K30 J29 H29 F31 E32 E31 D32 H30 H28 G29 F30";
@@ -883,19 +941,19 @@ INST "body_main_ram/input_dq_buffer_15" LOC = "SLICE_X0Y128" ;
 //a Area constraints
 //b Area placements
 #if LX60
-AREA_GROUP "AG_body_apb" RANGE = SLICE_X78Y153:SLICE_X103Y128 ;
-AREA_GROUP "AG_body_gip_data_ram" RANGE = SLICE_X2Y153:SLICE_X13Y144 ;
-AREA_GROUP "AG_body_gip_gip" RANGE = SLICE_X14Y153:SLICE_X69Y82 ;
-AREA_GROUP "AG_body_gip_gip_apb" RANGE = SLICE_X70Y153:SLICE_X77Y146 ;
-AREA_GROUP "AG_body_gip_prefetch" RANGE = SLICE_X2Y141:SLICE_X13Y104 ;
-AREA_GROUP "AG_body_iob_a_egress_control" RANGE = SLICE_X16Y27:SLICE_X29Y14 ;
-AREA_GROUP "AG_body_iob_a_egress_fifos" RANGE = SLICE_X32Y29:SLICE_X57Y4 ;
-AREA_GROUP "AG_body_iob_a_ingress_control" RANGE = SLICE_X12Y23:SLICE_X15Y18 ;
-AREA_GROUP "AG_body_iob_a_ingress_fifos" RANGE = SLICE_X32Y55:SLICE_X57Y30 ;
-AREA_GROUP "AG_body_iob_a_pst" RANGE = SLICE_X10Y51:SLICE_X31Y28 ;
-AREA_GROUP "AG_body_ios_a_erx" RANGE = SLICE_X16Y13:SLICE_X27Y0 ;
-AREA_GROUP "AG_body_ios_a_etx" RANGE = SLICE_X2Y15:SLICE_X15Y0 ;
-AREA_GROUP "AG_body_main_ram" RANGE = SLICE_X2Y179:SLICE_X11Y168 ;
+AREA_GROUP "AG_body_apb" RANGE = SLICE_X0Y73:SLICE_X25Y44 ;
+AREA_GROUP "AG_body_gip_data_ram" RANGE = SLICE_X82Y119:SLICE_X93Y110 ;
+AREA_GROUP "AG_body_gip_gip" RANGE = SLICE_X26Y121:SLICE_X81Y50 ;
+AREA_GROUP "AG_body_gip_gip_apb" RANGE = SLICE_X16Y79:SLICE_X27Y72 ;
+AREA_GROUP "AG_body_gip_prefetch" RANGE = SLICE_X82Y109:SLICE_X93Y72 ;
+AREA_GROUP "AG_body_iob_a_egress_control" RANGE = SLICE_X62Y41:SLICE_X75Y28 ;
+AREA_GROUP "AG_body_iob_a_egress_fifos" RANGE = SLICE_X32Y27:SLICE_X57Y0 ;
+AREA_GROUP "AG_body_iob_a_ingress_control" RANGE = SLICE_X76Y37:SLICE_X85Y28 ;
+AREA_GROUP "AG_body_iob_a_ingress_fifos" RANGE = SLICE_X58Y27:SLICE_X83Y0 ;
+AREA_GROUP "AG_body_iob_a_pst" RANGE = SLICE_X38Y49:SLICE_X61Y28 ;
+AREA_GROUP "AG_body_ios_a_erx" RANGE = SLICE_X92Y63:SLICE_X103Y50 ;
+AREA_GROUP "AG_body_ios_a_etx" RANGE = SLICE_X92Y43:SLICE_X103Y28 ;
+AREA_GROUP "AG_body_main_ram" RANGE = SLICE_X92Y171:SLICE_X101Y138 ;
 #else
 AREA_GROUP "AG_body_gip_data_ram"            RANGE = SLICE_X12Y81:SLICE_X25Y68 ;
 AREA_GROUP "AG_body_gip_gip"                 RANGE = SLICE_X26Y141:SLICE_X81Y70 ;
@@ -936,6 +994,14 @@ INST "body_iob_a_ingress_fifos" AREA_GROUP = "AG_body_iob_ingress_fifos" ;
 //INST "body_logic_analyzer" AREA_GROUP = "AG_body_logic_analyzer" ;
 
 //a Timing constraints
+NET "sys_drm_clock_in" TNM_NET="ckin" ;
+NET "int_logic_slow_clock_buffered" TNM_NET="ckslow" ;
+TIMESPEC "TS01" = PERIOD "ckin" 10.0 ns ;
+//NET "int_drm_clock_buffered" PERIOD = 10.0;
+//NET "int_drm_clock_90_buffered" PERIOD = 10.0;
+//NET "int_logic_slow_clock_buffered" PERIOD = 80.0;
+TIMESPEC "TS02" = PERIOD "ckslow" 80.0 ns ;
+
 INST "ddr_dram_clk_0" TNM = "ddr_clocks_out";
 INST "ddr_dram_clk_0_n" TNM = "ddr_clocks_out";
 INST "ddr_dram_clk_1" TNM = "ddr_clocks_out";
@@ -978,27 +1044,31 @@ INST "ddr_dram_dq<12>" TNM = "ddr_data_and_mask";
 INST "ddr_dram_dq<13>" TNM = "ddr_data_and_mask";
 INST "ddr_dram_dq<14>" TNM = "ddr_data_and_mask";
 INST "ddr_dram_dq<15>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<16>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<17>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<18>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<19>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<20>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<21>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<22>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<23>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<24>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<25>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<26>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<27>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<28>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<29>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<30>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dq<31>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<16>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<17>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<18>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<19>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<20>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<21>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<22>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<23>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<24>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<25>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<26>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<27>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<28>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<29>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<30>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dq<31>" TNM = "ddr_data_and_mask";
 INST "ddr_dram_dqm<0>" TNM = "ddr_data_and_mask";
 INST "ddr_dram_dqm<1>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dqm<2>" TNM = "ddr_data_and_mask";
-INST "ddr_dram_dqm<3>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dqm<2>" TNM = "ddr_data_and_mask";
+//INST "ddr_dram_dqm<3>" TNM = "ddr_data_and_mask";
 
-TIMEGRP "ddr_data_and_mask" OFFSET = OUT 9 ns AFTER "sys_drm_clock_in"  ;
-TIMEGRP "ddr_control"       OFFSET = OUT 9 ns AFTER "sys_drm_clock_in"  ;
-TIMEGRP "ddr_clocks_out"    OFFSET = OUT 6.68 ns AFTER "sys_drm_clock_in"  ;
+TIMEGRP "ddr_data_and_mask" OFFSET = OUT 14 ns AFTER "sys_drm_clock_in"  ;
+TIMEGRP "ddr_control"       OFFSET = OUT 14 ns AFTER "sys_drm_clock_in"  ;
+TIMEGRP "ddr_clocks_out"    OFFSET = OUT 14 ns AFTER "sys_drm_clock_in"  ;
+
+//TIMEGRP "ddr_data_and_mask" OFFSET = OUT 9 ns AFTER "int_drm_clock_buffered" ;
+//TIMEGRP "ddr_control"       OFFSET = OUT 9 ns AFTER "int_drm_clock_buffered" ;
+//TIMEGRP "ddr_clocks_out"    OFFSET = OUT 6.68 ns AFTER "int_drm_clock_buffered" ;

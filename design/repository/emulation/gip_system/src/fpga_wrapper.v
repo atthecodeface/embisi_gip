@@ -18,18 +18,18 @@ output d_in_low, d_in_high;
 inout pad;
 
 IFDDRCPE  dqi( .CLR(reset),
-               .PRE(1'b0),
-               .CE(1'b1),
-               .D(pad),
-               .C0(input_clock),
-               .C1(!input_clock),
-               .Q0( d_in_high ),
-               .Q1( d_in_low ) );
+                .PRE(1'b0),
+                .CE(1'b1),
+                .D(pad),
+                .C0(input_clock),
+                .C1(!input_clock),
+                .Q0( d_in_high ),
+                .Q1( d_in_low ) );
 
 reg d_low, d_high;
 reg oe_n;
 always @(posedge output_reg_clock) begin oe_n <= !next_oe; end
-always @(posedge output_reg_clock or posedge reset ) begin if (reset) begin d_low<=0; d_high<=0; end else begin d_low<=next_d_low, d_high<=next_d_high; end end
+always @(posedge output_reg_clock or posedge reset ) begin if (reset) begin d_low<=0; d_high<=0; end else begin d_low<=next_d_low; d_high<=next_d_high; end end
 // synthesis attribute equivalent_register_removal of oe_n is "no" ;
 OFDDRTCPE dqo( .CLR(reset),
                .PRE(1'b0),
@@ -84,6 +84,7 @@ module fpga_wrapper
 
     txd,
 
+    eb_rst_n,
     eb_ce_n,
     eb_oe_n,
     eb_we_n,
@@ -161,6 +162,7 @@ module fpga_wrapper
     output txd;
 
     //b External bus
+    output eb_rst_n;
     output [0:0]eb_ce_n;
     output eb_oe_n;
     output eb_we_n;
@@ -181,7 +183,7 @@ module fpga_wrapper
     output [1:0]ddr_dram_ba;
     output [12:0]ddr_dram_a;
 
-    inout [31:0]ddr_dram_dq; // for the old Avnet boards we need to actually use both banks else Vref is unreliable
+    inout [15:0]ddr_dram_dq; // for the old Avnet boards we need to actually use both banks else Vref is unreliable
     output [1:0]ddr_dram_dqm;
     inout [1:0]ddr_dram_dqs;
 
@@ -204,7 +206,9 @@ module fpga_wrapper
 //    input par_a_clock;
 //    input [1:0] par_a_control_inputs;
 //    input [1:0] par_a_data_inputs;
-wire par_a_clock, [1:0]par_a_control_inputs, [1:0] par_a_data_inputs;
+wire par_a_clock;
+wire [1:0]par_a_control_inputs;
+wire [1:0] par_a_data_inputs;
 assign par_a_clock = 1'b0;
 assign par_a_control_inputs = 0;
 assign par_a_data_inputs = 0;
@@ -274,6 +278,7 @@ wire ext_bus_oe;
 wire ext_bus_we;
 wire [23:0]ext_bus_address;
 
+assign eb_rst_n = !system_reset_out;
 assign eb_ce_n[0] = !ext_bus_ce[0];
 //assign eb_ce_n[1] = !ext_bus_ce[1];
 //assign eb_ce_n[2] = !ext_bus_ce[2];
@@ -372,16 +377,21 @@ assign ddr_dram_cke[1] = drm_cke_1;
 
 //b DQM outputs and  DQ pads - input registered on posedge and negedge 90 input clocks, outputs kept on int_drm_clock_buffered and driven 90 degress later
 // we don't care about reset too much, but it must match the internals to get the flops colocated - reset only effects the signal values, not the oe
-reg [1:0]ddr_dram_dqm_low, [1:0]ddr_dram_dqm_high;
+reg [1:0]ddr_dram_dqm_low;
+reg [1:0]ddr_dram_dqm_high;
 wire drm_next_dqoe;
-wire [15:0]drm_next_dq_low,  [15:0]drm_next_dq_high;
-wire [15:0]drm_input_dq_low, [15:0]drm_input_dq_high;
+wire [15:0]drm_next_dq_low;
+wire [15:0]drm_next_dq_high;
+wire [15:0]drm_input_dq_low;
+wire [15:0]drm_input_dq_high;
 wire [3:0]drm_next_dqm;
+wire [31:0]drm_next_dq;
 always @(posedge int_drm_clock_buffered or posedge system_reset_in)
 begin
     if (system_reset_in)
     begin
-        ddr_dram_dqm <= 0;
+        ddr_dram_dqm_low <= 0;
+        ddr_dram_dqm_high <= 0;
     end
     else
     begin
@@ -470,7 +480,7 @@ wire [7:0]internal_switches;
 wire [31:0]analyzer_async_trace_out;
 
 // We need to use at least one input pin on bank 7 else the voltage reference is not used and pulled low, which pulls it low for bank 6, so the DRAM reads just 1's
-assign ssdi[1] = drm_input_dq_high[63];
+assign ssdi[1] = drm_input_dq_high[15]; // was 63
 
 assign mii_mdc = sscl[0];
 assign mii_mdio = ssdo_oe ? ssdo : 1'bz; //'
@@ -568,8 +578,8 @@ gip_system body( .drm_clock(int_drm_clock_buffered),
                  .analyzer_async_trace_valid(analyzer_signals_valid),
                  .analyzer_async_trace_out(analyzer_signals)
     );
-assign drm_next_dq[63:32] = 0;
-assign drm_next_dqm[7:4] = 0;
+//assign drm_next_dq[63:32] = 0;
+//assign drm_next_dqm[7:4] = 0;
 
 //b End module
 endmodule

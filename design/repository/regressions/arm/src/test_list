@@ -84,6 +84,7 @@ cc ethmonitor min_cmds
 cc ethmonitor drv_cmds
 cc ethmonitor cmd_memory
 cc ethmonitor cmd_postbus
+cc ethmonitor cmd_ethernet
 cc ethmonitor cmd_extbus
 cc ethmonitor cmd_flash
 cc ethmonitor cmd_test
@@ -120,7 +121,7 @@ test dram ethmonitor    drivers:flash drivers:uart drivers:ethernet drivers:sync
                         drivers:gipeth drivers:gipeth_asm drivers:gip_video_capture drivers:gip_video_capture_asm \
                         ethmonitor:postbus_config ethmonitor:flash ethmonitor:uart ethmonitor:ethernet ethmonitor:timer_int ethmonitor:regs \
                         ethmonitor:framework ethmonitor:all_cmds ethmonitor:cmd \
-                        ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash \
+                        ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_ethernet ethmonitor:cmd_extbus ethmonitor:cmd_flash \
                         ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_video ethmonitor:cmd_driver_test \
                         common:wrapper_download common:support_download
 
@@ -132,14 +133,14 @@ test dram ethmonitor_noeth drivers:flash drivers:uart drivers:sync_serial driver
                         drivers:gipeth drivers:gipeth_asm drivers:gip_video_capture drivers:gip_video_capture_asm \
                         ethmonitor:postbus_config ethmonitor:flash ethmonitor:uart ethmonitor:timer_int ethmonitor:regs \
                         ethmonitor:framework_noeth ethmonitor:all_cmds ethmonitor:cmd \
-                        ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_extbus ethmonitor:cmd_flash \
+                        ethmonitor:cmd_memory ethmonitor:cmd_control ethmonitor:cmd_analyzer ethmonitor:cmd_postbus ethmonitor:cmd_ethernet ethmonitor:cmd_extbus ethmonitor:cmd_flash \
                         ethmonitor:cmd_test ethmonitor:cmd_leds ethmonitor:cmd_video ethmonitor:cmd_driver_test \
                         common:wrapper_download common:support_download
 
 test rom ethmonitor     drivers:flash drivers:uart drivers:ethernet drivers:sync_serial \
                         ethmonitor:postbus_config ethmonitor:flash ethmonitor:uart ethmonitor:ethernet \
                         ethmonitor:framework ethmonitor:min_cmds ethmonitor:cmd \
-                        ethmonitor:cmd_memory ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_leds \
+                        ethmonitor:cmd_memory ethmonitor:cmd_extbus ethmonitor:cmd_flash ethmonitor:cmd_postbus \
                         common:wrapper common:support
 
 #test sram ethmonitor drivers:flash drivers:uart ethmonitor:uart ethmonitor:framework_noeth ethmonitor:min_cmds ethmonitor:cmd_memory ethmonitor:cmd common:wrapper_download common:support_download

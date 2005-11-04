@@ -116,10 +116,11 @@ module apb_devices( clock int_clock,
             cfg_uart_speed = 0;
             full_switch( cfg_uart_speed )
                 {
-                case 0: // 260=>9600 - actually 1200 for 5MHz; for 125/12 we need 60
+                case 0: // 260=>9600 - actually 1200 for 5MHz; for 125/12 we need 60, 125/11 we need 68, 100/11 we need 54 I hope
                 {
                     cfg_baud_divider = 260;
                     cfg_baud_divider = 68;
+                    cfg_baud_divider = 54; // 100MHz we hope
                 }
                 case 1: // 130=>19200 - actually 2400 for 5MHz and for 125/12 we need 241
                 {

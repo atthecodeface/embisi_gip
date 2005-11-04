@@ -545,18 +545,12 @@ extern void mon_ethernet_init( unsigned int eth_address_hi, unsigned int eth_add
     ethernet_init( IO_A_SLOT_ETHERNET_0, 0, 2 ); // we use padding of 2 to align IP addresses etc with words, as ethernet has a 14 byte protocol header
     sync_serial_init( IO_A_SLOT_SYNC_SERIAL_0 );
 
-    // set auto-neg to 10FD only
+    // set base control reg to 10FD only no autoneg
     // clock MDC 32 times with MDIO high, then send command
     sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0xffffffff ); 
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x58920040 ); // 0101 10001 0010010 0000 0000 0100 0000 - address is 0x11
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x58820100 ); // 0101 10001 0010010 0000 0000 0100 0000 - address is 0x11
     sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0xffffffff ); 
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x51920040 ); // 0101 00011 0010010 0000 0000 0100 0000 - address is 0x03
-    // restart auto-neg
-    // clock MDC 32 times with MDIO high, then send command
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0xffffffff ); 
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x58821340 ); // 0101 10001 0000010 0001 0011 0100 0000 - address is 0x11
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0xffffffff ); 
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x51821340 ); // 0101 00011 0010010 0000 0000 0100 0000 - address is 0x03
+    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 10, 0x51820100 ); // 0101 00011 0010010 0000 0000 0100 0000 - address is 0x03
 
     ethernet_set_tx_callback( tx_callback, NULL );
     ethernet_set_rx_callback( rx_callback, NULL );

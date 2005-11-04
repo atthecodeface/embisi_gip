@@ -48,7 +48,8 @@ wrapper_entry_point:
     mov pc, lr
     ldr pc, return_address
 
-return_address:  .word 0x8000489c
+// return_address:  .word 0x8000489c
+return_address:  .word 0x242c // go back to the polling loop start from the outside... it should be okay
     
 mdio_write_eth_phy_data:    
     .word 0x51820100
@@ -59,4 +60,3 @@ mdio_write_cmd_cmd:
 
 .Lfe1:
 	.size	 wrapper_entry_point,.Lfe1-wrapper_entry_point
-    

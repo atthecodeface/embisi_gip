@@ -9,7 +9,7 @@ run
 -top fpga_wrapper
 -opt_mode Speed
 -opt_level 1
--uc "./constraints/gip_simple.xcf"
+-uc "../../repository/emulation/gip_system/constraints/gip_simple.xcf"
 -iuc NO
 -lso "./build/fpga_wrapper.lso"
 -keep_hierarchy NO

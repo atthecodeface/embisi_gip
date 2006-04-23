@@ -110,6 +110,7 @@ module ddr_dram_as_sram( clock drm_clock,
     clocked bit[32] input_dq_buffer=0; // captures the input_dq_high data, and these registers are placed very close to the pads
     clocked bit sram_low_priority_wait=0; // this is asserted if a refresh is pending
     clocked bit[32] sram_read_data=0;
+    clocked bit timing_safe_sram_priority=0 "Clock sram_priority so that it can be used in the ddr clock domain for ddr_transaction";
 
     /*b Write buffer data and buffered address
      */
@@ -461,6 +462,7 @@ module ddr_dram_as_sram( clock drm_clock,
      */
     ddr_dram_fsm "DDR DRAM state machine":
         {
+            timing_safe_sram_priority <= sram_priority; // We don't want ddr_transaction to depend on anything other than ddr clock data
             input_dq_buffer_low <= input_dq_low; // this is on the falling edge, capturing the (earlier) falling edge data
             input_dq_buffer[16;0] <= input_dq_buffer_low;
             input_dq_buffer[16;16] <= input_dq_high;
@@ -484,7 +486,7 @@ module ddr_dram_as_sram( clock drm_clock,
                         buffered_address <= sram_address;
                         buffered_data <= sram_write_data;
                         buffered_enables <= sram_write_byte_enables;
-                        if (!sram_priority && ddr_refresh_pending && sram_low_priority_wait)
+                        if (!timing_safe_sram_priority && ddr_refresh_pending && sram_low_priority_wait)
                         {
                             ddr_dram_state <= ddr_dram_refresh_command;
                             ddr_transaction = ddr_transaction_refresh;

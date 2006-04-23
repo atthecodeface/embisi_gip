@@ -1,6 +1,10 @@
 #!/usr/bin/php -q
 <?php
 
+#a Documetation - Xilinx bugs...
+# map must be run with -ignore_keep_hierarchy on 7.1 else it core dumps
+# xst adds 'keep_hierarchy' to _all_ submodules of a model when it synthesizes it if the xcf file has 'model $model keep_hierarchy=yes'
+
 #a Copyright
 #  
 #  This file 'xcreate_make' copyright Gavin J Stark 2006
@@ -637,7 +641,7 @@ function output_xilinx_makefile( $file )
     {
         $v_files = array();
         $hier_models = array();
-        fwrite( $file, "\${XST_OBJ}/".$model.".ngc: \\\n" );
+        fwrite( $file, "\${XST_OBJ}/$model.ngc: \\\n" );
         foreach ($obj["srcs"] as $src)
         {
             $handled = 0;
@@ -675,7 +679,8 @@ function output_xilinx_makefile( $file )
         fwrite( $file, "\n" );
         fwrite( $file, "\tmkdir -p \${XST_OBJ}\n" );
         fwrite( $file, "\tmkdir -p \${XST_TMP}\n" );
-        #fwrite( $file, "\trm -f \${XST_DONE}\n" );
+        fwrite( $file, "\trm -f \${XST_OBJ}/$model.ngc\n" );
+        fwrite( $file, "\trm -f \${XST_DONE}\n" );
         $xst_file = "\${XST_TMP}/$model.xst";
         $prj_file = "\${XST_TMP}/$model.prj";
         $xcf_file = "\${XST_TMP}/$model.xcf";
@@ -717,7 +722,7 @@ function output_xilinx_makefile( $file )
     #b NGDbuild
     fwrite( $file, "\${NGD_OBJ}/$toplevel.ngd: \${XST_OBJ}/boot_rom.ngo \${XST_OBJ}/.built $constraints \${XST_OBJ}/$toplevel.ngc\n");
     fwrite( $file, "\tmkdir -p \${NGD_OBJ}\n");
-    #fwrite( $file, "\trm -f \${NGD_DONE}\n");
+    fwrite( $file, "\trm -f \${NGD_DONE}\n");
     fwrite( $file, "\tngdbuild -insert_keep_hierarchy -dd ./tmp -nt timestamp -uc $constraints -p $device \${XST_OBJ}/$toplevel.ngc \${NGD_OBJ}/$toplevel.ngd\n");
     fwrite( $file, "\${NGD_DONE}: \${NGD_OBJ}/$toplevel.ngd\n" );
     fwrite( $file, "\ttouch \${NGD_DONE}\n" );
@@ -726,19 +731,19 @@ function output_xilinx_makefile( $file )
     #b Map
     fwrite( $file, "\${MAP_OBJ}/$toplevel.ncd: \${NGD_DONE} \${NGD_OBJ}/$toplevel.ngd\n");
     fwrite( $file, "\tmkdir -p \${MAP_OBJ}\n");
-    #fwrite( $file, "\trm -f \${MAP_DONE}\n");
-    fwrite( $file, "\tmap -p $device -cm area -detail -pr b -k 4 -c 100 -o \${MAP_OBJ}/$toplevel.ncd \${NGD_OBJ}/$toplevel.ngd \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\trm -f \${MAP_DONE}\n");
+    fwrite( $file, "\tmap -ignore_keep_hierarchy -p $device -cm area -detail -pr b -k 4 -c 100 -o \${MAP_OBJ}/$toplevel.ncd \${NGD_OBJ}/$toplevel.ngd \${MAP_OBJ}/$toplevel.pcf\n");
     fwrite( $file, "\${MAP_DONE}: \${MAP_OBJ}/$toplevel.ncd\n" );
     fwrite( $file, "\ttouch \${MAP_DONE}\n");
     fwrite( $file, "\${MAP_OBJ}/$toplevel.pcf: \${MAP_DONE}\n");
     fwrite( $file, "map: \${MAP_DONE}\n\n\n");
 
     #b PAR
-    fwrite( $file, "\${PAR_OBJ}/$toplevel.pcf:\${MAP_DONE} \${MAP_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\${PAR_OBJ}/$toplevel.par:\${MAP_DONE} \${MAP_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
     fwrite( $file, "\tmkdir -p \${PAR_OBJ}\n");
-    #fwrite( $file, "\trm -f \${PAR_DONE}\n");
+    fwrite( $file, "\trm -f \${PAR_DONE}\n");
     fwrite( $file, "\tpar -w -ol med -t 1 \${MAP_OBJ}/$toplevel.ncd \${PAR_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
-    fwrite( $file, "\${PAR_DONE}: \${PAR_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\${PAR_DONE}: \${PAR_OBJ}/$toplevel.par\n");
     fwrite( $file, "\ttouch \${PAR_DONE}\n");
     fwrite( $file, "par: \${PAR_DONE}\n\n\n");
 

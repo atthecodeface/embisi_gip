@@ -29,6 +29,14 @@ emulation:
 emclean:
 	$(MAKE) -f Makefile.emulation clean
 
+.PHONY: xilinx
+
+xilinx:
+	$(MAKE) -f Makefile.xilinx all
+
+xilinxclean:
+	$(MAKE) -f Makefile.xilinx clean
+
 .PHONY: documentation
 
 documentation:

@@ -1,0 +1,20 @@
+#!/usr/bin/perl
+
+die "Syntax: <destination directory> $#ARGV" unless ($#ARGV==0);
+
+sub do_system {
+    my ($cmd) = @_;
+    print "Do: $cmd\n";
+    system($cmd);
+}
+
+$dest = $ARGV[0];
+die "Destination $dest does not exist" unless (-d $dest);
+die "Subdirectory $dest/constraints does not exist" unless (-d "$dest/constraints");
+die "Subdirectory $dest/macros does not exist" unless (-d "$dest/macros");
+die "Subdirectory $dest/rams does not exist" unless (-d "$dest/rams");
+die "Subdirectory $dest/src does not exist" unless (-d "$dest/src");
+do_system("cp -p constraints/*ucf constraints/*xcf $dest/constraints");
+do_system("cp -p rams/*coe $dest/rams");
+do_system("cp -p macros/*v macros/*vhd macros/*xco $dest/macros");
+do_system("cp -p src/*v $dest/src");

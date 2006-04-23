@@ -1,0 +1,797 @@
+#!/usr/bin/php -q
+<?php
+
+#a Copyright
+#  
+#  This file 'xcreate_make' copyright Gavin J Stark 2006
+#  
+#  This is free software; you can redistribute it and/or modify it however you wish,
+#  with no obligations
+#  
+#  This software is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even implied warranty of MERCHANTABILITY
+#  or FITNESS FOR A PARTICULAR PURPOSE.
+
+function usage()
+{
+    echo "Syntax: xcreate_make -f <model_list> [-x <xilinx makefile>] [-m simulation/emulation makefile]\n";
+    exit();
+}
+
+#a Main
+$base_options = "--include-assertions\@\@\@--include-coverage\@\@\@--coverage-desc-file\@\@\@\${TARGET_DIR}/coverage.map";
+$options = getopt("f:x:m:");
+if (!isset($options["f"]))
+{
+    usage();
+}
+
+$model_list = $options["f"];
+
+#a Read the descriptor list
+#f read_objs
+function read_objs( $file )
+{
+    $nobj=0;
+    while (!feof($file))
+    {
+        $buffer = fgets($file);
+        if ( (!preg_match("/^\s*#/", $buffer)) &&
+             (!preg_match("/^\s*;/", $buffer)) )
+        {
+            #echo "\n$buffer";
+            if ( preg_match("/^\s*(\S+)\s+(\S.*)/", $buffer, $matches ) )
+            {
+                $objs[$nobj]["type"] = $matches[1];
+                $objs[$nobj]["args"] = preg_split("/\s+/",$matches[2]);
+                #echo $matches[1].":".$objs[$nobj]["args"][0].":".$objs[$nobj]["args"][1].":::".$matches[2]."\n";
+                $nobj++;
+            }
+        }
+    }
+    return $objs;
+}
+
+#f objs_of_type
+function objs_of_type( $objs, $type_re )
+{
+    $nsel = 0;
+    $selection = array();
+    foreach ($objs as $obj)
+    {
+        if (preg_match($type_re,$obj["type"]))
+        {
+            $selection[$nsel] = $obj;
+            $nsel++;
+        }
+    }
+    return $selection;
+}
+
+#f parse_models - c_model, c_src, ef, cdl
+function parse_models( $objs )
+{
+    global $models;
+    global $base_options;
+
+    $models["c"] = array();
+    $models["ef"] = array();
+    $models["cdl"] = array();
+    $models["hash"] = array();
+    foreach (objs_of_type($objs,"/^c_(model|src)/") as $sel)
+    {
+        $obj["type"]  = $sel["type"];
+        $obj["dir"]   = $sel["args"][0];
+        $obj["model"] = $sel["args"][1];
+        $args = "";
+        if ($sel["args"])
+        {
+            $args =  array_slice($sel["args"],2);
+        }
+
+        $c_opts = "";
+        foreach ($args as $option)
+        {
+            if (preg_match("/^inc:(\S*)/",$option, $matches))
+            {
+                $c_opts .=" -I\${SRC_ROOT}/".$matches[1];
+            }
+            if (preg_match("/^def:(\S*)/",$option, $matches))
+            {
+                $c_opts .=" -D".$matches[1];
+            }
+        }
+        $obj["opts"] = $c_opts;
+        $models["c"][] = $obj;
+        $models["hash"][$obj["model"]] = "c";
+    }
+
+    foreach (objs_of_type($objs,"/^ef/") as $sel)
+    {
+        $obj["type"]  = $sel["type"];
+        $obj["dir"]   = $sel["args"][0];
+        $obj["model"] = $sel["args"][1];
+        $obj["src"]   = $sel["args"][1].".ef";
+        $obj["c"]     = $sel["args"][1].".c";
+        $obj["obj"]   = $sel["args"][1].".o";
+        $args = "";
+        if ($sel["args"])
+        {
+            $args =  array_slice($sel["args"],2);
+        }
+
+        $ef_opts = $base_options;
+        $ef_opts = "";
+        foreach ($args as $option)
+        {
+            if (preg_match("/^model:(\S+)/",$option, $matches))
+            {
+                $obj["model"] = $matches[1];
+                $obj["c"]     = $matches[1].".cpp";
+                $obj["obj"]   = $matches[1].".o";
+            }
+            if (preg_match("/^rmn:(\S+)/",$option, $matches))
+            {
+                $ef_opts .= "@@@"."--remap-module-name@@@".$matches[1];
+            }
+            if (preg_match("/^rit:(\S+)/",$option, $matches))
+            {
+                $ef_opts .= "@@@"."--remap-instance-type@@@".$matches[1];
+            }
+        }
+        $obj["opts"] = $ef_opts;
+        $models["ef"][] = $obj;
+        $models["hash"][$obj["model"]] = "ef";
+    }
+
+    foreach (objs_of_type($objs,"/cdl/") as $sel)
+    {
+        $obj["dir"]   = $sel["args"][0];
+        $obj["model"] = $sel["args"][1];
+        $obj["src"]   = $sel["args"][1].".cdl";
+        $obj["c"]     = $sel["args"][1].".cpp";
+        $obj["v"]     = $sel["args"][1].".v";
+        $obj["obj"]   = $sel["args"][1].".o";
+        $args = "";
+        if ($sel["args"])
+        {
+            $args =  array_slice($sel["args"],2);
+        }
+
+        $cdl_opts = $base_options;
+        $cdl_opts = "";
+        foreach ($args as $option)
+        {
+            if (preg_match("/^model:(\S+)/",$option, $matches))
+            {
+                $obj["model"] = $matches[1];
+                $obj["c"]     = $matches[1].".cpp";
+                $obj["obj"]   = $matches[1].".o";
+            }
+            if (preg_match("/^rmn:(\S+)/",$option, $matches))
+            {
+                $cdl_opts .= "@@@"."--remap-module-name@@@".$matches[1];
+            }
+            if (preg_match("/^rit:(\S+)/",$option, $matches))
+            {
+                $cdl_opts .= "@@@"."--remap-instance-type@@@".$matches[1];
+            }
+            if (preg_match("/^inc:(\S+)/",$option, $matches))
+            {
+                $cdl_opts .= "@@@"."--include-dir@@@\${SRC_ROOT}/".$matches[1];
+            }
+            if (preg_match("/^dc:(\S+)/",$option, $matches))
+            {
+                $cdl_opts .= "@@@"."--constant@@@/".$matches[1];
+            }
+        }
+        $obj["opts"] = $cdl_opts;
+        $models["cdl"][] = $obj;
+        $models["hash"][$obj["model"]] = "cdl";
+    }
+}
+
+#f parse_xilinx_descs
+function parse_xilinx_descs( $objs )
+{
+    global $xilinx;
+
+    $xilinx["srcs"] = array();
+    $xilinx["rams"] = array();
+    $xilinx["cores"] = array();
+    $xilinx["subs"] = array();
+    $xilinx["comps"] = array();
+    $xilinx["toplevel"] = array();
+    $xilinx["type"] = array();
+
+    # A Xilinx source file is expected to define a model of the same name, and it should be a .v file in the 'src' directory of the emulation tree
+    # Xilinx source files should only be referenced by Xilinx subcomponents and components
+    # A Xilinx source file with the same name as another model takes preference over that other model in Xilinx components
+    foreach (objs_of_type($objs,"/^xilinx_src/") as $sel)
+    {
+        $src = $sel["args"][0];
+        $obj = array();
+        $obj["model"] = $src;
+        $xilinx["srcs"][$src] = $obj;
+        $xilinx["type"][$src] = "src";
+    }
+    # A RAM is a Xilinx-specific item that is used in cores; it does not define a model
+    foreach (objs_of_type($objs,"/^xilinx_ram/") as $sel)
+    {
+        $src = $sel["args"][0];
+        $xilinx["rams"][] = $src;
+        $xilinx["type"][$src] = "ram";
+    }
+    # A core has a '.xco' file in 'cores', and may depend on RAMs or perhaps other things
+    # It defines a Xilinx-specific model.
+    # If a core is specified with the same name as another model, the core takes preference over that other model in Xilinx components
+    # A core will generate its own '.ngc' file
+    foreach (objs_of_type($objs,"/^xilinx_core/") as $sel)
+    {
+        $src = $sel["args"][0];
+        $obj = array();
+        $obj["model"] = $src;
+        $obj["src"] = $src;
+        $obj["subs"] = array_slice($sel["args"],1);
+        $xilinx["cores"][$src] = $obj;
+        $xilinx["type"]["$src"] = "core";
+    }
+    # subcomponents are groups of source files, subcomponents, cores, components, or models
+    # a subcomponent is expected to have a model or source file that defines it, that is also declared
+    # subcomponents are basically handy groupings
+    foreach (objs_of_type($objs,"/^xilinx_subcomponent/") as $sel)
+    {
+        $src = $sel["args"][0];
+        $obj = array();
+        $obj["model"] = $src;
+        $obj["subs"] = array_slice($sel["args"],1);
+        $obj["src_models"] = array(); # The source models that make up the component
+        $obj["srcs"] = array(); # The sources (models/components/cores) (and their types) that make up the component
+        $xilinx["subs"][$src] = $obj;
+        $xilinx["type"][$src] = "sub";
+    }
+    # components are items that are built in the Xilinx world, and they consist of models, Xilinx source, and cores
+    # They may utilize subcomponents as a convenience, but subcomponents are not separately built (just used to gather files together neatly)
+    # A component will generate its own '.ngc' file
+    foreach (objs_of_type($objs,"/^xilinx_component/") as $sel)
+    {
+        $src = $sel["args"][0];
+        $obj = array();
+        $obj["model"] = $src;
+        $obj["subs"] = array_slice($sel["args"],1);
+        $obj["src_models"] = array(); # The source models that make up the component
+        $obj["srcs"] = array(); # The sources (models/components/cores) (and their types) that make up the component
+        $xilinx["comps"][$src] = $obj;
+        $xilinx["type"][$src] = "comp";
+    }
+    # toplevels are built (if components...) with IOBs
+    # Actually the first toplevel is also what everything depends upon
+    # So only put one toplevel in most of the time...
+    foreach (objs_of_type($objs,"/^xilinx_toplevel/") as $sel)
+    {
+        $src = $sel["args"][0];
+        $obj["model"] = $src;
+        $obj["device"] = $sel["args"][1];
+        $obj["constraints"] = $sel["args"][2];
+        $xilinx["toplevels"][$src] = $obj;
+    }
+}
+
+#f find_xilinx_source
+function find_xilinx_source( $model )
+{
+    global $models, $xilinx;
+    $type = NULL;
+    $xtype = NULL;
+    if (isset($models["hash"][$model]))
+    {
+        $type = $models["hash"][$model];
+    }
+    if (isset($xilinx["type"][$model]))
+    {
+        $xtype = $xilinx["type"][$model];
+    }
+    if ($xtype)
+    {
+        return array("xmodel", $xtype );
+    }
+    if ($type)
+    {
+        return array("model", $type );
+    }
+    return NULL;
+}
+
+#a Build hierarchy
+#f build_xilinx_hierarchy
+# We here build the hierarchy for a Xilinx build
+# In the Xilinx world we build components, which are made up of other components, cores, or source files
+# The hierarchy is dug back as far as a component, no further.
+# We use subcomponents to group source files or other components together; they are for convenience, and do not effect build hierarchy
+# So for each component we need to identify all its constituents, and where they are subcomponents we must dig back deeper.
+# The first thing to do, therefore, is hack down the subcomponents
+function build_xilinx_hierarchy()
+{
+    global $models, $xilinx;
+
+    #b Build subcomponents down to their base constituents
+    $iter = 0;
+    # We need to iterate whilst changes occur...
+    $done = 0;
+    while (!$done)
+    {
+        $iter++;
+        if ($iter>50)
+        {
+            echo "Too many iterations in subcomponent hierarchy examination - probably a loop in the Xilinx components; check '$last_model'\n";
+            exit(4);
+        }
+        $done = 1;
+        foreach ($xilinx["subs"] as $key=>$obj)
+        {
+            # the subcomponent must be a xilinx source or model
+            # we expect to find its source and type in the source list
+            $src_models = $obj["src_models"];
+            $srcs = $obj["srcs"];
+            $model = $obj["model"];
+            #echo "Model $model now has source ";print_r($src_models);echo"\n";
+            if (!in_array($model, $src_models))
+            {
+                $type = find_xilinx_source( $model );
+                if (!$type)
+                {
+                    echo "Subcomponent $model has no associated source file\n";
+                    exit(4);
+                }
+                #echo "Adding self $model\n";
+                $src_models[] = $model;
+                $srcs[] = array( $type, $model );
+                $done = 0;
+                $last_model = $model;
+            }
+            foreach ($obj["subs"] as $model)
+            {
+                $type = find_xilinx_source( $model );
+                #echo "Sub $model type ";print_r($type);
+                if (!$type)
+                {
+                    echo "Subcomponent constituent $model has no associated source file\n";
+                    exit(4);
+                }
+                if (!array_search($model, $src_models))
+                {
+                    $src_models[] = $model;
+                    $srcs[] = array( $type, $model );
+                    $last_model = $model;
+                    $done = 0;
+                }
+                if ( ($type[0]=="xmodel") &&
+                     ($type[1]=="sub") )
+                {
+                    foreach ($xilinx["subs"][$model]["subs"] as $submodel)
+                    {
+                        if (!in_array($submodel, $src_models))
+                        {
+                            $subtype = find_xilinx_source( $submodel );
+                            $src_models[] = $submodel;
+                            $srcs[] = array( $subtype, $submodel );
+                            $last_model = $model;
+                            $done = 0;
+                        }
+                    }
+                }
+            }
+            $xilinx["subs"][$key]["src_models"] = $src_models;
+            $xilinx["subs"][$key]["srcs"] = $srcs;
+            #print_r($src_models);
+        }
+    }
+
+    #b Now build components down to their base constituents
+    foreach ($xilinx["comps"] as $key=>$obj)
+    {
+        # the component must be a xilinx source or model
+        $src_models = array();
+        $srcs = array();
+        $model = $obj["model"];
+        $type = find_xilinx_source( $model );
+        if (!$type)
+        {
+            echo "Component $model has no associated source file\n";
+            exit(4);
+        }
+        $src_models[] = $model;
+        $srcs[] = array( $type, $model );
+        foreach ($obj["subs"] as $model)
+        {
+            $type = find_xilinx_source( $model );
+            if (!$type)
+            {
+                echo "Component constituent $model has no associated source file\n";
+                exit(4);
+            }
+            if (!array_search($model, $src_models))
+            {
+                $src_models[] = $model;
+                $srcs[] = array( $type, $model );
+            }
+            if ( ($type[0]=="xmodel") &&
+                 ($type[1]=="sub") )
+            {
+                foreach ($xilinx["subs"][$model]["subs"] as $submodel)
+                {
+                    if (!in_array($submodel, $src_models))
+                    {
+                        $subtype = find_xilinx_source( $submodel );
+                        $src_models[] = $submodel;
+                        $srcs[] = array( $subtype, $submodel );
+                    }
+                }
+            }
+        }
+        $xilinx["comps"][$key]["src_models"] = $src_models;
+        $xilinx["comps"][$key]["srcs"] = $srcs;
+    }
+}
+
+#a Model makefile
+#f output_model_makefile
+function output_model_makefile( $file )
+{
+    global $models;
+
+    fwrite( $file, "MODELS := \\\n" );
+    foreach ($models["c"] as $i)
+    {
+        if ($i["type"] == "c_model")
+        {
+            fwrite( $file, "    ".$i["model"]." \\\n");
+        }
+    }
+    foreach ($models["ef"] as $i)
+    {
+        fwrite( $file, "    ".$i["model"]." \\\n");
+    }
+    foreach ($models["cdl"] as $i)
+    {
+        fwrite( $file, "    ".$i["model"]." \\\n");
+    }
+    fwrite( $file, " \n" );
+
+    fwrite( $file, "C_MODEL_SRCS := \\\n" );
+    foreach ($models["c"] as $i)
+    {
+        fwrite( $file, "    \${SRC_ROOT}/".$i["dir"]."/".$i["model"].".cpp \\\n");
+    }
+    fwrite( $file, " \n" );
+
+    fwrite( $file, "C_MODEL_OBJS := \\\n" );
+    foreach ($models["c"] as $i)
+    {
+        fwrite( $file, "    \${TARGET_DIR}/".$i["model"].".o \\\n");
+    }
+    foreach ($models["ef"] as $i)
+    {
+        fwrite( $file, "    \${TARGET_DIR}/".$i["obj"]." \\\n");
+    }
+    foreach ($models["cdl"] as $i)
+    {
+        fwrite( $file, "    \${TARGET_DIR}/".$i["obj"]." \\\n");
+    }
+    fwrite( $file, " \n" );
+
+    fwrite( $file, "VERILOG_FILES := \\\n" );
+    foreach ($models["cdl"] as $i)
+    {
+        fwrite( $file, "    \${TARGET_DIR}/".$i["v"]." \\\n");
+    }
+    fwrite( $file, " \n" );
+
+    foreach ($models["c"] as $i)
+    {
+        $c_file = $i["dir"]."/".$i["model"].".cpp";
+        $object_file = $i["model"].".o";
+        $options = preg_replace( "/@@@/", " ", $i["opts"] );
+        fwrite( $file, "\${TARGET_DIR}/$object_file : \${SRC_ROOT}/$c_file\n" );
+        fwrite( $file, "\t\$(CXX) \$(CXXFLAGS) -c -o \${TARGET_DIR}/$object_file \${SRC_ROOT}/$c_file $options\n\n" );
+    }
+    
+    foreach ($models["ef"] as $i)
+    {
+        $directory = $i["dir"];
+        $model = $i["model"];
+        $source_file = $i["src"];
+        $c_file = $i["c"];
+        $object_file = $i["obj"];
+        $options = preg_replace( "/@@@/", " ", $i["opts"] );
+        fwrite( $file, "\${TARGET_DIR}/$c_file : \${SRC_ROOT}/$directory/$source_file \$(CYCLICITY_BIN_DIR)/ef\n" );
+        fwrite( $file, "\t\$(CYCLICITY_BIN_DIR)/ef --model $model --cpp \${TARGET_DIR}/$c_file $options \${SRC_ROOT}/$directory/$source_file\n\n" );
+        fwrite( $file, "\${TARGET_DIR}/$object_file : \${TARGET_DIR}/$c_file\n" );
+        fwrite( $file, "\t\$(CXX) \$(CXXFLAGS) -c -o \${TARGET_DIR}/$object_file \${TARGET_DIR}/$c_file\n\n" );
+    }
+
+    foreach ($models["cdl"] as $i)
+    {
+        $directory = $i["dir"];
+        $model = $i["model"];
+        $source_file = $i["src"];
+        $c_file = $i["c"];
+        $object_file = $i["obj"];
+        $v_file = $i["v"];
+        $options = preg_replace( "/@@@/", " ", $i["opts"] );
+        fwrite($file, "\${TARGET_DIR}/$c_file : \${SRC_ROOT}/$directory/$source_file \${CREATE_MAKE} \$(CYCLICITY_BIN_DIR)/cdl\n" );
+        fwrite($file, "\t\$(CYCLICITY_BIN_DIR)/cdl --model $model --cpp \${TARGET_DIR}/$c_file $options \${SRC_ROOT}/$directory/$source_file\n\n" );
+        fwrite($file, "\${TARGET_DIR}/$object_file : \${TARGET_DIR}/$c_file\n" );
+        fwrite($file, "\t\$(CXX) \$(CXXFLAGS) -c -o \${TARGET_DIR}/$object_file \${TARGET_DIR}/$c_file\n\n" );
+        fwrite($file, "\${TARGET_DIR}/$v_file : \${SRC_ROOT}/$directory/$source_file \${CREATE_MAKE} \$(CYCLICITY_BIN_DIR)/cdl\n" );
+        fwrite($file, "\t\$(CYCLICITY_BIN_DIR)/cdl --model $model --verilog \${TARGET_DIR}/$v_file $options \${SRC_ROOT}/$directory/$source_file\n\n" );
+    }
+}
+
+#a Xilinx makefile
+#f output_xilinx_makefile
+function output_xilinx_makefile( $file )
+{
+    global $models, $xilinx;
+
+    foreach ($xilinx["toplevels"] as $key=>$value)
+    {
+        $toplevel = $key;
+    }
+    $device = $xilinx["toplevels"][$toplevel]["device"];
+    $constraints = "\${CONSTRAINTS}/".$xilinx["toplevels"][$toplevel]["constraints"];
+
+    #b Header
+    fwrite( $file, "export XIL_PLACE_ALLOW_LOCAL_BUFG_ROUTING := 1\n");
+    fwrite( $file, "REPOSITORY = ../../repository/emulation/xilinx\n");
+    fwrite( $file, "MACROS = \${REPOSITORY}/macros\n");
+    fwrite( $file, "XSRC = \${REPOSITORY}/src\n");
+    fwrite( $file, "RAMS = \${REPOSITORY}/rams\n");
+    fwrite( $file, "CORES = \${REPOSITORY}/cores\n");
+    fwrite( $file, "CONSTRAINTS = \${REPOSITORY}/constraints\n");
+    fwrite( $file, "SRC = ../../build/emulation/linux\n");
+    fwrite( $file, "COREGEN_OBJ = obj/coregen\n");
+    fwrite( $file, "LOG = log\n");
+    fwrite( $file, "XST_OPTIONS = -p $device\n");
+    fwrite( $file, "XST_OPTIONS += -opt_mode Speed\n");
+    fwrite( $file, "XST_OPTIONS += -opt_level 1\n");
+    fwrite( $file, "XST_OPTIONS += -glob_opt AllClockNets\n");
+    fwrite( $file, "XST_OPTIONS += -rtlview No\n");
+    fwrite( $file, "XST_OPTIONS += -read_cores YES\n");
+    fwrite( $file, "XST_OPTIONS += -write_timing_constraints NO\n");
+    fwrite( $file, "XST_OPTIONS += -cross_clock_analysis NO\n");
+    fwrite( $file, "XST_OPTIONS += -hierarchy_separator /\n");
+    fwrite( $file, "XST_OPTIONS += -bus_delimiter <>\n");
+    fwrite( $file, "XST_OPTIONS += -case maintain\n");
+    fwrite( $file, "XST_OPTIONS += -slice_utilization_ratio 100\n");
+    fwrite( $file, "XST_OPTIONS += -verilog2001 YES\n");
+    fwrite( $file, "XST_OPTIONS += -fsm_extract YES\n");
+    fwrite( $file, "XST_OPTIONS += -fsm_encoding Auto\n");
+    fwrite( $file, "XST_OPTIONS += -safe_implementation No\n");
+    fwrite( $file, "XST_OPTIONS += -fsm_style lut\n");
+    fwrite( $file, "XST_OPTIONS += -ram_extract Yes\n");
+    fwrite( $file, "XST_OPTIONS += -ram_style Auto\n");
+    fwrite( $file, "XST_OPTIONS += -rom_extract Yes\n");
+    fwrite( $file, "XST_OPTIONS += -rom_style Auto\n");
+    fwrite( $file, "XST_OPTIONS += -mux_extract YES\n");
+    fwrite( $file, "XST_OPTIONS += -mux_style Auto\n");
+    fwrite( $file, "XST_OPTIONS += -decoder_extract YES\n");
+    fwrite( $file, "XST_OPTIONS += -priority_extract YES\n");
+    fwrite( $file, "XST_OPTIONS += -shreg_extract YES\n");
+    fwrite( $file, "XST_OPTIONS += -shift_extract YES\n");
+    fwrite( $file, "XST_OPTIONS += -xor_collapse YES\n");
+    fwrite( $file, "XST_OPTIONS += -resource_sharing YES\n");
+    fwrite( $file, "XST_OPTIONS += -use_dsp48 auto\n");
+    fwrite( $file, "XST_OPTIONS += -max_fanout 500\n");
+    fwrite( $file, "XST_OPTIONS += -bufg 32\n");
+    fwrite( $file, "XST_OPTIONS += -bufr Default\n");
+    fwrite( $file, "XST_OPTIONS += -register_duplication YES\n");
+    fwrite( $file, "XST_OPTIONS += -equivalent_register_removal YES\n");
+    fwrite( $file, "XST_OPTIONS += -register_balancing No\n");
+    fwrite( $file, "XST_OPTIONS += -slice_packing YES\n");
+    fwrite( $file, "XST_OPTIONS += -optimize_primitives NO\n");
+    fwrite( $file, "XST_OPTIONS += -use_clock_enable Auto\n");
+    fwrite( $file, "XST_OPTIONS += -use_sync_set Auto\n");
+    fwrite( $file, "XST_OPTIONS += -use_sync_reset Auto\n");
+    fwrite( $file, "XST_OPTIONS += -enable_auto_floorplanning No\n");
+    fwrite( $file, "XST_OPTIONS += -iob auto\n");
+    fwrite( $file, "XST_OPTIONS += -slice_utilization_ratio_maxmargin 5\n");
+    fwrite( $file, "\n");
+    fwrite( $file, "XST_COMP_OPTIONS = \${XST_OPTIONS} -iobuf no -ofmt ngc\n");
+    fwrite( $file, "XST_TOP_OPTIONS = \${XST_OPTIONS} -keep_hierarchy yes -iobuf yes -ofmt ngc\n");
+    fwrite( $file, "XST_OBJ = obj/xst\n");
+    fwrite( $file, "XST_TMP = tmp/xst\n");
+    fwrite( $file, "XST_DONE = obj/xst/.built\n");
+    fwrite( $file, "NGD_OBJ = obj/ngd\n");
+    fwrite( $file, "NGD_DONE = obj/ngd/.built\n");
+    fwrite( $file, "MAP_OBJ = obj/map\n");
+    fwrite( $file, "MAP_DONE = obj/map/.built\n");
+    fwrite( $file, "PAR_OBJ = obj/par\n");
+    fwrite( $file, "PAR_DONE = obj/par/.built\n");
+    fwrite( $file, "BIT_OBJ = obj/bit\n");
+    fwrite( $file, "BIT_DONE = obj/bit/.built\n");
+    fwrite( $file, "\n");
+
+    #b Core generation
+    foreach ($xilinx["cores"] as $i)
+    {
+        $model = $i["model"];
+        fwrite( $file, "\${COREGEN_OBJ}/$model.edn: \${CORES}/".$i["src"].".xco \${RAMS}/boot.coe\n");
+        fwrite( $file, "\tmkdir -p \${COREGEN_OBJ}\n" );
+        fwrite( $file, "\trm -f \${COREGEN_OBJ}/$model*\n" );
+        fwrite( $file, "\tcoregen -b \${CORES}/".$i["src"].".xco\n\n");
+        fwrite( $file, "\${XST_OBJ}/$model.ngo: \${COREGEN_OBJ}/$model.edn\n");
+        fwrite( $file, "\tmkdir -p \${XST_OBJ}\n");
+        fwrite( $file, "\tedif2ngd \${COREGEN_OBJ}/$model.edn \${XST_OBJ}/$model.ngo\n\n");
+    }
+    fwrite( $file, "coregen: \\\n" );
+    foreach ($xilinx["cores"] as $i)
+    {
+        $model = $i["model"];
+        fwrite( $file, "\t\${XST_OBJ}/$model.ngo\\\n");
+    }
+    fwrite( $file, "\n\n" );
+
+    #b NGC generation (synthesis)
+    foreach ($xilinx["comps"] as $model=>$obj)
+    {
+        $v_files = array();
+        $hier_models = array();
+        fwrite( $file, "\${XST_OBJ}/".$model.".ngc: \\\n" );
+        foreach ($obj["srcs"] as $src)
+        {
+            $handled = 0;
+            if ( ($src[0][0]=="xmodel") && ($src[0][1]=="core") )
+            {
+                $handled = 1;
+                fwrite( $file, "\t\${XST_OBJ}/".$src[1].".ngo \\\n");
+                $hier_models[] = $src[1];
+            }
+            if ( ($model!=$src[1]) && (($src[0][0]=="xmodel") && ($src[0][1]=="comp") ))
+            {
+                $handled = 1;
+                fwrite( $file, "\t\${XST_OBJ}/".$src[1].".ngc \\\n");
+                $hier_models[] = $src[1];
+            }
+            if (!$handled && isset($xilinx["srcs"][$src[1]]))
+            {
+                $v = "\${XSRC}/".$src[1].".v";
+                fwrite( $file, "\t$v \\\n");
+                $v_files[] = $v;
+                $handled = 1;
+            }
+            if (!$handled && isset($models["hash"][$src[1]]))
+            {
+                $v = "\${SRC}/".$src[1].".v";
+                fwrite( $file, "\t$v \\\n");
+                $v_files[] = $v;
+                $handled = 1;
+            }
+            if (!$handled)
+            {
+                echo "Could not handle source file $src[1]\n";
+            }
+        }
+        fwrite( $file, "\n" );
+        fwrite( $file, "\tmkdir -p \${XST_OBJ}\n" );
+        fwrite( $file, "\tmkdir -p \${XST_TMP}\n" );
+        #fwrite( $file, "\trm -f \${XST_DONE}\n" );
+        $xst_file = "\${XST_TMP}/$model.xst";
+        $prj_file = "\${XST_TMP}/$model.prj";
+        $xcf_file = "\${XST_TMP}/$model.xcf";
+        $lso_file = "\${XST_TMP}/$model.lso";
+        fwrite( $file, "\techo \"work\" > $lso_file\n");
+        fwrite( $file, "\techo \"\" > $xcf_file\n");
+        foreach ($xilinx["comps"] as $submodel=>$dummy)
+        #foreach ($hier_models as $submodel)
+        {
+            if ($submodel!=$model) # Don't include itself, that messes up xst
+            {
+                fwrite( $file, "\techo \"MODEL \\\"$submodel\\\" incremental_synthesis=yes;\" >> $xcf_file\n");
+            }
+        }
+        fwrite( $file, "\techo \"\" > $prj_file\n");
+        foreach ($v_files as $v)
+        {
+            fwrite( $file, "\techo \"verilog work $v\" >> $prj_file\n");
+        }
+        fwrite( $file, "\techo \"set -tmpdir ./tmp\" > $xst_file\n");
+        fwrite( $file, "\techo \"set -xsthdpdir ./xst\" >> $xst_file\n");
+        fwrite( $file, "\techo \"run\" >> $xst_file\n");
+        if (isset($xilinx["toplevels"][$model]))
+        {
+            fwrite( $file, "\techo \"\${XST_TOP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn \${XST_OBJ}/$model -top $model\" >> $xst_file\n" );
+        }
+        else
+        {
+            fwrite( $file, "\techo \"\${XST_COMP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn \${XST_OBJ}/$model -top $model\" >> $xst_file\n" );
+        }
+        fwrite( $file, "\txst -ifn $xst_file -ofn \${LOG}/$model.syr" );
+        fwrite( $file, "\n\n" );
+    }
+
+    fwrite( $file, "\${XST_DONE}: \${XST_OBJ}/$toplevel.ngc\n" );
+    fwrite( $file, "\ttouch \${XST_DONE}\n" );
+    fwrite( $file, "synth: \${XST_DONE}\n\n" );
+
+    #b NGDbuild
+    fwrite( $file, "\${NGD_OBJ}/$toplevel.ngd: \${XST_OBJ}/boot_rom.ngo \${XST_OBJ}/.built $constraints \${XST_OBJ}/$toplevel.ngc\n");
+    fwrite( $file, "\tmkdir -p \${NGD_OBJ}\n");
+    #fwrite( $file, "\trm -f \${NGD_DONE}\n");
+    fwrite( $file, "\tngdbuild -insert_keep_hierarchy -dd ./tmp -nt timestamp -uc $constraints -p $device \${XST_OBJ}/$toplevel.ngc \${NGD_OBJ}/$toplevel.ngd\n");
+    fwrite( $file, "\${NGD_DONE}: \${NGD_OBJ}/$toplevel.ngd\n" );
+    fwrite( $file, "\ttouch \${NGD_DONE}\n" );
+    fwrite( $file, "ngd: \${NGD_DONE}\n\n\n");
+
+    #b Map
+    fwrite( $file, "\${MAP_OBJ}/$toplevel.ncd: \${NGD_DONE} \${NGD_OBJ}/$toplevel.ngd\n");
+    fwrite( $file, "\tmkdir -p \${MAP_OBJ}\n");
+    #fwrite( $file, "\trm -f \${MAP_DONE}\n");
+    fwrite( $file, "\tmap -p $device -cm area -detail -pr b -k 4 -c 100 -o \${MAP_OBJ}/$toplevel.ncd \${NGD_OBJ}/$toplevel.ngd \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\${MAP_DONE}: \${MAP_OBJ}/$toplevel.ncd\n" );
+    fwrite( $file, "\ttouch \${MAP_DONE}\n");
+    fwrite( $file, "\${MAP_OBJ}/$toplevel.pcf: \${MAP_DONE}\n");
+    fwrite( $file, "map: \${MAP_DONE}\n\n\n");
+
+    #b PAR
+    fwrite( $file, "\${PAR_OBJ}/$toplevel.pcf:\${MAP_DONE} \${MAP_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\tmkdir -p \${PAR_OBJ}\n");
+    #fwrite( $file, "\trm -f \${PAR_DONE}\n");
+    fwrite( $file, "\tpar -w -ol med -t 1 \${MAP_OBJ}/$toplevel.ncd \${PAR_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\${PAR_DONE}: \${PAR_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\ttouch \${PAR_DONE}\n");
+    fwrite( $file, "par: \${PAR_DONE}\n\n\n");
+
+    #b Trace (timing analysis)
+    fwrite( $file, "obj/trace/.built: \${PAR_DONE} \${PAR_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\tmkdir -p obj/trace\n");
+    #fwrite( $file, "\trm -f obj/trace/.built\n");
+    fwrite( $file, "\ttrce -e 3 -l 3 -s 12 -xml $toplevel \${PAR_OBJ}/$toplevel.ncd -o obj/trace/$toplevel.twr \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\ttouch obj/trace/.built\n");
+    fwrite( $file, "\n");
+    fwrite( $file, "trace: obj/trace/.built\n\n\n");
+
+    #b Bit file generation
+    fwrite( $file, "\${BIT_DONE}: \${PAR_DONE} \${PAR_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\tmkdir -p \${BIT_OBJ}\n");
+    #fwrite( $file, "\trm -f \${BIT_DONE}\n");
+    fwrite( $file, "\tbitgen -f build/$toplevel.ut \${PAR_OBJ}/$toplevel.ncd \${BIT_OBJ}/$toplevel.bit \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\ttouch \${BIT_DONE}\n");
+    fwrite( $file, "bit: \${BIT_DONE}\n\n\n");
+}
+
+#a Main
+$desc = fopen( $model_list, 'r' );
+if (!$desc)
+{
+    echo "Could not open file $model_list\n";
+    exit();
+}
+$objs = read_objs( $desc );
+fclose( $desc );
+
+parse_models( $objs );
+parse_xilinx_descs( $objs );
+
+build_xilinx_hierarchy();
+
+if (isset($options["m"]))
+{
+    $file = fopen( $options["m"], 'w' );
+    output_model_makefile( $file );
+    fclose($file);
+}
+
+if (isset($options["x"]))
+{
+    $file = fopen( $options["x"], 'w' );
+    output_xilinx_makefile( $file );
+    fclose($file);
+}
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: perl ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

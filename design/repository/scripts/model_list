@@ -87,6 +87,42 @@ cdl units/io          io_block                    inc:headers/cdl
 cdl units/io          io_slot_head                inc:headers/cdl
 cdl units/io          io_parallel                 inc:headers/cdl
 
+xilinx_src fpga_wrapper
+xilinx_src clock_generator
+xilinx_ram boot.coe
+
+xilinx_core boot_rom boot_rom boot.coe
+
+# We need anything we are going to place to be a component
+xilinx_subcomponent gip_decode  gip_decode_native gip_decode_arm
+xilinx_subcomponent gip_alu     gip_alu_arith_op gip_alu_barrel_shift gip_alu_logical_op
+
+xilinx_component gip_core       gip_rf gip_alu gip_memory gip_postbus gip_special gip_decode
+xilinx_component gip_prefetch
+xilinx_component gip_periph_apb
+xilinx_component gip_data_ram
+xilinx_component gip_core_plus  gip_core gip_prefetch gip_data_ram gip_periph_apb
+
+xilinx_component apb_devices    apb_target_uart apb_target_ext_bus_master apb_target_gpio apb_target_timer io_uart
+
+xilinx_component io_egress_control
+xilinx_component io_egress_fifos
+xilinx_component io_ingress_control
+xilinx_component io_ingress_fifos
+xilinx_component io_postbus     io_postbus_target io_postbus_source io_postbus_event_manager
+xilinx_component io_block       io_postbus io_ingress_control io_ingress_fifos io_egress_control io_egress_fifos io_baud_rate_generator
+
+xilinx_subcomponent io_ethernet io_ethernet_tx io_ethernet_rx
+xilinx_component io_slots_eth_ss_par io_slot_head io_parallel io_sync_serial io_ethernet
+
+xilinx_component analyzer
+xilinx_component ddr_dram_as_sram
+xilinx_component gip_system     boot_rom ddr_dram_as_sram apb_devices io_block io_slots_eth_ss_par analyzer gip_core_plus
+
+xilinx_component  fpga_wrapper   clock_generator gip_system
+xilinx_toplevel  fpga_wrapper   xc4vlx60-ff668-12 fpga_wrapper_lx60.ucf
+
+
 #c_model src c_gip_cyc
 #c_src src c_gip_full
 #c_src src arm_dis

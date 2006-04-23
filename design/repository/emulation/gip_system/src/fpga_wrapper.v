@@ -253,6 +253,7 @@ wire par_b_data_oe;
     output [7:0]leds;
 //    output analyzer_clock;
 //    output [31:0]analyzer_signals;
+wire [31:0]analyzer_signals;
 wire analyzer_clock;
 
 //b Reset and clock signals/pins
@@ -423,14 +424,14 @@ ddr_in_ddr_out_pin dqp_14( .reset(system_reset_out), .output_reg_clock(int_drm_c
 ddr_in_ddr_out_pin dqp_15( .reset(system_reset_out), .output_reg_clock(int_drm_clock_buffered), .output_drive_clock(int_drm_clock_90_buffered), .next_oe(drm_next_dqoe), .next_d_low(drm_next_dq_low[15]), .next_d_high(drm_next_dq_high[15]), .input_clock(int_input_drm_clock_buffered), .d_in_low(drm_input_dq_low[15]), .d_in_high(drm_input_dq_high[15]), .pad(ddr_dram_dq[15]) );
 
 //b DQS outputs - individual tristate registers, DDR register in the IOBs; can use drm_clock_buffered to drive them out as skew to the clock should be around 0ns
-wire [1:0] drm_next_dqs_high;
-wire [1:0] drm_next_dqs_low;
+wire [3:0] drm_next_dqs_high;
+wire [3:0] drm_next_dqs_low;
 reg drm_dqs_oe_n_0;
 reg drm_dqs_oe_n_1;
 reg [1:0] drm_dqs_low;
 always @(posedge int_drm_clock_buffered)
 begin
-    drm_dqs_low <= drm_next_dqs_low;
+    drm_dqs_low <= drm_next_dqs_low[1:0];
     drm_dqs_oe_n_0 <= !drm_next_dqoe;
     drm_dqs_oe_n_1 <= !drm_next_dqoe;
 end

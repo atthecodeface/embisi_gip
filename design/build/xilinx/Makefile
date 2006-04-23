@@ -67,12 +67,109 @@ SRCS = ${MACROS}/brw.vhd \
 		${SRC}/analyzer.v \
 		${SRC}/gip_system.v
 
-all:
-	@echo "Make synth, or make ngdbuild, or make map, or make par, or make trace, or make bitgen"
+XST_OPTIONS = -p xc4vlx60-12-ff668
+XST_OPTIONS += -opt_mode Speed
+XST_OPTIONS += -opt_level 1
+XST_OPTIONS += -glob_opt AllClockNets
+XST_OPTIONS += -rtlview No
+XST_OPTIONS += -read_cores YES
+XST_OPTIONS += -write_timing_constraints NO
+XST_OPTIONS += -cross_clock_analysis NO
+XST_OPTIONS += -hierarchy_separator /
+XST_OPTIONS += -bus_delimiter <>
+XST_OPTIONS += -case maintain
+XST_OPTIONS += -slice_utilization_ratio 100
+XST_OPTIONS += -verilog2001 YES
+XST_OPTIONS += -fsm_extract YES
+XST_OPTIONS += -fsm_encoding Auto
+XST_OPTIONS += -safe_implementation No
+XST_OPTIONS += -fsm_style lut
+XST_OPTIONS += -ram_extract Yes
+XST_OPTIONS += -ram_style Auto
+XST_OPTIONS += -rom_extract Yes
+XST_OPTIONS += -rom_style Auto
+XST_OPTIONS += -mux_extract YES
+XST_OPTIONS += -mux_style Auto
+XST_OPTIONS += -decoder_extract YES
+XST_OPTIONS += -priority_extract YES
+XST_OPTIONS += -shreg_extract YES
+XST_OPTIONS += -shift_extract YES
+XST_OPTIONS += -xor_collapse YES
+XST_OPTIONS += -resource_sharing YES
+XST_OPTIONS += -use_dsp48 auto
+XST_OPTIONS += -max_fanout 500
+XST_OPTIONS += -bufg 32
+XST_OPTIONS += -bufr Default
+XST_OPTIONS += -register_duplication YES
+XST_OPTIONS += -equivalent_register_removal YES
+XST_OPTIONS += -register_balancing No
+XST_OPTIONS += -slice_packing YES
+XST_OPTIONS += -optimize_primitives NO
+XST_OPTIONS += -use_clock_enable Auto
+XST_OPTIONS += -use_sync_set Auto
+XST_OPTIONS += -use_sync_reset Auto
+XST_OPTIONS += -enable_auto_floorplanning No
+XST_OPTIONS += -iob auto
+XST_OPTIONS += -slice_utilization_ratio_maxmargin 5
 
-obj/xst/.built: ${SRCS} build/fpga_wrapper.xst
+XST_COMP_OPTIONS = ${XST_OPTIONS} -iobuf no -ofmt ngc
+# -keep-hierarchy NO
+
+
+all:
+	@echo "Make synth, or make ngd, or make map, or make par, or make trace, or make bitgen"
+
+obj/xst/gip_core.ngc: ${SRC}/gip_core.v ${SRC}/gip_rf.v ${SRC}/gip_alu.v ${SRC}/gip_memory.v ${SRC}/gip_postbus.v ${SRC}/gip_special.v ${SRC}/gip_scheduler.v ${SRC}/gip_decode.v
+	mkdir -p obj/xst
+	mkdir -p tmp/xst
+	rm -f obj/xst/.built
+	echo "verilog  work ${SRC}/gip_core.v"          > tmp/xst/gip_core.prj
+	echo "verilog  work ${SRC}/gip_rf.v"           >> tmp/xst/gip_core.prj
+	echo "verilog  work ${SRC}/gip_alu.v"          >> tmp/xst/gip_core.prj
+	echo "verilog  work ${SRC}/gip_memory.v"       >> tmp/xst/gip_core.prj
+	echo "verilog  work ${SRC}/gip_postbus.v"      >> tmp/xst/gip_core.prj
+	echo "verilog  work ${SRC}/gip_special.v"      >> tmp/xst/gip_core.prj
+	echo "verilog  work ${SRC}/gip_scheduler.v"    >> tmp/xst/gip_core.prj
+	echo "verilog  work ${SRC}/gip_decode.v"       >> tmp/xst/gip_core.prj
+	echo "set -tmpdir ./tmp"                        > tmp/xst/gip_core.xst
+	echo "set -xsthdpdir ./xst"                    >> tmp/xst/gip_core.xst
+	echo "run"                                     >> tmp/xst/gip_core.xst
+	echo "${XST_COMP_OPTIONS}  -ifmt mixed -ifn tmp/xst/gip_core.prj -ofn ./obj/xst/gip_core -top gip_core" >> tmp/xst/gip_core.xst
+	xst -ifn tmp/xst/gip_core.xst -ofn log/gip_core.syr
+
+obj/xst/gip_core_plus.ngc: obj/xst/gip_core.ngc ${SRC}/gip_core_plus.v
+	mkdir -p obj/xst
+	mkdir -p tmp/xst
+	rm -f obj/xst/.built
+	echo "MODEL \"gip_core\" incremental_synthesis=yes;" > tmp/xst/gip_core_plus.xcf
+	echo "verilog  work ${SRC}/gip_core_plus.v"     > tmp/xst/gip_core_plus.prj
+	echo "verilog  work ${SRC}/gip_prefetch.v"     >> tmp/xst/gip_core_plus.prj
+	echo "verilog  work ${SRC}/gip_data_ram.v"     >> tmp/xst/gip_core_plus.prj
+	echo "verilog  work ${SRC}/gip_periph_apb.v"   >> tmp/xst/gip_core_plus.prj
+	echo "set -tmpdir ./tmp"                        > tmp/xst/gip_core_plus.xst
+	echo "set -xsthdpdir ./xst"                    >> tmp/xst/gip_core_plus.xst
+	echo "run"                                     >> tmp/xst/gip_core_plus.xst
+	echo "-uc tmp/xst/gip_core_plus.xcf"          >> tmp/xst/gip_core_plus.xst
+	echo "${XST_COMP_OPTIONS}  -ifmt mixed -ifn tmp/xst/gip_core_plus.prj -ofn ./obj/xst/gip_core_plus -top gip_core_plus" >> tmp/xst/gip_core_plus.xst
+	xst -ifn tmp/xst/gip_core_plus.xst -ofn log/gip_core_plus.syr
+
+obj/xst/ddr_dram_as_sram.ngc: ${SRC}/ddr_dram_as_sram.v
+	mkdir -p obj/xst
+	mkdir -p tmp/xst
+	rm -f obj/xst/.built
+	echo "verilog  work ${SRC}/ddr_dram_as_sram.v"  > tmp/xst/ddr_dram_as_sram.prj
+	echo "set -tmpdir ./tmp"                        > tmp/xst/ddr_dram_as_sram.xst
+	echo "set -xsthdpdir ./xst"                    >> tmp/xst/ddr_dram_as_sram.xst
+	echo "run"                                     >> tmp/xst/ddr_dram_as_sram.xst
+	echo "${XST_COMP_OPTIONS}  -ifmt mixed -ifn tmp/xst/ddr_dram_as_sram.prj -ofn ./obj/xst/ddr_dram_as_sram -top ddr_dram_as_sram" >> tmp/xst/ddr_dram_as_sram.xst
+	xst -ifn tmp/xst/ddr_dram_as_sram.xst -ofn log/ddr_dram_as_sram.syr
+
+obj/xst/io_postbus.ngc: build/io_postbus.xst ${SRC}/io_postbus.v ${SRC}/io_postbus_target.v ${SRC}/io_postbus_source.v ${SRC}/io_postbus_event_manager.v
 	mkdir -p obj/xst
 	rm -f obj/xst/.built
+	xst -ifn build/io_postbus.xst -ofn log/io_postbus.syr
+
+obj/xst/.built: ${SRCS} build/fpga_wrapper.xst obj/xst/io_postbus.ngc
 	xst -ifn build/fpga_wrapper.xst -ofn log/fpga_wrapper.syr
 	touch obj/xst/.built
 
@@ -85,6 +182,7 @@ obj/coregen/boot_rom.edn: build/boot_rom.xco ${RAMS}/boot.coe
 	coregen -b build/boot_rom.xco
 
 obj/xst/boot_rom.ngo: obj/coregen/boot_rom.edn
+	mkdir -p obj/xst
 	edif2ngd obj/coregen/boot_rom.edn obj/xst/boot_rom.ngo
 
 coregen: obj/xst/boot_rom.ngo
@@ -97,7 +195,7 @@ obj/ngd/.built: obj/xst/boot_rom.ngo obj/xst/.built ${CONSTRAINTS}/fpga_wrapper_
 	touch obj/ngd/.built
 
 obj/ngd/fpga_wrapper.ngd: obj/ngd/.built
-ngdbuild: obj/ngd/.built
+ngd: obj/ngd/.built
 
 
 obj/map/.built: obj/ngd/.built obj/ngd/fpga_wrapper.ngd

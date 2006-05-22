@@ -1,0 +1,237 @@
+
+For the FFT we need to do...
+
+
+OutA.real = ina.real + (eiw.real*inb.real - eiw.imag*inb.imag)
+OutB.real = ina.real - (eiw.real*inb.real - eiw.imag*inb.imag)
+OutA.imag = ina.imag + (eiw.imag*inb.real + eiw.real*inb.imag)
+OutB.imag = ina.imag - (eiw.imag*inb.real + eiw.real*inb.imag)
+
+We have 4 multiplies to do.
+
+We are going to read ina.real and ina.imag in one cycle
+And inb.real and inb.imag in another cycle
+Simultaneously with inb.real and inb.imag we read eiw.real and
+eiw.imag
+
+So we can do...
+
+Cyc    RAM 0        RAM 1    Hold0       ACC1.40       ACC2.40      ACC3.40                       MAC stage 1 reg     MAC stage 2 reg
+0      inb    read eiw
+1      ina               inb.i,inb.r   eiw.i,eiw.r                                              
+2                              inb.i,inb.r   eiw.i,eiw.r   ina.i,ina.r                                 ACC0.L20*ACC1.L20
+3                              inb.i,inb.r                 ina.i,ina.r                                 ACC0.H20*ACC1.H20   =ACC0.L20*ACC1.L20(inb.r*eiw.r)
+4      inb'                                          ina.i,ina.r  ina.r,ina.r                    ACC0.H20*ACC1.L20   -ACC0.H20*ACC1.H20(inb.r*eiw.r-inb.i*eiw.i)
+5      ina'              inb'                        ina.i,ina.r  inb.r*eiw.r-inb.i*eiw.i,outb.r ACC0.L20*ACC1.H20   =ACC0.H20*ACC1.L20
+6                                                          ina.i,outa.r ina.i,outb.r                    nxt rnd            +ACC0.H20*ACC1.H20
+7                                                          outa.i,outa.r ina.i,outb.r,????
+8                                                          NEW ina.i, ina.r
+
+ACC0, ACC1 are from RAMs or arith only
+ACC2 and ACC3 are from calculation or RAM
+MAC takes 2 inputs, one from acc0l/h and one from acc1l/h. MAC does 17x17->17 with additional sign bit, in 2 pipeline stages.
+Arith takes 2 inputs, one from acc2/mac l/h, other from acc3/mac l/h
+
+How about 3 RAM read registers - hold 0, hold 1, hold 2; two can get written at any one time, and hold 2 (say) may get written from either hold 0 or hold 1?
+Effectively you could treat hold 2 as the coefficent store?
+
+hold0 <= ram_read0 ? ram_read_data0 : hold0
+hold1 <= ram_read1 ? ram_read_data1 : hold1
+hold2 <= hold0, hold1, hold2
+
+mult_operand_0 = hold0.hi, hold0,lo
+mult_operand_1 = hold1.hi, hold1.lo
+mult operation stage 1 = 9*17 -> 26, hold 8 and 17
+mult operation stage 2 = 1/0*mult op stage 2 +/- (8*17 -> 25 + mult operation stage 1 (26))
+mac_res <= mult operation stage 2
+mac_hold <= mac_res or mac_hold
+alu operand_0 = hold2.lo, hold2.hi
+alu operand_1 = (acc2, mac_res).lo/.h
+alu op = op0 +/- op1 (plus possibly and, xor, and other simple)
+result_0 <= result_0 ? alu.hi, alu.lo,
+result_1 <= result_1 ? alu.hi, alu.lo,
+
+write to ram result_0 or result_1
+
+
+How to do:
+
+1. n-coeff FIR(x)
+
+out(t) = sum(coeff(i)*x(t+i))
+
+For a real FIR the performance is one tap per cycle, and for a real coefficient complex data FIR the performance is one tap every two cycles.
+
+
+2. n-coeff IIR(x)
+
+out(t) = sum(coeff(i)*x(t+i))+sum(coeff(i+k)*out(t+i))
+
+
+3. n-point FFT(c)
+
+performance target:
+512-point FFT of 20MHz signal with 100MHz clock at 5k per second (1/8th real time)
+64-point FFT of 20MHz signal with 100MHz clock at 100k per second (1/3rd real time)
+butterfly at 1 MAC/cycle (4 cycles reqd), so 512-point FFT at 4*(log(512)*512/2) 9k cycles
+
+
+4. Power( c ) for range n
+
+out(t) = mod(c(t))
+
+
+5. n-data power( x )
+
+out(t) = sqrt(sum(x(t)))
+
+
+6. Autocorrelate(x(t), x(t+dt)) for range n
+
+out(t) = x(t) * x(t+dt)
+
+
+7. Autocorrelate(c(t), c(t+dt))
+
+out(t) = power(c(t) * c(t+dt))
+
+This is best done without a DC component to the signal (:-)).
+Basically each element has a complex multiply followed by a power
+determination. The complex multiply and squares for the power
+determination take 6 cycles, and the power determination can use the
+square-root logic with 4-bit starter and at 2 bits per cycle to get a
+14-bit accurate value. Throughput is then 6 cycles per element.
+
+
+
+8. Data range multiply( c0, c1 ) for convolution
+
+out(n) = c0(n)*c1(n)
+
+For this each memory word is treated as a complex number, as a sign plus 17-bit fractional value for real and imaginary. The result is similar.
+Performance is 4 cycles per array element.
+
+
+9. Complex -> amplitude, quadrant (or better) phase approximation
+
+out(n) = approx power(c(n)), quadrant(c(n))
+
+
+10. Colorspace conversion
+
+Y = 0.299R + 0.587G + 0.114B
+U'= (B-Y)*0.565
+V'= (R-Y)*0.713
+
+R = Y + 1.403V'
+G = Y - 0.344U' - 0.714V'
+B = Y + 1.770U'
+
+Ey = 0.299R+0.587G+0.114B
+Ecr = 0.713(R - Ey) = 0.500R-0.419G-0.081B
+Ecb = 0.564(B - Ey) = -0.169R-0.331G+0.500B
+
+R, G, B, Y are 0 to 1, U, V, Ecr, Ecb are -0.5,0.5 (inclusive)
+
+If we split the multiply such that each stage can do 17*9->25/17 then
+we can actually pack these multiplies for colorspace in to 0.299*R &
+0.5*R to a pair of 18 bit results (one MAC), similarly for 2 G, and 2
+B, then we finish up with 3 separate MACs that we accumulate and write
+out. Total 6 cycles per pixel. However, this requires a long hold on
+the input to the MAC (for two coefficients). What we prefer is a
+single coefficient multiplied by two distinct 9 bit numbers. For that we
+would have to work on pixels in pairs, which can be done.
+
+It would be nice to pack the data out in to separate YUV buffers, from packed RGB (32-bit) buffers.
+
+
+11. 2D DCT
+
+The 2D DCT is needed for JPEG and MJPEg for camera images, and
+possibly for MPEG decode (and encode if that ever happens our way). If
+we are doing it on the cheap then we can do 8 bit precision for YUV,
+and this means we end up with the following for a 1D DCT...
+
+ci = cos(i.pi/16) (9 to 23 are -ve)
+R0 = +0+1+2+3+4+5+6+7
+R4 = +0-1+2-3+4-5+6+-7
+R2 = c2(+0-3-4+7)+ c6(+1-2-5+6)
+R6 = c6(+0-3-4+7)- c2(+1-2-5+6)
+R1 = c1.(+0-7) + c3.(+1-6) + c5.(+2-5) + c7.(+3-4)
+R3 = c3.(+0-7) - c7.(+1-6) - c1.(+2-5) - c5.(+3-4)
+R5 = c5.(+0-7) - c1.(+1-6) + c7.(+2-5) + c3.(+3-4)
+R7 = c7.(+0-7) - c5.(+1-6) + c3.(+2-5) + c1.(+3-4)
+
+This can clearly be performed in 64 MACs; we would require for best
+operation the YUV to be separate buffers so you DCT a single buffer of
+Y, with 4 Y per 32-bit word. However, for a 2D DCT you then need to
+transpose bytes in words. We are not set up for this at
+present. Plausibly we could do two 1D DCTs at once, and pack the
+results into 16-bit words that can eb written transposed.
+
+
+How to set up microprograms
+
+How to invoke microprograms
+
+How to get data in and out
+
+How to do squareroot?  Want to couple squareroot and divide, maybe
+with an approximation mechanism to improve the performance
+particularly for quadrant determination An approximation for the
+quadrant needs to be able to cope with QAM16; this is a 4 by 4
+constellation, with values of 1, 1/3, -1/3, 1.  for each of real and
+imaginary. There are 4 values per quadrant then. They are 1,1; 1,1/3;
+1/3,1; and 1/3,1/3. If we arrange with the larger first, we then have
+3 to choose from: 1/1, 1/3,1/3 and 1,1/3.  The polar representation of
+each is 1.41,45, 0.47,45, and 1.05,18.  So we are looking to divide at
+0 degrees, and roughly 30 degrees, then 60 degrees and 90 degrees, and
+determine 1,1 and 1/3,1/3 by power.  To discriminate by angle, note
+that tan(30) is 0.577. This means that if the imaginary component 'I'
+is smaller than the real component 'R', such that I<0.577R, then the
+point is below 30 degress and can be approximated to 1,1/3. The actual
+approximation should probably therefore be min(I,R)<(max(I,R)/2) =>
+1,1/3-type constellation point, but > => 1,1 or 1/3,1/3 type
+constellation point. The signs of I and R indicate which quadrant.
+
+Note also that for magnitude of (R,I), we can look at I=kR, k=0, 0.1, 0.5, 0.9, 1.0.
+At k=0, mag = R
+At k=0.1, mag = 1.005R
+At k=0.5, mag = 1.118R
+At k=0.9, mag = 1.345R
+At k=1.0, mag = 1.414R
+Now, if you take 1+k/2 as an approximation, the error is...
+e(0.1) = +0.045R
+e(0.5) = +0.132R
+e(0.9) = +0.105R
+e(1.0) = +0.086R
+Or 1+3k/8...
+e(0.1) = +0.032R
+e(0.5) = +0.069R
+e(0.9) = +0.008R
+e(1.0) = -0.039R
+This is accurate to better than 10%.
+The math goes like this...
+mag = R.sqrt(1+k*k), 0<=k<=1
+mag^2 = 1+k*k
+estimate = 1+k/2, est^2 = 1+k+k^2/4 = 1+4k(1+
+
+How to do cryptography?
+AES, DES, SHA1 and MD5 should be doable also
+
+What does DTV use? QAM16/QAM64, but on what carrier?
+
+
+
+
+
+RFID...
+
+Input at 100Msps 0.12 bits (real), CIC filter down to 1.6MHz 1.17 bits (complex).
+33-tap FIR real coefficients complex filter, takes 66*1.6MHz performance.
+Remove DC (subtract running average) at 4*1.6MHz performance
+Complex Autocorrelate at distance of 16 at 4*1.6MHz performance
+Complex integrate (running average) at 4*1.6MHz performance
+Simplistic power determination at 4*1.6MHz performance
+Demodulate in GIP.
+Total performance required: roughly 82MHz plus overheads.

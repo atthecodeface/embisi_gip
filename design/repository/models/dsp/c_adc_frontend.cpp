@@ -1,0 +1,700 @@
+/*a Copyright Gavin J Stark
+ */
+
+/*a Examples
+ */
+
+/*a Includes
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "be_model_includes.h"
+#include "sl_general.h"
+#include "sl_token.h"
+
+/*a Defines
+ */
+#define MAX_INT_WIDTH (8)
+#define CLOCKED_INPUT( name, width, clk ) \
+    { \
+        engine->register_input_signal( engine_handle, #name, width, (int **)&inputs.name ); \
+        engine->register_input_used_on_clock( engine_handle, #name, #clk, 1 ); \
+    }
+
+#define COMB_INPUT( name, width ) \
+    { \
+        engine->register_input_signal( engine_handle, #name, width, (int **)&inputs.name ); \
+        engine->register_comb_input( engine_handle, #name ); \
+    }
+
+#define COMB_OUTPUT( name, width )\
+    { \
+        engine->register_output_signal( engine_handle, #name, width, (int *)&combinatorials.name ); \
+        engine->register_comb_output( engine_handle, #name ); \
+    }
+
+#define STATE_OUTPUT( name, width, clk )\
+    { \
+        engine->register_output_signal( engine_handle, #name, width, (int *)&posedge_int_clock_state.name ); \
+        engine->register_output_generated_on_clock( engine_handle, #name, #clk, 1 ); \
+    }
+
+/*a Types for c_adc_frontend
+*/
+/*t t_phase_acc_fsm
+ */
+typedef enum
+{
+    phase_acc_fsm_idle,
+    phase_acc_fsm_reading_cosine,
+    phase_acc_fsm_reading_sine
+} t_phase_acc_fsm;
+
+/*t t_mixer_fsm
+ */
+typedef enum
+{
+    mixer_fsm_idle,
+    mixer_fsm_cosine_done,
+    mixer_fsm_sine_done
+} t_mixer_fsm;
+
+/*t t_adc_frontend_inputs
+  Reset
+  Digital data in (probably should have some form of clock enable)
+  Postbus for configuration and data out
+*/
+typedef struct t_adc_frontend_inputs
+{
+    unsigned int *adc_frontend_reset;
+
+    unsigned int *adc_frontend_data_0;
+    unsigned int *adc_frontend_data_1;
+
+} t_adc_frontend_inputs;
+
+/*t t_adc_frontend_data_clock_state
+*/
+typedef struct t_adc_frontend_data_clock_state
+{
+    unsigned int data_0_reg; // input registers for data
+    unsigned int data_1_reg;
+
+    unsigned int selected_i; // mux select from data registers for in-phase for sync to internal clock domain
+    unsigned int selected_q; // mux select from data registers for quadrature for sync to internal clock domain
+    unsigned int selected_toggle; // toggled when the data in the selected registers becomes valid - an edge on this must be detected by the internal clock
+
+} t_adc_frontend_data_clock_state;
+
+/*t t_adc_frontend_internal_clock_sync_state
+*/
+typedef struct t_adc_frontend_internal_clock_sync_state
+{
+    // we synchronize a toggle and register the data, all to the internal clock domain
+    // the synchronizer for the toggle is a metastable flop, a stable flop, and a 'last value' flop; if the stable and last flops differ in value, then data is present in the register
+    // if the external clock occurs near-simultaneously with the internal clock, then the metastability can occur
+    // there are two cases to consider
+    // 1. the data register clocks to a new value, while the metastable flop settles untoggled, on the clock collision
+    // 2. the data register clocks an incorrect (or old) value, while the metastable flop settles on the toggle, on the clock collision
+    // In case 1:
+    //  during cycle 0 (internal cycle post clock collision) metastable is untoggled, data register has new data
+    //  during cycle 1 metastable has toggled, stable has not
+    //  during cycle 2 stable has toggled, last has not, and so valid data is expected in the register
+    //  therefore the next external clock cannot occur prior to the end of cycle 2 - this gives a minimum of 3 internal clocks per external clock tick
+    // In case 2:
+    //  during cycle 0 metastable has toggled, data register has old or invalid data
+    //  during cycle 1 stable has toggled, last has not, and data register has valid data, as required
+    //  therefore there is no race condition for case 2, and no clocking limit
+    unsigned int sync_reg_i_0; // internal clock version of sync of selected_ data
+    unsigned int sync_reg_q_0;
+
+    int sync_toggle_0; // first stage of sync of selected_toggle
+    int sync_toggle_1; // second stage
+    int sync_last_toggle; // if this differs from sync_toggle_1 then an edge occurred on the toggle and the sync register is required to have valid data
+
+    unsigned int i_out; // output data
+    unsigned int q_out;
+    int iq_valid; // asserted if i_out and q_out are valid
+
+} t_adc_frontend_internal_clock_sync_state;
+
+/*t t_phase_acc_rom_entry
+ */
+typedef struct
+{
+    unsigned int base_value;
+    unsigned int delta;
+    unsigned long error_bits;
+} t_phase_acc_rom_entry;
+
+/*t t_adc_frontend_internal_clock_phase_acc_state
+*/
+typedef struct t_adc_frontend_internal_clock_phase_acc_state
+{
+    unsigned int phase; // current phase
+    unsigned int phase_step; // increment per tick
+    t_phase_acc_fsm fsm; // idle, reading sin, reading cos
+    struct
+    {
+        int rom_reading_cosine;
+        int negate;
+        int fine_phase;
+        unsigned int rom_base_value;
+        unsigned int rom_delta;
+        unsigned int rom_error_bits;
+    } rom_stage;
+    struct
+    {
+        int negate;
+        int fine_phase; // 4 bit value
+        int valid_cosine;
+        int base_value; // 14 bit value, 0.14
+        int delta;      // 6 bit value, 0.15 bottom 6 bits
+        int error_bit;  // 1 bit value, 0.15 bottom bit
+    } calc_in_stage;
+    struct
+    {
+        int value; // 15 bit value, 0.15
+        int sign;
+        int valid_cosine;
+    } data_out_stage;
+} t_adc_frontend_internal_clock_phase_acc_state;
+
+/*t t_adc_frontend_internal_clock_mixer_state
+*/
+typedef struct t_adc_frontend_internal_clock_mixer_state
+{
+    t_mixer_fsm fsm;
+    unsigned int mult_a;
+    unsigned int mult_b;
+    unsigned int i_out;
+    unsigned int q_out;
+    int valid_out;
+    
+} t_adc_frontend_internal_clock_mixer_state;
+
+/*t t_adc_frontend_cic_stage
+*/
+typedef struct t_adc_frontend_cic_stage
+{
+    unsigned long long calc;
+    unsigned long long out;
+    int calc_valid;
+    int valid_out;
+} t_adc_frontend_cic_stage;
+
+/*t t_adc_frontend_internal_clock_cic_state
+*/
+typedef struct t_adc_frontend_internal_clock_cic_state
+{
+    t_adc_frontend_cic_stage stage[5];
+    unsigned int q_store;
+    struct
+    {
+        int valid_out;
+        unsigned int count;
+        unsigned int factor;
+    } decimate;
+} t_adc_frontend_internal_clock_cic_state;
+
+/*t t_adc_frontend_internal_clock_state
+*/
+typedef struct t_adc_frontend_internal_clock_state
+{
+    t_adc_frontend_internal_clock_sync_state       sync;
+    t_adc_frontend_internal_clock_phase_acc_state  phase_acc;
+    t_adc_frontend_internal_clock_mixer_state      mixer;
+    t_adc_frontend_internal_clock_cic_state        cic;
+} t_adc_frontend_internal_clock_state;
+
+/*t c_adc_frontend
+*/
+class c_adc_frontend
+{
+public:
+    c_adc_frontend::c_adc_frontend( class c_engine *eng, void *eng_handle );
+    c_adc_frontend::~c_adc_frontend();
+    t_sl_error_level c_adc_frontend::delete_instance( void );
+    t_sl_error_level c_adc_frontend::reset( int pass );
+    t_sl_error_level c_adc_frontend::preclock_posedge_int_clock( void );
+    t_sl_error_level c_adc_frontend::clock_posedge_int_clock( void );
+    t_sl_error_level c_adc_frontend::preclock_posedge_data_clock( void );
+    t_sl_error_level c_adc_frontend::clock_posedge_data_clock( void );
+private:
+    c_engine *engine;
+    void *engine_handle;
+
+    void c_adc_frontend::cic_inc_stage_preclock( int stage, int valid_in, signed long long value, int width_in, int inc_width );
+
+    t_adc_frontend_inputs inputs;
+
+    t_adc_frontend_internal_clock_state state;
+    t_adc_frontend_internal_clock_state next_state;
+
+    t_adc_frontend_data_clock_state data_state;
+    t_adc_frontend_data_clock_state next_data_state;
+
+    int phase_resolution;
+    int coarse_resolution;
+    int fine_resolution;
+
+};
+
+/*a Static ROM
+ */
+static t_phase_acc_rom_entry rom[1024] =
+{
+#include "rom.txt"
+};
+
+
+/*a Static wrapper functions for adc_frontend
+*/
+/*f adc_frontend_1r_1w_32_32_instance_fn
+*/
+static t_sl_error_level adc_frontend_instance_fn( c_engine *engine, void *engine_handle )
+{
+    c_adc_frontend *mod;
+    mod = new c_adc_frontend( engine, engine_handle );
+    if (!mod)
+        return error_level_fatal;
+    return error_level_okay;
+}
+
+/*f adc_frontend_delete_fn - simple callback wrapper for the main method
+*/
+static t_sl_error_level adc_frontend_delete_fn( void *handle )
+{
+    c_adc_frontend *mod;
+    t_sl_error_level result;
+    mod = (c_adc_frontend *)handle;
+    result = mod->delete_instance();
+    delete( mod );
+    return result;
+}
+
+/*f adc_frontend_reset_fn
+*/
+static t_sl_error_level adc_frontend_reset_fn( void *handle, int pass )
+{
+    c_adc_frontend *mod;
+    mod = (c_adc_frontend *)handle;
+    return mod->reset( pass );
+}
+
+/*f adc_frontend_preclock_posedge_int_clock_fn
+*/
+static t_sl_error_level adc_frontend_preclock_posedge_int_clock_fn( void *handle )
+{
+    c_adc_frontend *mod;
+    mod = (c_adc_frontend *)handle;
+    return mod->preclock_posedge_int_clock();
+}
+
+/*f adc_frontend_clock_posedge_int_clock_fn
+*/
+static t_sl_error_level adc_frontend_clock_posedge_int_clock_fn( void *handle )
+{
+    c_adc_frontend *mod;
+    mod = (c_adc_frontend *)handle;
+    return mod->clock_posedge_int_clock();
+}
+
+/*f adc_frontend_preclock_posedge_data_clock_fn
+*/
+static t_sl_error_level adc_frontend_preclock_posedge_data_clock_fn( void *handle )
+{
+    c_adc_frontend *mod;
+    mod = (c_adc_frontend *)handle;
+    return mod->preclock_posedge_data_clock();
+}
+
+/*f adc_frontend_clock_posedge_data_clock_fn
+*/
+static t_sl_error_level adc_frontend_clock_posedge_data_clock_fn( void *handle )
+{
+    c_adc_frontend *mod;
+    mod = (c_adc_frontend *)handle;
+    return mod->clock_posedge_data_clock();
+}
+
+/*a Constructors and destructors for adc_frontend
+*/
+/*f c_adc_frontend::c_adc_frontend
+*/
+c_adc_frontend::c_adc_frontend( class c_engine *eng, void *eng_handle )
+{
+    engine = eng;
+    engine_handle = eng_handle;
+
+    phase_resolution = 24; // resolution of the phase accumulator itself
+    coarse_resolution = 10; // coarse resolution - resolution of the ROM
+    fine_resolution = 4; // steps per ROM entry
+
+    /*b Instantiate module
+     */
+    engine->register_delete_function( engine_handle, (void *)this, adc_frontend_delete_fn );
+    engine->register_reset_function( engine_handle, (void *)this, adc_frontend_reset_fn );
+    engine->register_clock_fns( engine_handle, (void *)this, "int_clock", adc_frontend_preclock_posedge_int_clock_fn, adc_frontend_clock_posedge_int_clock_fn );
+    engine->register_clock_fns( engine_handle, (void *)this, "data_clock", adc_frontend_preclock_posedge_data_clock_fn, adc_frontend_clock_posedge_data_clock_fn );
+
+    CLOCKED_INPUT( adc_frontend_reset, 1, int_clock );
+    CLOCKED_INPUT( adc_frontend_data_0, 16, data_clock );
+    CLOCKED_INPUT( adc_frontend_data_1, 16, data_clock );
+
+    /*b Register state then reset
+     */
+    //engine->register_state_desc( engine_handle, 1, state_desc_adc_frontend_posedge_int_clock, &posedge_int_clock_state, NULL );
+    reset( 0 );
+
+    /*b Done
+     */
+
+}
+
+/*f c_adc_frontend::~c_adc_frontend
+*/
+c_adc_frontend::~c_adc_frontend()
+{
+    delete_instance();
+}
+
+/*f c_adc_frontend::delete_instance
+*/
+t_sl_error_level c_adc_frontend::delete_instance( void )
+{
+    return error_level_okay;
+}
+
+/*a Class reset/preclock/clock methods for adc_frontend
+*/
+/*f c_adc_frontend::reset
+*/
+t_sl_error_level c_adc_frontend::reset( int pass )
+{
+    return error_level_okay;
+}
+
+/*f c_adc_frontend::preclock_posedge_data_clock
+*/
+t_sl_error_level c_adc_frontend::preclock_posedge_data_clock( void )
+{
+    /*b Copy current to next
+     */
+    memcpy( &next_data_state, &data_state, sizeof(data_state));
+
+    /*b Synchronizer and input
+     */
+    next_data_state.data_0_reg = inputs.adc_frontend_data_0[0];
+    next_data_state.data_1_reg = inputs.adc_frontend_data_1[0];
+    next_data_state.selected_i = data_state.data_0_reg; // no muxing yet!
+    next_data_state.selected_q = data_state.data_1_reg; // no muxing yet!
+    next_data_state.selected_toggle = !data_state.selected_toggle;
+
+    /*b Done
+     */
+    return error_level_okay;
+}
+
+/*f c_adc_frontend::clock_posedge_data_clock
+*/
+t_sl_error_level c_adc_frontend::clock_posedge_data_clock( void )
+{
+
+    /*b Copy next to current
+     */
+    memcpy( &data_state, &next_data_state, sizeof(data_state));
+
+    /*b Done
+     */
+    return error_level_okay;
+}
+
+/*f c_adc_frontend::cic_inc_stage_preclock
+ */
+#define sign_extend(v,w) { (v) |= (v>>(w-1)) ? ((-1)<<w):0; }
+static signed int mult_u16_x_u15_sign_s17( unsigned int a, unsigned int b, int sign )
+{
+    unsigned int r;
+    r = (a*b)>>15; // go from 16+15 = 31 unsigned bits to 16 unsigned bits
+    if (sign)
+    {
+        r = -r;
+    }
+    r = r&0x1ffff;
+    return r;
+}
+void c_adc_frontend::cic_inc_stage_preclock( int stage, int valid_in, signed long long value, int width_in, int inc_width  )
+{
+    stage--;
+
+    sign_extend( value, width_in ); // sign extend
+
+    next_state.cic.stage[stage].calc = state.cic.stage[stage].calc;
+    next_state.cic.stage[stage].out = state.cic.stage[stage].out;
+
+    if (valid_in || state.cic.stage[stage].calc_valid )
+    {
+        next_state.cic.stage[stage].calc = state.cic.stage[stage].out + value;
+        next_state.cic.stage[stage].out = state.cic.stage[stage].calc &~ ((-1)<<inc_width);
+    }
+
+    next_state.cic.stage[stage].calc_valid = valid_in;
+    next_state.cic.stage[stage].valid_out = state.cic.stage[stage].calc_valid;
+}
+
+/*f c_adc_frontend::preclock_posedge_int_clock
+*/
+t_sl_error_level c_adc_frontend::preclock_posedge_int_clock( void )
+{
+    int phase_value_taken;
+
+    /*b Copy current to next
+     */
+    memcpy( &next_state, &state, sizeof(state));
+
+    /*b Mixer - generates phase_value_taken
+     */
+    if (1)
+    {
+        phase_value_taken = 0;
+        switch (state.mixer.fsm)
+        {
+        case mixer_fsm_idle:
+            if (state.sync.iq_valid && state.phase_acc.data_out_stage.valid_cosine)
+            {
+                phase_value_taken = 1;
+                next_state.mixer.fsm = mixer_fsm_cosine_done;
+            }
+            break;
+        case mixer_fsm_cosine_done:
+            next_state.mixer.fsm = mixer_fsm_sine_done;
+            break;
+        case mixer_fsm_sine_done:
+            next_state.mixer.fsm = mixer_fsm_idle;
+            break;
+        }
+
+        next_state.mixer.mult_a = mult_u16_x_u15_sign_s17( state.sync.i_out, state.phase_acc.data_out_stage.value, state.phase_acc.data_out_stage.sign );
+        next_state.mixer.mult_b = mult_u16_x_u15_sign_s17( state.sync.q_out, state.phase_acc.data_out_stage.value, state.phase_acc.data_out_stage.sign );
+
+        next_state.mixer.valid_out = 0;
+        switch (state.mixer.fsm)
+        {
+        case mixer_fsm_cosine_done:
+            next_state.mixer.i_out = state.mixer.mult_a;
+            next_state.mixer.q_out = state.mixer.mult_b;
+            break;
+        case mixer_fsm_sine_done:
+            next_state.mixer.i_out = (state.mixer.i_out - state.mixer.mult_b) &0x1ffff;
+            next_state.mixer.q_out = (state.mixer.q_out + state.mixer.mult_a) &0x1ffff;
+            next_state.mixer.valid_out = 1;
+            break;
+        default: break;
+        }
+    }
+
+    /*b Phase accumulator - needs phase_value_taken
+     */
+    if (1)
+    {
+        int clock_phase;
+        int read_rom;
+        int read_cosine;
+        int read_quad;
+        int read_phase;
+        int rom_address;
+        int fine_phase;
+        int error_bit;
+
+        clock_phase = 0;
+        read_rom = 0;
+        read_cosine = 0;
+        switch (state.phase_acc.fsm)
+        {
+        case phase_acc_fsm_idle:
+            if ( phase_value_taken ||
+                 (!state.phase_acc.data_out_stage.valid_cosine) )
+            {
+                read_rom = 1;
+                read_cosine = 1;
+                clock_phase = 0;
+                next_state.phase_acc.fsm = phase_acc_fsm_reading_cosine;
+            }
+            break;
+        case phase_acc_fsm_reading_cosine:
+            read_rom = 1;
+            read_cosine = 0;
+            clock_phase = 0;
+            next_state.phase_acc.fsm = phase_acc_fsm_reading_sine;
+            break;
+        case phase_acc_fsm_reading_sine:
+            read_rom = 0;
+            read_cosine = 0;
+            clock_phase = 1;
+            next_state.phase_acc.fsm = phase_acc_fsm_idle;
+            break;
+        }
+
+        if (clock_phase)
+        {
+            next_state.phase_acc.phase = (state.phase_acc.phase + state.phase_acc.phase_step) &~ (-1<<phase_resolution);
+        }
+
+        if (read_cosine)
+        {
+            read_quad = ((state.phase_acc.phase >> (phase_resolution-2))+1)&3;
+        }
+        else
+        {
+            read_quad = state.phase_acc.phase >> (phase_resolution-2);
+        }
+        read_phase = state.phase_acc.phase >> (phase_resolution-(coarse_resolution+fine_resolution)+2);
+        if (read_quad&1)
+        {
+            read_phase = ~read_phase;
+        }
+        read_phase = read_phase &~ (-1<<(coarse_resolution+fine_resolution));
+        rom_address = read_phase >> fine_resolution;
+        fine_phase = read_phase &~ (-1<<fine_resolution);
+
+        {
+            next_state.phase_acc.rom_stage.rom_reading_cosine = read_cosine;
+            next_state.phase_acc.rom_stage.negate = ((read_quad&2)!=0);
+            next_state.phase_acc.rom_stage.fine_phase = fine_phase;
+            if (read_rom)
+            {
+                next_state.phase_acc.rom_stage.rom_base_value = rom[rom_address].base_value;
+                next_state.phase_acc.rom_stage.rom_delta      = rom[rom_address].delta;
+                next_state.phase_acc.rom_stage.rom_error_bits = rom[rom_address].error_bits;
+            }
+            else
+            {
+                next_state.phase_acc.rom_stage.rom_base_value = 0xdead;
+                next_state.phase_acc.rom_stage.rom_delta      = 0xdead;
+                next_state.phase_acc.rom_stage.rom_error_bits = 0xdead;
+            }
+        }
+
+        {
+            if (!state.phase_acc.data_out_stage.valid_cosine)
+            {
+                next_state.phase_acc.calc_in_stage.negate     = state.phase_acc.rom_stage.negate;
+                next_state.phase_acc.calc_in_stage.fine_phase = state.phase_acc.rom_stage.fine_phase;
+                next_state.phase_acc.calc_in_stage.valid_cosine = state.phase_acc.rom_stage.rom_reading_cosine;
+                next_state.phase_acc.calc_in_stage.base_value = state.phase_acc.rom_stage.rom_base_value;
+                next_state.phase_acc.calc_in_stage.delta      = state.phase_acc.rom_stage.rom_delta;
+                next_state.phase_acc.calc_in_stage.error_bit  = state.phase_acc.rom_stage.rom_error_bits>>state.phase_acc.rom_stage.fine_phase;
+            }
+        }
+
+        {
+            unsigned int delta_sum, value;
+            delta_sum = 0;
+            if (state.phase_acc.calc_in_stage.fine_phase & (1<<(fine_resolution-1)))
+                delta_sum = state.phase_acc.calc_in_stage.delta<<1;
+            if (state.phase_acc.calc_in_stage.fine_phase & (1<<(fine_resolution-2)))
+                delta_sum += state.phase_acc.calc_in_stage.delta<<0;
+            if (state.phase_acc.calc_in_stage.fine_phase & (1<<(fine_resolution-3)))
+                delta_sum += state.phase_acc.calc_in_stage.delta>>1;
+            if (state.phase_acc.calc_in_stage.fine_phase & (1<<(fine_resolution-4)))
+                delta_sum += state.phase_acc.calc_in_stage.delta>>2;
+
+            value = ((state.phase_acc.calc_in_stage.base_value<<1) | error_bit) + (delta_sum>>1) + (delta_sum&1);
+
+            if ( (!state.phase_acc.data_out_stage.valid_cosine) ||
+                 (phase_value_taken) )
+            {
+                next_state.phase_acc.data_out_stage.value = value;
+                next_state.phase_acc.data_out_stage.sign = state.phase_acc.calc_in_stage.negate;
+                next_state.phase_acc.data_out_stage.valid_cosine = state.phase_acc.calc_in_stage.valid_cosine;
+            }
+        }
+    }
+
+    /*b Synchronizer
+     */
+    next_state.sync.sync_reg_i_0 = data_state.selected_i;
+    next_state.sync.sync_reg_q_0 = data_state.selected_q;
+    next_state.sync.sync_toggle_0 = data_state.selected_toggle;
+    next_state.sync.sync_toggle_1 = state.sync.sync_toggle_0;
+    next_state.sync.sync_last_toggle = state.sync.sync_toggle_1;
+    next_state.sync.iq_valid = 0;
+    if (state.sync.sync_last_toggle != state.sync.sync_toggle_1)
+    {
+        next_state.sync.i_out = state.sync.sync_reg_i_0;
+        next_state.sync.q_out = state.sync.sync_reg_q_0;
+        next_state.sync.iq_valid = 1;
+    }
+
+    /*b CIC filter
+     */
+    if (1)
+    {
+        signed long long cic_in;
+        cic_in = (signed int) state.cic.q_store;
+        if (state.mixer.valid_out)
+        {
+            next_state.cic.q_store = state.mixer.q_out;
+            cic_in = (signed int) state.mixer.i_out;
+        }
+
+        cic_inc_stage_preclock( 1, state.mixer.valid_out,        cic_in,                 17, 22 );
+        cic_inc_stage_preclock( 2, state.cic.stage[0].valid_out, state.cic.stage[0].out, 22, 26 );
+        cic_inc_stage_preclock( 3, state.cic.stage[1].valid_out, state.cic.stage[1].out, 26, 30 );
+        cic_inc_stage_preclock( 4, state.cic.stage[2].valid_out, state.cic.stage[2].out, 30, 35 );
+        cic_inc_stage_preclock( 5, state.cic.stage[3].valid_out, state.cic.stage[3].out, 35, 40 );
+
+        next_state.cic.decimate.valid_out = 0;
+        if (next_state.cic.stage[4].valid_out)
+        {
+            if (state.cic.decimate.count==0)
+            {
+                next_state.cic.decimate.valid_out = 1;
+                next_state.cic.decimate.count = state.cic.decimate.factor;
+            }
+            else
+            {
+                next_state.cic.decimate.count = state.cic.decimate.count-1;
+            }
+        }
+    }
+
+    /*b Done
+     */
+    return error_level_okay;
+}
+
+/*f c_adc_frontend::clock_posedge_int_clock
+*/
+t_sl_error_level c_adc_frontend::clock_posedge_int_clock( void )
+{
+
+    /*b Copy next to current
+     */
+    memcpy( &state, &next_state, sizeof(state));
+
+    /*b Done
+     */
+    return error_level_okay;
+}
+
+/*a Initialization functions
+*/
+/*f c_adc_frontend__init
+*/
+extern void c_adc_frontend__init( void )
+{
+    se_external_module_register( 1, "adc_frontend", adc_frontend_instance_fn );
+}
+
+/*a Scripting support code
+*/
+/*f initadc_frontend
+*/
+extern "C" void initadc_frontend( void )
+{
+    c_adc_frontend__init( );
+    scripting_init_module( "adc_frontend" );
+}

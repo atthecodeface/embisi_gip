@@ -1,7 +1,21 @@
 /*a Copyright Gavin J Stark
  */
 
-/*a Examples
+/*a Documentation The vector processor is an engine that is a high
+  performance, highly pipelined, data processing engine for somewhat
+  flexible vector processing
+
+  The basic design is driven by the memory subsystem that is a pair of
+  single read/write port SRAMs, whose accesses are prioritized for the
+  vector processing accesses; cycles not used by the vector processing
+  are available for a postbus interface to fill and empty the memory.
+
+  The vector processing, then, consists of a memory interface that
+  supports up to two read/writes simultaneously, and a collection of
+  vector processing subsystems which perform autonomous processing on
+  data words from the memory, and a small instruction memory that can
+  be loaded with libraries of vector processing operations specific to
+  the particular system required.
  */
 
 /*a Includes
@@ -42,7 +56,7 @@
         engine->register_output_generated_on_clock( engine_handle, #name, #clk, 1 ); \
     }
 
-/*a Types for c_adc_frontend
+/*a Types for c_vector_processor
 */
 /*t t_phase_acc_fsm
  */
@@ -62,23 +76,23 @@ typedef enum
     mixer_fsm_sine_done
 } t_mixer_fsm;
 
-/*t t_adc_frontend_inputs
+/*t t_vector_processor_inputs
   Reset
   Digital data in (probably should have some form of clock enable)
   Postbus for configuration and data out
 */
-typedef struct t_adc_frontend_inputs
+typedef struct t_vector_processor_inputs
 {
     unsigned int *int_reset;
 
     unsigned int *data_0;
     unsigned int *data_1;
 
-} t_adc_frontend_inputs;
+} t_vector_processor_inputs;
 
-/*t t_adc_frontend_data_clock_state
+/*t t_vector_processor_data_clock_state
 */
-typedef struct t_adc_frontend_data_clock_state
+typedef struct t_vector_processor_data_clock_state
 {
     unsigned int data_0_reg; // input registers for data
     unsigned int data_1_reg;
@@ -87,11 +101,11 @@ typedef struct t_adc_frontend_data_clock_state
     unsigned int selected_q; // mux select from data registers for quadrature for sync to internal clock domain
     unsigned int selected_toggle; // toggled when the data in the selected registers becomes valid - an edge on this must be detected by the internal clock
 
-} t_adc_frontend_data_clock_state;
+} t_vector_processor_data_clock_state;
 
-/*t t_adc_frontend_internal_clock_sync_state
+/*t t_vector_processor_internal_clock_sync_state
 */
-typedef struct t_adc_frontend_internal_clock_sync_state
+typedef struct t_vector_processor_internal_clock_sync_state
 {
     // we synchronize a toggle and register the data, all to the internal clock domain
     // the synchronizer for the toggle is a metastable flop, a stable flop, and a 'last value' flop; if the stable and last flops differ in value, then data is present in the register
@@ -119,7 +133,7 @@ typedef struct t_adc_frontend_internal_clock_sync_state
     unsigned int q_out;
     int iq_valid; // asserted if i_out and q_out are valid
 
-} t_adc_frontend_internal_clock_sync_state;
+} t_vector_processor_internal_clock_sync_state;
 
 /*t t_phase_acc_rom_entry
  */
@@ -130,9 +144,9 @@ typedef struct
     unsigned long error_bits;
 } t_phase_acc_rom_entry;
 
-/*t t_adc_frontend_internal_clock_phase_acc_state
+/*t t_vector_processor_internal_clock_phase_acc_state
 */
-typedef struct t_adc_frontend_internal_clock_phase_acc_state
+typedef struct t_vector_processor_internal_clock_phase_acc_state
 {
     unsigned int phase; // current phase
     unsigned int phase_step; // increment per tick
@@ -161,11 +175,11 @@ typedef struct t_adc_frontend_internal_clock_phase_acc_state
         int sign;
         int valid_cosine;
     } data_out_stage;
-} t_adc_frontend_internal_clock_phase_acc_state;
+} t_vector_processor_internal_clock_phase_acc_state;
 
-/*t t_adc_frontend_internal_clock_mixer_state
+/*t t_vector_processor_internal_clock_mixer_state
 */
-typedef struct t_adc_frontend_internal_clock_mixer_state
+typedef struct t_vector_processor_internal_clock_mixer_state
 {
     t_mixer_fsm fsm;
     unsigned int mult_a;
@@ -174,33 +188,33 @@ typedef struct t_adc_frontend_internal_clock_mixer_state
     unsigned int q_out;
     int valid_out;
     
-} t_adc_frontend_internal_clock_mixer_state;
+} t_vector_processor_internal_clock_mixer_state;
 
-/*t t_adc_frontend_cic_int_stage
+/*t t_vector_processor_cic_int_stage
 */
-typedef struct t_adc_frontend_cic_int_stage
+typedef struct t_vector_processor_cic_int_stage
 {
     unsigned long long calc; // normally holds i; add to input, put result in out
     unsigned long long out; // normally holds q; pass to calc when integrating
     int valid_out;
-} t_adc_frontend_cic_int_stage;
+} t_vector_processor_cic_int_stage;
 
-/*t t_adc_frontend_cic_comb_stage
+/*t t_vector_processor_cic_comb_stage
 */
-typedef struct t_adc_frontend_cic_comb_stage
+typedef struct t_vector_processor_cic_comb_stage
 {
     unsigned long long pipe_0; // normally holds q; pass to pipe_1 when combing
     unsigned long long pipe_1; // normally holds i; subtract from input when combing
     unsigned long long value; // result of comb
     int valid_out;
-} t_adc_frontend_cic_comb_stage;
+} t_vector_processor_cic_comb_stage;
 
-/*t t_adc_frontend_internal_clock_cic_state
+/*t t_vector_processor_internal_clock_cic_state
 */
-typedef struct t_adc_frontend_internal_clock_cic_state
+typedef struct t_vector_processor_internal_clock_cic_state
 {
-    t_adc_frontend_cic_int_stage int_stage[5];
-    t_adc_frontend_cic_comb_stage comb_stage[5];
+    t_vector_processor_cic_int_stage int_stage[5];
+    t_vector_processor_cic_comb_stage comb_stage[5];
     unsigned int q_store;
     struct
     {
@@ -208,50 +222,50 @@ typedef struct t_adc_frontend_internal_clock_cic_state
         unsigned int count;
         unsigned int factor;
     } decimate;
-} t_adc_frontend_internal_clock_cic_state;
+} t_vector_processor_internal_clock_cic_state;
 
-/*t t_adc_frontend_internal_clock_state
+/*t t_vector_processor_internal_clock_state
 */
-typedef struct t_adc_frontend_internal_clock_state
+typedef struct t_vector_processor_internal_clock_state
 {
-    t_adc_frontend_internal_clock_sync_state       sync;
-    t_adc_frontend_internal_clock_phase_acc_state  phase_acc;
-    t_adc_frontend_internal_clock_mixer_state      mixer;
-    t_adc_frontend_internal_clock_cic_state        cic;
+    t_vector_processor_internal_clock_sync_state       sync;
+    t_vector_processor_internal_clock_phase_acc_state  phase_acc;
+    t_vector_processor_internal_clock_mixer_state      mixer;
+    t_vector_processor_internal_clock_cic_state        cic;
 
     double pwr_calc;
     unsigned int result;
     int calc;
     int valid;
-} t_adc_frontend_internal_clock_state;
+} t_vector_processor_internal_clock_state;
 
-/*t c_adc_frontend
+/*t c_vector_processor
 */
-class c_adc_frontend
+class c_vector_processor
 {
 public:
-    c_adc_frontend::c_adc_frontend( class c_engine *eng, void *eng_handle );
-    c_adc_frontend::~c_adc_frontend();
-    t_sl_error_level c_adc_frontend::delete_instance( void );
-    t_sl_error_level c_adc_frontend::reset( int pass );
-    t_sl_error_level c_adc_frontend::preclock_posedge_int_clock( void );
-    t_sl_error_level c_adc_frontend::clock_posedge_int_clock( void );
-    t_sl_error_level c_adc_frontend::preclock_posedge_data_clock( void );
-    t_sl_error_level c_adc_frontend::clock_posedge_data_clock( void );
+    c_vector_processor::c_vector_processor( class c_engine *eng, void *eng_handle );
+    c_vector_processor::~c_vector_processor();
+    t_sl_error_level c_vector_processor::delete_instance( void );
+    t_sl_error_level c_vector_processor::reset( int pass );
+    t_sl_error_level c_vector_processor::preclock_posedge_int_clock( void );
+    t_sl_error_level c_vector_processor::clock_posedge_int_clock( void );
+    t_sl_error_level c_vector_processor::preclock_posedge_data_clock( void );
+    t_sl_error_level c_vector_processor::clock_posedge_data_clock( void );
 private:
     c_engine *engine;
     void *engine_handle;
 
-    void c_adc_frontend::cic_int_stage_preclock( int stage, int valid_in, unsigned long long value );
-    void c_adc_frontend::cic_comb_stage_preclock( int stage, int valid_in, unsigned long long value );
+    void c_vector_processor::cic_int_stage_preclock( int stage, int valid_in, unsigned long long value );
+    void c_vector_processor::cic_comb_stage_preclock( int stage, int valid_in, unsigned long long value );
 
-    t_adc_frontend_inputs inputs;
+    t_vector_processor_inputs inputs;
 
-    t_adc_frontend_internal_clock_state state;
-    t_adc_frontend_internal_clock_state next_state;
+    t_vector_processor_internal_clock_state state;
+    t_vector_processor_internal_clock_state next_state;
 
-    t_adc_frontend_data_clock_state data_state;
-    t_adc_frontend_data_clock_state next_data_state;
+    t_vector_processor_data_clock_state data_state;
+    t_vector_processor_data_clock_state next_data_state;
 
     int phase_resolution;
     int coarse_resolution;
@@ -274,7 +288,7 @@ static t_phase_acc_rom_entry rom[1024] =
 #define struct_offset( ptr, a ) (((char *)&(ptr->a))-(char *)ptr)
 /*v state_desc_posedge_int_clock
 */
-static t_adc_frontend_internal_clock_state *___posedge_int_clock__ptr;
+static t_vector_processor_internal_clock_state *___posedge_int_clock__ptr;
 static t_engine_state_desc state_desc_posedge_int_clock[] =
 {
     {"sync_toggle_0", engine_state_desc_type_bits, NULL, struct_offset(___posedge_int_clock__ptr, sync.sync_toggle_0), {1,0,0,0}, {NULL,NULL,NULL,NULL} },
@@ -343,81 +357,81 @@ static t_engine_state_desc state_desc_posedge_int_clock[] =
 */
 #undef struct_offset
 
-/*a Static wrapper functions for adc_frontend
+/*a Static wrapper functions for vector_processor
 */
-/*f adc_frontend_1r_1w_32_32_instance_fn
+/*f vector_processor_1r_1w_32_32_instance_fn
 */
-static t_sl_error_level adc_frontend_instance_fn( c_engine *engine, void *engine_handle )
+static t_sl_error_level vector_processor_instance_fn( c_engine *engine, void *engine_handle )
 {
-    c_adc_frontend *mod;
-    mod = new c_adc_frontend( engine, engine_handle );
+    c_vector_processor *mod;
+    mod = new c_vector_processor( engine, engine_handle );
     if (!mod)
         return error_level_fatal;
     return error_level_okay;
 }
 
-/*f adc_frontend_delete_fn - simple callback wrapper for the main method
+/*f vector_processor_delete_fn - simple callback wrapper for the main method
 */
-static t_sl_error_level adc_frontend_delete_fn( void *handle )
+static t_sl_error_level vector_processor_delete_fn( void *handle )
 {
-    c_adc_frontend *mod;
+    c_vector_processor *mod;
     t_sl_error_level result;
-    mod = (c_adc_frontend *)handle;
+    mod = (c_vector_processor *)handle;
     result = mod->delete_instance();
     delete( mod );
     return result;
 }
 
-/*f adc_frontend_reset_fn
+/*f vector_processor_reset_fn
 */
-static t_sl_error_level adc_frontend_reset_fn( void *handle, int pass )
+static t_sl_error_level vector_processor_reset_fn( void *handle, int pass )
 {
-    c_adc_frontend *mod;
-    mod = (c_adc_frontend *)handle;
+    c_vector_processor *mod;
+    mod = (c_vector_processor *)handle;
     return mod->reset( pass );
 }
 
-/*f adc_frontend_preclock_posedge_int_clock_fn
+/*f vector_processor_preclock_posedge_int_clock_fn
 */
-static t_sl_error_level adc_frontend_preclock_posedge_int_clock_fn( void *handle )
+static t_sl_error_level vector_processor_preclock_posedge_int_clock_fn( void *handle )
 {
-    c_adc_frontend *mod;
-    mod = (c_adc_frontend *)handle;
+    c_vector_processor *mod;
+    mod = (c_vector_processor *)handle;
     return mod->preclock_posedge_int_clock();
 }
 
-/*f adc_frontend_clock_posedge_int_clock_fn
+/*f vector_processor_clock_posedge_int_clock_fn
 */
-static t_sl_error_level adc_frontend_clock_posedge_int_clock_fn( void *handle )
+static t_sl_error_level vector_processor_clock_posedge_int_clock_fn( void *handle )
 {
-    c_adc_frontend *mod;
-    mod = (c_adc_frontend *)handle;
+    c_vector_processor *mod;
+    mod = (c_vector_processor *)handle;
     return mod->clock_posedge_int_clock();
 }
 
-/*f adc_frontend_preclock_posedge_data_clock_fn
+/*f vector_processor_preclock_posedge_data_clock_fn
 */
-static t_sl_error_level adc_frontend_preclock_posedge_data_clock_fn( void *handle )
+static t_sl_error_level vector_processor_preclock_posedge_data_clock_fn( void *handle )
 {
-    c_adc_frontend *mod;
-    mod = (c_adc_frontend *)handle;
+    c_vector_processor *mod;
+    mod = (c_vector_processor *)handle;
     return mod->preclock_posedge_data_clock();
 }
 
-/*f adc_frontend_clock_posedge_data_clock_fn
+/*f vector_processor_clock_posedge_data_clock_fn
 */
-static t_sl_error_level adc_frontend_clock_posedge_data_clock_fn( void *handle )
+static t_sl_error_level vector_processor_clock_posedge_data_clock_fn( void *handle )
 {
-    c_adc_frontend *mod;
-    mod = (c_adc_frontend *)handle;
+    c_vector_processor *mod;
+    mod = (c_vector_processor *)handle;
     return mod->clock_posedge_data_clock();
 }
 
-/*a Constructors and destructors for adc_frontend
+/*a Constructors and destructors for vector_processor
 */
-/*f c_adc_frontend::c_adc_frontend
+/*f c_vector_processor::c_vector_processor
 */
-c_adc_frontend::c_adc_frontend( class c_engine *eng, void *eng_handle )
+c_vector_processor::c_vector_processor( class c_engine *eng, void *eng_handle )
 {
     engine = eng;
     engine_handle = eng_handle;
@@ -428,10 +442,10 @@ c_adc_frontend::c_adc_frontend( class c_engine *eng, void *eng_handle )
 
     /*b Instantiate module
      */
-    engine->register_delete_function( engine_handle, (void *)this, adc_frontend_delete_fn );
-    engine->register_reset_function( engine_handle, (void *)this, adc_frontend_reset_fn );
-    engine->register_clock_fns( engine_handle, (void *)this, "int_clock", adc_frontend_preclock_posedge_int_clock_fn, adc_frontend_clock_posedge_int_clock_fn );
-    engine->register_clock_fns( engine_handle, (void *)this, "data_clock", adc_frontend_preclock_posedge_data_clock_fn, adc_frontend_clock_posedge_data_clock_fn );
+    engine->register_delete_function( engine_handle, (void *)this, vector_processor_delete_fn );
+    engine->register_reset_function( engine_handle, (void *)this, vector_processor_reset_fn );
+    engine->register_clock_fns( engine_handle, (void *)this, "int_clock", vector_processor_preclock_posedge_int_clock_fn, vector_processor_clock_posedge_int_clock_fn );
+    engine->register_clock_fns( engine_handle, (void *)this, "data_clock", vector_processor_preclock_posedge_data_clock_fn, vector_processor_clock_posedge_data_clock_fn );
 
     CLOCKED_INPUT( int_reset, 1, int_clock );
     CLOCKED_INPUT( data_0, 16, data_clock );
@@ -453,25 +467,25 @@ c_adc_frontend::c_adc_frontend( class c_engine *eng, void *eng_handle )
 
 }
 
-/*f c_adc_frontend::~c_adc_frontend
+/*f c_vector_processor::~c_vector_processor
 */
-c_adc_frontend::~c_adc_frontend()
+c_vector_processor::~c_vector_processor()
 {
     delete_instance();
 }
 
-/*f c_adc_frontend::delete_instance
+/*f c_vector_processor::delete_instance
 */
-t_sl_error_level c_adc_frontend::delete_instance( void )
+t_sl_error_level c_vector_processor::delete_instance( void )
 {
     return error_level_okay;
 }
 
-/*a Class reset/preclock/clock methods for adc_frontend
+/*a Class reset/preclock/clock methods for vector_processor
 */
-/*f c_adc_frontend::reset
+/*f c_vector_processor::reset
 */
-t_sl_error_level c_adc_frontend::reset( int pass )
+t_sl_error_level c_vector_processor::reset( int pass )
 {
     data_state.selected_toggle = 0;
 
@@ -509,9 +523,9 @@ t_sl_error_level c_adc_frontend::reset( int pass )
     return error_level_okay;
 }
 
-/*f c_adc_frontend::preclock_posedge_data_clock
+/*f c_vector_processor::preclock_posedge_data_clock
 */
-t_sl_error_level c_adc_frontend::preclock_posedge_data_clock( void )
+t_sl_error_level c_vector_processor::preclock_posedge_data_clock( void )
 {
     /*b Copy current to next
      */
@@ -530,9 +544,9 @@ t_sl_error_level c_adc_frontend::preclock_posedge_data_clock( void )
     return error_level_okay;
 }
 
-/*f c_adc_frontend::clock_posedge_data_clock
+/*f c_vector_processor::clock_posedge_data_clock
 */
-t_sl_error_level c_adc_frontend::clock_posedge_data_clock( void )
+t_sl_error_level c_vector_processor::clock_posedge_data_clock( void )
 {
 
     /*b Copy next to current
@@ -544,7 +558,7 @@ t_sl_error_level c_adc_frontend::clock_posedge_data_clock( void )
     return error_level_okay;
 }
 
-/*f c_adc_frontend::cic_int_stage_preclock
+/*f c_vector_processor::cic_int_stage_preclock
  */
 #define sign_extend(v,w) { (v) |= (v>>(w-1)) ? ((0xffffffffffffffffULL)<<w):0; }
 static signed int mult_u16_x_u15_sign_s18( unsigned int a, unsigned int b, int sign )
@@ -558,7 +572,7 @@ static signed int mult_u16_x_u15_sign_s18( unsigned int a, unsigned int b, int s
     r = r&0x3ffff;
     return r;
 }
-void c_adc_frontend::cic_int_stage_preclock( int stage, int valid_in, unsigned long long value )
+void c_vector_processor::cic_int_stage_preclock( int stage, int valid_in, unsigned long long value )
 {
     stage--;
 
@@ -577,9 +591,9 @@ void c_adc_frontend::cic_int_stage_preclock( int stage, int valid_in, unsigned l
     next_state.cic.int_stage[stage].valid_out = valid_in;
 }
 
-/*f c_adc_frontend::cic_comb_stage_preclock
+/*f c_vector_processor::cic_comb_stage_preclock
  */
-void c_adc_frontend::cic_comb_stage_preclock( int stage, int valid_in, unsigned long long value )
+void c_vector_processor::cic_comb_stage_preclock( int stage, int valid_in, unsigned long long value )
 {
     stage--;
 
@@ -600,9 +614,9 @@ void c_adc_frontend::cic_comb_stage_preclock( int stage, int valid_in, unsigned 
     next_state.cic.comb_stage[stage].valid_out = valid_in;
 }
 
-/*f c_adc_frontend::preclock_posedge_int_clock
+/*f c_vector_processor::preclock_posedge_int_clock
 */
-t_sl_error_level c_adc_frontend::preclock_posedge_int_clock( void )
+t_sl_error_level c_vector_processor::preclock_posedge_int_clock( void )
 {
     int phase_value_taken;
 
@@ -852,9 +866,9 @@ t_sl_error_level c_adc_frontend::preclock_posedge_int_clock( void )
     return error_level_okay;
 }
 
-/*f c_adc_frontend::clock_posedge_int_clock
+/*f c_vector_processor::clock_posedge_int_clock
 */
-t_sl_error_level c_adc_frontend::clock_posedge_int_clock( void )
+t_sl_error_level c_vector_processor::clock_posedge_int_clock( void )
 {
 
     /*b Copy next to current
@@ -868,19 +882,19 @@ t_sl_error_level c_adc_frontend::clock_posedge_int_clock( void )
 
 /*a Initialization functions
 */
-/*f c_adc_frontend__init
+/*f c_vector_processor__init
 */
-extern void c_adc_frontend__init( void )
+extern void c_vector_processor__init( void )
 {
-    se_external_module_register( 1, "adc_frontend", adc_frontend_instance_fn );
+    se_external_module_register( 1, "vector_processor", vector_processor_instance_fn );
 }
 
 /*a Scripting support code
 */
-/*f initadc_frontend
+/*f initvector_processor
 */
-extern "C" void initadc_frontend( void )
+extern "C" void initvector_processor( void )
 {
-    c_adc_frontend__init( );
-    scripting_init_module( "adc_frontend" );
+    c_vector_processor__init( );
+    scripting_init_module( "vector_processor" );
 }

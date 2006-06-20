@@ -1,0 +1,1262 @@
+/*a Documentation
+  This DDR interface is expected to run at the same speed as its postbus interface
+    We support up to 1GB of DDR, or 256MW, hence 2^20 256-word aligned addresses
+  The postbus interface supplies a command port which supports the following commands:
+    (type cmd, op 0) => init ddr
+    (type pull_data, op burst size/0, length 1/2, data 'ddr address' 'hdr' =>                     read data from address to postbus header of specified length; this also sets the internal 'address' register
+    (type push_data, op 0/0, length 'n', data 'write data*n') =>                                  write data to the internal address register of specified length and data
+    (type config, op 0/2 or 3, length 3, data 'start address', 'end address', 'next pointer') =>  configure one of two circular buffers
+    (type push_data, op 0/2 or 3, length 'n', data 'write data*n') =>                             write data to a circular buffer of specified length and data
+    (type pull_data, op burst size/2 or 3, length 0) =>                                           read data from a circular buffer to postbus header of specified length
+  The internal state is then:
+    DRAM address for simple burst transactions
+    postbus push header for read data
+    two circular buffers with 256-word aligned start address, 256-word aligned end address, 'next address' to read/write from
+
+  The DDR is operated with a burst length of 2 16-bit words, i.e. a single 32-bit word, with a CAS latency of 2, clock period of 7.5ns minimum (133MHz)
+  A RAS is issued followed by a CAS after a hold-off period to meet tRCD, of 15ns, so RAS, gap, CAS (i.e. active, nop, read/write)
+  So active is issued off clock -3, captured on clock -2.
+  A write is issued off clock -1, captured on clock 0, and data is captured on clock 1 rising and the following falling edge
+  A read is issued off clock -1, captured on clock 1, and data is ready to be captured on clock 3 rising and the following falling edge, and buffered on clock 4 rising near the pads in input_dq_buffer
+  We operate a single 8 word register file for the DRAM data; it is always empty at the start of a postbus transaction (this is an entry criterion).
+  For writes, the DDR is kicked off to a write transaction of a certain length.
+  Then write commands are issued if the number of commands issued is less than the number of words added to the RF, and words are read out of the RF in response to the write command issued.
+  The last write command is issued with autoprecharge, and the DDR FSM implements the tRP backoff (15ns from cycle following last command, plus extras for tRC)
+  tRC of 60ns must also be met, which is active to active; this is done with 
+  Read with autoprecharge is effectively a read followed by a precharge command, provided the precharge command is not earlier than tRAS of 42ns after the active
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+
+/*a Constants
+ */
+//constant integer ddr_refresh_counter_initial_value=1328; // This will do for now - we need it to be 16us, which (at 83MHz) is 16*83 = 1328
+constant integer ddr_refresh_counter_initial_value=400; // This will do for now - we need it to be 16us, which (at 83MHz) is 16*83 = 1328
+//gjs aug 1 constant integer ddr_refresh_counter_initial_value=4; // This will do for now - we need it to be 16us, which (at 83MHz) is 16*83 = 1328
+
+/*a Types
+ */
+/*t t_ddr_dram_init_state
+ */
+typedef fsm
+{
+    ddr_dram_init_start "DDR initialization - hold CKE low for 200us";
+    ddr_dram_init_cke_up "DDR initialization - raise CKE with a nop";
+    ddr_dram_init_precharge_all "DDR initialization - precharge all";
+    ddr_dram_init_ext_mode "DDR initialization - program extended mode register";
+    ddr_dram_init_mode "DDR initialization - program mode register, resetting DLL";
+    ddr_dram_init_precharge_2_all "DDR initialization - precharge all";
+    ddr_dram_init_autorefresh_all "DDR initialization - autorefresh all";
+    ddr_dram_init_autorefresh_2_all "DDR initialization - autorefresh all";
+    ddr_dram_init_mode_2 "DDR initialization - program mode register to clear DLL bit";
+    ddr_dram_init_final_wait "DDR initialization - wait for remainder of 200 cycles";
+    ddr_dram_init_idle "DDR initialization - done";
+} t_ddr_dram_init_state;
+
+/*t t_ddr_dram_state
+ */
+typedef fsm
+{
+    ddr_dram_init "DDR doing initialization";
+    ddr_dram_idle "DDR idle, waiting for refresh command or SRAM read/write on enabled clock edge";
+    ddr_dram_refresh_command "DDR refresh, issuing refresh command; after this we can just go idle";
+    ddr_dram_read_start "DDR read, address buffered, NOP on bus, passing address to output registers";
+    ddr_dram_read_active "DDR read, active command on bus; we must wait a cycle before the read command";
+    ddr_dram_read_data "DDR read ready for read commands";
+    ddr_dram_read_last_data "last data read is being presented to DDR";
+    ddr_dram_read_cas_wait_1 "DDR read, waiting the CAS latency (1)";
+    ddr_dram_read_cas_wait_2 "DDR read, waiting the CAS latency (2)";
+    ddr_dram_read_cas_wait_3 "DDR read, waiting the CAS latency (3)";
+    ddr_dram_read_data_on_bus "DDR read, data will be on the external bus and registered in our input flops during this phase, and at the end of the clock it is stored in interl registers on our clock edge";
+    ddr_dram_read_data_in_reg "DDR read, data will be in the internal register after the pad registers: buffer it";
+    ddr_dram_write_start "DDR write, address buffered, NOP on bus, passing address to output registers";
+    ddr_dram_write_active "DDR write, active command on bus; we must wait a cycle before the write command";
+    ddr_dram_write_data "DDR write, prepare to write data if we have some in the buffer";
+    ddr_dram_written_last "Presenting last DDR write (with autoprecharge)";
+    ddr_dram_written_last_wait "Presented last DDR write, DDR captured that at start of this state";
+    ddr_dram_write_presenting_last_data "Presenting last DDR write data - can return to idle";
+} t_ddr_dram_state;
+
+/*t t_ddr_transaction
+ */
+typedef enum [4]
+{
+    ddr_transaction_cke_low,
+    ddr_transaction_precharge_all,
+    ddr_transaction_autorefresh,
+    ddr_transaction_load_ext_mode_register,
+    ddr_transaction_load_mode_register,
+    ddr_transaction_load_mode_register_dll_reset,
+    ddr_transaction_nop,
+    ddr_transaction_active,
+    ddr_transaction_refresh,
+    ddr_transaction_read,
+    ddr_transaction_read_precharge,
+    ddr_transaction_write,
+    ddr_transaction_write_precharge
+} t_ddr_transaction;
+
+/*t t_ddr_data_transaction
+ */
+typedef enum [3]
+{
+    ddr_data_transaction_idle,       // dqs not driven, no data clocked
+    ddr_data_transaction_write_data, // dqs driven high then low, data clocked out
+    ddr_data_transaction_wait,       // dqs driven low for both cycles, no data clocked
+    ddr_data_transaction_read_data,  // dqs not driven, data clocked in three cycles later
+    ddr_data_transaction_empty       // dqs not driven, no data clocked, and buffer emptied
+} t_ddr_data_transaction;
+
+/*t t_circular_buffer
+ */
+typedef struct
+{
+    bit[20] start_block;
+    bit[20] end_block;
+    bit[28] next_address;
+    bit[32] postbus_header;
+} t_circular_buffer;
+
+/*t t_postbus_tgt_space
+ */
+typedef enum [2]
+{
+    postbus_tgt_space_command = 0,
+        postbus_tgt_space_config = 1,
+        postbus_tgt_space_push_data = 2,
+        postbus_tgt_space_pull_data = 3
+} t_postbus_tgt_space;
+
+/*t t_postbus_tgt_fsm
+ */
+typedef fsm
+{
+    postbus_tgt_fsm_idle "Idle state";
+    postbus_tgt_fsm_address_0 "First data expected for an address transaction";
+    postbus_tgt_fsm_address_1 "Second data expected for an address transaction";
+    postbus_tgt_fsm_address_2 "Third data expected for an address transaction";
+    postbus_tgt_fsm_address_3 "Fourth and last data expected for an address transaction";
+    postbus_tgt_fsm_push_data "Write data to DDR, expecting write data from postbus to buffer";
+    postbus_tgt_fsm_push_full "Write data to DDR, expecting write data from postbus to buffer but buffer was last full";
+    postbus_tgt_fsm_push_wait "Writing data to DDR, last data is in, waiting for DDR to finish";
+    postbus_tgt_fsm_pull_set_address "Read data from DDR, setting address first";
+    postbus_tgt_fsm_pull_set_header  "Read data from DDR, setting postbus header first";
+    postbus_tgt_fsm_pull_request     "Read data from DDR, expecting DDR to start to gather data";
+    postbus_tgt_fsm_pull_data        "Read data from DDR, data coming, handshaking with postbus source";
+    postbus_tgt_fsm_pull_end         "Read data from DDR, DDR state machine done, ready for next transaction";
+} t_postbus_tgt_fsm;
+
+/*t t_postbus_tgt
+  */
+typedef struct
+{
+    t_postbus_tgt_fsm state;
+    bit[2]            address_src;
+    bit pending; // asserted if the DDR is expected to service the current postbus target state somehow - read or write burst
+} t_postbus_tgt;
+
+/*t t_postbus_src_fsm
+ */
+typedef fsm
+{
+    postbus_src_fsm_idle "Idle state";
+    postbus_src_fsm_header "Header word being driven out";
+    postbus_src_fsm_data   "Second data expected for an address transaction";
+    postbus_src_fsm_last   "Third data expected for an address transaction";
+} t_postbus_src_fsm;
+
+/*t t_postbus_src
+  */
+typedef struct
+{
+    t_postbus_src_fsm state;
+} t_postbus_src;
+
+/*a Submodules
+ */
+/*m rf_1r_1w_32_32
+ */
+extern module rf_1r_1w_32_32( clock rf_clock,
+                             input bit rf_reset,
+                             input bit[5] rf_rd_addr_0,
+                             output bit[32] rf_rd_data_0,
+                             input bit rf_wr_enable,
+                             input bit[5] rf_wr_addr,
+                             input bit[32] rf_wr_data )
+{
+    timing comb input rf_rd_addr_0;
+    timing comb output rf_rd_data_0;
+    timing to rising clock rf_clock rf_reset;
+    timing to rising clock rf_clock rf_wr_enable, rf_wr_addr, rf_wr_data;
+    timing from rising clock rf_clock rf_rd_data_0;
+}
+
+/*a Module
+ */
+module ddr_dram_postbus( clock drm_clock,
+
+                         input bit drm_ctl_reset,
+                         output bit init_done,
+
+                         input t_postbus_type postbus_tgt_type,
+                         output t_postbus_ack postbus_tgt_ack,
+                         input bit[32] postbus_tgt_data,
+
+                         output t_postbus_type postbus_src_type,
+                         input t_postbus_ack postbus_src_ack,
+                         output bit[32] postbus_src_data,
+
+                         output bit next_cke,
+                         output bit[2] next_s_n,
+                         output bit next_ras_n,
+                         output bit next_cas_n,
+                         output bit next_we_n,
+                         output bit[13] next_a,
+                         output bit[2] next_ba,
+                         output bit next_dqoe,
+                         output bit[32] next_dq "Top 16 bits are for when clock is low, bottom 16 for when clock is high",
+                         output bit[4] next_dqm "Top 2 bits are for when clock is low, bottom 2 for when clock is high",
+                         output bit[4] next_dqs_high,
+                         output bit[4] next_dqs_low,
+                         input bit[16] input_dq_high "Clocked when fb clock rises, i.e. the data when the fb clock was low - store it when our (earlier clock) rises",
+                         input bit[16] input_dq_low "Clocked when fb clock falls, i.e. the data when the fb clock was high - store it when our (earlier clock) falls" )
+{
+    /*b Default clock and reset
+     */
+    default clock drm_clock;
+    default reset drm_ctl_reset;
+
+    /*b Circular buffers and addresses
+     */
+    clocked t_circular_buffer buffer_0 = { start_block=0, end_block=0, next_address=0, postbus_header=0 };
+    clocked bit[28] burst_address=0;
+    clocked bit[32] burst_postbus_header=0;
+
+    /*b Postbus
+     */
+    clocked t_postbus_ack postbus_tgt_ack = postbus_ack_hold;
+    comb bit[2] postbus_tgt_space;
+    comb bit[5] postbus_tgt_op;
+    comb bit[2] postbus_tgt_address_source;
+    comb bit[3] postbus_tgt_burst_length;
+    clocked t_postbus_tgt postbus_tgt = {state=postbus_tgt_fsm_idle, pending=0, address_src=0};
+    clocked t_postbus_src postbus_src = {state=postbus_src_fsm_idle};
+    clocked t_postbus_type postbus_src_type = postbus_word_type_idle;
+    clocked bit[32] postbus_src_data = 0;
+
+    /*b DDR data input read buffers
+     */
+    clocked clock falling drm_clock bit[16] input_dq_buffer_low = 0 "Capture the low data from the fb clock before it goes away - high data can be captured on rising clock";
+    clocked bit[32] input_dq_buffer=0; // captures the input_dq_high data, and these registers are placed very close to the pads
+
+    /*b Data buffer and buffer DDR address and count variables
+     */
+    clocked bit ddr_take_buffered_address=0 "Asserted to fill buffered_address from the postbus_tgt.src";
+    clocked bit[28] buffered_address = 0;
+    comb bit[32] buffered_data; // Data out of the register file
+    clocked bit[8] buffer_last_bits = 0; // one bit per buffer entry, asserted if that entry is the last of the burst
+    comb bit buffer_postbus_ptr_inc_tgt; // increment postbus buffer ptr due to target
+    comb bit buffer_postbus_ptr_inc_src; // increment postbus buffer ptr due to source
+    comb bit buffer_postbus_ptr_zero;    // zero postbus buffer ptr (due to postbus target)
+    comb bit buffer_postbus_length_write; // asserted if the postbus wants to set the length of a ddr pull transaction
+    comb bit buffer_ddr_length_dec;       // asserted if the ddr wants to decrement the length of a ddr pull transaction
+    clocked bit[3] buffer_postbus_ptr = 0; // address written to by the postbus for push, read by postbus for pull
+    clocked bit[3] buffer_ddr_ptr = 0; // address read by the ddr for push data, written by ddr for pull - must be zero at end of DDR transaction
+    clocked bit[3] buffer_ddr_lookahead_ptr = 0; // address read by the ddr for control strobes - how much we have committed to write
+    clocked bit[5] buffer_length = 0; // length of a pull transaction minus 1
+    net bit[32] buffer_rf_read_data;
+
+    /*b DDR state and transaction, including cke, variables
+     */
+    clocked bit init_done = 0;
+    clocked bit[18] ddr_dram_init_counter = 1; // This should be -1 for an emulator build
+    clocked bit ddr_dram_init_counter_is_zero = 0;
+    clocked t_ddr_dram_init_state ddr_dram_init_state = ddr_dram_init_start;
+    clocked t_ddr_transaction ddr_init_transaction = ddr_transaction_cke_low;
+
+    clocked t_ddr_dram_state ddr_dram_state = ddr_dram_init;
+    comb t_ddr_transaction ddr_transaction;
+    comb t_ddr_data_transaction ddr_data_transaction;
+    clocked t_ddr_data_transaction ddr_data_transaction_piped_1 = ddr_data_transaction_idle;
+    clocked bit[4] ddr_data_read_pipeline = 0;
+    clocked bit[4] ddr_cycle_count=0; // counter used for timing dram cycles
+
+    /*b Refresh counter variables
+     */
+    clocked bit[12] ddr_refresh_counter = 0;
+    clocked bit ddr_refresh_needed = 0;
+    clocked bit ddr_refresh_pending = 0; // If a refresh is needed then we set pending if we can guarantee not to be at the same edge as the logic clock changing - this is guaranteed with cke_last_of_logic
+    clocked bit cke_first_of_logic = 0;
+    clocked bit cke_second_of_logic = 0;
+    comb bit ddr_refresh_issued;         // If a refresh is pending then we cannot start it unless we are driving sram_low_priority_wait
+
+    /*b Refresh counter logic
+     */
+    ddr_refresh_counter "DDR refresh counter":
+        {
+            if (ddr_refresh_needed)
+            {
+                ddr_refresh_pending <= 1;
+            }
+            if (ddr_refresh_issued)
+            {
+                ddr_refresh_pending <= 0;
+                ddr_refresh_needed <= 0;
+            }
+            ddr_refresh_counter <= ddr_refresh_counter-1;
+            if (ddr_refresh_counter==0)
+            {
+                ddr_refresh_counter <= ddr_refresh_counter_initial_value;
+                ddr_refresh_needed <= 1;
+            }
+        }
+
+    /*b Decode transaction to outputs
+     */
+    ddr_outputs "Decode transaction to DDR outputs":
+        {
+            /*b Buffered address default behaviour
+             */
+            if (ddr_take_buffered_address)
+            {
+                full_switch (postbus_tgt.address_src)
+                    {
+                    case 2:
+                    {
+                        buffered_address <= buffer_0.next_address;
+                    }
+                    default:
+                    {
+                        buffered_address <= burst_address;
+                    }
+                    }
+            }
+
+            /*b Default transaction will be a NOP
+             */
+            next_cke = 0;
+            next_s_n = 3;
+            next_ras_n = 1;
+            next_cas_n = 1;
+            next_we_n = 1;
+            next_a = buffered_address[13;8];
+            next_ba = buffered_address[2;21];
+
+            /*b Now decode the actual requested transaction
+             */
+            full_switch (ddr_transaction)
+                {
+                case ddr_transaction_cke_low:
+                {
+                    next_cke = 0;
+                }
+                case ddr_transaction_precharge_all:
+                {
+                    next_cke = 1;
+                    next_s_n = 0;
+                    next_a[10] = 1;
+                    next_ras_n = 0;
+                    next_cas_n = 1;
+                    next_we_n = 0;
+                }
+                case ddr_transaction_autorefresh:
+                {
+                    next_cke = 1;
+                    next_s_n = 0;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 1;
+                }
+                case ddr_transaction_load_ext_mode_register:
+                {
+                    next_cke = 1;
+                    next_s_n = 0;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_ba = 1;
+                    next_a[0] = 0; // enable dll
+                    next_a[1] = 0; // drive strength normal
+                    next_a[11;2] = 0;
+                }
+                case ddr_transaction_load_mode_register:
+                {
+                    next_cke = 1;
+                    next_s_n = 0;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_ba = 0;
+                    next_a[3;0] = 1; // BL 2
+                    next_a[3] = 0; // sequential
+                    next_a[3;4] = 6; // CL 2.5
+                    next_a[6;7] = 0; // no DLL reset
+                }
+                case ddr_transaction_load_mode_register_dll_reset:
+                {
+                    next_cke = 1;
+                    next_s_n = 0;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_ba = 0;
+                    next_a[3;0] = 1; // BL 2
+                    next_a[3] = 0; // sequential
+                    next_a[3;4] = 6; // CL 2.5
+                    next_a[6;7] = 2; // DLL reset
+                }
+                case ddr_transaction_nop:
+                {
+                    next_cke = 1;
+                    next_s_n = 3;
+                }
+                case ddr_transaction_active:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 0;
+                    next_cas_n = 1;
+                    next_we_n = 1;
+                    next_a = buffered_address[13;8];
+                    next_ba = buffered_address[2;21];
+                }
+                case ddr_transaction_refresh:
+                {
+                    next_cke = 1;
+                    next_s_n = 0;
+                    next_ras_n = 0;
+                    next_cas_n = 0;
+                    next_we_n = 1;
+                }
+                case ddr_transaction_read:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 1;
+                    next_cas_n = 0;
+                    next_we_n = 1;
+                    next_a[0] = 0;
+                    next_a[8;1] = buffered_address[8;0];
+                    next_a[10] = 0;
+                    next_ba = buffered_address[2;21];
+                    buffered_address <= buffered_address+1;
+                }
+                case ddr_transaction_read_precharge:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 1;
+                    next_cas_n = 0;
+                    next_we_n = 1;
+                    next_a[0] = 0;
+                    next_a[8;1] = buffered_address[8;0];
+                    next_a[10] = 1;
+                    next_ba = buffered_address[2;21];
+                    buffered_address <= buffered_address+1;
+                }
+                case ddr_transaction_write_precharge:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 1;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_a[0] = 0;
+                    next_a[8;1] = buffered_address[8;0];
+                    next_a[10] = 1;
+                    next_ba = buffered_address[2;21];
+                    buffered_address <= buffered_address+1;
+                }
+                case ddr_transaction_write:
+                {
+                    next_cke = 1;
+                    next_s_n = 2;
+                    next_ras_n = 1;
+                    next_cas_n = 0;
+                    next_we_n = 0;
+                    next_a[0] = 0;
+                    next_a[8;1] = buffered_address[8;0];
+                    next_a[10] = 0;
+                    next_ba = buffered_address[2;21];
+                    buffered_address <= buffered_address+1;
+                }
+                }
+
+            /*b Default data transaction is a NOP
+             */
+            next_dq = buffered_data;
+            next_dqm = 4hf;
+            next_dqoe = 0;
+            next_dqs_high = 0;
+            next_dqs_low = 0;
+
+            /*b Now decode the actual requested data transaction
+             */
+            ddr_data_transaction_piped_1 <= ddr_data_transaction;
+            ddr_data_read_pipeline[0] <= ddr_data_read_pipeline[1];
+            ddr_data_read_pipeline[1] <= ddr_data_read_pipeline[2];
+            ddr_data_read_pipeline[2] <= ddr_data_read_pipeline[3];
+            ddr_data_read_pipeline[3] <= 0;
+            if (ddr_data_read_pipeline[0])
+            {
+                buffer_ddr_ptr <= buffer_ddr_ptr+1;
+            }
+            full_switch (ddr_data_transaction_piped_1)
+                {
+                case ddr_data_transaction_idle:
+                {
+                    next_dqoe = 0;
+                    next_dq = buffered_data;
+                    next_dqm = 0;
+                    next_dqs_high = 0;
+                    next_dqs_low = 0;
+                }
+                case ddr_data_transaction_wait:
+                {
+                    next_dqoe = 1;
+                    next_dq = buffered_data;
+                    next_dqm = 0;
+                    next_dqs_high = 0;
+                    next_dqs_low = 0;
+                }
+                case ddr_data_transaction_write_data:
+                {
+                    next_dqoe = 1;
+                    next_dq = buffered_data;
+                    next_dqm = 0;
+                    next_dqs_high = 4hf;
+                    next_dqs_low = 0;
+                    buffer_ddr_ptr <= buffer_ddr_ptr+1;
+                }
+                case ddr_data_transaction_read_data:
+                {
+                    next_dqoe = 0;
+                    next_dq = buffered_data;
+                    next_dqm = 0;
+                    next_dqs_high = 0;
+                    next_dqs_low = 0;
+                    ddr_data_read_pipeline[3] <= 1;
+                }
+                case ddr_data_transaction_empty:
+                {
+                    next_dqoe = 0;
+                    next_dq = buffered_data;
+                    next_dqm = 0;
+                    next_dqs_high = 0;
+                    next_dqs_low = 0;
+                    buffer_ddr_ptr <= 0;
+                }
+                }
+
+            /*b Done
+             */
+        }
+
+    /*b Handle DDR init state machine
+     */
+    ddr_dram_init_fsm "DDR DRAM init state machine":
+        {
+            init_done <= 0;
+            ddr_init_transaction <= ddr_transaction_nop;
+            if (ddr_dram_init_counter!=0)
+            {
+                ddr_dram_init_counter <= ddr_dram_init_counter-1;
+                ddr_dram_init_counter_is_zero <= (ddr_dram_init_counter==1);
+            }
+            else
+            {
+                ddr_dram_init_counter_is_zero <= 1;
+            }
+            full_switch (ddr_dram_init_state)
+                {
+                case ddr_dram_init_start:
+                {
+                    ddr_init_transaction <= ddr_transaction_cke_low;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_cke_up;
+                        ddr_dram_init_counter <= 16; // 16 cycles is enough for any transaction
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_nop;
+                    }
+                }
+                case ddr_dram_init_cke_up:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_precharge_all;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_precharge_all;
+                    }
+                }
+                case ddr_dram_init_precharge_all:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_ext_mode;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_load_ext_mode_register;
+                    }
+                }
+                case ddr_dram_init_ext_mode:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_mode;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_load_mode_register_dll_reset;
+                    }
+                }
+                case ddr_dram_init_mode:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_precharge_2_all;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_precharge_all;
+                    }
+                }
+                case ddr_dram_init_precharge_2_all:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_autorefresh_all;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_autorefresh;
+                    }
+                }
+                case ddr_dram_init_autorefresh_all:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_autorefresh_2_all;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_autorefresh;
+                    }
+                }
+                case ddr_dram_init_autorefresh_2_all:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_mode_2;
+                        ddr_dram_init_counter <= 16;
+                        ddr_dram_init_counter_is_zero <= 0;
+                        ddr_init_transaction <= ddr_transaction_load_mode_register;
+                    }
+                }
+                case ddr_dram_init_mode_2:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_final_wait;
+                        ddr_dram_init_counter <= 200; // we have done 5 transactions since mode, and waited 16 cycles each (80 cycles total). We must wait at least 200 cycles. So, 200 here is fine
+                        ddr_dram_init_counter_is_zero <= 0;
+                    }
+                }
+                case ddr_dram_init_final_wait:
+                {
+                    ddr_init_transaction <= ddr_transaction_nop;
+                    if (ddr_dram_init_counter_is_zero)
+                    {
+                        ddr_dram_init_state <= ddr_dram_init_idle;
+                    }
+                }
+                case ddr_dram_init_idle:
+                {
+                    init_done <= 1;
+                }
+                }
+        }
+
+    /*b Handle DDR state machine
+     */
+    ddr_dram_fsm "DDR DRAM state machine":
+        {
+            input_dq_buffer_low <= input_dq_low; // this is on the falling edge, capturing the (earlier) falling edge data
+            input_dq_buffer[16;0] <= input_dq_buffer_low;
+            input_dq_buffer[16;16] <= input_dq_high;
+
+            ddr_refresh_issued = 0;
+            ddr_transaction = ddr_transaction_nop;
+            ddr_data_transaction = ddr_data_transaction_idle;
+            buffer_ddr_length_dec = 0;
+
+            full_switch (ddr_dram_state)
+                {
+                case ddr_dram_init:
+                {
+                    ddr_transaction = ddr_init_transaction;
+                    if (init_done)
+                    {
+                        ddr_dram_state <= ddr_dram_idle;
+                        ddr_transaction = ddr_transaction_nop;
+                    }
+                }
+                case ddr_dram_idle:
+                {
+                    ddr_cycle_count <= 15;
+                    if (ddr_refresh_pending)
+                    {
+                        ddr_dram_state <= ddr_dram_refresh_command;
+                        ddr_transaction = ddr_transaction_refresh;
+                        ddr_refresh_issued = 1;
+                    }
+                    elsif (postbus_tgt.pending)
+                        {
+                            buffer_ddr_lookahead_ptr <= 0;
+                            if ( (postbus_tgt.state==postbus_tgt_fsm_push_data) ||
+                                 (postbus_tgt.state==postbus_tgt_fsm_push_full) ||
+                                 (postbus_tgt.state==postbus_tgt_fsm_push_wait) )
+                            {
+                                ddr_dram_state <= ddr_dram_write_start;
+                            }
+                            else
+                            {
+                                ddr_dram_state <= ddr_dram_read_start;
+                            }
+                        }
+                }
+                case ddr_dram_refresh_command:
+                {
+                    ddr_cycle_count <= ddr_cycle_count-1;
+                    if (ddr_cycle_count==0)
+                    {
+                        ddr_dram_state <= ddr_dram_idle;
+                    }
+                }
+                case ddr_dram_read_start: // buffer_length 32-bit words to be read to the buffer
+                {
+                    ddr_transaction = ddr_transaction_active;
+                    ddr_dram_state <= ddr_dram_read_active;
+                }
+                case ddr_dram_read_active: // read presented to ddr; wait
+                {
+                    ddr_dram_state <= ddr_dram_read_data;
+                }
+                case ddr_dram_read_data: // ddr ready for read request, if there is room in the buffer
+                {
+                    if (buffer_ddr_lookahead_ptr+1 != buffer_postbus_ptr) // room for 'n' more... request next one
+                    {
+                        buffer_ddr_lookahead_ptr <= buffer_ddr_lookahead_ptr+1;
+                        buffer_ddr_length_dec = 1;
+                        ddr_transaction = ddr_transaction_read;
+                        ddr_data_transaction = ddr_data_transaction_read_data;
+                        ddr_dram_state <= ddr_dram_read_data;
+                        if (buffer_length==0) // last one is being requested
+                        {
+                            buffer_last_bits[buffer_ddr_lookahead_ptr] <= 1;
+                            ddr_transaction = ddr_transaction_read_precharge;
+                            ddr_dram_state <= ddr_dram_read_last_data;
+                        }
+                    }
+                }
+                case ddr_dram_read_last_data: // during this cycle read is on the bus for the last read, and cas latency of 2 starts at the end of this cycle
+                {
+                    ddr_dram_state <= ddr_dram_read_cas_wait_1;
+                }
+                case ddr_dram_read_cas_wait_1: // at the start of this cycle the 2 CAS latency clocks begin
+                {
+                    ddr_dram_state <= ddr_dram_read_cas_wait_2;
+                }
+                case ddr_dram_read_cas_wait_2: // at the start of this cycle 1 CAS latency clocks remain
+                {
+                    ddr_dram_state <= ddr_dram_read_cas_wait_3;
+                }
+                case ddr_dram_read_cas_wait_3: // at the start of this cycle the CAS latency is over, and data is valid mid-clock and the end of this clock
+                {
+                    ddr_dram_state <= ddr_dram_read_data_on_bus;
+                }
+                case ddr_dram_read_data_on_bus: // at the start of this cycle the pad input buffers have the full word of last read data, and it is written at the end of this clock to the buffer
+                {
+                    ddr_dram_state <= ddr_dram_read_data_in_reg;
+                }
+                case ddr_dram_read_data_in_reg: // at the start of this cycle the last data is in the buffer and we can idle
+                {
+                    ddr_dram_state <= ddr_dram_idle;
+                    //sram_read_data <= input_dq_buffer;
+                }
+                case ddr_dram_write_start: // effectively T-4
+                {
+                    ddr_transaction = ddr_transaction_active;
+                    ddr_dram_state <= ddr_dram_write_active;
+                }
+                case ddr_dram_write_active: // effectively T-3, presenting active to DDR - get ready to present data
+                {
+                    ddr_dram_state <= ddr_dram_write_data;
+                    ddr_data_transaction = ddr_data_transaction_wait;
+                }
+                case ddr_dram_write_data: // effectively T-2, DDR has captured 'active' command; present write if we have uncommitted data; T-1 and T-0 are effectively handled through the data transaction path
+                {
+                    if (buffer_postbus_ptr != buffer_ddr_lookahead_ptr)
+                    {
+                        buffer_ddr_lookahead_ptr <= buffer_ddr_lookahead_ptr+1;
+                        if (buffer_last_bits[buffer_ddr_lookahead_ptr])
+                        {
+                            ddr_dram_state <= ddr_dram_written_last;
+                            ddr_transaction = ddr_transaction_write_precharge;
+                            ddr_data_transaction = ddr_data_transaction_write_data;
+                        }
+                        else
+                        {
+                            ddr_dram_state <= ddr_dram_write_data;
+                            ddr_transaction = ddr_transaction_write;
+                            ddr_data_transaction = ddr_data_transaction_write_data;
+                        }
+                    }
+                    else
+                    {
+                        ddr_dram_state <= ddr_dram_write_data;
+                        ddr_transaction = ddr_transaction_nop;
+                        ddr_data_transaction = ddr_data_transaction_wait;
+                    }
+                }
+                case ddr_dram_written_last: // presenting last write, with auto-precharge
+                {
+                    ddr_dram_state <= ddr_dram_written_last_wait;
+                    ddr_data_transaction = ddr_data_transaction_empty;
+                }
+                case ddr_dram_written_last_wait: // captured last write, should be strobing last-but-one write
+                {
+                    ddr_dram_state <= ddr_dram_write_presenting_last_data;
+                }
+                case ddr_dram_write_presenting_last_data: // presenting last write's data - we are now minimum tRP from last write, and tRC from last active, so timings are met
+                {
+                    ddr_dram_state <= ddr_dram_idle;
+                }
+                }
+        }
+
+    /*b Postbus target interface
+     */
+    postbus_tgt_if "Postbus target interface":
+        {
+            postbus_tgt_ack <= postbus_ack_taken;
+            postbus_tgt_space = postbus_tgt_data[ 2; postbus_command_target_start ];
+            postbus_tgt_op    = postbus_tgt_data[ 5; postbus_command_target_start+2 ];
+            postbus_tgt_address_source  = postbus_tgt_op[2;0];
+            postbus_tgt_burst_length    = postbus_tgt_op[3;2];
+            buffer_postbus_ptr_inc_tgt = 0;
+            buffer_postbus_ptr_zero = 0;
+            buffer_postbus_length_write = 0;
+            ddr_take_buffered_address <= 0;
+          
+            /*b Decode FSM
+             */
+            full_switch (postbus_tgt.state)
+                /*b idle
+                 */
+                {
+                case postbus_tgt_fsm_idle:
+                {
+                    if (postbus_tgt_type==postbus_word_type_start)
+                    {
+                        full_switch (postbus_tgt_space)
+                            {
+                            case postbus_tgt_space_command: // command is
+                            {
+                                // do command in postbus_tgt_op
+                            }
+                            case postbus_tgt_space_config:
+                            {
+                                postbus_tgt.address_src <= postbus_tgt_op[2;0];
+                                postbus_tgt.state <= postbus_tgt_fsm_address_0;
+                            }
+                            case postbus_tgt_space_push_data:
+                            {
+                                postbus_tgt.address_src <= postbus_tgt_op[2;0];
+                                postbus_tgt.state <= postbus_tgt_fsm_push_data;
+                                postbus_tgt.pending <= 1;
+                                buffer_postbus_ptr_zero = 1;
+                                buffer_last_bits <= 0;
+                                ddr_take_buffered_address <= 1;
+                            }
+                            case postbus_tgt_space_pull_data: // address source of 0->burst, 2/3 implies circ buffers 0/1
+                            {
+                                postbus_tgt.address_src <= postbus_tgt_op[2;0];
+                                buffer_postbus_ptr_zero = 1;
+                                buffer_last_bits <= 0;
+                                buffer_postbus_length_write = 1;
+                                if (postbus_tgt_data[postbus_command_last_bit])
+                                {
+                                    postbus_tgt.pending <= 1;
+                                    postbus_tgt.state <= postbus_tgt_fsm_pull_request;
+                                    ddr_take_buffered_address <= 1;
+                                }
+                                else
+                                {
+                                    postbus_tgt.state <= postbus_tgt_fsm_pull_set_address;
+                                }
+                            }
+                            }
+                    }
+                }
+                /*b pull_set_address - expecting burst address (and possibly postbus header)
+                 */
+                case postbus_tgt_fsm_pull_set_address:
+                {
+                    if (postbus_tgt_type == postbus_word_type_hold)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_pull_set_address;
+                    }
+                    else
+                    {
+                        burst_address[28;0] <= postbus_tgt_data[28;2];
+                        postbus_tgt.state <= postbus_tgt_fsm_pull_set_header;
+                    }
+                    if (postbus_tgt_type == postbus_word_type_last)
+                    {
+                        postbus_tgt.pending <= 1;
+                        postbus_tgt.state <= postbus_tgt_fsm_pull_request;
+                        ddr_take_buffered_address <= 1;
+                    }
+                }
+                /*b pull_set_header - expecting burst postbus header
+                 */
+                case postbus_tgt_fsm_pull_set_header:
+                {
+                    if (postbus_tgt_type == postbus_word_type_hold)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_pull_set_header;
+                    }
+                    else
+                    {
+                        burst_postbus_header <= postbus_tgt_data;
+                        postbus_tgt.pending <= 1;
+                        postbus_tgt.state <= postbus_tgt_fsm_pull_request;
+                        ddr_take_buffered_address <= 1;
+                    }
+                }
+                /*b pull_request
+                 */
+                case postbus_tgt_fsm_pull_request:
+                {
+                    if (ddr_dram_state == ddr_dram_read_start)
+                    {
+                        postbus_tgt.pending <= 0;
+                        postbus_tgt.state <= postbus_tgt_fsm_pull_data; // data is now coming to the buffer, get postbus source started
+                    }
+                }
+                /*b pull_data - ddr state machine running, postbus source running; wait for ddr fsm to complete
+                 */
+                case postbus_tgt_fsm_pull_data:
+                {
+                    if (ddr_dram_state == ddr_dram_idle)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_pull_end; // now we wait for the postbus source to complete
+                    }
+                }
+                /*b pull_end - postbus source running, ddr fsm done
+                 */
+                case postbus_tgt_fsm_pull_end:
+                {
+                    if (postbus_src.state == postbus_src_fsm_last)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_idle;
+                    }
+                }
+                /*b address_0 - expecting start address of circular buffer - should use address_src to determine which buffer
+                 */
+                case postbus_tgt_fsm_address_0:
+                {
+                    if (postbus_tgt_type == postbus_word_type_hold)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_address_0;
+                    }
+                    else
+                    {
+                        buffer_0.start_block <= postbus_tgt_data[20;10];
+                        postbus_tgt.state <= postbus_tgt_fsm_address_1;
+                    }
+                    if (postbus_tgt_type == postbus_word_type_last)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_idle;
+                    }
+                }
+                /*b address_1 - expecting end address of circular buffer - should use address_src to determine which buffer
+                 */
+                case postbus_tgt_fsm_address_1:
+                {
+                    if (postbus_tgt_type == postbus_word_type_hold)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_address_1;
+                    }
+                    else
+                    {
+                        buffer_0.end_block <= postbus_tgt_data[20;10];
+                        postbus_tgt.state <= postbus_tgt_fsm_address_2;
+                    }
+                    if (postbus_tgt_type == postbus_word_type_last)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_idle;
+                    }
+                }
+                /*b address_2 - expecting next address of circular buffer - should use address_src to determine which buffer
+                 */
+                case postbus_tgt_fsm_address_2:
+                {
+                    if (postbus_tgt_type == postbus_word_type_hold)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_address_2;
+                    }
+                    else
+                    {
+                        buffer_0.next_address <= postbus_tgt_data[28;2];
+                        postbus_tgt.state <= postbus_tgt_fsm_address_3;
+                    }
+                    if (postbus_tgt_type == postbus_word_type_last)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_idle;
+                    }
+                }
+                /*b address_3 - expecting postbus header for circular buffer - should use address_src to determine which buffer
+                 */
+                case postbus_tgt_fsm_address_3:
+                {
+                    if (postbus_tgt_type == postbus_word_type_hold)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_address_3;
+                    }
+                    else
+                    {
+                        buffer_0.postbus_header <= postbus_tgt_data;
+                        postbus_tgt.state <= postbus_tgt_fsm_idle;
+                    }
+                }
+                /*b push_data - more data expected, write it to the buffer if there is room - our ack is asserted in this state
+                 */
+                case postbus_tgt_fsm_push_data:
+                {
+                    if (postbus_tgt_type == postbus_word_type_hold)
+                    {
+                        postbus_tgt.state <= postbus_tgt_fsm_push_data;
+                    }
+                    else // write the given data; if last data, mark it as such and wait for completion, else if that makes us full go to the wait state with ack disabled, else
+                    {
+                        buffer_postbus_ptr_inc_tgt = 1; // also writes data to rf
+                        full_switch (postbus_tgt.address_src)
+                            {
+                            case 2:
+                            {
+                                buffer_0.next_address <= buffer_0.next_address+1;
+                            }
+                            default:
+                            {
+                                burst_address <= burst_address+1;
+                            }
+                            }
+                        if (postbus_tgt_type == postbus_word_type_last)
+                        {
+                            buffer_last_bits[ buffer_postbus_ptr ] <= 1;
+                            postbus_tgt_ack <= postbus_ack_hold;
+                            postbus_tgt.state <= postbus_tgt_fsm_push_wait;
+                        }
+                        else
+                        {
+                            if ( (buffer_postbus_ptr+2)==buffer_ddr_ptr )
+                            {
+                                postbus_tgt_ack <= postbus_ack_hold;
+                                postbus_tgt.state <= postbus_tgt_fsm_push_full;
+                            }
+                        }
+                    }
+                }
+                /*b push_full - more data expected, but buffer was full (postbus_ptr+1==ddr_ptr) - our ack is deasserted in this state
+                 */
+                case postbus_tgt_fsm_push_full:
+                {
+                    postbus_tgt_ack <= postbus_ack_hold;
+                    if ( (buffer_postbus_ptr+1)!=buffer_ddr_ptr )
+                    {
+                        postbus_tgt_ack <= postbus_ack_taken;
+                        postbus_tgt.state <= postbus_tgt_fsm_push_data;
+                    }
+                }
+                /*b push_wait - all data is in, last is tagged as last, postbus on hold, wait for ddr to complete
+                 */
+                case postbus_tgt_fsm_push_wait:
+                {
+                    postbus_tgt_ack <= postbus_ack_hold;
+                    postbus_tgt.state <= postbus_tgt_fsm_push_wait;
+                    postbus_tgt.pending <= 0;
+                    if (ddr_dram_state==ddr_dram_write_presenting_last_data)
+                    {
+                        postbus_tgt_ack <= postbus_ack_taken;
+                        postbus_tgt.state <= postbus_tgt_fsm_idle;
+                    }
+                }
+                /*b Done
+                 */
+                }
+        }
+
+    /*b Postbus source interface
+     */
+    postbus_src_if "Postbus source interface":
+        {
+            postbus_src_type <= postbus_word_type_idle;
+            buffer_postbus_ptr_inc_src = 0;
+
+
+            /*b Decode FSM
+             */
+            full_switch (postbus_src.state)
+                /*b idle
+                 */
+                {
+                case postbus_src_fsm_idle:
+                {
+                    if (postbus_tgt.state==postbus_tgt_fsm_pull_data)
+                    {
+                        postbus_src.state <= postbus_src_fsm_header;
+                        postbus_src_type <= postbus_word_type_start;
+                        postbus_src_data <= burst_postbus_header; // or other...
+                    }
+                }
+                /*b header - driving out the header, if acknowledged then drive out data if we have it
+                 */
+                case postbus_src_fsm_header:
+                {
+                    if (postbus_src_ack== postbus_ack_taken)
+                    {
+                        postbus_src.state <= postbus_src_fsm_data;
+                        if (buffer_postbus_ptr != buffer_ddr_ptr)
+                        {
+                            buffer_postbus_ptr_inc_src = 1;
+                            postbus_src_type <= postbus_word_type_data;
+                            postbus_src_data <= 0;
+                            if (buffer_last_bits[ buffer_postbus_ptr ])
+                            {
+                                postbus_src_type <= postbus_word_type_last;
+                                postbus_src.state <= postbus_src_fsm_last;
+                            }
+                        }
+                        else
+                        {
+                            postbus_src_type <= postbus_word_type_hold;
+                            postbus_src.state <= postbus_src_fsm_data;
+                        }
+                    }
+                    else
+                    {
+                        postbus_src_type <= postbus_word_type_start;
+                    }
+                }
+                /*b data - driving out data or hold, if acknowledged then drive out more data if we have it
+                 */
+                case postbus_src_fsm_data:
+                {
+                    if (postbus_src_type == postbus_word_type_hold) // we had no data to push it - see if we can
+                    {
+                        if (buffer_postbus_ptr != buffer_ddr_ptr)
+                        {
+                            buffer_postbus_ptr_inc_src = 1;
+                            postbus_src_type <= postbus_word_type_data;
+                            postbus_src_data <= 0;
+                            if (buffer_last_bits[ buffer_postbus_ptr ])
+                            {
+                                postbus_src_type <= postbus_word_type_last;
+                                postbus_src.state <= postbus_src_fsm_last;
+                            }
+                        }
+                        else
+                        {
+                            postbus_src_type <= postbus_word_type_hold;
+                        }
+                    }
+                    elsif (postbus_src_ack==postbus_ack_taken) // ack of data word
+                        {
+                            if (buffer_postbus_ptr != buffer_ddr_ptr)
+                            {
+                                buffer_postbus_ptr_inc_src = 1;
+                                postbus_src_type <= postbus_word_type_data;
+                                postbus_src_data <= 0;
+                                if (buffer_last_bits[ buffer_postbus_ptr ])
+                                {
+                                    postbus_src_type <= postbus_word_type_last;
+                                    postbus_src.state <= postbus_src_fsm_last;
+                                }
+                            }
+                            else
+                            {
+                                postbus_src_type <= postbus_word_type_hold;
+                            }
+                        }
+                    else                     // data word presented but no ack
+                    {
+                        postbus_src_type <= postbus_word_type_data;
+                    }
+                }
+                /*b last - driving out last data; if acknowledged then complete
+                 */
+                case postbus_src_fsm_last:
+                {
+                    if (postbus_src_ack==postbus_ack_taken) // ack of data word
+                    {
+                        postbus_src.state <= postbus_src_fsm_idle;
+                        postbus_src_type <= postbus_word_type_idle;
+                    }
+                    else
+                    {
+                        postbus_src_type <= postbus_word_type_last;
+                    }
+                }
+                /*b Done
+                 */
+                }
+        }
+
+    /*b Buffer register file
+     */
+    buffer_rf "Buffer register file":
+        {
+            rf_1r_1w_32_32 rf( rf_clock <- drm_clock,
+                               rf_reset <= drm_ctl_reset,
+                               rf_rd_addr_0 <= 0+buffer_ddr_ptr,
+                               rf_rd_data_0 => buffer_rf_read_data,
+                               rf_wr_enable <= buffer_postbus_ptr_inc_tgt,
+                               rf_wr_addr <= 0+buffer_postbus_ptr,
+                               rf_wr_data <= postbus_tgt_data );
+
+            if (buffer_postbus_ptr_inc_tgt || buffer_postbus_ptr_inc_src) 
+            {
+                buffer_postbus_ptr <= buffer_postbus_ptr+1;
+            }
+            if (buffer_postbus_ptr_zero)
+            {
+                buffer_postbus_ptr <= 0;
+            }
+            if (buffer_postbus_length_write)
+            {
+                buffer_length <= 31;
+                buffer_length[3;2] <= postbus_tgt_burst_length-1;
+                if (postbus_tgt_burst_length==0)
+                {
+                    buffer_length <= 31;
+                }
+            }
+            if (buffer_ddr_length_dec)
+            {
+                buffer_length <= buffer_length-1;
+            }
+            buffered_data = buffer_rf_read_data;
+        }
+
+    /*b Done
+     */
+}

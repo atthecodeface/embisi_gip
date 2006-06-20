@@ -201,6 +201,7 @@ function parse_xilinx_descs( $objs )
     global $xilinx;
 
     $xilinx["srcs"] = array();
+    $xilinx["macros"] = array();
     $xilinx["rams"] = array();
     $xilinx["cores"] = array();
     $xilinx["subs"] = array();
@@ -219,6 +220,19 @@ function parse_xilinx_descs( $objs )
         $xilinx["srcs"][$src] = $obj;
         $xilinx["type"][$src] = "src";
     }
+
+    # A Xilinx macro is expected to define a model of the same name, and it should be a .v file in the 'macro' directory of the emulation tree
+    # Xilinx macro should only be referenced by Xilinx subcomponents and components
+    # A Xilinx macro with the same name as another model takes preference over that other model in Xilinx components
+    foreach (objs_of_type($objs,"/^xilinx_macro/") as $sel)
+    {
+        $src = $sel["args"][0];
+        $obj = array();
+        $obj["model"] = $src;
+        $xilinx["macros"][$src] = $obj;
+        $xilinx["type"][$src] = "macro";
+    }
+
     # A RAM is a Xilinx-specific item that is used in cores; it does not define a model
     foreach (objs_of_type($objs,"/^xilinx_ram/") as $sel)
     {
@@ -226,6 +240,7 @@ function parse_xilinx_descs( $objs )
         $xilinx["rams"][] = $src;
         $xilinx["type"][$src] = "ram";
     }
+
     # A core has a '.xco' file in 'cores', and may depend on RAMs or perhaps other things
     # It defines a Xilinx-specific model.
     # If a core is specified with the same name as another model, the core takes preference over that other model in Xilinx components
@@ -369,16 +384,18 @@ function build_xilinx_hierarchy()
                     $last_model = $model;
                     $done = 0;
                 }
+                # $obj is a subcomponent; $model is now running through each of its components
+                # If $model is a subcomponent, then add all its source models!
                 if ( ($type[0]=="xmodel") &&
                      ($type[1]=="sub") )
                 {
-                    foreach ($xilinx["subs"][$model]["subs"] as $submodel)
+                    foreach ($xilinx["subs"][$model]["src_models"] as $src_model)
                     {
-                        if (!in_array($submodel, $src_models))
+                        if (!in_array($src_model, $src_models))
                         {
-                            $subtype = find_xilinx_source( $submodel );
-                            $src_models[] = $submodel;
-                            $srcs[] = array( $subtype, $submodel );
+                            $subtype = find_xilinx_source( $src_model );
+                            $src_models[] = $src_model;
+                            $srcs[] = array( $subtype, $src_model );
                             $last_model = $model;
                             $done = 0;
                         }
@@ -422,7 +439,7 @@ function build_xilinx_hierarchy()
             if ( ($type[0]=="xmodel") &&
                  ($type[1]=="sub") )
             {
-                foreach ($xilinx["subs"][$model]["subs"] as $submodel)
+                foreach ($xilinx["subs"][$model]["src_models"] as $submodel)
                 {
                     if (!in_array($submodel, $src_models))
                     {
@@ -548,7 +565,7 @@ function output_xilinx_makefile( $file )
     #b Header
     fwrite( $file, "export XIL_PLACE_ALLOW_LOCAL_BUFG_ROUTING := 1\n");
     fwrite( $file, "REPOSITORY = ../../repository/emulation/xilinx\n");
-    fwrite( $file, "MACROS = \${REPOSITORY}/macros\n");
+    fwrite( $file, "XMACRO = \${REPOSITORY}/macros\n");
     fwrite( $file, "XSRC = \${REPOSITORY}/src\n");
     fwrite( $file, "RAMS = \${REPOSITORY}/rams\n");
     fwrite( $file, "CORES = \${REPOSITORY}/cores\n");
@@ -585,10 +602,10 @@ function output_xilinx_makefile( $file )
     fwrite( $file, "XST_OPTIONS += -shift_extract YES\n");
     fwrite( $file, "XST_OPTIONS += -xor_collapse YES\n");
     fwrite( $file, "XST_OPTIONS += -resource_sharing YES\n");
-    fwrite( $file, "XST_OPTIONS += -use_dsp48 auto\n");
+    #Not for spartan3 fwrite( $file, "XST_OPTIONS += -use_dsp48 auto\n");
     fwrite( $file, "XST_OPTIONS += -max_fanout 500\n");
     fwrite( $file, "XST_OPTIONS += -bufg 32\n");
-    fwrite( $file, "XST_OPTIONS += -bufr Default\n");
+    #Not for spartan3 fwrite( $file, "XST_OPTIONS += -bufr Default\n");
     fwrite( $file, "XST_OPTIONS += -register_duplication YES\n");
     fwrite( $file, "XST_OPTIONS += -equivalent_register_removal YES\n");
     fwrite( $file, "XST_OPTIONS += -register_balancing No\n");
@@ -620,7 +637,13 @@ function output_xilinx_makefile( $file )
     foreach ($xilinx["cores"] as $i)
     {
         $model = $i["model"];
-        fwrite( $file, "\${COREGEN_OBJ}/$model.edn: \${CORES}/".$i["src"].".xco \${RAMS}/boot.coe\n");
+        fwrite( $file, "\${COREGEN_OBJ}/$model.edn: \${CORES}/".$i["src"].".xco");
+        if (isset($i["subs"][0]))
+        {
+            fwrite ($file, " \${RAMS}/".$i["subs"][0] );
+        }
+        fwrite ($file, "\n");
+
         fwrite( $file, "\tmkdir -p \${COREGEN_OBJ}\n" );
         fwrite( $file, "\trm -f \${COREGEN_OBJ}/$model*\n" );
         fwrite( $file, "\tcoregen -b \${CORES}/".$i["src"].".xco\n\n");
@@ -660,6 +683,13 @@ function output_xilinx_makefile( $file )
             if (!$handled && isset($xilinx["srcs"][$src[1]]))
             {
                 $v = "\${XSRC}/".$src[1].".v";
+                fwrite( $file, "\t$v \\\n");
+                $v_files[] = $v;
+                $handled = 1;
+            }
+            if (!$handled && isset($xilinx["macros"][$src[1]]))
+            {
+                $v = "\${XMACRO}/".$src[1].".v";
                 fwrite( $file, "\t$v \\\n");
                 $v_files[] = $v;
                 $handled = 1;

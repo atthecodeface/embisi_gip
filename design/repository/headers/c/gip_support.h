@@ -32,9 +32,9 @@
 #define GIP_POSTBUS_COMMAND(r,s,t) ( ((r)<<postbus_command_route_start) | ((s)<<postbus_command_source_start) | ((t)<<postbus_command_target_start) )
 
  // data == watermark (10;21), size_m_one (10;11), base (11;0)
-#define GIP_POSTBUS_IO_FIFO_CFG( data, rx, fifo, base, size_m_one, wm ) { \
+#define GIP_POSTBUS_IO_FIFO_CFG( route, data, rx, fifo, base, size_m_one, wm ) { \
     GIP_POST_TXD_0( ((wm)<<21) | ((size_m_one)<<11) | ((base)<<0) ); \
-    GIP_POST_TXC_0( ((fifo)<<postbus_command_target_io_fifo_start) | ((!(data))<<postbus_command_target_io_cmd_status) | ((rx)<<postbus_command_target_io_ingress) | (1<<postbus_command_target_io_dest_type_start) | (0<<postbus_command_source_gip_tx_length_start)); \
+    GIP_POST_TXC_0( ((route)<<postbus_command_route_start) | ((fifo)<<postbus_command_target_io_fifo_start) | ((!(data))<<postbus_command_target_io_cmd_status) | ((rx)<<postbus_command_target_io_ingress) | (1<<postbus_command_target_io_dest_type_start) | (0<<postbus_command_source_gip_tx_length_start)); \
 }
 #define GIP_POSTIF_CFG(r,v) { __asm__ volatile ( " .word 0xec00c7ee+" #r "<<4 \n mov r0, %0 \n" : : "r" (v) ); }
 

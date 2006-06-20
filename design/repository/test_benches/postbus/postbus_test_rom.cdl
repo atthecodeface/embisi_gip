@@ -126,18 +126,6 @@ module postbus_test_rom( clock int_clock,
                                        tgt_ack_3 <= 1,
                                        tgt_type_3 => tgt_type_3,
 
-                                       tgt_ack_4 <= 1,
-                                       tgt_type_4 => tgt_type_4,
-
-                                       tgt_ack_5 <= 1,
-                                       tgt_type_5 => tgt_type_5,
-
-                                       tgt_ack_6 <= 1,
-                                       tgt_type_6 => tgt_type_6,
-
-                                       tgt_ack_7 <= 1,
-                                       tgt_type_7 => tgt_type_7,
-
                                        tgt_data => tgt_data );
 
             postbus_led_target plt( int_clock <- int_clock,

@@ -8,12 +8,12 @@ typedef enum [2]
     postbus_word_type_last = 3,
 } t_postbus_type;
 typedef bit[c_postbus_width] t_postbus_data;
-typedef bit[2] t_postbus_ack;
-typedef enum [2]
+//typedef bit t_postbus_ack;
+typedef enum [1]
 {
     postbus_ack_hold = 0,
     postbus_ack_taken = 1,
-} t_postbus_ack_e;
+} t_postbus_ack;
 
 // bits 0 through 7 are consumed by routing
 // bits 8 through 17 are consumed by source (e.g. 5 bits length, 5 bits semaphore; 5 bits length, 2 bits operation)

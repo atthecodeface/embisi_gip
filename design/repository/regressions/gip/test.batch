@@ -15,7 +15,8 @@ int vcd_create
 int vcd_signals_toplevel
 int vcd_signals_gip
 int vcd_signals_ddr
-int vcd_signals_io
+int vcd_signals_io_a
+int vcd_signals_io_b
 int vcd_signals_eth
 int vcd_signals_ss
 int vcd_signals_par_a
@@ -35,7 +36,8 @@ set vcd_skip_length env_int("vcd_skip_length")
 set vcd_signals_toplevel env_int("vcd_signals_toplevel")
 set vcd_signals_gip env_int("vcd_signals_gip")
 set vcd_signals_ddr env_int("vcd_signals_ddr")
-set vcd_signals_io env_int("vcd_signals_io")
+set vcd_signals_io_a env_int("vcd_signals_io_a")
+set vcd_signals_io_b env_int("vcd_signals_io_b")
 set vcd_signals_eth env_int("vcd_signals_eth")
 set vcd_signals_ss env_int("vcd_signals_ss")
 set vcd_signals_par_a env_int("vcd_signals_par_a")
@@ -361,8 +363,8 @@ setenv "verbose_level" 1
 #   gosub gip_system_io_202
 #    return
 
-   gosub gip_system_io_1
-   gosub gip_system_io_2
+#   gosub gip_system_io_1
+#   gosub gip_system_io_2
    gosub gip_system_io_101
    gosub gip_system_io_102
    gosub gip_system_io_103
@@ -683,7 +685,7 @@ vcd_file_add "allsignals" "ddr_pins"
 vcd_file_add "allsignals" "gip_simple.main_ram"
 gip_system_test_vcd_signals_ddr_no:
 
-beq vcd_signals_io 0 gip_system_test_vcd_signals_io_no
+beq vcd_signals_io_a 0 gip_system_test_vcd_signals_io_a_no
 vcd_file_add "allsignals" "gip_simple.iob_a.pst.src"
 vcd_file_add "allsignals" "gip_simple.iob_a.pst.tgt"
 vcd_file_add "allsignals" "gip_simple.iob_a.pst.event_mgr"
@@ -691,7 +693,17 @@ vcd_file_add "allsignals" "gip_simple.iob_a.ingress_fifos"
 vcd_file_add "allsignals" "gip_simple.iob_a.egress_fifos"
 #vcd_file_add "allsignals" "gip_simple.iob_a"
 #vcd_file_add "allsignals" "gip_simple.ios_a"
-gip_system_test_vcd_signals_io_no:
+gip_system_test_vcd_signals_io_a_no:
+
+beq vcd_signals_io_b 0 gip_system_test_vcd_signals_io_b_no
+vcd_file_add "allsignals" "gip_simple.iob_b.pst.src"
+vcd_file_add "allsignals" "gip_simple.iob_b.pst.tgt"
+vcd_file_add "allsignals" "gip_simple.iob_b.pst.event_mgr"
+vcd_file_add "allsignals" "gip_simple.iob_b.ingress_fifos"
+vcd_file_add "allsignals" "gip_simple.iob_b.egress_fifos"
+#vcd_file_add "allsignals" "gip_simple.iob_b"
+#vcd_file_add "allsignals" "gip_simple.ios_a"
+gip_system_test_vcd_signals_io_b_no:
 
 beq vcd_signals_eth 0 gip_system_test_vcd_signals_eth_no
 vcd_file_add "allsignals" "gip_simple.ios_a.erx"

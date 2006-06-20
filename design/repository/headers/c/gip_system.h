@@ -11,6 +11,10 @@
 
 /*a Defines
  */
+#define POSTBUS_ROUTE_GIP       (0)
+#define POSTBUS_ROUTE_IO_A_SLOT (2)
+#define POSTBUS_ROUTE_IO_B_SLOT (3)
+
 #define IO_A_SLOT_ETHERNET_0 (0)
 #define IO_A_SLOT_SYNC_SERIAL_0 (1)
 #define IO_A_SLOT_PARALLEL_0    (2)

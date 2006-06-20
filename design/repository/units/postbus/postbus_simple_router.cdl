@@ -31,10 +31,6 @@ module postbus_simple_router( clock int_clock,
                               input t_postbus_ack tgt_ack_1, output t_postbus_type tgt_type_1,
                               input t_postbus_ack tgt_ack_2, output t_postbus_type tgt_type_2,
                               input t_postbus_ack tgt_ack_3, output t_postbus_type tgt_type_3,
-                              input t_postbus_ack tgt_ack_4, output t_postbus_type tgt_type_4,
-                              input t_postbus_ack tgt_ack_5, output t_postbus_type tgt_type_5,
-                              input t_postbus_ack tgt_ack_6, output t_postbus_type tgt_type_6,
-                              input t_postbus_ack tgt_ack_7, output t_postbus_type tgt_type_7,
                               output t_postbus_data tgt_data
     )
 "
@@ -55,7 +51,7 @@ sources independent of the target they which to send to.
     /*b State and combinatorials for the design
      */
     clocked clock rising int_clock reset active_high int_reset t_arb_fsm state = arb_fsm_idle;
-    clocked clock rising int_clock reset active_high int_reset bit[3] selected_target = 0 "Target that a current transaction is addressing"; 
+    clocked clock rising int_clock reset active_high int_reset bit[2] selected_target = 0 "Target that a current transaction is addressing"; 
     clocked clock rising int_clock reset active_high int_reset bit xfr_first_word = 0 "1 if the source is giving the first word of a transaction";
     comb t_arb_fsm next_state "Next state of FSM";
     comb bit busy "Set if a transfer is in place and the selected target indicates no acknowledge";
@@ -148,12 +144,11 @@ sources independent of the target they which to send to.
             {
                 full_switch (next_state)
                 {
-                case arb_fsm_idle:
-                case arb_fsm_xfr_0:
-                { selected_target <= src_data_0[3;1]; }
-                case arb_fsm_xfr_1: {selected_target <= src_data_1[3;1];}
-                case arb_fsm_xfr_2: {selected_target <= src_data_2[3;1];}
-                case arb_fsm_xfr_3: {selected_target <= src_data_3[3;1];}
+                case arb_fsm_idle:  {selected_target <= src_data_0[2;postbus_command_route_start];}
+                case arb_fsm_xfr_0: {selected_target <= src_data_0[2;postbus_command_route_start];}
+                case arb_fsm_xfr_1: {selected_target <= src_data_1[2;postbus_command_route_start];}
+                case arb_fsm_xfr_2: {selected_target <= src_data_2[2;postbus_command_route_start];}
+                case arb_fsm_xfr_3: {selected_target <= src_data_3[2;postbus_command_route_start];}
                 }
             }
         }
@@ -194,20 +189,12 @@ sources independent of the target they which to send to.
             tgt_type_1 = postbus_word_type_idle;
             tgt_type_2 = postbus_word_type_idle;
             tgt_type_3 = postbus_word_type_idle;
-            tgt_type_4 = postbus_word_type_idle;
-            tgt_type_5 = postbus_word_type_idle;
-            tgt_type_6 = postbus_word_type_idle;
-            tgt_type_7 = postbus_word_type_idle;
             full_switch( selected_target )
                 {
                 case 0: {tgt_type_0 = tgt_type; tgt_ack = tgt_ack_0;}
                 case 1: {tgt_type_1 = tgt_type; tgt_ack = tgt_ack_1;}
                 case 2: {tgt_type_2 = tgt_type; tgt_ack = tgt_ack_2;}
                 case 3: {tgt_type_3 = tgt_type; tgt_ack = tgt_ack_3;}
-                case 4: {tgt_type_4 = tgt_type; tgt_ack = tgt_ack_4;}
-                case 5: {tgt_type_5 = tgt_type; tgt_ack = tgt_ack_5;}
-                case 6: {tgt_type_6 = tgt_type; tgt_ack = tgt_ack_6;}
-                case 7: {tgt_type_7 = tgt_type; tgt_ack = tgt_ack_7;}
                 }
 
             src_ack_0 = 0;

@@ -9,6 +9,7 @@ include "io_block.h"
 include "io_slots_eth_ss_par.h"
 include "io_cmd.h"
 include "memories.h"
+include "postbus_simple_router.h"
 
 /*a Types
  */
@@ -285,12 +286,32 @@ module gip_system( clock drm_clock,
                    input bit eth_mii_col,
                    input bit eth_mii_crs,
 
+                   clock eth_mii_tx_clock_b,
+                   output bit eth_mii_tx_en_b,
+                   output bit[4] eth_mii_tx_d_b,
+                   output bit eth_mii_tx_er_b, // we hold this low
+
+                   clock eth_mii_rx_clock_b,
+                   input bit eth_mii_rx_dv_b,
+                   input bit[4] eth_mii_rx_d_b,
+                   input bit eth_mii_rx_er_b,
+
+                   input bit eth_mii_col_b,
+                   input bit eth_mii_crs_b,
+
                    output bit[2] sscl,
                    output bit[2] sscl_oe,
                    output bit ssdo,
                    output bit ssdo_oe,
                    input bit[2] ssdi,
                    output bit[8] sscs,
+
+                   output bit[2] sscl_b,
+                   output bit[2] sscl_oe_b,
+                   output bit ssdo_b,
+                   output bit ssdo_oe_b,
+                   input bit[2] ssdi_b,
+                   output bit[8] sscs_b,
 
                    clock par_a_clock,
                    input bit[3] par_a_control_inputs,
@@ -312,11 +333,33 @@ module gip_system( clock drm_clock,
                    output bit[3] par_b_data_output_width,
                    output bit par_b_data_oe,
 
+                   clock par_c_clock,
+                   input bit[3] par_c_control_inputs,
+                   input bit[16] par_c_data_inputs,
+
+                   output bit[4] par_c_control_outputs,
+                   output bit[4] par_c_control_oes,
+                   output bit[16] par_c_data_outputs,
+                   output bit[3] par_c_data_output_width,
+                   output bit par_c_data_oe,
+
+                   clock par_d_clock,
+                   input bit[3] par_d_control_inputs,
+                   input bit[16] par_d_data_inputs,
+
+                   output bit[4] par_d_control_outputs,
+                   output bit[4] par_d_control_oes,
+                   output bit[16] par_d_data_outputs,
+                   output bit[3] par_d_data_output_width,
+                   output bit par_d_data_oe,
+
                    clock analyzer_clock,
                    output bit analyzer_async_trace_valid,
                    output bit[32] analyzer_async_trace_out
                    )
 {
+
+    //b Common nets
     default clock int_clock;
     default reset system_reset;
 
@@ -324,6 +367,7 @@ module gip_system( clock drm_clock,
 
     net bit txd;
 
+    //b External bus nets
     net bit[4]ext_bus_ce;
     net bit ext_bus_oe;
     net bit ext_bus_we;
@@ -331,6 +375,7 @@ module gip_system( clock drm_clock,
     net bit ext_bus_write_data_enable;
     net bit[32]ext_bus_write_data;
 
+    //b DDR dram nets
     net bit next_cke;
     net bit[2] next_s_n;
     net bit next_ras_n;
@@ -344,6 +389,7 @@ module gip_system( clock drm_clock,
     net bit[4] next_dqs_high;
     net bit[4] next_dqs_low;
 
+    //b Gip memory interface nets
     net bit gip_mem_priority;
     net bit gip_mem_read;
     net bit gip_mem_write;
@@ -353,6 +399,7 @@ module gip_system( clock drm_clock,
     comb bit[32] gip_mem_read_data;
     comb bit gip_mem_wait;
 
+    //b Global APB nets
     net bit[6] apb_paddr;
     net bit apb_penable;
     net bit apb_pselect;
@@ -361,35 +408,77 @@ module gip_system( clock drm_clock,
     net bit[32] apb_prdata;
     net bit apb_pwait;
 
+    //b Postbus switch fabric nets
     net t_postbus_type postbus_tx_type;
     net t_postbus_data postbus_tx_data;
     net t_postbus_ack postbus_tx_ack;
 
+    net t_postbus_type postbus_tgt_type_io_a;
+    net t_postbus_ack postbus_tgt_ack_io_a;
+    net t_postbus_type postbus_src_type_io_a;
+    net t_postbus_data postbus_src_data_io_a;
+    net t_postbus_ack postbus_src_ack_io_a;
+
+    net t_postbus_type postbus_tgt_type_io_b;
+    net t_postbus_ack postbus_tgt_ack_io_b;
+    net t_postbus_type postbus_src_type_io_b;
+    net t_postbus_data postbus_src_data_io_b;
+    net t_postbus_ack postbus_src_ack_io_b;
+
+    net t_postbus_type postbus_tgt_type_unused;
+    net t_postbus_ack postbus_src_ack_unused;
+
     net t_postbus_type postbus_rx_type;
-    net t_postbus_data postbus_rx_data;
     net t_postbus_ack postbus_rx_ack;
 
-    net bit    io_slot_cfg_write "asserted if cfg_data should be written to cfg_slot";
-    net bit[8] io_slot_cfg_data  "data for setting a slot configuration";
-    net bit[2] io_slot_cfg_slot  "number of slot cfg data is destined for";
+    net t_postbus_data postbus_tgt_data;
 
-    net bit[4]    io_slot_egr_cmd_ready  "bus of command emptys from all slots - they are filled asynchronously to requests";
-    net bit       io_slot_egr_data_req    "OR of data requests, masked by pending acknowledgements";
-    net t_io_tx_data_fifo_cmd   io_slot_egr_data_cmd    "data command from lowest number slot with an unmasked request";
-    net bit[2]    io_slot_egr_data_slot   "slot the data command is coming from";
-    net bit      io_slot_egr_data_ack "asserted to acknowledge the current data request";
-    net bit[32]  io_slot_egr_data "contains data for writes to the slots, registered here, valid 3 cycles after acknowledged request (acked req in cycle 0, sram req in cycle 1, sram data stored end cycle 2, this valid in cycle 3";
-    net bit[2]   io_slot_egr_slot "indicates which slot the egress data is for, registered here; ";
-    net bit      io_slot_egr_cmd_write  "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client";
-    net bit      io_slot_egr_data_write "asserted if the data on the bus in this cycle is for the data side interface";
-    net bit[4]   io_slot_egr_data_empty "indicates egress data fifo states for the slots";
+    //b IO A nets
+    net bit    io_slot_cfg_write_io_a "asserted if cfg_data should be written to cfg_slot";
+    net bit[8] io_slot_cfg_data_io_a  "data for setting a slot configuration";
+    net bit[2] io_slot_cfg_slot_io_a  "number of slot cfg data is destined for";
 
-    net bit[32]  io_slot_ingr_data       "muxed in slot head from clients, ANDed with a select from io_slot_ing_number";
-    net bit      io_slot_ingr_status_req "OR of status requests, masked by pending acknowledgements";
-    net bit      io_slot_ingr_data_req    "OR of rx data requests, masked by pending acknowledgements, clear if status_req is asserted";
-    net bit[2]   io_slot_ingr_slot       "indicates which slot the status or rx data request is from";
-    net bit     io_slot_ingr_ack        "acknowledge, valid in same clock as status_req and data_req";
-    net bit[4]  io_slot_ingr_data_full  "for use by I/O";
+    net bit[4]                  io_slot_egr_cmd_ready_io_a   "bus of command emptys from all slots - they are filled asynchronously to requests";
+    net bit                     io_slot_egr_data_req_io_a    "OR of data requests, masked by pending acknowledgements";
+    net t_io_tx_data_fifo_cmd   io_slot_egr_data_cmd_io_a    "data command from lowest number slot with an unmasked request";
+    net bit[2]    io_slot_egr_data_slot_io_a   "slot the data command is coming from";
+    net bit      io_slot_egr_data_ack_io_a     "asserted to acknowledge the current data request";
+    net bit[32]  io_slot_egr_data_io_a         "contains data for writes to the slots, registered here, valid 3 cycles after acknowledged request (acked req in cycle 0, sram req in cycle 1, sram data stored end cycle 2, this valid in cycle 3";
+    net bit[2]   io_slot_egr_slot_io_a         "indicates which slot the egress data is for, registered here; ";
+    net bit      io_slot_egr_cmd_write_io_a    "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client";
+    net bit      io_slot_egr_data_write_io_a   "asserted if the data on the bus in this cycle is for the data side interface";
+    net bit[4]   io_slot_egr_data_empty_io_a   "indicates egress data fifo states for the slots";
+
+    net bit[32]  io_slot_ingr_data_io_a        "muxed in slot head from clients, ANDed with a select from io_slot_ing_number";
+    net bit      io_slot_ingr_status_req_io_a  "OR of status requests, masked by pending acknowledgements";
+    net bit      io_slot_ingr_data_req_io_a    "OR of rx data requests, masked by pending acknowledgements, clear if status_req is asserted";
+    net bit[2]   io_slot_ingr_slot_io_a        "indicates which slot the status or rx data request is from";
+    net bit     io_slot_ingr_ack_io_a          "acknowledge, valid in same clock as status_req and data_req";
+    net bit[4]  io_slot_ingr_data_full_io_a    "for use by I/O";
+
+
+    //b IO B nets
+    net bit    io_slot_cfg_write_io_b "asserted if cfg_data should be written to cfg_slot";
+    net bit[8] io_slot_cfg_data_io_b  "data for setting a slot configuration";
+    net bit[2] io_slot_cfg_slot_io_b  "number of slot cfg data is destined for";
+
+    net bit[4]                  io_slot_egr_cmd_ready_io_b   "bus of command emptys from all slots - they are filled asynchronously to requests";
+    net bit                     io_slot_egr_data_req_io_b    "OR of data requests, masked by pending acknowledgements";
+    net t_io_tx_data_fifo_cmd   io_slot_egr_data_cmd_io_b    "data command from lowest number slot with an unmasked request";
+    net bit[2]    io_slot_egr_data_slot_io_b   "slot the data command is coming from";
+    net bit      io_slot_egr_data_ack_io_b     "asserted to acknowledge the current data request";
+    net bit[32]  io_slot_egr_data_io_b         "contains data for writes to the slots, registered here, valid 3 cycles after acknowledged request (acked req in cycle 0, sram req in cycle 1, sram data stored end cycle 2, this valid in cycle 3";
+    net bit[2]   io_slot_egr_slot_io_b         "indicates which slot the egress data is for, registered here; ";
+    net bit      io_slot_egr_cmd_write_io_b    "asserted if the data on the bus in this cycle is for the command side interface - if so, it will drive the not empty signal to the slot client";
+    net bit      io_slot_egr_data_write_io_b   "asserted if the data on the bus in this cycle is for the data side interface";
+    net bit[4]   io_slot_egr_data_empty_io_b   "indicates egress data fifo states for the slots";
+
+    net bit[32]  io_slot_ingr_data_io_b        "muxed in slot head from clients, ANDed with a select from io_slot_ing_number";
+    net bit      io_slot_ingr_status_req_io_b  "OR of status requests, masked by pending acknowledgements";
+    net bit      io_slot_ingr_data_req_io_b    "OR of rx data requests, masked by pending acknowledgements, clear if status_req is asserted";
+    net bit[2]   io_slot_ingr_slot_io_b        "indicates which slot the status or rx data request is from";
+    net bit     io_slot_ingr_ack_io_b          "acknowledge, valid in same clock as status_req and data_req";
+    net bit[4]  io_slot_ingr_data_full_io_b    "for use by I/O";
 
     comb bit rom_next_access;
     comb bit sram_next_access;
@@ -405,8 +494,12 @@ module gip_system( clock drm_clock,
     net bit ddr_ready;
 
     comb bit io_reset;
+
     net bit eth_mii_tx_en;
     net bit[4] eth_mii_tx_d;
+
+    net bit eth_mii_tx_en_b;
+    net bit[4] eth_mii_tx_d_b;
 //    comb bit eth_mii_tx_er;
 
     net bit[16] gpio_output;
@@ -420,6 +513,12 @@ module gip_system( clock drm_clock,
     net bit ssdo_oe;
     net bit[8] sscs;
 
+    net bit[2] sscl_b;
+    net bit[2] sscl_oe_b;
+    net bit ssdo_b;
+    net bit ssdo_oe_b;
+    net bit[8] sscs_b;
+
     net bit[4]                par_a_control_outputs;
     net bit[4]                par_a_control_oes;
     net bit[16]               par_a_data_outputs;
@@ -432,11 +531,25 @@ module gip_system( clock drm_clock,
     net bit[3]                par_b_data_output_width;
     net bit                   par_b_data_oe;
 
+    net bit[4]                par_c_control_outputs;
+    net bit[4]                par_c_control_oes;
+    net bit[16]               par_c_data_outputs;
+    net bit[3]                par_c_data_output_width;
+    net bit                   par_c_data_oe;
+
+    net bit[4]                par_d_control_outputs;
+    net bit[4]                par_d_control_oes;
+    net bit[16]               par_d_data_outputs;
+    net bit[3]                par_d_data_output_width;
+    net bit                   par_d_data_oe;
+
     comb bit[8] local_events_in;
 
     net bit[32] analyzer_mux_control;
-    net bit[32] iob_analyzer_signals;
-    net bit[32] ios_analyzer_signals;
+    net bit[32] iob_analyzer_signals_io_a;
+    net bit[32] iob_analyzer_signals_io_b;
+    net bit[32] ios_analyzer_signals_io_a;
+    net bit[32] ios_analyzer_signals_io_b;
     clocked bit[32] analyzer_signals = 0;
     net bit analyzer_trace_ready;
     net bit analyzer_trace_done;
@@ -510,7 +623,7 @@ module gip_system( clock drm_clock,
                                postbus_tx_ack <= postbus_tx_ack,
 
                                postbus_rx_type <= postbus_rx_type,
-                               postbus_rx_data <= postbus_rx_data,
+                               postbus_rx_data <= postbus_tgt_data,
                                postbus_rx_ack => postbus_rx_ack );
         }
 
@@ -631,69 +744,109 @@ module gip_system( clock drm_clock,
      */
     postbus_instances "Postbus instances":
         {
+            postbus_simple_router post_route( int_clock <- int_clock,
+                                              int_reset <= int_reset,
+
+                                              src_type_0 <= postbus_tx_type,
+                                              src_data_0 <= postbus_tx_data,
+                                              src_ack_0 => postbus_tx_ack,
+
+                                              src_type_1 <= postbus_tx_type,
+                                              src_data_1 <= postbus_tx_data,
+                                              src_ack_1 => postbus_src_ack_unused,
+
+                                              src_type_2 <= postbus_src_type_io_a,
+                                              src_data_2 <= postbus_src_data_io_a,
+                                              src_ack_2 => postbus_src_ack_io_a,
+
+                                              src_type_3 <= postbus_src_type_io_b,
+                                              src_data_3 <= postbus_src_data_io_b,
+                                              src_ack_3 => postbus_src_ack_io_b,
+
+                                              tgt_ack_0 <= postbus_rx_ack,
+                                              tgt_type_0 => postbus_rx_type,
+
+                                              tgt_ack_1 <= 1,
+                                              tgt_type_1 => postbus_tgt_type_unused,
+
+                                              tgt_ack_2 <= postbus_tgt_ack_io_a,
+                                              tgt_type_2 => postbus_tgt_type_io_a,
+
+                                              tgt_ack_3 <= postbus_tgt_ack_io_b,
+                                              tgt_type_3 => postbus_tgt_type_io_b,
+
+                                              tgt_data => postbus_tgt_data );
+        }
+
+    /*b IO blocks
+     */
+    io_blocks "IO blocks instances":
+        {
 
             io_reset = int_reset;
             eth_mii_tx_er = 0;
+            eth_mii_tx_er_b = 0;
+
             io_block iob_a( int_clock <- int_clock,
-                          int_reset <= int_reset,
+                            int_reset <= int_reset,
 
-                          postbus_tgt_type <= postbus_tx_type,
-                          postbus_tgt_data <= postbus_tx_data,
-                          postbus_tgt_ack => postbus_tx_ack,
+                            postbus_tgt_type <= postbus_tgt_type_io_a,
+                            postbus_tgt_data <= postbus_tgt_data,
+                            postbus_tgt_ack => postbus_tgt_ack_io_a,
 
-                          postbus_src_type => postbus_rx_type,
-                          postbus_src_data => postbus_rx_data,
-                          postbus_src_ack <= postbus_rx_ack,
+                            postbus_src_type => postbus_src_type_io_a,
+                            postbus_src_data => postbus_src_data_io_a,
+                            postbus_src_ack <= postbus_src_ack_io_a,
 
-                          io_slot_cfg_write => io_slot_cfg_write,
-                          io_slot_cfg_data => io_slot_cfg_data,
-                          io_slot_cfg_slot => io_slot_cfg_slot,
+                            io_slot_cfg_write => io_slot_cfg_write_io_a,
+                            io_slot_cfg_data => io_slot_cfg_data_io_a,
+                            io_slot_cfg_slot => io_slot_cfg_slot_io_a,
 
-                          io_slot_egr_cmd_ready <= io_slot_egr_cmd_ready,
-                          io_slot_egr_data_req <= io_slot_egr_data_req,
-                            io_slot_egr_data_cmd <= io_slot_egr_data_cmd,
-                            io_slot_egr_data_slot <= io_slot_egr_data_slot,
-                            io_slot_egr_data_ack => io_slot_egr_data_ack,
-                            io_slot_egr_data => io_slot_egr_data,
-                            io_slot_egr_slot => io_slot_egr_slot,
-                            io_slot_egr_cmd_write => io_slot_egr_cmd_write,
-                            io_slot_egr_data_write => io_slot_egr_data_write,
-                            io_slot_egr_data_empty => io_slot_egr_data_empty,
+                            io_slot_egr_cmd_ready <= io_slot_egr_cmd_ready_io_a,
+                            io_slot_egr_data_req <= io_slot_egr_data_req_io_a,
+                            io_slot_egr_data_cmd <= io_slot_egr_data_cmd_io_a,
+                            io_slot_egr_data_slot <= io_slot_egr_data_slot_io_a,
+                            io_slot_egr_data_ack => io_slot_egr_data_ack_io_a,
+                            io_slot_egr_data => io_slot_egr_data_io_a,
+                            io_slot_egr_slot => io_slot_egr_slot_io_a,
+                            io_slot_egr_cmd_write => io_slot_egr_cmd_write_io_a,
+                            io_slot_egr_data_write => io_slot_egr_data_write_io_a,
+                            io_slot_egr_data_empty => io_slot_egr_data_empty_io_a,
 
-                          io_slot_ingr_data <= io_slot_ingr_data,
-                          io_slot_ingr_status_req <= io_slot_ingr_status_req,
-                          io_slot_ingr_data_req <= io_slot_ingr_data_req,
-                          io_slot_ingr_slot <= io_slot_ingr_slot,
-                          io_slot_ingr_ack => io_slot_ingr_ack,
-                          io_slot_ingr_data_full => io_slot_ingr_data_full,
+                            io_slot_ingr_data <= io_slot_ingr_data_io_a,
+                            io_slot_ingr_status_req <= io_slot_ingr_status_req_io_a,
+                            io_slot_ingr_data_req <= io_slot_ingr_data_req_io_a,
+                            io_slot_ingr_slot <= io_slot_ingr_slot_io_a,
+                            io_slot_ingr_ack => io_slot_ingr_ack_io_a,
+                            io_slot_ingr_data_full => io_slot_ingr_data_full_io_a,
 
-                          analyzer_mux_control <= analyzer_mux_control[3;0],
-                          analyzer_signals => iob_analyzer_signals );
+                            analyzer_mux_control <= analyzer_mux_control[3;0],
+                            analyzer_signals => iob_analyzer_signals_io_a );
 
             io_slots_eth_ss_par ios_a ( int_clock <- int_clock,
                                         int_reset <= int_reset,
 
-                                        io_slot_cfg_write <= io_slot_cfg_write,
-                                        io_slot_cfg_data <= io_slot_cfg_data,
-                                        io_slot_cfg_slot <= io_slot_cfg_slot,
+                                        io_slot_cfg_write <= io_slot_cfg_write_io_a,
+                                        io_slot_cfg_data <= io_slot_cfg_data_io_a,
+                                        io_slot_cfg_slot <= io_slot_cfg_slot_io_a,
 
-                                        io_slot_egr_cmd_ready => io_slot_egr_cmd_ready,
-                                        io_slot_egr_data_req => io_slot_egr_data_req,
-                                        io_slot_egr_data_cmd => io_slot_egr_data_cmd,
-                                        io_slot_egr_data_slot => io_slot_egr_data_slot,
-                                        io_slot_egr_data_ack <= io_slot_egr_data_ack,
-                                        io_slot_egr_data <= io_slot_egr_data,
-                                        io_slot_egr_slot <= io_slot_egr_slot,
-                                        io_slot_egr_cmd_write <= io_slot_egr_cmd_write,
-                                        io_slot_egr_data_write <= io_slot_egr_data_write,
-                                        io_slot_egr_data_empty <= io_slot_egr_data_empty,
+                                        io_slot_egr_cmd_ready => io_slot_egr_cmd_ready_io_a,
+                                        io_slot_egr_data_req => io_slot_egr_data_req_io_a,
+                                        io_slot_egr_data_cmd => io_slot_egr_data_cmd_io_a,
+                                        io_slot_egr_data_slot => io_slot_egr_data_slot_io_a,
+                                        io_slot_egr_data_ack <= io_slot_egr_data_ack_io_a,
+                                        io_slot_egr_data <= io_slot_egr_data_io_a,
+                                        io_slot_egr_slot <= io_slot_egr_slot_io_a,
+                                        io_slot_egr_cmd_write <= io_slot_egr_cmd_write_io_a,
+                                        io_slot_egr_data_write <= io_slot_egr_data_write_io_a,
+                                        io_slot_egr_data_empty <= io_slot_egr_data_empty_io_a,
 
-                                        io_slot_ingr_data => io_slot_ingr_data,
-                                        io_slot_ingr_status_req => io_slot_ingr_status_req,
-                                        io_slot_ingr_data_req => io_slot_ingr_data_req,
-                                        io_slot_ingr_slot => io_slot_ingr_slot,
-                                        io_slot_ingr_ack <= io_slot_ingr_ack,
-                                        io_slot_ingr_data_full <= io_slot_ingr_data_full,
+                                        io_slot_ingr_data => io_slot_ingr_data_io_a,
+                                        io_slot_ingr_status_req => io_slot_ingr_status_req_io_a,
+                                        io_slot_ingr_data_req => io_slot_ingr_data_req_io_a,
+                                        io_slot_ingr_slot => io_slot_ingr_slot_io_a,
+                                        io_slot_ingr_ack <= io_slot_ingr_ack_io_a,
+                                        io_slot_ingr_data_full <= io_slot_ingr_data_full_io_a,
 
                                         erx_clock <- eth_mii_rx_clock,
                                         erx_reset <= io_reset,
@@ -737,7 +890,112 @@ module gip_system( clock drm_clock,
                                         par_b_data_oe => par_b_data_oe,
 
                                         analyzer_mux_control <= analyzer_mux_control[4;0],
-                                        analyzer_signals => ios_analyzer_signals );
+                                        analyzer_signals => ios_analyzer_signals_io_a );
+
+            io_block iob_b( int_clock <- int_clock,
+                            int_reset <= int_reset,
+
+                            postbus_tgt_type <= postbus_tgt_type_io_b,
+                            postbus_tgt_data <= postbus_tgt_data,
+                            postbus_tgt_ack => postbus_tgt_ack_io_b,
+
+                            postbus_src_type => postbus_src_type_io_b,
+                            postbus_src_data => postbus_src_data_io_b,
+                            postbus_src_ack <= postbus_src_ack_io_b,
+
+                            io_slot_cfg_write => io_slot_cfg_write_io_b,
+                            io_slot_cfg_data => io_slot_cfg_data_io_b,
+                            io_slot_cfg_slot => io_slot_cfg_slot_io_b,
+
+                            io_slot_egr_cmd_ready <= io_slot_egr_cmd_ready_io_b,
+                            io_slot_egr_data_req <= io_slot_egr_data_req_io_b,
+                            io_slot_egr_data_cmd <= io_slot_egr_data_cmd_io_b,
+                            io_slot_egr_data_slot <= io_slot_egr_data_slot_io_b,
+                            io_slot_egr_data_ack => io_slot_egr_data_ack_io_b,
+                            io_slot_egr_data => io_slot_egr_data_io_b,
+                            io_slot_egr_slot => io_slot_egr_slot_io_b,
+                            io_slot_egr_cmd_write => io_slot_egr_cmd_write_io_b,
+                            io_slot_egr_data_write => io_slot_egr_data_write_io_b,
+                            io_slot_egr_data_empty => io_slot_egr_data_empty_io_b,
+
+                            io_slot_ingr_data <= io_slot_ingr_data_io_b,
+                            io_slot_ingr_status_req <= io_slot_ingr_status_req_io_b,
+                            io_slot_ingr_data_req <= io_slot_ingr_data_req_io_b,
+                            io_slot_ingr_slot <= io_slot_ingr_slot_io_b,
+                            io_slot_ingr_ack => io_slot_ingr_ack_io_b,
+                            io_slot_ingr_data_full => io_slot_ingr_data_full_io_b,
+
+                            analyzer_mux_control <= analyzer_mux_control[3;0],
+                            analyzer_signals => iob_analyzer_signals_io_b );
+
+            io_slots_eth_ss_par ios_b ( int_clock <- int_clock,
+                                        int_reset <= int_reset,
+
+                                        io_slot_cfg_write <= io_slot_cfg_write_io_b,
+                                        io_slot_cfg_data <= io_slot_cfg_data_io_b,
+                                        io_slot_cfg_slot <= io_slot_cfg_slot_io_b,
+
+                                        io_slot_egr_cmd_ready => io_slot_egr_cmd_ready_io_b,
+                                        io_slot_egr_data_req => io_slot_egr_data_req_io_b,
+                                        io_slot_egr_data_cmd => io_slot_egr_data_cmd_io_b,
+                                        io_slot_egr_data_slot => io_slot_egr_data_slot_io_b,
+                                        io_slot_egr_data_ack <= io_slot_egr_data_ack_io_b,
+                                        io_slot_egr_data <= io_slot_egr_data_io_b,
+                                        io_slot_egr_slot <= io_slot_egr_slot_io_b,
+                                        io_slot_egr_cmd_write <= io_slot_egr_cmd_write_io_b,
+                                        io_slot_egr_data_write <= io_slot_egr_data_write_io_b,
+                                        io_slot_egr_data_empty <= io_slot_egr_data_empty_io_b,
+
+                                        io_slot_ingr_data => io_slot_ingr_data_io_b,
+                                        io_slot_ingr_status_req => io_slot_ingr_status_req_io_b,
+                                        io_slot_ingr_data_req => io_slot_ingr_data_req_io_b,
+                                        io_slot_ingr_slot => io_slot_ingr_slot_io_b,
+                                        io_slot_ingr_ack <= io_slot_ingr_ack_io_b,
+                                        io_slot_ingr_data_full <= io_slot_ingr_data_full_io_b,
+
+                                        erx_clock <- eth_mii_rx_clock_b,
+                                        erx_reset <= io_reset,
+
+                                        erx_mii_dv <= eth_mii_rx_dv_b,
+                                        erx_mii_err <= eth_mii_rx_er_b,
+                                        erx_mii_data <= eth_mii_rx_d_b,
+
+                                        etx_clock <- eth_mii_tx_clock_b,
+                                        etx_reset <= io_reset,
+                                        etx_mii_enable => eth_mii_tx_en_b,
+                                        etx_mii_data => eth_mii_tx_d_b,
+                                        etx_mii_crs <= eth_mii_crs_b,
+                                        etx_mii_col <= eth_mii_col_b,
+
+                                        sscl => sscl_b,
+                                        sscl_oe => sscl_oe_b,
+                                        ssdo => ssdo_b,
+                                        ssdo_oe => ssdo_oe_b,
+                                        ssdi <= ssdi_b,
+                                        sscs => sscs_b,
+
+                                        par_a_clock <- par_c_clock,
+                                        par_a_control_inputs <= par_c_control_inputs,
+                                        par_a_data_inputs <= par_c_data_inputs,
+
+                                        par_a_control_outputs => par_c_control_outputs,
+                                        par_a_control_oes => par_c_control_oes,
+                                        par_a_data_outputs => par_c_data_outputs,
+                                        par_a_data_output_width => par_c_data_output_width,
+                                        par_a_data_oe => par_c_data_oe,
+
+                                        par_b_clock <- par_d_clock,
+                                        par_b_control_inputs <= par_d_control_inputs,
+                                        par_b_data_inputs <= par_d_data_inputs,
+
+                                        par_b_control_outputs => par_d_control_outputs,
+                                        par_b_control_oes => par_d_control_oes,
+                                        par_b_data_outputs => par_d_data_outputs,
+                                        par_b_data_output_width => par_d_data_output_width,
+                                        par_b_data_oe => par_d_data_oe,
+
+                                        analyzer_mux_control <= analyzer_mux_control[4;0],
+                                        analyzer_signals => ios_analyzer_signals_io_b );
         }
 
     /*b Logic analyzer
@@ -745,7 +1003,7 @@ module gip_system( clock drm_clock,
     logic_analyzer "Logic analyzer instantiation and signal muxing":
         {
 
-            analyzer_signals <= iob_analyzer_signals;
+            analyzer_signals <= iob_analyzer_signals_io_a;
             part_switch (analyzer_mux_control[3;0])
                 {
                 case 0:
@@ -792,11 +1050,19 @@ module gip_system( clock drm_clock,
                 {
                 case 1: // 0 is GIP - don't override
                 {
-                    analyzer_signals <= iob_analyzer_signals;
+                    analyzer_signals <= iob_analyzer_signals_io_a;
                 }
                 case 2:
                 {
-                    analyzer_signals <= ios_analyzer_signals;
+                    analyzer_signals <= ios_analyzer_signals_io_a;
+                }
+                case 3:
+                {
+                    analyzer_signals <= iob_analyzer_signals_io_b;
+                }
+                case 4:
+                {
+                    analyzer_signals <= ios_analyzer_signals_io_b;
                 }
                 }
             analyzer logic_analyzer( analyzer_clock <- int_clock,

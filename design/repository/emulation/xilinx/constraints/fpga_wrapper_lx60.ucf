@@ -210,9 +210,9 @@ INST "ddr_dram_dqm_low_1" LOC = "SLICE_X103Y187" ;
 INST "ddr_dram_dqm_high_1" LOC = "SLICE_X103Y187" ;
 
 INST "drm_dqs_oe_n_0" LOC = "SLICE_X103Y177" ;
-INST "drm_dqs_low_0" LOC = "SLICE_X103Y177" ;
+#NST "drm_dqs_low_0" LOC = "SLICE_X103Y177" ;
 INST "drm_dqs_oe_n_1" LOC = "SLICE_X103Y145" ;
-INST "drm_dqs_low_1" LOC = "SLICE_X103Y145" ;
+#NST "drm_dqs_low_1" LOC = "SLICE_X103Y145" ;
 
 INST "dqp_00/d_low" LOC = "SLICE_X103Y132" ;
 INST "dqp_00/d_high" LOC = "SLICE_X103Y132" ;
@@ -294,31 +294,36 @@ INST "dqp_15/d_high" LOC = "SLICE_X103Y155" ;
 INST "body/main_ram/input_dq_buffer_low_15" LOC = "SLICE_X101Y155" ;
 INST "body/main_ram/input_dq_buffer_31" LOC = "SLICE_X102Y155" ;
 # 944 "fpga_wrapper_common.ucf"
-AREA_GROUP "AG_body_apb" RANGE = SLICE_X0Y73:SLICE_X25Y44 ;
-AREA_GROUP "AG_body_gip_data_ram" RANGE = SLICE_X82Y119:SLICE_X93Y110 ;
-AREA_GROUP "AG_body_gip_gip" RANGE = SLICE_X26Y121:SLICE_X81Y50 ;
-AREA_GROUP "AG_body_gip_gip_apb" RANGE = SLICE_X16Y79:SLICE_X27Y72 ;
-AREA_GROUP "AG_body_gip_prefetch" RANGE = SLICE_X82Y109:SLICE_X93Y72 ;
-AREA_GROUP "AG_body_iob_a_egress_control" RANGE = SLICE_X62Y41:SLICE_X75Y28 ;
-AREA_GROUP "AG_body_iob_a_egress_fifos" RANGE = SLICE_X32Y27:SLICE_X57Y0 ;
-AREA_GROUP "AG_body_iob_a_ingress_control" RANGE = SLICE_X76Y37:SLICE_X85Y28 ;
-AREA_GROUP "AG_body_iob_a_ingress_fifos" RANGE = SLICE_X58Y27:SLICE_X83Y0 ;
-AREA_GROUP "AG_body_iob_a_pst" RANGE = SLICE_X38Y49:SLICE_X61Y28 ;
-AREA_GROUP "AG_body_ios_a_erx" RANGE = SLICE_X92Y63:SLICE_X103Y50 ;
-AREA_GROUP "AG_body_ios_a_etx" RANGE = SLICE_X92Y43:SLICE_X103Y28 ;
-AREA_GROUP "AG_body_main_ram" RANGE = SLICE_X92Y171:SLICE_X101Y138 ;
-# 978 "fpga_wrapper_common.ucf"
-INST "body/gip/data_ram" AREA_GROUP = "AG_body_gip_data_ram" ;
-INST "body/gip/gip" AREA_GROUP = "AG_body_gip_gip" ;
-INST "body/gip/gip_apb" AREA_GROUP = "AG_body_gip_gip_apb" ;
-INST "body/gip/prefetch" AREA_GROUP = "AG_body_gip_prefetch" ;
-INST "body/main_ram" AREA_GROUP = "AG_body_main_ram" ;
-INST "body/apb" AREA_GROUP = "AG_body_apb" ;
-INST "body/iob_a/pst" AREA_GROUP = "AG_body_iob_pst" ;
-INST "body/iob_a/egress_control" AREA_GROUP = "AG_body_iob_egress_control" ;
-INST "body/iob_a/egress_fifos" AREA_GROUP = "AG_body_iob_egress_fifos" ;
-INST "body/iob_a/ingress_control" AREA_GROUP = "AG_body_iob_ingress_control" ;
-INST "body/iob_a/ingress_fifos" AREA_GROUP = "AG_body_iob_ingress_fifos" ;
+
+
+AREA_GROUP "AG_body/logic_analyzer" RANGE = SLICE_X52Y191:SLICE_X71Y172 ;
+AREA_GROUP "AG_body/main_ram" RANGE = SLICE_X94Y157:SLICE_X103Y124 ;
+AREA_GROUP "AG_body/shared_sram" RANGE = SLICE_X84Y117:SLICE_X89Y112 ;
+AREA_GROUP "AG_body/apb" RANGE = SLICE_X0Y149:SLICE_X25Y120 ;
+AREA_GROUP "AG_body/gip/data_ram" RANGE = SLICE_X82Y129:SLICE_X93Y120 ;
+AREA_GROUP "AG_body/gip/gip" RANGE = SLICE_X26Y157:SLICE_X81Y86 ;
+AREA_GROUP "AG_body/gip/gip_apb" RANGE = SLICE_X14Y157:SLICE_X25Y150 ;
+AREA_GROUP "AG_body/gip/prefetch" RANGE = SLICE_X82Y167:SLICE_X93Y130 ;
+AREA_GROUP "AG_body/post_route" RANGE = SLICE_X48Y83:SLICE_X55Y58 ;
+AREA_GROUP "AG_body/iob_a" RANGE = SLICE_X56Y85:SLICE_X103Y38 ;
+AREA_GROUP "AG_body/iob_b" RANGE = SLICE_X0Y85:SLICE_X47Y38 ;
+AREA_GROUP "AG_body/ios_a" RANGE = SLICE_X52Y23:SLICE_X103Y0 ;
+AREA_GROUP "AG_body/ios_b" RANGE = SLICE_X32Y23:SLICE_X47Y6 ;
+
+INST "body/apb" AREA_GROUP = "AG_body/apb" ;
+INST "body/gip/data_ram" AREA_GROUP = "AG_body/gip/data_ram" ;
+INST "body/gip/gip" AREA_GROUP = "AG_body/gip/gip" ;
+INST "body/gip/gip_apb" AREA_GROUP = "AG_body/gip/gip_apb" ;
+INST "body/gip/prefetch" AREA_GROUP = "AG_body/gip/prefetch" ;
+INST "body/iob_a" AREA_GROUP = "AG_body/iob_a" ;
+INST "body/iob_b" AREA_GROUP = "AG_body/iob_b" ;
+INST "body/ios_a" AREA_GROUP = "AG_body/ios_a" ;
+INST "body/ios_b" AREA_GROUP = "AG_body/ios_b" ;
+INST "body/logic_analyzer" AREA_GROUP = "AG_body/logic_analyzer" ;
+INST "body/main_ram" AREA_GROUP = "AG_body/main_ram" ;
+INST "body/post_route" AREA_GROUP = "AG_body/post_route" ;
+INST "body/shared_sram" AREA_GROUP = "AG_body/shared_sram" ;
+
 # 997 "fpga_wrapper_common.ucf"
 NET "sys_drm_clock_in" TNM_NET="ckin" ;
 NET "int_logic_slow_clock_buffered" TNM_NET="ckslow" ;

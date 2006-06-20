@@ -1,0 +1,50 @@
+#a Copyright
+#  
+#  This file 'adc_fe.th' copyright Gavin J Stark 2003, 2004
+#  
+
+memory sample_mem 65536 32
+mem_load sample_mem env_string("sample_data_file") 0
+
+printf "Simple ADC FE test"
+
+reset "test_reset" 1
+reset "i" 0    
+reset "q" 0    
+reset "postbus_tx_ack" 0
+
+wait 1
+
+reset "test_reset" 0
+
+wait 10
+
+reset "postbus_tx_ack" 1
+
+int address
+for address 4000 40000 1
+mem_read sample sample_mem address
+blt sample 0x2000 no_negate
+sub sample sample 0x4000
+no_negate:
+add sample sample 0x4000
+reset "i" sample
+reset "q" 0
+wait 1
+next address
+
+pass 0 "Test succeeded"
+
+end
+
+test_fail:
+printf "Test failed %d0% %d1%" global_cycle() input("result")
+fail global_cycle() "**************************************************************************** Test failed"
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

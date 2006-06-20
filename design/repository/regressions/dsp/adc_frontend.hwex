@@ -1,0 +1,64 @@
+#a Copyright
+#  
+#  This file 'eth_0.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add ADC frontend
+module adc_frontend "adcfe"
+module sample_memory "sampmem"
+
+#b Add test harness
+option_string "clock" "data_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset i[16] q[16] postbus_tx_ack"
+option_string "filename" "adc_fe.th"
+option_string "sample_data_file" env_string("sample_data_file")
+module se_test_harness "th"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+clock system_clock 0 1 1
+drive adcfe.int_clock system_clock
+drive sampmem.int_clock system_clock
+
+clock data_clock 0 5 5
+drive th.data_clock data_clock
+drive adcfe.data_clock data_clock
+
+#b Add wires
+wire system_reset
+wire i[16] q[16]
+wire postbus_tx_ack
+wire sync_i[16] sync_q[16] sync_valid
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+drive i th.i
+drive q th.q
+drive postbus_tx_ack th.postbus_tx_ack
+
+#b Wire up ADC FE
+drive adcfe.int_reset system_reset
+drive adcfe.data_0 i
+drive adcfe.data_1 q
+drive sync_i adcfe.sync_i_out
+drive sync_q adcfe.sync_q_out
+drive sync_valid adcfe.sync_iq_valid
+
+#b Wire up sample memory
+drive sampmem.int_reset system_reset
+drive sampmem.postbus_tx_ack postbus_tx_ack
+drive sampmem.sample_i sync_i
+drive sampmem.sample_q sync_q
+drive sampmem.sample_valid sync_valid
+
+#b End
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

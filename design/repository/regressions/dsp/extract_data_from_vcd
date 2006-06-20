@@ -1,0 +1,59 @@
+#!/usr/bin/perl
+
+sub twoscomp {
+    my($in)=@_;
+    if (length($in)>31) {
+        $in = substr($in,-31);
+    }
+    $bits = length($in);
+    $bin = oct("0b".$in);
+    if ($in =~ /^1/) {
+        printf("#:%x:\n",$bin);
+        $bin = $bin^((-1)<<$bits);
+        $bin = ~$bin;
+        $bin = -$bin-1;
+        printf("#:%x:\n",$bin);
+    }
+    return $bin;
+}
+
+while (<>) {
+    if (/\$var wire 18 (\S)+ mixer_i_out /) { $id{"i_out"} = $1; }
+    if (/\$var wire 18 (\S)+ mixer_q_out /) { $id{"q_out"} = $1; }
+    if (/\$var wire 1 (\S)+ mixer_valid_out /) { $id{"v_out"} = $1; }
+    if (/\$var wire 1 (\S)+ cic_0_comb_out_valid /) { $id{"cv_out"} = $1; }
+    if (/\$var wire 40 (\S)+ cic_0_comb_out /) { $id{"cd_out"} = $1; }
+    last if (/enddefinitions/);
+}
+print "i_out ".$id{"i_out"}."\n";
+print "q_out ".$id{"q_out"}."\n";
+print "v_out ".$id{"v_out"}."\n";
+print "cv_out ".$id{"cv_out"}."\n";
+print "cd_out ".$id{"cd_out"}."\n";
+$sum_i=0;
+$sum_q=0;
+@history_i = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+@history_q = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+$cd_out = 0;
+while (<>) {
+    if (/\#(\S+)/) {
+         $time=$1;
+        if ($v_out) {
+            $sum_i += $i_out;
+            $cic_i = $sum_i - $history_i[0];
+            @history_i = @history_i[1 .. 9];
+            $history_i[9] = $sum_i;
+            $sum_q += $q_out;
+            $cic_q = $sum_q - $history_q[0];
+            @history_q = @history_q[1 .. 9];
+            $history_q[9] = $sum_q;
+            printf("%d %lf %lf %lf %x %lf %x %lf %lf %x %x %lf\n",$time,$i_out,$q_out,sqrt($i_out*$i_out+$q_out*$q_out), $cic_i, $cic_i, $cic_q, $cic_q,sqrt($cic_i*$cic_i+$cic_q*$cic_q), $cd_out, $cd_last, sqrt($cd_last*$cd_last+$cd_out*$cd_out));
+        }
+    }
+    if (/^([01])$id{"v_out"}/) {$v_out=$1;}
+    if (/^b([01]+) $id{"i_out"}/) {$i_out=twoscomp($1);}
+    if (/^b([01]+) $id{"q_out"}/) {$q_out=twoscomp($1);}
+    if (/^([01])$id{"cv_out"}/) {$cv_out=$1;}
+    if (/^b([01]+) $id{"cd_out"}/) {$cd_last=$cd_out;$cd_out=twoscomp($1);}
+}
+#data

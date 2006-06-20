@@ -1,0 +1,107 @@
+#a Copyright
+#  
+#  This file 'test.batch' copyright Gavin J Stark 2003, 2004
+#  
+
+#a Variables
+int run_length
+int vcd_create
+string vcd_full_filename
+string vcd_filename
+string sample_filename
+string postrom_filename
+
+set vcd_create 1
+
+#a Main
+#gosub adc_frontend_tests
+gosub adc_logger_tests
+end
+
+#a Adc_Frontend tests
+#f adc_frontend_tests
+adc_frontend_tests:
+
+#b adc_frontend_0
+set run_length 400000
+set run_length 40000
+#set run_length 4000
+set_string vcd_filename "adc_frontend_0"
+set_string sample_filename "rfid_sample_data.mif"
+#set_string sample_filename "sample_data_constant_9999.mif"
+#set_string sample_filename "sample_data_constant_0.mif"
+gosub adc_frontend_test
+
+#b Done
+return
+
+#a Adc_Frontend Subroutines
+#f adc_frontend_test
+adc_frontend_test:
+setenv "sample_data_file" sample_filename
+read_hw_file adc_frontend.hwex
+
+beq vcd_create 0 adc_frontend_test_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "adcfe" "th" "sampmem"
+#vcd_file_add "allsignals" "ptr" "ptr.prs" "ptr.adc_frontend" "ptr.psr" "ptr.plt" "ptr.put"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+adc_frontend_test_no_vcd:
+reset
+step run_length
+return
+
+#a Adc_Logger tests
+#f adc_logger_tests
+adc_logger_tests:
+
+#b adc_logger_0
+set run_length 400000
+set run_length 40000
+#set run_length 4000
+set_string vcd_filename "adc_logger_0"
+set_string sample_filename "rfid_sample_data.mif"
+set_string sample_filename "incr_sample_data.mif"
+set_string postrom_filename "adclog_0_postrom.mif"
+#set_string sample_filename "sample_data_constant_9999.mif"
+#set_string sample_filename "sample_data_constant_0.mif"
+gosub adc_logger_test
+
+#b Done
+return
+
+#a Adc_Logger Subroutines
+#f adc_logger_test
+adc_logger_test:
+setenv "postrom_mif" postrom_filename
+setenv "ddr_mif" sample_filename
+setenv "sample_data_file" sample_filename
+read_hw_file adc_logger.hwex
+
+beq vcd_create 0 adc_logger_test_no_vcd    
+sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
+vcd_file_open "allsignals" vcd_full_filename
+vcd_file_add "allsignals" "afe" "th" "postbus_rom" "afe.prs" "afe.psr" "afe.ddr" 
+vcd_file_add "allsignals" "ddr_pins"
+vcd_file_enable "allsignals"
+reset
+step run_length
+vcd_file_close "allsignals"
+return
+
+adc_logger_test_no_vcd:
+reset
+step run_length
+return
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***

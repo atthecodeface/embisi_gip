@@ -1,0 +1,157 @@
+#a Copyright
+#  
+#  This file 'eth_0.hwex' copyright Gavin J Stark 2004
+#  
+
+#a Instantiate modules
+#b Add ADC frontend framework
+module afe_framework "afe"
+option_string "filename" env_string("postrom_mif")
+option_int "debug" 0
+module memory_s_sp_4096_x_32 "postbus_rom"
+
+#b Add DDR model
+option_int "debug" 7
+option_string "filename" env_string("ddr_mif")
+#module ddr_16m_x_32 "ddr"
+module ddr_32m_x_16 "ddr"
+
+#b Add test harness
+option_string "clock" "data_clock"
+option_string "inputs" ""
+option_string "outputs" "test_reset i[16] q[16]"
+option_string "filename" "adc_logger.th"
+option_string "sample_data_file" env_string("sample_data_file")
+module se_test_harness "th"
+
+#b Add DDR pin logic
+option_string "clock" "ddr_clock"
+option_string "inputs" "next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4] dq_to_ctl[16] dqs_to_ctl[2]"
+option_string "outputs" "cke select_n[2] ras_n cas_n we_n ba[2] a[13] dqs_out[2] dq_out[16] dqm[2] dq_in_low[16] dq_in_high[16] dq_oe_ctl"
+option_string "filename" "ddr_pins.th"
+module se_test_harness "ddr_pins"
+
+#a Wire them up
+#b Drive clocks - name, delay, cycles high, cycles low
+# ddr_clock is 8ns; 4 high, 4 low
+# 4x clock is then 1 high, 1 low
+clock ddr_x4_clock 0 1 1
+drive ddr_pins.ddr_clock ddr_x4_clock
+
+clock system_clock 0 4 4
+drive afe.int_clock system_clock
+drive ddr.ddr_clock system_clock
+drive postbus_rom.sram_clock system_clock
+
+clock data_clock 0 20 20
+drive th.data_clock data_clock
+drive afe.data_clock data_clock
+
+#b Add wires
+wire system_reset
+wire i[16] q[16]
+
+wire next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4]
+wire dqm[2] dq_to_ddr[16] dqs_to_ddr[2] dq_oe_ctl
+wire        dq_to_ctl[16] dqs_to_ctl[2] dq_oe_ddr
+wire dq_to_ctl_high[16] dq_to_ctl_low[16]
+wire cke a[13] ba[2] we_n cas_n ras_n select_n[2]
+wire select_0
+extract select_0 select_n 0 1
+
+wire low low32[32]
+assign low 0
+assign low32 0
+
+#b Wire up DDR model
+drive ddr.dqm     dqm
+drive ddr.dq_in   dq_to_ddr
+drive ddr.dqs_in  dqs_to_ddr
+drive ddr.a       a
+drive ddr.ba      ba
+drive ddr.we_n    we_n
+drive ddr.cas_n   cas_n
+drive ddr.ras_n   ras_n
+drive ddr.select_n select_0
+drive ddr.cke     cke
+drive dq_to_ctl  ddr.dq_out
+drive dqs_to_ctl ddr.dqs_out
+drive dq_oe_ddr  ddr.dq_oe
+
+#b Wire up DDR pins model
+drive ddr_pins.next_dqs_low next_dqs_low
+drive ddr_pins.next_dqs_high next_dqs_high
+drive ddr_pins.next_dqoe next_dqoe
+drive ddr_pins.next_dqm next_dqm
+drive ddr_pins.next_dq next_dq
+drive ddr_pins.next_ba next_ba
+drive ddr_pins.next_a next_a
+drive ddr_pins.next_we_n next_we_n
+drive ddr_pins.next_cas_n next_cas_n
+drive ddr_pins.next_ras_n next_ras_n
+drive ddr_pins.next_s_n next_s_n
+drive ddr_pins.next_cke next_cke
+drive ddr_pins.dqs_to_ctl dqs_to_ctl
+drive ddr_pins.dq_to_ctl dq_to_ctl
+
+drive dqm ddr_pins.dqm
+drive dq_to_ddr  ddr_pins.dq_out
+drive dqs_to_ddr ddr_pins.dqs_out
+drive cke      ddr_pins.cke
+drive a        ddr_pins.a
+drive ba       ddr_pins.ba
+drive we_n     ddr_pins.we_n
+drive cas_n    ddr_pins.cas_n
+drive ras_n    ddr_pins.ras_n
+drive select_n ddr_pins.select_n
+
+drive dq_oe_ctl ddr_pins.dq_oe_ctl
+drive dq_to_ctl_high ddr_pins.dq_in_high
+drive dq_to_ctl_low ddr_pins.dq_in_low
+
+#b Wire up test harness
+drive system_reset        th.test_reset 
+drive i th.i
+drive q th.q
+
+#b Wire up ADC FE framework
+drive afe.int_reset system_reset
+drive afe.data_0 i
+drive afe.data_1 q
+
+wire pst_rom_read pst_rom_data[32] pst_rom_address[12]
+drive pst_rom_read afe.pst_rom_read
+drive pst_rom_address afe.pst_rom_address
+drive afe.pst_rom_data pst_rom_data
+
+drive next_cke      afe.next_cke
+drive next_s_n      afe.next_s_n
+drive next_ras_n    afe.next_ras_n
+drive next_cas_n    afe.next_cas_n
+drive next_we_n     afe.next_we_n
+drive next_a        afe.next_a
+drive next_ba       afe.next_ba
+drive next_dq       afe.next_dq
+drive next_dqm      afe.next_dqm
+drive next_dqoe     afe.next_dqoe
+drive next_dqs_high afe.next_dqs_high
+drive next_dqs_low  afe.next_dqs_low
+drive afe.input_dq_high  dq_to_ctl_high
+drive afe.input_dq_low   dq_to_ctl_low
+
+#b Wire up ADC FE postbus
+drive postbus_rom.sram_read pst_rom_read
+drive postbus_rom.sram_address pst_rom_address
+drive postbus_rom.sram_write low
+drive postbus_rom.sram_write_data low32
+drive pst_rom_data postbus_rom.sram_read_data
+
+#b End
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

@@ -1,0 +1,77 @@
+#a Copyright
+#  
+#  This file 'rom.th' copyright Gavin J Stark 2003, 2004
+#  
+
+# We are called for every x4 tick
+# If the DDR is high for 4, low for 4, we are called high for 1, low for 1
+# So...
+# DDR  ^^^^____^^^^____^^^^____
+# pins ^_^_^_^_^_^_^_^_^_^_^_^_
+# and our posedge pin output should change at 0, 4, 8
+# the negedge pin outputs should change at 2, 6, 10
+# and data capture occurs at 1,3,5,7,9,11 etc
+printf "DDR test pins logic"
+
+int ddr_ck
+int dqs_store
+int dqm_store
+int dq_store
+
+set ddr_ck 1
+reset logic_ck 1
+wait 2
+
+set ddr_ck 0
+
+wait 2
+
+while 1
+
+set ddr_ck 1
+
+drive cke input("next_cke")
+drive select_n input("next_s_n")
+drive ras_n input("next_ras_n")
+drive cas_n input("next_cas_n")
+drive we_n input("next_we_n")
+drive ba input("next_ba")
+drive a input("next_a")
+drive dqs_out input("next_dqs_high")
+drive dq_oe_ctl input("next_dqoe")
+
+set dqs_store input("next_dqs_low")
+set dqm_store input("next_dqm")
+set dq_store input("next_dq")
+mult dqm_store dqm_store 0x1111
+rol dq_store dq_store 16
+
+wait 1
+drive dq_in_high input("dq_to_ctl")
+drive dq_out dq_store
+drive dqm dqm_store
+lshr dqm_store dqm_store 2
+rol dq_store dq_store 16
+wait 1
+
+set ddr_ck 0
+
+
+drive dqs_out dqs_store
+
+wait 1
+drive dq_in_low input("dq_to_ctl")
+drive dq_out dq_store
+drive dqm dqm_store
+wait 1
+endwhile
+
+
+end
+
+#a Editor preferences and notes
+# Local Variables: ***
+# mode: shell-script ***
+# outline-regexp: "#[a!]\\\|#[\t ]*[b-z][\t ]" ***
+# End: ***
+

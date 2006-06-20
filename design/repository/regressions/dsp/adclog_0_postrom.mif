@@ -1,0 +1,4 @@
+#Format is dddddJss - d is delay before transaction, J is 1 for jump to size, 0 for transaction, sss is size of following transaction
+# DDR postbus dest type is bbbSSss, b is burst length in quadwords, S is source, s is access type (0=>command 1=>config, 2=>push, 3=>pull)
+000:  00200003  !0b_111_00_11__0000000__0000000000__0000000__0  00000000  !0b_0000000__0000000__0000000000__0000001_0
+004:  000000100

@@ -43,8 +43,9 @@ typedef struct t_eth
 {
     t_eth_rx rx;
     t_eth_tx tx;
-    int rx_slot;
-    int tx_slot;
+    int postbus_route;  // routing information for sending commands and data to the ethernet IO block
+    int rx_slot; // Which slot in the IO block the ethernet receive is
+    int tx_slot; // Which slot in the IO block the ethernet receive is
     int padding;
 } t_eth;
 
@@ -76,7 +77,7 @@ static void ethernet_tx_start( t_eth_buffer *buffer )
                 GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<31 );
                 if ((s>>31)&1) break;
             }
-            GIP_POST_TXC_0_IO_FIFO_DATA( 0,j-1,31, eth.tx_slot,0,0 ); // add j words to etx fifo (egress data fifo 0)
+            GIP_POST_TXC_0_IO_FIFO_DATA( eth.postbus_route,j-1,31, eth.tx_slot,0,0 ); // add j words to etx fifo (egress data fifo 0)
             j = 0;
         }
     }
@@ -88,7 +89,7 @@ static void ethernet_tx_start( t_eth_buffer *buffer )
             GIP_READ_AND_CLEAR_SEMAPHORES( s, 1<<31 );
             if ((s>>31)&1) break;
         }
-        GIP_POST_TXC_0_IO_FIFO_DATA( 0,j-1,31, eth.tx_slot,0,0 ); // add j words to etx fifo (egress data fifo 0)
+        GIP_POST_TXC_0_IO_FIFO_DATA( eth.postbus_route,j-1,31, eth.tx_slot,0,0 ); // add j words to etx fifo (egress data fifo 0)
     }
 
     while (1)
@@ -99,7 +100,7 @@ static void ethernet_tx_start( t_eth_buffer *buffer )
     }
     GIP_POST_TXD_0( 0x01000000 );
     GIP_POST_TXD_0( 0x21800000 | buffer->buffer_size ); // this is the true count of bytes in the packet
-    GIP_POST_TXC_0_IO_FIFO_DATA( 0,1,31, eth.tx_slot,0,1 ); // add to egress cmd fifo 0, set semaphore 31 on completion
+    GIP_POST_TXC_0_IO_FIFO_DATA( eth.postbus_route,1,31, eth.tx_slot,0,1 ); // add to egress cmd fifo 0, set semaphore 31 on completion
 
     while (1)
     {
@@ -178,7 +179,7 @@ static void handle_rx_status( unsigned int status )
     if (block_size>0)
     {
         GIP_POST_TXD_0( (0<<postbus_command_source_io_cmd_op_start) | (((block_size+3)/4)<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=0, length=1 (get status), semaphore=0
-        GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x4|eth.rx_slot ); // eth rx d, ingr data fifo 0
+        GIP_POST_TXC_0_IO_CMD( eth.postbus_route, 0, 0, 0x4|eth.rx_slot ); // eth rx d, ingr data fifo 0
     }
 
     /*b Now figure out what to do with the data while it comes
@@ -298,7 +299,7 @@ static void handle_tx_status_fifo( void )
      */
     GIP_READ_AND_CLEAR_SEMAPHORES( status, 1<<31 );
     GIP_POST_TXD_0( (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
-    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc|eth.tx_slot );
+    GIP_POST_TXC_0_IO_CMD( eth.postbus_route, 0, 0, 0xc|eth.tx_slot );
 
     // wait for the data to come back
     while (1)
@@ -323,7 +324,7 @@ static void handle_rx_status_fifo( void )
      */
     GIP_READ_AND_CLEAR_SEMAPHORES( status, 1<<31 );
     GIP_POST_TXD_0( (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
-    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc|eth.rx_slot );
+    GIP_POST_TXC_0_IO_CMD( eth.postbus_route, 0, 0, 0xc|eth.rx_slot );
 
     // wait for the data to come back
     while (1)
@@ -347,7 +348,7 @@ static void handle_eth_status_fifo( void )
      */
     GIP_READ_AND_CLEAR_SEMAPHORES( status, 1<<31 );
     GIP_POST_TXD_0( (0<<postbus_command_source_io_cmd_op_start) | (2<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
-    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc|eth.rx_slot );
+    GIP_POST_TXC_0_IO_CMD( eth.postbus_route, 0, 0, 0xc|eth.rx_slot );
 
     // wait for the data to come back
     while (1)
@@ -453,10 +454,10 @@ extern void ethernet_poll( void )
         if (eth.tx_slot != eth.rx_slot)
         {
             GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (0<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
-            GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc|eth.rx_slot ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
+            GIP_POST_TXC_0_IO_CMD( eth.postbus_route/*route*/, 0/*len*/, 0/*sem*/, 0xc|eth.rx_slot/*cmd*/ ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
         }
         GIP_POST_TXD_0( (2<<postbus_command_source_io_cmd_op_start) | (1<<postbus_command_source_io_length_start) | (31<<postbus_command_target_gip_rx_semaphore_start) ); // cmd_op[2]=2, length=1 (get status), semaphore=0
-        GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0xc|eth.tx_slot ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
+        GIP_POST_TXC_0_IO_CMD( eth.postbus_route, 0, 0, 0xc|eth.tx_slot ); // fifo etc(4;27), length_m_one(5;10)=0, io_dest_type(2;8)=0 (cmd), route(7)=0, last(1)=0
         while (1)
         {
             unsigned int s;
@@ -489,18 +490,19 @@ extern void ethernet_poll( void )
 
 /*f ethernet_init
  */
-extern void ethernet_init( int slot, int endian_swap, int padding )
+extern void ethernet_init( int gip_postbus_route, int eth_postbus_route, int slot, int endian_swap, int padding )
 {
+    eth.postbus_route = eth_postbus_route;
     eth.rx_slot = slot;
     eth.tx_slot = slot;
     eth.padding = padding;
 
     GIP_POST_TXD_0(1|(endian_swap<<1)|(padding<<2)); // bit 0 is disable (hold in reset)
-    GIP_POST_TXC_0_IO_CFG(0,0,eth.rx_slot);   // do I/O configuration
+    GIP_POST_TXC_0_IO_CFG(eth.postbus_route,0,eth.rx_slot);   // do I/O configuration
     if (eth.tx_slot != eth.rx_slot)
     {
         GIP_POST_TXD_0(1|(endian_swap<<1)|(padding<<2)); // bit 0 is disable (hold in reset)
-        GIP_POST_TXC_0_IO_CFG(0,0,eth.tx_slot);   // do I/O configuration
+        GIP_POST_TXC_0_IO_CFG(eth.postbus_route,0,eth.tx_slot);   // do I/O configuration
     }
 
     eth.rx.buffer_list = NULL;
@@ -511,16 +513,16 @@ extern void ethernet_init( int slot, int endian_swap, int padding )
 
     // set up events 2 and 3 to be virtual rxs fifo ne and virtual txs fifo ne, semaphore 3
     GIP_CLEAR_SEMAPHORES( (1<<3) );
-    GIP_POST_TXD_0( GIP_POSTBUS_COMMAND( 0, 0, 0 ) ); // header details: route=0
-    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x11 );
+    GIP_POST_TXD_0( GIP_POSTBUS_COMMAND( gip_postbus_route, 0, 0 ) ); // header details: route=0
+    GIP_POST_TXC_0_IO_CMD( eth.postbus_route, 0, 0, 0x11 );
     NOP;NOP;NOP;NOP;NOP;NOP;
     GIP_POST_TXD_0( (eth.rx_slot<<0) | (1<<2) | (1<<3) | (1<<4) | (0<<5) | (0<<postbus_command_source_io_cmd_op_start) | (0<<postbus_command_source_io_length_start) | (3<<postbus_command_target_gip_rx_semaphore_start) ); // ingress=1, cmd_status=1, fifo=0, empty_not_watermark=1, level=0, length=0, cmd_op=0 (read data length 0)
-    GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x14 );
+    GIP_POST_TXC_0_IO_CMD( eth.postbus_route, 0, 0, 0x14 );
     NOP;NOP;NOP;NOP;NOP;NOP;
     if (eth.tx_slot != eth.rx_slot)
     {
         GIP_POST_TXD_0( (eth.tx_slot<<0) | (1<<2) | (1<<3) | (1<<4) | (0<<5) | (0<<postbus_command_source_io_cmd_op_start) | (0<<postbus_command_source_io_length_start) | (3<<postbus_command_target_gip_rx_semaphore_start) ); // ingress=1, cmd_status=1, fifo=1, empty_not_watermark=1, level=0, length=0, cmd_op=0 (read data length 0)
-        GIP_POST_TXC_0_IO_CMD( 0, 0, 0, 0x18 );
+        GIP_POST_TXC_0_IO_CMD( eth.postbus_route, 0, 0, 0x18 );
         NOP;NOP;NOP;NOP;NOP;NOP;
     }
 

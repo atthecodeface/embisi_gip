@@ -542,7 +542,7 @@ extern void mon_ethernet_init( unsigned int eth_address_hi, unsigned int eth_add
 
     eth.hwaddress_high32 = (eth.hwaddress_high16<<16) | (eth.hwaddress_low32>>16);
     eth.hwaddress_low16  = (eth.hwaddress_low32&0xffff);
-    ethernet_init( IO_A_SLOT_ETHERNET_0, 0, 2 ); // we use padding of 2 to align IP addresses etc with words, as ethernet has a 14 byte protocol header
+    ethernet_init( POSTBUS_ROUTE_GIP, POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_ETHERNET_0, 0, 2 ); // we use padding of 2 to align IP addresses etc with words, as ethernet has a 14 byte protocol header
     sync_serial_init( IO_A_SLOT_SYNC_SERIAL_0 );
 
     // set base control reg to 10FD only no autoneg

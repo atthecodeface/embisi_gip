@@ -6,7 +6,7 @@
 #include "postbus.h"
 #include "postbus_config.h"
 #include "../common/wrapper.h"
-#include "sync_serial.h"
+#include "../drivers/sync_serial.h"
 
 /*a Defines
  */
@@ -28,24 +28,24 @@ extern int test_entry_point( void )
     postbus_config( 16, 16, 0, 0 ); // use 16 for tx and 16 for rx, no sharing
     GIP_CLEAR_SEMAPHORES( -1 );
 
-    sync_serial_init( IO_A_SLOT_SYNC_SERIAL_0 );
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 1, 0x12345678 ); 
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 2, 0xfedcba98 ); //0x58920040 is auto-neg to 10-FD
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 3, 0xbeeff00d ); //    GIP_POST_TXD_0( 0x58821340 ); is restart auto-neg
-    sync_serial_mdio_write( IO_A_SLOT_SYNC_SERIAL_0, 4, 0xd10deade ); 
+    sync_serial_init( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0 );
+    sync_serial_mdio_write( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0, 1, 0x12345678 ); 
+    sync_serial_mdio_write( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0, 2, 0xfedcba98 ); //0x58920040 is auto-neg to 10-FD
+    sync_serial_mdio_write( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0, 3, 0xbeeff00d ); //    GIP_POST_TXD_0( 0x58821340 ); is restart auto-neg
+    sync_serial_mdio_write( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0, 4, 0xd10deade ); 
 
-    sync_serial_wait_and_read_response( IO_A_SLOT_SYNC_SERIAL_0, &time, &status, &read_data );
+    sync_serial_wait_and_read_response( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0, &time, &status, &read_data );
     if ((read_data != 0x12345678) || (status!=(0x10700020|(1<<8)))) return 1;
     last_time = time;
-    sync_serial_wait_and_read_response( IO_A_SLOT_SYNC_SERIAL_0, &time, &status, &read_data );
+    sync_serial_wait_and_read_response( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0, &time, &status, &read_data );
     if ((read_data != 0xfedcba98) || (status!=(0x10700020|(2<<8)))) return 2;
     second_time = time - last_time;
     last_time = time;
-    sync_serial_wait_and_read_response( IO_A_SLOT_SYNC_SERIAL_0, &time, &status, &read_data );
+    sync_serial_wait_and_read_response( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0, &time, &status, &read_data );
     if ((read_data != 0xbeeff00d) || (status!=(0x10700020|(3<<8)))) return 3;
     third_time = time - last_time;
     last_time = time;
-    sync_serial_wait_and_read_response( IO_A_SLOT_SYNC_SERIAL_0, &time, &status, &read_data );
+    sync_serial_wait_and_read_response( POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_SYNC_SERIAL_0, &time, &status, &read_data );
     if ((read_data != 0xd10deade) || (status!=(0x10700020|(4<<8)))) return 4;
     fourth_time = time - last_time;
     last_time = time;

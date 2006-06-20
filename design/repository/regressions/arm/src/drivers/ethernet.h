@@ -26,4 +26,4 @@ extern void ethernet_tx_buffer( t_eth_buffer *buffer );
 extern void ethernet_set_rx_callback( t_eth_rx_callback_fn callback, void *handle );
 extern void ethernet_add_rx_buffer( t_eth_buffer *buffer );
 extern void ethernet_poll( void );
-extern void ethernet_init( int slot, int endian_swap, int padding );
+extern void ethernet_init( int gip_postbus_route, int eth_postbus_route, int slot, int endian_swap, int padding );

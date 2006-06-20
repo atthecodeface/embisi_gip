@@ -154,10 +154,10 @@ test dram  memory memory:memory common:wrapper_download common:support_download
 #test regression  ethernet          ethernet:ethernet drivers:ethernet drivers:uart \
 #                                   common:support_regression common:wrapper_regression
 
-test regression  sync_serial_test_1 io:sync_serial_test_1 io:postbus_config io:sync_serial \
+test regression  sync_serial_test_1 io:sync_serial_test_1 io:postbus_config drivers:sync_serial \
                                     common:support_regression common:wrapper_regression
 
-test regression  sync_serial_test_2 io:sync_serial_test_2 io:postbus_config io:sync_serial \
+test regression  sync_serial_test_2 io:sync_serial_test_2 io:postbus_config drivers:sync_serial \
                                     common:support_regression common:wrapper_regression
 
 test regression  parallel_test_1 io:parallel_test_1 io:postbus_config io:parallel \

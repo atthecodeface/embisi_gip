@@ -91,7 +91,7 @@ extern int test_entry_point()
     postbus_config( 16, 16, 0, 0 ); // use 16 for tx and 16 for rx, no sharing
     GIP_CLEAR_SEMAPHORES( -1 );
 
-    ethernet_init( IO_A_SLOT_ETHERNET_0, 0, 2 );
+    ethernet_init( POSTBUS_ROUTE_GIP, POSTBUS_ROUTE_IO_A_SLOT, IO_A_SLOT_ETHERNET_0, 0, 2 );
     ethernet_set_tx_callback( tx_callback, NULL );
     ethernet_set_rx_callback( rx_callback, NULL );
 

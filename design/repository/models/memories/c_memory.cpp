@@ -15,10 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "be_model_includes.h"
-#include "sl_general.h"
-#include "sl_token.h"
-#include "sl_data_stream.h"
-#include "postbus.h"
+#include "sl_mif.h"
 
 /*a Defines
  */
@@ -97,9 +94,12 @@ private:
     int memory_byte_width; // width in bytes
     int memory_has_byte_enables;
 
+    int debug;
+
     int shared_ports;
     int read_ports;
     int write_ports;
+    char *filename;
 
     unsigned char *data; // mallocked array of width in bytes * size
 };
@@ -260,6 +260,7 @@ c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, 
 
     /*b Determine configuration
      */
+    debug = 0;
     for (i=0; i<32; i++)
     {
         if (size<=(1<<i))
@@ -271,10 +272,15 @@ c_memory::c_memory( class c_engine *eng, void *eng_handle, int size, int width, 
     memory_byte_width = (width+7)/8;
     memory_int_width = (width+sizeof(int)*8-1)/(sizeof(int)*8);
     memory_has_byte_enables = byte_enables;
-    data = (unsigned char *)malloc(memory_byte_width*memory_size);
     this->shared_ports = shared_ports;
     this->read_ports = read_ports;
     this->write_ports = write_ports;
+    this->filename = engine->get_option_string( engine_handle, "filename", "" );
+    debug = engine->get_option_int( engine_handle, "debug", 0 );
+    if (debug)
+    {
+        fprintf(stderr,"c_memory::c_memory debug instantiate width %d bits (%d bytes) size %d filename %s\n", memory_width, memory_byte_width, memory_size, filename );
+    }
     
     /*b Instantiate module
      */
@@ -353,6 +359,36 @@ t_sl_error_level c_memory::delete_instance( void )
 t_sl_error_level c_memory::reset( int pass )
 {
     int i, j;
+    if (pass==0)
+    {
+        if (data)
+        {
+            free(data);
+            data = NULL;
+        }
+        sl_mif_allocate_and_read_mif_file( engine->error,
+                                           strcmp(filename,"")?filename:NULL,
+                                           "se_internal_module__sram_srw",
+                                           0, // address offset 0
+                                           memory_size,
+                                           memory_width,
+                                           0,
+                                           2, // reset style 2
+                                           0x11111111, // reset value, add 0x1111111 to each address when storing it in the data
+                                           (int **)&data,
+                                           NULL,
+                                           NULL );
+        //data = (unsigned char *)malloc(memory_byte_width*memory_size);
+        if (debug)
+        {
+            fprintf(stderr,"c_memory::c_memory debug allocated memory and filled with filename %s (%08x %08x %08x)\n",
+                    filename,
+                    ((unsigned int *)data)[0],
+                    ((unsigned int *)data)[1],
+                    ((unsigned int *)data)[2] );
+        }
+
+    }
     for (j=0; j<MAX_CLOCKS; j++)
     {
         posedge_int_clock_state[j].writing = 0;
@@ -417,7 +453,10 @@ t_sl_error_level c_memory::clock_posedge_int_clock( int port, int do_read, int d
      */
     if (do_write && posedge_int_clock_state[port].writing)
     {
-//        fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:Writing address %04x data %08x\n", this, posedge_int_clock_state.sram_write_address, posedge_int_clock_state.sram_write_data[port] );
+        if (debug)
+        {
+            fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:port %d:Writing address %04x data %08x\n", this, port, posedge_int_clock_state[port].sram_write_address, posedge_int_clock_state[port].sram_write_data[0] );
+        }
         if (posedge_int_clock_state[port].sram_write_address<memory_size)
         {
             if (data)
@@ -468,7 +507,10 @@ t_sl_error_level c_memory::clock_posedge_int_clock( int port, int do_read, int d
             {
                 fprintf(stderr,"c_memory::Out of range read\n");
             }
-            //fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:Reading address %04x data %08x\n", this, posedge_int_clock_state.sram_read_address, posedge_int_clock_state.sram_read_data[port]  );
+            if (debug)
+            {
+                fprintf(stderr,"c_memory(%p)::clock_posedge_int_clock:port %d:Reading address %04x data %08x\n", this, port, posedge_int_clock_state[port].sram_read_address, posedge_int_clock_state[port].sram_read_data[0]  );
+            }
         }
     }
 

@@ -208,6 +208,7 @@ private:
     t_ddr_biedge_int_clock_state biedge_int_clock_state;
 
     char *filename;
+    int debug;
 
     unsigned int ddr_size;
     int ddr_int_width; // width in ints
@@ -324,6 +325,7 @@ c_ddr::c_ddr( class c_engine *eng, void *eng_handle, int size, int byte_width )
 
     /*b Determine configuration
      */
+    debug = engine->get_option_int( engine_handle, "debug", 0 );
     filename = engine->get_option_string( engine_handle, "filename", "" );
     ddr_size = size;
     ddr_byte_width = byte_width;
@@ -559,7 +561,7 @@ void c_ddr::do_write_data( int offset )
                 if (dqm&4) { mask|= 0xff0000; }
                 if (dqm&8) { mask|= 0xff000000; }
                 memory[ address*ddr_int_width+j ] = (memory[ address*ddr_int_width+j ] & mask) | (~mask & biedge_int_clock_state.dq_in[j]);
-                if (0) fprintf(stderr,"Writing %08x/%08x:%08x\n",address, memory[ address*ddr_int_width+j],mask );
+                if (debug&4) fprintf(stderr,"Writing %08x/%08x:%08x\n",address, memory[ address*ddr_int_width+j],mask );
                 dqm>>=4;
             }
         }
@@ -572,7 +574,7 @@ void c_ddr::do_write_data( int offset )
                 if (!(dqm&1))
                 {
                     memory[ address ] = (memory[ address ] & ~(mask<<offset)) | ((mask & biedge_int_clock_state.dq_in[0])<<offset);
-                    if (0) fprintf(stderr,"Writing byte %d %08x/%08x:%08x:%d\n",j, address, memory[ address ],mask<<offset,dqm&1 );
+                    if (debug&4) fprintf(stderr,"Writing byte %d %08x/%08x:%08x:%d\n",j, address, memory[ address ],mask<<offset,dqm&1 );
                 }
                 dqm>>=1;
                 mask<<=8;
@@ -754,13 +756,13 @@ t_sl_error_level c_ddr::clock_posedge_int_clock( void )
                                 for (j=0; j<ddr_int_width; j++)
                                 {
                                     biedge_int_clock_state.dq_out_fifo[(k+5)*8+j] = memory[ (address+k)*ddr_int_width+j ];
-                                    if (0) fprintf(stderr,"Reading %08x/%08x\n",(address+k),memory[ (address+k)*ddr_int_width+j ]);
+                                    if (debug&2) fprintf(stderr,"Reading %08x/%08x\n",(address+k),memory[ (address+k)*ddr_int_width+j ]);
                                 }
                             }
                             else
                             {
                                 biedge_int_clock_state.dq_out_fifo[(k+5)*8] = memory[ address ] >> (k*8*ddr_byte_width);
-                                if (0) fprintf(stderr,"Reading %08x/%08x\n",address,memory[ address ]);
+                                if (debug&2) fprintf(stderr,"Reading %08x/%08x\n",address,memory[ address ]);
                             }
                         }
                     }
@@ -793,7 +795,7 @@ t_sl_error_level c_ddr::clock_posedge_int_clock( void )
 
     /*b Verbose
      */
-    if (0)
+    if (debug&1)
     {
         if (posedge_int_clock_state.ddr_command != ddr_command_nop)
         {

@@ -1,0 +1,297 @@
+/*a Copyright Gavin J Stark, 2004
+ */
+
+/*a Includes
+ */
+include "postbus.h"
+include "postbus_rom_source.h"
+include "postbus_led_target.h"
+include "postbus_uart_target.h"
+include "postbus_simple_router.h"
+
+/*a Types
+ */
+
+/*a External modules required
+ */
+/*b adc_frontend
+ */
+extern module adc_frontend( clock int_clock,
+                            clock data_clock,
+                            input bit int_reset,
+                            input bit[16] data_0,
+                            input bit[16] data_1,
+                            output bit sync_iq_valid,
+                            output bit[16] sync_i_out,
+                            output bit[16] sync_q_out )
+{
+    timing to rising clock int_clock int_reset;
+    timing to rising clock data_clock data_0, data_1;
+    timing from rising clock int_clock sync_iq_valid, sync_i_out, sync_q_out;
+    timing comb input int_reset;
+}
+
+/*b sample_memory
+ */
+extern module sample_memory( clock int_clock,
+                             input bit int_reset,
+                             input bit sample_valid,
+                             input bit[16] sample_i,
+                             input bit[16] sample_q,
+                             output t_postbus_type postbus_tx_type,
+                             output t_postbus_data postbus_tx_data,
+                             input t_postbus_ack postbus_tx_ack )
+{
+    timing to rising clock int_clock int_reset;
+    timing to rising clock int_clock sample_valid, sample_i, sample_q;
+    timing from rising clock int_clock postbus_tx_type, postbus_tx_data;
+    timing to rising clock int_clock postbus_tx_ack;
+    timing comb input int_reset;
+}
+
+/*b ddr_dram_postbus
+ */
+extern module ddr_dram_postbus( clock drm_clock,
+                                input bit drm_ctl_reset,
+                                output bit init_done,
+
+                                input t_postbus_type postbus_tgt_type,
+                                input t_postbus_data postbus_tgt_data,
+                                output t_postbus_ack postbus_tgt_ack,
+
+                                output t_postbus_type postbus_src_type,
+                                output t_postbus_data postbus_src_data,
+                                input t_postbus_ack postbus_src_ack,
+
+                                output bit next_cke,
+                                output bit[2] next_s_n,
+                                output bit next_ras_n,
+                                output bit next_cas_n,
+                                output bit next_we_n,
+                                output bit[13] next_a,
+                                output bit[2] next_ba,
+                                output bit[32] next_dq,
+                                output bit[4] next_dqm,
+                                output bit next_dqoe,
+                                output bit[4] next_dqs_high,
+                                output bit[4] next_dqs_low,
+                                input bit[16] input_dq_high,
+                                input bit[16] input_dq_low )
+{
+    timing to rising clock drm_clock drm_ctl_reset;
+
+    timing from rising clock drm_clock postbus_src_type, postbus_src_data;
+    timing to rising clock drm_clock postbus_src_ack;
+
+    timing from rising clock drm_clock postbus_tgt_ack;
+    timing to rising clock drm_clock postbus_tgt_type, postbus_tgt_data;
+
+    timing comb input drm_ctl_reset;
+
+    timing to rising clock drm_clock drm_ctl_reset;
+    timing from rising clock drm_clock init_done;
+
+    timing from rising clock drm_clock next_cke, next_s_n, next_ras_n, next_cas_n, next_we_n, next_a, next_ba, next_dq, next_dqm, next_dqoe, next_dqs_high, next_dqs_low;
+    timing to rising clock drm_clock input_dq_high, input_dq_low;
+    timing to falling clock drm_clock input_dq_high, input_dq_low;
+}
+
+/*a Modules
+ */
+module afe_framework( clock int_clock,
+                      clock data_clock,
+                      input bit int_reset,
+                      input bit[16] data_0,
+                      input bit[16] data_1,
+
+                      output bit pst_rom_read,
+                      output bit[12] pst_rom_address,
+                      input bit[32] pst_rom_data,
+
+                      output bit next_cke,
+                      output bit[2] next_s_n,
+                      output bit next_ras_n,
+                      output bit next_cas_n,
+                      output bit next_we_n,
+                      output bit[13] next_a,
+                      output bit[2] next_ba,
+                      output bit[32] next_dq,
+                      output bit[4] next_dqm,
+                      output bit next_dqoe,
+                      output bit[4] next_dqs_high,
+                      output bit[4] next_dqs_low,
+                      input bit[16] input_dq_high,
+                      input bit[16] input_dq_low
+    )
+{
+    default clock int_clock;
+    default reset int_reset;
+
+    net bit afe_fe_sync_iq_valid   "Synchronized input data valid, for logging";
+    net bit[16] afe_fe_sync_i_out  "Synchronized input data, for logging";
+    net bit[16] afe_fe_sync_q_out  "Synchronized input data, for logging";
+
+    /*b ROM nets
+     */
+    net bit pst_rom_read;
+    //comb bit[12] pst_rom_address;
+    net bit[8] pst_rom_address_short;
+
+    /*b Specific postbus nets
+     */
+    net t_postbus_type sample_mem_src_postbus_type "Postbus type from sample memory (src)";
+    net t_postbus_data sample_mem_src_postbus_data "Postbus data from sample memory (src)";
+    net t_postbus_ack  sample_mem_src_postbus_ack  "Postbus ack to sample memory (src)";
+
+    net t_postbus_type ddr_tgt_postbus_type "Postbus type to DDR controller (tgt)";
+    comb t_postbus_data ddr_tgt_postbus_data "Postbus data to DDR controller (tgt)";
+    net t_postbus_ack  ddr_tgt_postbus_ack  "Postbus ack from DDR controller (tgt)";
+
+    net t_postbus_type ddr_src_postbus_type "Postbus type from DDR controller (src)";
+    net t_postbus_data ddr_src_postbus_data "Postbus data from DDR controller (src)";
+    net t_postbus_ack  ddr_src_postbus_ack  "Postbus ack to DDR controller (src)";
+
+    net t_postbus_type rom_src_postbus_type "Postbus type from sample memory (src)";
+    net t_postbus_data rom_src_postbus_data "Postbus data from sample memory (src)";
+    net t_postbus_ack  rom_src_postbus_ack  "Postbus ack to sample memory (src)";
+
+    /*b Generic postbus nets
+     */
+    net t_postbus_ack src_ack_3;
+
+    net t_postbus_type tgt_type_1;
+    net t_postbus_type tgt_type_2;
+    net t_postbus_type tgt_type_3;
+
+    net t_postbus_data tgt_data;
+
+    /*b DDR dram nets
+     */
+    net bit init_done;
+    net bit next_cke;
+    net bit[2] next_s_n;
+    net bit next_ras_n;
+    net bit next_cas_n;
+    net bit next_we_n;
+    net bit[13] next_a;
+    net bit[2] next_ba;
+    net bit[32] next_dq;
+    net bit[4] next_dqm;
+    net bit next_dqoe;
+    net bit[4] next_dqs_high;
+    net bit[4] next_dqs_low;
+
+    /*b Instances
+     */
+    instances "Instances":
+        {
+            /*b Postbus ROM
+             */
+            pst_rom_address = 0;
+            pst_rom_address[8;0] = pst_rom_address_short;
+            postbus_rom_source prs( int_clock <- int_clock,
+                                    int_reset <= int_reset,
+
+                                    rom_read => pst_rom_read,
+                                    rom_address => pst_rom_address_short,
+                                    rom_data <= pst_rom_data,
+
+                                    postbus_type => rom_src_postbus_type,
+                                    postbus_data => rom_src_postbus_data,
+                                    postbus_ack <= rom_src_postbus_ack );
+
+            /*b ADC Frontend (sync, mixer, CIC)
+             */
+            adc_frontend adc_fe( int_clock <- int_clock,
+                                 data_clock <- data_clock,
+                                 int_reset <= int_reset,
+                                 data_0 <= data_0,
+                                 data_1 <= data_1,
+                                 sync_iq_valid => afe_fe_sync_iq_valid,
+                                 sync_i_out => afe_fe_sync_i_out,
+                                 sync_q_out => afe_fe_sync_q_out );
+
+            /*b Sample memory (circular buffers with SRAM)
+             */
+            sample_memory sample_mem( int_clock <- int_clock,
+                                      int_reset <= int_reset,
+                                      sample_valid <= afe_fe_sync_iq_valid,
+                                      sample_i <= afe_fe_sync_i_out,
+                                      sample_q <= afe_fe_sync_q_out,
+                                      postbus_tx_type => sample_mem_src_postbus_type,
+                                      postbus_tx_data => sample_mem_src_postbus_data,
+                                      postbus_tx_ack <= sample_mem_src_postbus_ack );
+
+            /*b DDR controller (circular buffers extended in DDR)
+             */
+            ddr_tgt_postbus_data = tgt_data;
+            ddr_dram_postbus ddr( drm_clock <- int_clock,
+                                  drm_ctl_reset <= int_reset,
+                                  init_done => init_done,
+
+                                  postbus_tgt_type <= ddr_tgt_postbus_type,
+                                  postbus_tgt_data <= ddr_tgt_postbus_data,
+                                  postbus_tgt_ack => ddr_tgt_postbus_ack,
+
+                                  postbus_src_type => ddr_src_postbus_type,
+                                  postbus_src_data => ddr_src_postbus_data,
+                                  postbus_src_ack <= ddr_src_postbus_ack,
+
+                                  next_cke => next_cke,
+                                  next_s_n => next_s_n,
+                                  next_ras_n => next_ras_n,
+                                  next_cas_n => next_cas_n,
+                                  next_we_n => next_we_n,
+                                  next_a => next_a,
+                                  next_ba => next_ba,
+                                  next_dq => next_dq,
+                                  next_dqm => next_dqm,
+                                  next_dqoe => next_dqoe,
+                                  next_dqs_high => next_dqs_high,
+                                  next_dqs_low => next_dqs_low,
+                                  input_dq_high <= input_dq_high,
+                                  input_dq_low <= input_dq_low );
+
+            /*b Postbus router
+             */
+            postbus_simple_router psr( int_clock <- int_clock,
+                                       int_reset <= int_reset,
+
+                                       src_type_0 <= rom_src_postbus_type,
+                                       src_data_0 <= rom_src_postbus_data,
+                                       src_ack_0 => rom_src_postbus_ack,
+                                       
+                                       src_type_1 <= sample_mem_src_postbus_type,
+                                       src_data_1 <= sample_mem_src_postbus_data,
+                                       src_ack_1 => sample_mem_src_postbus_ack,
+
+                                       src_type_2 <= ddr_src_postbus_type,
+                                       src_data_2 <= ddr_src_postbus_data,
+                                       src_ack_2 => ddr_src_postbus_ack,
+
+                                       src_type_3 <= postbus_word_type_idle,
+                                       src_data_3 <= 3,
+                                       src_ack_3 => src_ack_3,
+
+                                       tgt_ack_0 <= ddr_tgt_postbus_ack,
+                                       tgt_type_0 => ddr_tgt_postbus_type,
+
+                                       tgt_ack_1 <= 1,
+                                       tgt_type_1 => tgt_type_1,
+
+                                       tgt_ack_2 <= 1,
+                                       tgt_type_2 => tgt_type_2,
+
+                                       tgt_ack_3 <= 1,
+                                       tgt_type_3 => tgt_type_3,
+
+                                       tgt_data => tgt_data );
+
+            /*b Done
+             */
+        }
+
+    /*b Done
+     */
+}
+

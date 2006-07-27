@@ -417,13 +417,13 @@ to I/O     io_slot_ingr_data_full  (for use by the I/O)
                 case 2: // postbus target signals
                 {
                     analyzer_signals <= postbus_tgt_data;
-                    analyzer_signals[31]   <= postbus_tgt_ack[0];
+                    analyzer_signals[31]   <= postbus_tgt_ack;
                     analyzer_signals[2;29] <= postbus_tgt_type;
                 }
                 case 3: // postbus target signals
                 {
                     analyzer_signals <= postbus_src_data;
-                    analyzer_signals[31]   <= postbus_src_ack[0];
+                    analyzer_signals[31]   <= postbus_src_ack;
                     analyzer_signals[2;29] <= postbus_src_type;
                 }
                 }

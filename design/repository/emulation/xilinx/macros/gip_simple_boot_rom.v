@@ -1,10 +1,4 @@
 //a Module boot_rom_wrapper
-// We fake out xst with this declaration of boot_rom - hopefully the real one gets put in
-module boot_rom ( addr, clk, dout, en );
-    input [11:0]addr;
-    input clk, en;
-    output [31:0]dout;
-endmodule
 
 module gip_simple_boot_rom
 (

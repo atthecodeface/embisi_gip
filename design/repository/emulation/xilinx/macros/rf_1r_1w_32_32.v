@@ -25,21 +25,7 @@ module rf_1r_1w_32_32
     //b Outputs
     output [31:0]rf_rd_data_0;
 
-    reg [31:0]rf[31:0];
+rf_1r_1w_32_32_core core( .clka(rf_clock), .addra(rf_rd_addr_0), .douta(rf_rd_data_0),
+                                .clkb(rf_clock), .addrb(rf_wr_addr), .dinb(rf_wr_data), .web(rf_wr_enable) );
 
-    reg [31:0]rf_rd_data_0;
-
-    always @(posedge rf_clock)
-    begin
-        if (rf_wr_enable)
-        begin
-            rf[rf_wr_addr] <= rf_wr_data;
-        end
-    end
-
-    always @(rf_rd_addr_0)
-    begin
-        rf_rd_data_0 = rf[rf_rd_addr_0];
-    end
-    
 endmodule

@@ -245,6 +245,7 @@ function parse_xilinx_descs( $objs )
     # It defines a Xilinx-specific model.
     # If a core is specified with the same name as another model, the core takes preference over that other model in Xilinx components
     # A core will generate its own '.ngc' file
+    # The core should also generate a behavioural verilog file
     foreach (objs_of_type($objs,"/^xilinx_core/") as $sel)
     {
         $src = $sel["args"][0];
@@ -670,9 +671,11 @@ function output_xilinx_makefile( $file )
             $handled = 0;
             if ( ($src[0][0]=="xmodel") && ($src[0][1]=="core") )
             {
+                $v = "\${COREGEN_OBJ}/".$src[1].".v";
                 $handled = 1;
                 fwrite( $file, "\t\${XST_OBJ}/".$src[1].".ngo \\\n");
                 $hier_models[] = $src[1];
+                $v_files[] = $v;
             }
             if ( ($model!=$src[1]) && (($src[0][0]=="xmodel") && ($src[0][1]=="comp") ))
             {

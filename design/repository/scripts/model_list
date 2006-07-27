@@ -104,10 +104,12 @@ xilinx_macro memory_s_sp_4096_x_8
 xilinx_macro rf_2r_1w_32_32
 xilinx_macro gip_simple_boot_rom
 
-xilinx_core rf_1r_1w_32_32
-xilinx_core rf_1r_1w_16_32
-xilinx_core rf_1r_1w_8_32
-xilinx_core rf_1r_1w_16_4
+xilinx_macro rf_1r_1w_32_32
+xilinx_core rf_1r_1w_32_32_core
+xilinx_macro rf_1r_1w_16_32
+xilinx_macro rf_1r_1w_8_32
+#xilinx_core rf_1r_1w_16_4_core
+xilinx_macro rf_1r_1w_16_4
 xilinx_core boot_rom boot.coe
 
 # We need anything we are going to place to be a component
@@ -138,7 +140,7 @@ xilinx_subcomponent io_slots_eth_ss_par io_slot_head io_parallel io_sync_serial 
 xilinx_subcomponent analyzer
 xilinx_subcomponent ddr_dram_as_sram
 xilinx_subcomponent postbus_simple_router
-xilinx_subcomponent gip_system     boot_rom ddr_dram_as_sram apb_devices io_block io_slots_eth_ss_par analyzer gip_core_plus postbus_simple_router memory_s_sp_4096_x_4b8  memory_s_sp_4096_x_8 gip_simple_boot_rom
+xilinx_subcomponent gip_system     boot_rom rf_1r_1w_32_32_core    ddr_dram_as_sram apb_devices io_block io_slots_eth_ss_par analyzer gip_core_plus postbus_simple_router memory_s_sp_4096_x_4b8  memory_s_sp_4096_x_8 gip_simple_boot_rom
 
 xilinx_component  fpga_wrapper   clock_generator gip_system
 #xilinx_toplevel  fpga_wrapper   xc4vlx60-ff668-12 fpga_wrapper_lx60.ucf
@@ -155,6 +157,11 @@ xilinx_component  fpga_wrapper   clock_generator gip_system
 #xilinx_toplevel  fpga_wrapper   xc3s1500-fg676-4 fpga_wrapper_spartan.ucf
 xilinx_toplevel  fpga_wrapper   xc3s4000-fg676-4 fpga_wrapper_spartan.ucf
 
+# gip_rf          uses rf_2r_1w_32_32
+# gip_postbus     uses rf_1r_1w_32_32
+# ddr_dram_posbus uses rf_1r_1w_32_32
+# io_parallel     uses rf_1r_1w_16_32
+# io_parallel     uses rf_1r_1w_16_4
 
 #c_model src c_gip_cyc
 #c_src src c_gip_full

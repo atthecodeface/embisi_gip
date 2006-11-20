@@ -230,6 +230,8 @@ typedef enum[3]
 /*m Module
  */
 extern module gip_core( clock gip_clock,
+                        clock gip_fast_clock,
+                        input bit gip_clock_phase,
                         input bit gip_reset,
 
                         output bit fetch_16,
@@ -275,6 +277,7 @@ extern module gip_core( clock gip_clock,
 
     )
 {
+    timing to rising clock gip_fast_clock gip_clock_phase;
     timing from rising clock gip_clock fetch_16, fetch_op;
     timing to rising clock gip_clock fetch_data, fetch_data_valid, fetch_pc;
     timing from rising clock gip_clock prefetch_op, prefetch_address;

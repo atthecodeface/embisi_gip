@@ -4,8 +4,8 @@
 #  
 
 #a Instantiate modules
-#b Add GIP simple
-module gip_system "gip_simple"
+#b Add GIP system
+module gip_system "gip_system"
 
 #b Add MII testbench
 option_string "monitor_level" "15"
@@ -26,13 +26,6 @@ module uart_testbench "uart_testbench"
 option_string "filename" env_string("ddr_mif")
 #module ddr_16m_x_32 "ddr"
 module ddr_32m_x_16 "ddr"
-
-#b Add test harness
-option_string "clock" "ddr_clock"
-option_string "inputs" "dq_oe_ctl dq_oe_ddr logic_ck_fb"
-option_string "outputs" "test_reset cke_last_of_logic logic_ck"
-option_string "filename" "gip_ddr.th"
-module se_test_harness "ddrth"
 
 #b Ext bus test harness
 option_string "clock" "extbus_clock"
@@ -66,11 +59,7 @@ option_string "filename" "par_b.th"
 module se_test_harness "par_b_th"
 
 #b Add DDR pin logic
-option_string "clock" "ddr_clock"
-option_string "inputs" "next_cke next_s_n[2] next_ras_n next_cas_n next_we_n next_a[13] next_ba[2] next_dq[32] next_dqm[4] next_dqoe next_dqs_high[4] next_dqs_low[4] dq_to_ctl[16] dqs_to_ctl[2]"
-option_string "outputs" "cke select_n[2] ras_n cas_n we_n ba[2] a[13] dqs_out[2] dq_out[16] dqm[2] dq_in_low[16] dq_in_high[16] dq_oe_ctl"
-option_string "filename" "ddr_pins.th"
-module se_test_harness "ddr_pins"
+module ddr_pins "ddr_pins"
 
 #a Wire them up
 #b Drive clocks - name, delay, cycles high, cycles low
@@ -78,19 +67,29 @@ module se_test_harness "ddr_pins"
 # 4x clock is then 1 high, 1 low
 # main clock is then at 96ns; 48 high, 48 low
 # 10Mbps ethernet is at 400ns; 200 high, 200 low
-clock ddr_x4_clock 0 1 1
+#clock ddr_x4_clock 0 1 1
 clock ddr_clock 0 4 4
-clock logic_clock 0 48 48
+clock ddr_data_clock 2 4 4
+# Would like...
+# clock_divide <output clock> <source clock> <delay until first high> <clock ticks high> <clock ticks low>
+# clock_phase <output signal> <source clock> <delay until pattern starts> <cycle length> "pattern" - pattern has H,h,X,* for 1, all others 0; 0 outside pattern
+#   pattern can be shorter than the cycle length if required
+# clock_phase cke_last_of_logic ddr_clock 0 12 " ... ... ..H"
+# OR
+# clock_phase cke_last_of_logic ddr_clock 11 12 "H"
+clock_divide logic_clock ddr_clock 0 6 6
+#clock logic_clock 0 48 48
 clock eth_clock 0 200 200
 clock par_a_clock 0 15 15
 clock par_b_clock 0 48 48
 clock never_clock 0 0x7ffffff 0x7fffffff
 
-drive ddrth.ddr_clock ddr_clock
-drive ddr_pins.ddr_clock ddr_x4_clock
-drive gip_simple.int_clock logic_clock
-drive gip_simple.analyzer_clock logic_clock
-drive gip_simple.drm_clock ddr_clock
+drive ddr_pins.ddr_clock ddr_clock
+drive ddr_pins.ddr_data_clock ddr_data_clock
+drive gip_system.int_clock logic_clock
+drive gip_system.analyzer_clock logic_clock
+drive gip_system.drm_clock ddr_clock
+drive gip_system.fast_clock ddr_clock
 drive ddr.ddr_clock ddr_clock
 
 beq env_int("extbus_enable") 1 extbus_enabled
@@ -103,18 +102,18 @@ extbus_clocked:
 int clock_mii
 set clock_mii 0
 beq env_int("rx_mii_enable") 1 rx_mii_enabled
-drive gip_simple.eth_mii_rx_clock never_clock
+drive gip_system.eth_mii_rx_clock never_clock
 goto rx_mii_clocked
 rx_mii_enabled:
-drive gip_simple.eth_mii_rx_clock eth_clock
+drive gip_system.eth_mii_rx_clock eth_clock
 set clock_mii 1
 rx_mii_clocked:
 
 beq env_int("tx_mii_enable") 1 tx_mii_enabled
-drive gip_simple.eth_mii_tx_clock never_clock
+drive gip_system.eth_mii_tx_clock never_clock
 goto tx_mii_clocked
 tx_mii_enabled:
-drive gip_simple.eth_mii_tx_clock eth_clock
+drive gip_system.eth_mii_tx_clock eth_clock
 set clock_mii 1
 tx_mii_clocked:
 
@@ -134,20 +133,20 @@ ss_clocked:
 
 beq env_int("par_a_enable") 1 par_a_enabled
 drive par_a_th.par_clock never_clock
-drive gip_simple.par_a_clock never_clock
+drive gip_system.par_a_clock never_clock
 goto par_a_clocked
 par_a_enabled:
 drive par_a_th.par_clock par_a_clock
-drive gip_simple.par_a_clock par_a_clock
+drive gip_system.par_a_clock par_a_clock
 par_a_clocked:
 
 beq env_int("par_b_enable") 1 par_b_enabled
 drive par_b_th.par_clock never_clock
-drive gip_simple.par_b_clock never_clock
+drive gip_system.par_b_clock never_clock
 goto par_b_clocked
 par_b_enabled:
 drive par_b_th.par_clock par_b_clock
-drive gip_simple.par_b_clock par_b_clock
+drive gip_system.par_b_clock par_b_clock
 par_b_clocked:
 
 #b Add wires
@@ -185,15 +184,10 @@ wire ssdi[2]
 wire sscl[2] sscl_oe[2]
 wire sscs[8]
 
-wire logic_ck
-
-#b Wire up DDR test harness
-drive system_reset        ddrth.test_reset 
-drive cke_last_of_logic ddrth.cke_last_of_logic
-drive ddrth.dq_oe_ctl dq_oe_ctl
-drive ddrth.dq_oe_ddr dq_oe_ddr
-drive logic_ck ddrth.logic_ck
-drive ddrth.logic_ck_fb logic_ck
+#b Global signals
+assign system_reset 1 1
+clock_phase cke_last_of_logic ddr_clock 11 12 "H"
+assign switches 0
 
 #b Wire up extbus test harness
 drive ext_bus_read_data extbusth.ext_bus_read_data
@@ -205,72 +199,71 @@ drive extbusth.ext_bus_write_data ext_bus_write_data
 drive extbusth.ext_bus_address ext_bus_address
 drive extbusth.leds leds
 
-#b Wire up GIP simple
-drive gip_simple.cke_last_of_logic cke_last_of_logic
-assign switches 0
-drive gip_simple.switches switches
-drive gip_simple.system_reset system_reset
-drive gip_simple.rxd rxd
-drive txd gip_simple.txd
-drive leds gip_simple.leds
+#b Wire up GIP system
+drive gip_system.cke_last_of_logic cke_last_of_logic
+drive gip_system.switches switches
+drive gip_system.system_reset system_reset
+drive gip_system.rxd rxd
+drive txd gip_system.txd
+drive leds gip_system.leds
 
-drive gip_simple.ext_bus_read_data ext_bus_read_data
-drive ext_bus_ce gip_simple.ext_bus_ce
-drive ext_bus_oe gip_simple.ext_bus_oe
-drive ext_bus_we gip_simple.ext_bus_we
-drive ext_bus_write_data_enable gip_simple.ext_bus_write_data_enable
-drive ext_bus_write_data gip_simple.ext_bus_write_data
-drive ext_bus_address gip_simple.ext_bus_address
+drive gip_system.ext_bus_read_data ext_bus_read_data
+drive ext_bus_ce gip_system.ext_bus_ce
+drive ext_bus_oe gip_system.ext_bus_oe
+drive ext_bus_we gip_system.ext_bus_we
+drive ext_bus_write_data_enable gip_system.ext_bus_write_data_enable
+drive ext_bus_write_data gip_system.ext_bus_write_data
+drive ext_bus_address gip_system.ext_bus_address
 
-drive gip_simple.input_dq_high  dq_to_ctl_high
-drive gip_simple.input_dq_low   dq_to_ctl_low
+drive gip_system.input_dq_high  dq_to_ctl_high
+drive gip_system.input_dq_low   dq_to_ctl_low
 
-drive next_cke      gip_simple.next_cke
-drive next_s_n      gip_simple.next_s_n
-drive next_ras_n    gip_simple.next_ras_n
-drive next_cas_n    gip_simple.next_cas_n
-drive next_we_n     gip_simple.next_we_n
-drive next_a        gip_simple.next_a
-drive next_ba       gip_simple.next_ba
-drive next_dq       gip_simple.next_dq
-drive next_dqm      gip_simple.next_dqm
-drive next_dqoe     gip_simple.next_dqoe
-drive next_dqs_high gip_simple.next_dqs_high
-drive next_dqs_low  gip_simple.next_dqs_low
+drive next_cke      gip_system.next_cke
+drive next_s_n      gip_system.next_s_n
+drive next_ras_n    gip_system.next_ras_n
+drive next_cas_n    gip_system.next_cas_n
+drive next_we_n     gip_system.next_we_n
+drive next_a        gip_system.next_a
+drive next_ba       gip_system.next_ba
+drive next_dq       gip_system.next_dq
+drive next_dqm      gip_system.next_dqm
+drive next_dqoe     gip_system.next_dqoe
+drive next_dqs_high gip_system.next_dqs_high
+drive next_dqs_low  gip_system.next_dqs_low
 
-drive gip_simple.eth_mii_rx_dv  eth_mii_rx_dv
-drive gip_simple.eth_mii_rx_d   eth_mii_rx_d
-drive gip_simple.eth_mii_rx_er  eth_mii_rx_er
-drive gip_simple.eth_mii_col    eth_mii_col
-drive gip_simple.eth_mii_crs    eth_mii_crs
+drive gip_system.eth_mii_rx_dv  eth_mii_rx_dv
+drive gip_system.eth_mii_rx_d   eth_mii_rx_d
+drive gip_system.eth_mii_rx_er  eth_mii_rx_er
+drive gip_system.eth_mii_col    eth_mii_col
+drive gip_system.eth_mii_crs    eth_mii_crs
 
-drive eth_mii_tx_en gip_simple.eth_mii_tx_en
-drive eth_mii_tx_d  gip_simple.eth_mii_tx_d
+drive eth_mii_tx_en gip_system.eth_mii_tx_en
+drive eth_mii_tx_d  gip_system.eth_mii_tx_d
 
-drive ssdo    gip_simple.ssdo
-drive ssdo_oe gip_simple.ssdo_oe
-drive sscl    gip_simple.sscl
-drive sscl_oe gip_simple.sscl_oe
-drive sscs    gip_simple.sscs
-drive gip_simple.ssdi ssdi
+drive ssdo    gip_system.ssdo
+drive ssdo_oe gip_system.ssdo_oe
+drive sscl    gip_system.sscl
+drive sscl_oe gip_system.sscl_oe
+drive sscs    gip_system.sscs
+drive gip_system.ssdi ssdi
 
-drive par_a_control_outputs         gip_simple.par_a_control_outputs
-drive par_a_control_oes             gip_simple.par_a_control_oes
-drive par_a_data_outputs            gip_simple.par_a_data_outputs
-drive par_a_data_output_width       gip_simple.par_a_data_output_width
-drive par_a_data_oe                 gip_simple.par_a_data_oe
+drive par_a_control_outputs         gip_system.par_a_control_outputs
+drive par_a_control_oes             gip_system.par_a_control_oes
+drive par_a_data_outputs            gip_system.par_a_data_outputs
+drive par_a_data_output_width       gip_system.par_a_data_output_width
+drive par_a_data_oe                 gip_system.par_a_data_oe
  
-drive gip_simple.par_a_control_inputs  par_a_control_inputs
-drive gip_simple.par_a_data_inputs     par_a_data_inputs
+drive gip_system.par_a_control_inputs  par_a_control_inputs
+drive gip_system.par_a_data_inputs     par_a_data_inputs
 
-drive par_b_control_outputs         gip_simple.par_b_control_outputs
-drive par_b_control_oes             gip_simple.par_b_control_oes
-drive par_b_data_outputs            gip_simple.par_b_data_outputs
-drive par_b_data_output_width       gip_simple.par_b_data_output_width
-drive par_b_data_oe                 gip_simple.par_b_data_oe
+drive par_b_control_outputs         gip_system.par_b_control_outputs
+drive par_b_control_oes             gip_system.par_b_control_oes
+drive par_b_data_outputs            gip_system.par_b_data_outputs
+drive par_b_data_output_width       gip_system.par_b_data_output_width
+drive par_b_data_oe                 gip_system.par_b_data_oe
  
-drive gip_simple.par_b_control_inputs  par_b_control_inputs
-drive gip_simple.par_b_data_inputs     par_b_data_inputs
+drive gip_system.par_b_control_inputs  par_b_control_inputs
+drive gip_system.par_b_data_inputs     par_b_data_inputs
 
 #b Wire up DDR model
 drive ddr.dqm     dqm
@@ -287,36 +280,48 @@ drive dq_to_ctl  ddr.dq_out
 drive dqs_to_ctl ddr.dqs_out
 drive dq_oe_ddr  ddr.dq_oe
 
-#b Wire up DDR pins model
-drive ddr_pins.next_dqs_low next_dqs_low
-drive ddr_pins.next_dqs_high next_dqs_high
-drive ddr_pins.next_dqoe next_dqoe
-drive ddr_pins.next_dqm next_dqm
-drive ddr_pins.next_dq next_dq
-drive ddr_pins.next_ba next_ba
-drive ddr_pins.next_a next_a
-drive ddr_pins.next_we_n next_we_n
-drive ddr_pins.next_cas_n next_cas_n
-drive ddr_pins.next_ras_n next_ras_n
-drive ddr_pins.next_s_n next_s_n
-drive ddr_pins.next_cke next_cke
-drive ddr_pins.dqs_to_ctl dqs_to_ctl
-drive ddr_pins.dq_to_ctl dq_to_ctl
+#b Wire up DDR pins C model
+wire next_dq_out_high[16] next_dq_out_low[16] next_dqm_out_high[2] next_dqm_out_low[2]
+extract next_dq_out_high next_dq 16 16
+extract next_dq_out_low  next_dq 0 16
+extract next_dqm_out_high next_dqm 2 2
+extract next_dqm_out_low next_dqm 0 2
 
-drive dqm ddr_pins.dqm
-drive dq_to_ddr  ddr_pins.dq_out
-drive dqs_to_ddr ddr_pins.dqs_out
+# Inputs
+drive ddr_pins.next_cke next_cke
+drive ddr_pins.next_select_n next_s_n
+drive ddr_pins.next_ras_n next_ras_n
+drive ddr_pins.next_cas_n next_cas_n
+drive ddr_pins.next_we_n next_we_n
+drive ddr_pins.next_a next_a
+drive ddr_pins.next_ba next_ba
+drive ddr_pins.next_dqoe_out next_dqoe
+drive ddr_pins.next_dqs_out_high next_dqs_high
+drive ddr_pins.next_dqs_out_low next_dqs_low
+drive ddr_pins.next_dq_out_high next_dq_out_high
+drive ddr_pins.next_dq_out_low next_dq_out_low
+drive ddr_pins.next_dqm_out_low next_dqm_out_low
+drive ddr_pins.next_dqm_out_high next_dqm_out_high
+
+drive ddr_pins.dqoe_in dq_oe_ddr
+drive ddr_pins.dq_in   dq_to_ctl
+
+# Outputs
 drive cke      ddr_pins.cke
+drive select_n ddr_pins.select_n
 drive a        ddr_pins.a
 drive ba       ddr_pins.ba
 drive we_n     ddr_pins.we_n
 drive cas_n    ddr_pins.cas_n
 drive ras_n    ddr_pins.ras_n
-drive select_n ddr_pins.select_n
 
-drive dq_oe_ctl ddr_pins.dq_oe_ctl
-drive dq_to_ctl_high ddr_pins.dq_in_high
-drive dq_to_ctl_low ddr_pins.dq_in_low
+drive dqm        ddr_pins.dqm_out
+drive dq_to_ddr  ddr_pins.dq_out
+drive dqs_to_ddr ddr_pins.dqs_out
+
+drive dq_oe_ctl          ddr_pins.dqoe_out
+drive dq_to_ctl_high     ddr_pins.dq_in_high
+drive dq_to_ctl_low      ddr_pins.dq_in_low
 
 #b MII testbench
 drive mii.int_reset          system_reset

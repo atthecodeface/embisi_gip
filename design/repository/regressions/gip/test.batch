@@ -23,6 +23,7 @@ int vcd_signals_par_a
 int vcd_signals_par_b
 int vcd_signals_analyzer
 int vcd_signals_apb
+string profile_full_filename
 string vcd_full_filename
 string vcd_filename
 
@@ -220,6 +221,7 @@ printf "gip_system_alu tests"
 setenv "verbose_level" 1
 
     gosub gip_system_alu_0
+#    gosub gip_system_alu_1
 return
 
 #b gip_system_alu_0
@@ -228,6 +230,7 @@ gip_system_alu_0:
 gosub gip_system_test_init
 set_string test_name "gip_system_alu_0"
 set run_length 4000000
+#set run_length 100000
 setenv "ddr_mif" "../arm/bin/alu.regression.dmif"
 gosub gip_system_test
 return
@@ -236,7 +239,7 @@ return
 # This test runs the linux div64 function
 gip_system_alu_1:
 gosub gip_system_test_init
-set_string test_name "gip_system_alu_0"
+set_string test_name "gip_system_alu_1"
 set run_length 100000
 setenv "ddr_mif" "../arm/bin/test_div64.regression.dmif"
 gosub gip_system_test
@@ -658,7 +661,7 @@ sprintf vcd_full_filename "%s0%/%s1%.vcd" env_string("run_dir") vcd_filename
 vcd_file_open "allsignals" vcd_full_filename
 
 beq vcd_signals_toplevel 0 gip_system_test_vcd_signals_toplevel_no
-vcd_file_add "allsignals" "gip_simple"
+vcd_file_add "allsignals" "gip_system"
 vcd_file_add "allsignals" "mii"
 vcd_file_add "allsignals" "uart_testbench"
 vcd_file_add "allsignals" "ddr"
@@ -666,81 +669,81 @@ vcd_file_add "allsignals" "ss_th"
 gip_system_test_vcd_signals_toplevel_no:
 
 beq vcd_signals_gip 0 gip_system_test_vcd_signals_gip_no
-vcd_file_add "allsignals" "gip_simple.gip.gip.decode" "gip_simple.gip.gip.decode.native" "gip_simple.gip.gip.decode.arm"
-vcd_file_add "allsignals" "gip_simple.gip.gip.rf"
-vcd_file_add "allsignals" "gip_simple.gip.gip.alu"
-vcd_file_add "allsignals" "gip_simple.gip.gip.alu.shift_op"
-vcd_file_add "allsignals" "gip_simple.gip.gip.postbus"
-vcd_file_add "allsignals" "gip_simple.gip.gip.special"
-vcd_file_add "allsignals" "gip_simple.gip.gip.scheduler"
-vcd_file_add "allsignals" "gip_simple.prefetch"
-vcd_file_add "allsignals" "gip_simple.data_ram"
-vcd_file_add "allsignals" "gip_simple.boot_rom"
-vcd_file_add "allsignals" "gip_simple.shared_sram"
+vcd_file_add "allsignals" "gip_system.gip.gip.decode" "gip_system.gip.gip.decode.native" "gip_system.gip.gip.decode.arm"
+vcd_file_add "allsignals" "gip_system.gip.gip.rf"
+vcd_file_add "allsignals" "gip_system.gip.gip.alu"
+vcd_file_add "allsignals" "gip_system.gip.gip.alu.shift_op"
+vcd_file_add "allsignals" "gip_system.gip.gip.postbus"
+vcd_file_add "allsignals" "gip_system.gip.gip.special"
+vcd_file_add "allsignals" "gip_system.gip.gip.scheduler"
+vcd_file_add "allsignals" "gip_system.prefetch"
+vcd_file_add "allsignals" "gip_system.data_ram"
+vcd_file_add "allsignals" "gip_system.boot_rom"
+vcd_file_add "allsignals" "gip_system.shared_sram"
 gip_system_test_vcd_signals_gip_no:
 
 beq vcd_signals_ddr 0 gip_system_test_vcd_signals_ddr_no
 vcd_file_add "allsignals" "ddr"
 vcd_file_add "allsignals" "ddr_pins"
-vcd_file_add "allsignals" "gip_simple.main_ram"
+vcd_file_add "allsignals" "gip_system.main_ram"
 gip_system_test_vcd_signals_ddr_no:
 
 beq vcd_signals_io_a 0 gip_system_test_vcd_signals_io_a_no
-vcd_file_add "allsignals" "gip_simple.iob_a.pst.src"
-vcd_file_add "allsignals" "gip_simple.iob_a.pst.tgt"
-vcd_file_add "allsignals" "gip_simple.iob_a.pst.event_mgr"
-vcd_file_add "allsignals" "gip_simple.iob_a.ingress_fifos"
-vcd_file_add "allsignals" "gip_simple.iob_a.egress_fifos"
-#vcd_file_add "allsignals" "gip_simple.iob_a"
-#vcd_file_add "allsignals" "gip_simple.ios_a"
+vcd_file_add "allsignals" "gip_system.iob_a.pst.src"
+vcd_file_add "allsignals" "gip_system.iob_a.pst.tgt"
+vcd_file_add "allsignals" "gip_system.iob_a.pst.event_mgr"
+vcd_file_add "allsignals" "gip_system.iob_a.ingress_fifos"
+vcd_file_add "allsignals" "gip_system.iob_a.egress_fifos"
+#vcd_file_add "allsignals" "gip_system.iob_a"
+#vcd_file_add "allsignals" "gip_system.ios_a"
 gip_system_test_vcd_signals_io_a_no:
 
 beq vcd_signals_io_b 0 gip_system_test_vcd_signals_io_b_no
-vcd_file_add "allsignals" "gip_simple.iob_b.pst.src"
-vcd_file_add "allsignals" "gip_simple.iob_b.pst.tgt"
-vcd_file_add "allsignals" "gip_simple.iob_b.pst.event_mgr"
-vcd_file_add "allsignals" "gip_simple.iob_b.ingress_fifos"
-vcd_file_add "allsignals" "gip_simple.iob_b.egress_fifos"
-#vcd_file_add "allsignals" "gip_simple.iob_b"
-#vcd_file_add "allsignals" "gip_simple.ios_a"
+vcd_file_add "allsignals" "gip_system.iob_b.pst.src"
+vcd_file_add "allsignals" "gip_system.iob_b.pst.tgt"
+vcd_file_add "allsignals" "gip_system.iob_b.pst.event_mgr"
+vcd_file_add "allsignals" "gip_system.iob_b.ingress_fifos"
+vcd_file_add "allsignals" "gip_system.iob_b.egress_fifos"
+#vcd_file_add "allsignals" "gip_system.iob_b"
+#vcd_file_add "allsignals" "gip_system.ios_a"
 gip_system_test_vcd_signals_io_b_no:
 
 beq vcd_signals_eth 0 gip_system_test_vcd_signals_eth_no
-vcd_file_add "allsignals" "gip_simple.ios_a.erx"
-vcd_file_add "allsignals" "gip_simple.ios_a.erx_head"
-vcd_file_add "allsignals" "gip_simple.ios_a.etx"
-vcd_file_add "allsignals" "gip_simple.ios_a.etx_head"
+vcd_file_add "allsignals" "gip_system.ios_a.erx"
+vcd_file_add "allsignals" "gip_system.ios_a.erx_head"
+vcd_file_add "allsignals" "gip_system.ios_a.etx"
+vcd_file_add "allsignals" "gip_system.ios_a.etx_head"
 gip_system_test_vcd_signals_eth_no:
 
 beq vcd_signals_ss 0 gip_system_test_vcd_signals_ss_no
-vcd_file_add "allsignals" "gip_simple.ios_a.ss"
-vcd_file_add "allsignals" "gip_simple.ios_a.ss_head"
+vcd_file_add "allsignals" "gip_system.ios_a.ss"
+vcd_file_add "allsignals" "gip_system.ios_a.ss_head"
 gip_system_test_vcd_signals_ss_no:
 
 beq vcd_signals_par_a 0 gip_system_test_vcd_signals_par_a_no
-vcd_file_add "allsignals" "gip_simple.ios_a.par_a"
-vcd_file_add "allsignals" "gip_simple.ios_a.par_a_head"
-vcd_file_add "allsignals" "gip_simple.ios_a.par_b"
-vcd_file_add "allsignals" "gip_simple.ios_a.par_b_head"
+vcd_file_add "allsignals" "gip_system.ios_a.par_a"
+vcd_file_add "allsignals" "gip_system.ios_a.par_a_head"
+vcd_file_add "allsignals" "gip_system.ios_a.par_b"
+vcd_file_add "allsignals" "gip_system.ios_a.par_b_head"
 gip_system_test_vcd_signals_par_a_no:
 
 beq vcd_signals_par_b 0 gip_system_test_vcd_signals_par_b_no
-vcd_file_add "allsignals" "gip_simple.ios_a.par_b"
-vcd_file_add "allsignals" "gip_simple.ios_a.par_b_head"
-vcd_file_add "allsignals" "gip_simple.ios_a.par_b"
-vcd_file_add "allsignals" "gip_simple.ios_a.par_b_head"
+vcd_file_add "allsignals" "gip_system.ios_a.par_b"
+vcd_file_add "allsignals" "gip_system.ios_a.par_b_head"
+vcd_file_add "allsignals" "gip_system.ios_a.par_b"
+vcd_file_add "allsignals" "gip_system.ios_a.par_b_head"
 gip_system_test_vcd_signals_par_b_no:
 
 beq vcd_signals_analyzer 0 gip_system_test_vcd_signals_analyzer_no
-vcd_file_add "allsignals" "gip_simple.logic_analyzer"
+vcd_file_add "allsignals" "gip_system.logic_analyzer"
 gip_system_test_vcd_signals_analyzer_no:
 
 beq vcd_signals_apb 0 gip_system_test_vcd_signals_apb_no
-vcd_file_add "allsignals" "gip_simple.apb"
-vcd_file_add "allsignals" "gip_simple.apb.uart_apb"
-vcd_file_add "allsignals" "gip_simple.apb.ext_bus_apb"
-vcd_file_add "allsignals" "gip_simple.apb.gpio_apb"
-vcd_file_add "allsignals" "gip_simple.apb.timer_apb"
+vcd_file_add "allsignals" "gip_system.apb"
+vcd_file_add "allsignals" "gip_system.apb.uart_apb"
+vcd_file_add "allsignals" "gip_system.apb.ext_bus_apb"
+vcd_file_add "allsignals" "gip_system.apb.gpio_apb"
+vcd_file_add "allsignals" "gip_system.apb.timer_apb"
 gip_system_test_vcd_signals_apb_no:
 
 
@@ -768,6 +771,9 @@ bgt run_length 0 gip_system_test_loop
 beq vcd_create 0 gip_system_test_no_vcd_2
 vcd_file_close "allsignals"
 gip_system_test_no_vcd_2:
+
+sprintf profile_full_filename "+%s0%/%s1%.prof" env_string("run_dir") vcd_filename
+write_profile profile_full_filename
 
 return
 

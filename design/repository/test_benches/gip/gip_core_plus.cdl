@@ -50,24 +50,24 @@ extern module gip_prefetch( clock gip_clock,
 /*m gip_data_ram
  */
 extern module gip_data_ram( clock gip_clock,
-                     input bit gip_reset,
+                            input bit gip_reset,
 
-                     input t_gip_mem_op alu_mem_op,
-                     input t_gip_mem_options alu_mem_options,
-                     input t_gip_word alu_mem_address,
-                     input t_gip_word alu_mem_write_data,
-                     input bit[4] alu_mem_burst,
+                            input t_gip_mem_op alu_mem_op,
+                            input t_gip_mem_options alu_mem_options,
+                            input t_gip_word alu_mem_address,
+                            input t_gip_word alu_mem_write_data,
+                            input bit[4] alu_mem_burst,
 
-                     output bit mem_alu_busy,
-                     output bit mem_read_data_valid,
-                     output bit[32] mem_read_data,
+                            output bit mem_alu_busy,
+                            output bit mem_read_data_valid,
+                            output bit[32] mem_read_data,
 
-                     output bit sram_not_in_use,
-                     output bit sram_read_not_write,
-                     output bit[4] sram_write_byte_enables,
-                     output bit[32] sram_address,
-                     output bit[32] sram_write_data,
-                     input bit[32] sram_read_data )
+                            output bit sram_not_in_use,
+                            output bit sram_read_not_write,
+                            output bit[4] sram_write_byte_enables,
+                            output bit[32] sram_address,
+                            output bit[32] sram_write_data,
+                            input bit[32] sram_read_data )
 {
     timing to rising clock gip_clock gip_reset, alu_mem_op, alu_mem_options, alu_mem_address, alu_mem_write_data, alu_mem_burst;
     timing comb input sram_read_data;
@@ -119,6 +119,8 @@ extern module gip_periph_apb( clock gip_clock,
 /*a Modules
  */
 module gip_core_plus( clock int_clock,
+                      clock fast_clock,
+                      input bit clock_phase,
                       input bit int_reset,
 
                       output bit gip_mem_priority,
@@ -212,6 +214,8 @@ module gip_core_plus( clock int_clock,
     gip_core_instance "GIP core instance":
         {
             gip_core gip( gip_clock <- int_clock,
+                          gip_fast_clock <- fast_clock,
+                          gip_clock_phase <= clock_phase,
                           gip_reset <= int_reset,
 
                           fetch_op => fetch_op,

@@ -80,6 +80,8 @@ extern module apb_devices( clock int_clock,
 /*m gip_core_plus
  */
 extern module gip_core_plus( clock int_clock,
+                             clock fast_clock,
+                             input bit clock_phase,
                              input bit int_reset,
 
                              output bit gip_mem_priority,
@@ -110,6 +112,7 @@ extern module gip_core_plus( clock int_clock,
                              output t_postbus_ack postbus_rx_ack
     )
 {
+    timing to rising clock fast_clock clock_phase;
     timing to rising clock int_clock int_reset;
 
     timing from rising clock int_clock gip_mem_priority, gip_mem_read, gip_mem_write, gip_mem_write_byte_enables, gip_mem_address, gip_mem_write_data;
@@ -240,6 +243,8 @@ extern module analyzer( clock analyzer_clock,
  */
 module gip_system( clock drm_clock,
                    clock int_clock,
+                   clock fast_clock,
+                   input bit clock_phase,
                    input bit system_reset,
                    output bit reset_out,
 
@@ -597,6 +602,8 @@ module gip_system( clock drm_clock,
             local_events_in[3] = gpio_input_event;
             leds = gpio_output[8;0];
             gip_core_plus gip( int_clock <- int_clock,
+                               fast_clock <- fast_clock,
+                               clock_phase <= cke_last_of_logic,
                                int_reset <= int_reset,
 
                                gip_mem_priority => gip_mem_priority,

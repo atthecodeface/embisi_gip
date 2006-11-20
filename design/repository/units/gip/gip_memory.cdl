@@ -9,6 +9,8 @@ include "gip_internal.h"
 /*a Module
  */
 module gip_memory( clock gip_clock,
+                   clock gip_fast_clock,
+                   input bit gip_clock_phase,
                    input bit gip_reset,
 
                    input t_gip_ins_r alu_mem_rd,
@@ -32,6 +34,10 @@ module gip_memory( clock gip_clock,
      */
     default clock gip_clock;
     default reset gip_reset;
+
+    /*b Dummy for fast clock if not needed
+     */
+    clocked clock gip_fast_clock bit fast_dummy=0;
 
     /*b Pipeline
      */

@@ -64,6 +64,8 @@ typedef struct
 constant integer gip_postbus_nfifo=2;
 constant integer gip_postbus_log_nfifo=1;
 module gip_postbus( clock gip_clock,
+                    clock gip_fast_clock,
+                    input bit gip_clock_phase,
                     input bit gip_reset,
 
                     input bit read,
@@ -114,6 +116,10 @@ module gip_postbus( clock gip_clock,
     clocked t_postbus_data postbus_tx_data = 0; // Postbus Tx side data presented
     clocked bit[5] postbus_tx_left = 0; // Words left to transmit (0=>last)
     clocked bit[5] postbus_tx_semaphore = 0; // Semaphore to set on completion of transmit
+
+    /*b Dummy for fast clock if not needed
+     */
+    clocked clock gip_fast_clock bit fast_dummy=0;
 
     /*b Combinatorials in the postbus registers
      */

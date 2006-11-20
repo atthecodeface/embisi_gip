@@ -23,6 +23,8 @@ typedef struct
 /*a Module
  */
 module gip_scheduler( clock gip_clock,
+                      clock gip_fast_clock,
+                      input bit gip_clock_phase,
                       input bit gip_reset,
 
                       input bit dec_acknowledge_scheduler "If asserted indicates that the outputs from the scheduler have been taken, and they should be removed in the next cycle",
@@ -113,6 +115,10 @@ module gip_scheduler( clock gip_clock,
     comb bit[3] next_thread_to_start;
 
     comb bit[3] thread_data_to_read;
+
+    /*b Dummy for fast clock if not needed
+     */
+    clocked clock gip_fast_clock bit fast_dummy=0;
 
     /*b Determine the schedulability of each thread, and highest priority
      */

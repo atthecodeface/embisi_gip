@@ -253,6 +253,8 @@ typedef enum [2]
 /*m gip_rf
  */
 extern module gip_rf( clock gip_clock,
+                      clock gip_fast_clock,
+                      input bit gip_clock_phase,
                       input bit gip_reset,
 
                       input t_gip_instruction_rf dec_inst,
@@ -310,6 +312,7 @@ extern module gip_rf( clock gip_clock,
                       output bit[32] gip_pipeline_rfw_data
     )
 {
+    timing to rising clock gip_fast_clock gip_clock_phase;
     timing to rising clock gip_clock gip_reset;
 
     timing to rising clock gip_clock dec_inst;
@@ -355,6 +358,8 @@ extern module gip_rf( clock gip_clock,
 /*m gip_alu
  */
 extern module gip_alu( clock gip_clock,
+                       clock gip_fast_clock,
+                       input bit gip_clock_phase,
                        input bit gip_reset,
 
                        input t_gip_instruction_rf rfr_inst,
@@ -389,6 +394,7 @@ extern module gip_alu( clock gip_clock,
                        output bit gip_pipeline_executing
     )
 {
+    timing to rising clock gip_fast_clock gip_clock_phase;
     timing to rising clock gip_clock gip_reset;
 
     timing to rising clock gip_clock rfr_inst, rf_read_port_0, rf_read_port_1;
@@ -411,16 +417,19 @@ extern module gip_alu( clock gip_clock,
 /*m gip_memory
  */
 extern module gip_memory( clock gip_clock,
-                   input bit gip_reset,
+                          clock gip_fast_clock,
+                          input bit gip_clock_phase,
+                          input bit gip_reset,
 
-                   input t_gip_ins_r alu_mem_rd,
-                   input bit mem_alu_busy,
+                          input t_gip_ins_r alu_mem_rd,
+                          input bit mem_alu_busy,
 
-                   output t_gip_ins_r mem_1_rd,
-                   output t_gip_ins_r mem_2_rd,
-                   input bit mem_read_data_valid
+                          output t_gip_ins_r mem_1_rd,
+                          output t_gip_ins_r mem_2_rd,
+                          input bit mem_read_data_valid
     )
 {
+    timing to rising clock gip_fast_clock gip_clock_phase;
     timing to rising clock gip_clock gip_reset;
 
     timing to rising clock gip_clock alu_mem_rd, mem_alu_busy;
@@ -431,6 +440,8 @@ extern module gip_memory( clock gip_clock,
 /*m gip_decode
  */
 extern module gip_decode( clock gip_clock,
+                          clock gip_fast_clock,
+                          input bit gip_clock_phase,
                           input bit gip_reset,
 
                           output bit fetch_16,
@@ -467,6 +478,7 @@ extern module gip_decode( clock gip_clock,
 
     )
 {
+    timing to rising clock gip_fast_clock gip_clock_phase;
     timing to rising clock gip_clock gip_reset;
     timing comb input gip_reset; // Use to take out prefetch_op
 
@@ -491,6 +503,8 @@ extern module gip_decode( clock gip_clock,
 /*m gip_special
  */
 extern module gip_special( clock gip_clock,
+                           clock gip_fast_clock,
+                           input bit gip_clock_phase,
                            input bit gip_reset,
 
                            input bit read,
@@ -525,6 +539,7 @@ extern module gip_special( clock gip_clock,
 
     )
 {
+    timing to rising clock gip_fast_clock gip_clock_phase;
     timing to rising clock gip_clock gip_reset;
 
     timing to rising clock gip_clock read, read_address;
@@ -547,6 +562,8 @@ extern module gip_special( clock gip_clock,
 /*m gip_postbus
  */
 extern module gip_postbus( clock gip_clock,
+                           clock gip_fast_clock,
+                           input bit gip_clock_phase,
                            input bit gip_reset,
 
                            input bit read,
@@ -570,6 +587,7 @@ extern module gip_postbus( clock gip_clock,
 
     )
 {
+    timing to rising clock gip_fast_clock gip_clock_phase;
     timing to rising clock gip_clock gip_reset;
 
     timing to rising clock gip_clock read, flush, read_address;
@@ -591,6 +609,8 @@ extern module gip_postbus( clock gip_clock,
 /*m gip_scheduler
  */
 extern module gip_scheduler( clock gip_clock,
+                             clock gip_fast_clock,
+                             input bit gip_clock_phase,
                              input bit gip_reset,
 
                              input bit dec_acknowledge_scheduler,
@@ -621,6 +641,7 @@ extern module gip_scheduler( clock gip_clock,
 
     )
 {
+    timing to rising clock gip_fast_clock gip_clock_phase;
     timing to rising clock gip_clock gip_reset;
 
     timing to rising clock gip_clock dec_acknowledge_scheduler;
@@ -635,7 +656,9 @@ extern module gip_scheduler( clock gip_clock,
 
 /*a External modules
  */
-extern module rf_2r_1w_32_32( clock rf_clock,
+extern module rf_2r_1w_32_32_fc( clock rf_clock,
+                              clock rf_fast_clock,
+                              input bit rf_clock_phase,
                              input bit rf_reset,
                              input bit[5] rf_rd_addr_0,
                              output bit[32] rf_rd_data_0,
@@ -650,6 +673,7 @@ extern module rf_2r_1w_32_32( clock rf_clock,
     timing to rising clock rf_clock rf_reset;
     timing to rising clock rf_clock rf_wr_enable, rf_wr_addr, rf_wr_data;
     timing from rising clock rf_clock rf_rd_data_0, rf_rd_data_1;
+    timing to rising clock rf_fast_clock rf_clock_phase;
 }
 
 extern module rf_1r_1w_32_32( clock rf_clock,

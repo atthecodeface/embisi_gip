@@ -15,6 +15,8 @@ typedef struct
 /*a Module
  */
 module gip_special( clock gip_clock,
+                    clock gip_fast_clock,
+                    input bit gip_clock_phase,
                     input bit gip_reset,
 
                     input bit read,
@@ -83,6 +85,10 @@ module gip_special( clock gip_clock,
     clocked bit[8] local_events = 0;
     comb bit[8] local_events_one_hot;
     clocked t_local_event_cfg[8] local_events_cfg = { {enable=0, thread=0} };
+
+    /*b Dummy for fast clock if not needed
+     */
+    clocked clock gip_fast_clock bit fast_dummy=0;
 
     /*b Local events to create semaphores
      */

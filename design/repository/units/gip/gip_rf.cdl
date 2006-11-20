@@ -28,6 +28,8 @@ typedef enum [3]
 /*a Module
  */
 module gip_rf( clock gip_clock,
+               clock gip_fast_clock,
+               input bit gip_clock_phase,
                input bit gip_reset,
 
                input t_gip_instruction_rf dec_inst,
@@ -92,11 +94,11 @@ module gip_rf( clock gip_clock,
     /*b State in the RF read stage
      */
     clocked t_gip_instruction_rf rfr_inst_in = { valid=0,
-                                              gip_ins_rn = {type=gip_ins_r_type_none, r=0},
-                                              gip_ins_rd = {type=gip_ins_r_type_none, r=0},
-                                              gip_ins_rm = {type=gip_ins_r_type_none, r=0},
-                                              rm_is_imm = 0,
-                                              k=0, a=0, f=0, d=0, pc=0, tag=0 }
+                                                 gip_ins_rn = {type=gip_ins_r_type_none, r=0},
+                                                 gip_ins_rd = {type=gip_ins_r_type_none, r=0},
+                                                 gip_ins_rm = {type=gip_ins_r_type_none, r=0},
+                                                 rm_is_imm = 0,
+                                                 k=0, a=0, f=0, d=0, pc=0, tag=0 }
                                               "Instruction in the RF read stage";
 
     /*b State in the RF write stage
@@ -123,14 +125,21 @@ module gip_rf( clock gip_clock,
 //    net t_gip_word rf_read_port_0 "Register file read port 0 value";
 //    net t_gip_word rf_read_port_1 "Register file read port 1 value";
 
+    /*b Dummy for fast clock if not needed
+     */
+    clocked clock gip_fast_clock bit fast_dummy=0;
+
     /*b Instantiate register file
      */
     net bit[32] rfr_rf_data_0;
-    net bit[32] rfr_rf_data_1;            
+    net bit[32] rfr_rf_data_1;
+
     rf_inst "":
         {
 
-            rf_2r_1w_32_32 rf( rf_clock <- gip_clock,
+            rf_2r_1w_32_32_fc rf( rf_clock <- gip_clock,
+                               rf_fast_clock <- gip_fast_clock,
+                               rf_clock_phase <= gip_clock_phase,
                                rf_reset <= gip_reset,
                                rf_rd_addr_0 <= rfr_inst_in.gip_ins_rn.r,
                                rf_rd_data_0 => rfr_rf_data_0,

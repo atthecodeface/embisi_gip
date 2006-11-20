@@ -27,6 +27,8 @@ typedef struct
 /*a Module
  */
 module gip_alu( clock gip_clock,
+                clock gip_fast_clock,
+                input bit gip_clock_phase,
                 input bit gip_reset,
 
                 input t_gip_instruction_rf rfr_inst,
@@ -136,6 +138,10 @@ module gip_alu( clock gip_clock,
 
     comb t_gip_alu_op1_src alu_op1_src;
     comb t_gip_alu_op2_src alu_op2_src;
+
+    /*b Dummy for fast clock if not needed
+     */
+    clocked clock gip_fast_clock bit fast_dummy=0;
 
     /*b Evaluate condition associated with the instruction - simultaneous with ALU stage, blocks all results from instruction if it fails; depends directly on state
      */

@@ -16,6 +16,8 @@ include "gip_internal.h"
 /*a Module
  */
 module gip_core( clock gip_clock,
+                 clock gip_fast_clock,
+                 input bit gip_clock_phase,
                  input bit gip_reset,
 
                  output bit fetch_16,
@@ -208,6 +210,8 @@ module gip_core( clock gip_clock,
                                               (rfr_accepting_dec_instruction_if_alu_does && alu_accepting_rfr_instruction) );
 
             gip_rf rf( gip_clock <- gip_clock,
+                       gip_fast_clock <- gip_fast_clock,
+                       gip_clock_phase <= gip_clock_phase,
                        gip_reset <= gip_reset,
 
                        dec_inst <= dec_inst,
@@ -265,6 +269,8 @@ module gip_core( clock gip_clock,
             rfw_periph_write_data = gip_pipeline_rfw_data;
 
             gip_alu alu( gip_clock <- gip_clock,
+                         gip_fast_clock <- gip_fast_clock,
+                         gip_clock_phase <= gip_clock_phase,
                          gip_reset <= gip_reset,
 
                          rfr_inst <= rfr_inst,
@@ -300,6 +306,8 @@ module gip_core( clock gip_clock,
                          gip_pipeline_executing => gip_pipeline_executing );
 
             gip_memory memory( gip_clock <- gip_clock,
+                               gip_fast_clock <- gip_fast_clock,
+                               gip_clock_phase <= gip_clock_phase,
                                gip_reset <= gip_reset,
 
                                alu_mem_rd <= alu_mem_rd,
@@ -316,6 +324,8 @@ module gip_core( clock gip_clock,
     control_instances "Control instances":
         {
             gip_scheduler scheduler( gip_clock <- gip_clock,
+                                     gip_fast_clock <- gip_fast_clock,
+                                     gip_clock_phase <= gip_clock_phase,
                                      gip_reset <= gip_reset,
 
                                      dec_acknowledge_scheduler <= dec_sched_acknowledge,
@@ -347,6 +357,8 @@ module gip_core( clock gip_clock,
 
             fetch_flush = force_fetch_flush | gip_pipeline_flush;
             gip_decode decode( gip_clock <- gip_clock,
+                               gip_fast_clock <- gip_fast_clock,
+                               gip_clock_phase <= gip_clock_phase,
                                gip_reset <= gip_reset,
 
                                fetch_16 => fetch_16,
@@ -388,6 +400,8 @@ module gip_core( clock gip_clock,
     peripheral_instances "Peripheral instances":
         {
             gip_postbus postbus( gip_clock <- gip_clock,
+                                 gip_fast_clock <- gip_fast_clock,
+                                 gip_clock_phase <= gip_clock_phase,
                                  gip_reset <= gip_reset,
 
                                  read <= rfr_postbus_read,
@@ -410,6 +424,8 @@ module gip_core( clock gip_clock,
                                  semaphore_to_set => postbus_semaphore_to_set );
 
             gip_special special( gip_clock <- gip_clock,
+                                 gip_fast_clock <- gip_fast_clock,
+                                 gip_clock_phase <= gip_clock_phase,
                                  gip_reset <=gip_reset,
 
                                  read <= rfr_special_read,

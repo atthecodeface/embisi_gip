@@ -55,6 +55,8 @@ typedef struct
 
  */
 module gip_decode( clock gip_clock,
+                   clock gip_fast_clock,
+                   input bit gip_clock_phase,
                    input bit gip_reset,
 
                    output bit fetch_16,
@@ -147,6 +149,10 @@ module gip_decode( clock gip_clock,
     clocked bit[6] atomic=0;
     comb bit[6] next_atomic;
     comb bit[6] atomic_dec;
+
+    /*b Dummy for fast clock if not needed
+     */
+    clocked clock gip_fast_clock bit fast_dummy=0;
 
     /*b ARM registers
      */

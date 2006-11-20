@@ -1,7 +1,7 @@
 #!/usr/bin/php -q
 <?php
 
-#a Documetation - Xilinx bugs...
+#a Documentation - Xilinx bugs...
 # map must be run with -ignore_keep_hierarchy on 7.1 else it core dumps
 # xst adds 'keep_hierarchy' to _all_ submodules of a model when it synthesizes it if the xcf file has 'model $model keep_hierarchy=yes'
 
@@ -19,12 +19,12 @@
 function usage()
 {
     echo "Syntax: xcreate_make -f <model_list> [-x <xilinx makefile>] [-m simulation/emulation makefile]\n";
-    exit();
+    exit(4);
 }
 
 #a Main
 $base_options = "--include-assertions\@\@\@--include-coverage\@\@\@--coverage-desc-file\@\@\@\${TARGET_DIR}/coverage.map";
-$options = getopt("f:x:m:");
+$options = getopt("f:x:m:t:");
 if (!isset($options["f"]))
 {
     usage();
@@ -285,14 +285,13 @@ function parse_xilinx_descs( $objs )
         $xilinx["type"][$src] = "comp";
     }
     # toplevels are built (if components...) with IOBs
-    # Actually the first toplevel is also what everything depends upon
-    # So only put one toplevel in most of the time...
     foreach (objs_of_type($objs,"/^xilinx_toplevel/") as $sel)
     {
+        echo "Parsing toplevel '".$sel["args"][0]."'\n";
         $src = $sel["args"][0];
-        $obj["model"] = $src;
-        $obj["device"] = $sel["args"][1];
-        $obj["constraints"] = $sel["args"][2];
+        $obj["model"] = $sel["args"][1];
+        $obj["device"] = $sel["args"][2];
+        $obj["constraints"] = $sel["args"][3];
         $xilinx["toplevels"][$src] = $obj;
     }
 }
@@ -552,15 +551,12 @@ function output_model_makefile( $file )
 
 #a Xilinx makefile
 #f output_xilinx_makefile
-function output_xilinx_makefile( $file )
+function output_xilinx_makefile( $file, $toplevel )
 {
     global $models, $xilinx;
 
-    foreach ($xilinx["toplevels"] as $key=>$value)
-    {
-        $toplevel = $key;
-    }
-    $device = $xilinx["toplevels"][$toplevel]["device"];
+    $device         = $xilinx["toplevels"][$toplevel]["device"];
+    $toplevel_model = $xilinx["toplevels"][$toplevel]["model"];
     $constraints = "\${CONSTRAINTS}/".$xilinx["toplevels"][$toplevel]["constraints"];
 
     #b Header
@@ -645,11 +641,11 @@ function output_xilinx_makefile( $file )
         }
         fwrite ($file, "\n");
 
-        fwrite( $file, "\tmkdir -p \${COREGEN_OBJ}\n" );
+        fwrite( $file, "\t@mkdir -p \${COREGEN_OBJ}\n" );
         fwrite( $file, "\trm -f \${COREGEN_OBJ}/$model*\n" );
         fwrite( $file, "\tcoregen -b \${CORES}/".$i["src"].".xco\n\n");
         fwrite( $file, "\${XST_OBJ}/$model.ngo: \${COREGEN_OBJ}/$model.edn\n");
-        fwrite( $file, "\tmkdir -p \${XST_OBJ}\n");
+        fwrite( $file, "\t@mkdir -p \${XST_OBJ}\n");
         fwrite( $file, "\tedif2ngd \${COREGEN_OBJ}/$model.edn \${XST_OBJ}/$model.ngo\n\n");
     }
     fwrite( $file, "coregen: \\\n" );
@@ -710,90 +706,115 @@ function output_xilinx_makefile( $file )
             }
         }
         fwrite( $file, "\n" );
-        fwrite( $file, "\tmkdir -p \${XST_OBJ}\n" );
-        fwrite( $file, "\tmkdir -p \${XST_TMP}\n" );
-        fwrite( $file, "\trm -f \${XST_OBJ}/$model.ngc\n" );
-        fwrite( $file, "\trm -f \${XST_DONE}\n" );
+        fwrite( $file, "\t@mkdir -p \${XST_OBJ}\n" );
+        fwrite( $file, "\t@mkdir -p \${XST_TMP}\n" );
+        fwrite( $file, "\t@rm -f \${XST_OBJ}/$model.ngc\n" );
+        fwrite( $file, "\t@rm -f \${XST_DONE}\n" );
         $xst_file = "\${XST_TMP}/$model.xst";
         $prj_file = "\${XST_TMP}/$model.prj";
         $xcf_file = "\${XST_TMP}/$model.xcf";
         $lso_file = "\${XST_TMP}/$model.lso";
-        fwrite( $file, "\techo \"work\" > $lso_file\n");
-        fwrite( $file, "\techo \"\" > $xcf_file\n");
+        fwrite( $file, "\t@echo \"work\" > $lso_file\n");
+        fwrite( $file, "\t@echo \"\" > $xcf_file\n");
         foreach ($xilinx["comps"] as $submodel=>$dummy)
         #foreach ($hier_models as $submodel)
         {
             if ($submodel!=$model) # Don't include itself, that messes up xst
             {
-                fwrite( $file, "\techo \"MODEL \\\"$submodel\\\" incremental_synthesis=yes;\" >> $xcf_file\n");
+                fwrite( $file, "\t@echo \"MODEL \\\"$submodel\\\" incremental_synthesis=yes;\" >> $xcf_file\n");
             }
         }
-        fwrite( $file, "\techo \"\" > $prj_file\n");
+        fwrite( $file, "\t@echo \"\" > $prj_file\n");
         foreach ($v_files as $v)
         {
-            fwrite( $file, "\techo \"verilog work $v\" >> $prj_file\n");
+            fwrite( $file, "\t@echo \"verilog work $v\" >> $prj_file\n");
         }
-        fwrite( $file, "\techo \"set -tmpdir ./tmp\" > $xst_file\n");
-        fwrite( $file, "\techo \"set -xsthdpdir ./xst\" >> $xst_file\n");
-        fwrite( $file, "\techo \"run\" >> $xst_file\n");
-        if (isset($xilinx["toplevels"][$model]))
+        fwrite( $file, "\t@echo \"set -tmpdir ./tmp\" > $xst_file\n");
+        fwrite( $file, "\t@echo \"set -xsthdpdir ./xst\" >> $xst_file\n");
+        fwrite( $file, "\t@echo \"run\" >> $xst_file\n");
+        #if (isset($xilinx["toplevels"][$model]))
+        if ($model==$toplevel_model)
         {
-            fwrite( $file, "\techo \"\${XST_TOP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn \${XST_OBJ}/$model -top $model\" >> $xst_file\n" );
+            fwrite( $file, "\t@echo \"\${XST_TOP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn \${XST_OBJ}/$model -top $model\" >> $xst_file\n" );
         }
         else
         {
-            fwrite( $file, "\techo \"\${XST_COMP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn \${XST_OBJ}/$model -top $model\" >> $xst_file\n" );
+            fwrite( $file, "\t@echo \"\${XST_COMP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn \${XST_OBJ}/$model -top $model\" >> $xst_file\n" );
         }
+        fwrite( $file, "\t@echo \"\"\n");
+        fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+        fwrite( $file, "\t@echo \"                               Synthesizing $model                          \"\n");
+        fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
         fwrite( $file, "\txst -ifn $xst_file -ofn \${LOG}/$model.syr" );
         fwrite( $file, "\n\n" );
     }
 
-    fwrite( $file, "\${XST_DONE}: \${XST_OBJ}/$toplevel.ngc\n" );
+    fwrite( $file, "\${XST_DONE}: \${XST_OBJ}/$toplevel_model.ngc\n" );
     fwrite( $file, "\ttouch \${XST_DONE}\n" );
     fwrite( $file, "synth: \${XST_DONE}\n\n" );
 
     #b NGDbuild
-    fwrite( $file, "\${NGD_OBJ}/$toplevel.ngd: \${XST_OBJ}/boot_rom.ngo \${XST_OBJ}/.built $constraints \${XST_OBJ}/$toplevel.ngc\n");
-    fwrite( $file, "\tmkdir -p \${NGD_OBJ}\n");
-    fwrite( $file, "\trm -f \${NGD_DONE}\n");
-    fwrite( $file, "\tngdbuild -insert_keep_hierarchy -dd ./tmp -nt timestamp -uc $constraints -p $device \${XST_OBJ}/$toplevel.ngc \${NGD_OBJ}/$toplevel.ngd\n");
-    fwrite( $file, "\${NGD_DONE}: \${NGD_OBJ}/$toplevel.ngd\n" );
+    fwrite( $file, "\${NGD_OBJ}/$toplevel_model.ngd: \${XST_OBJ}/boot_rom.ngo \${XST_OBJ}/.built $constraints \${XST_OBJ}/$toplevel_model.ngc\n");
+    fwrite( $file, "\t@mkdir -p \${NGD_OBJ}\n");
+    fwrite( $file, "\t@rm -f \${NGD_DONE}\n");
+    fwrite( $file, "\t@echo \"\"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\t@echo \"                               NGD Build                                    \"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\tngdbuild -aul -insert_keep_hierarchy -dd ./tmp -nt timestamp -uc $constraints -p $device \${XST_OBJ}/$toplevel_model.ngc \${NGD_OBJ}/$toplevel_model.ngd\n");
+    fwrite( $file, "\${NGD_DONE}: \${NGD_OBJ}/$toplevel_model.ngd\n" );
     fwrite( $file, "\ttouch \${NGD_DONE}\n" );
     fwrite( $file, "ngd: \${NGD_DONE}\n\n\n");
 
     #b Map
-    fwrite( $file, "\${MAP_OBJ}/$toplevel.ncd: \${NGD_DONE} \${NGD_OBJ}/$toplevel.ngd\n");
-    fwrite( $file, "\tmkdir -p \${MAP_OBJ}\n");
-    fwrite( $file, "\trm -f \${MAP_DONE}\n");
-    fwrite( $file, "\tmap -ignore_keep_hierarchy -p $device -cm area -detail -pr b -k 4 -c 100 -o \${MAP_OBJ}/$toplevel.ncd \${NGD_OBJ}/$toplevel.ngd \${MAP_OBJ}/$toplevel.pcf\n");
-    fwrite( $file, "\${MAP_DONE}: \${MAP_OBJ}/$toplevel.ncd\n" );
+    fwrite( $file, "\${MAP_OBJ}/$toplevel_model.ncd: \${NGD_DONE} \${NGD_OBJ}/$toplevel_model.ngd\n");
+    fwrite( $file, "\t@mkdir -p \${MAP_OBJ}\n");
+    fwrite( $file, "\t@rm -f \${MAP_DONE}\n");
+    fwrite( $file, "\t@echo \"\"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\t@echo \"                               Mapping                                      \"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\tmap -ignore_keep_hierarchy -p $device -cm area -detail -pr b -k 4 -c 100 -o \${MAP_OBJ}/$toplevel_model.ncd \${NGD_OBJ}/$toplevel_model.ngd \${MAP_OBJ}/$toplevel_model.pcf\n");
+    fwrite( $file, "\${MAP_DONE}: \${MAP_OBJ}/$toplevel_model.ncd\n" );
     fwrite( $file, "\ttouch \${MAP_DONE}\n");
-    fwrite( $file, "\${MAP_OBJ}/$toplevel.pcf: \${MAP_DONE}\n");
+    fwrite( $file, "\${MAP_OBJ}/$toplevel_model.pcf: \${MAP_DONE}\n");
     fwrite( $file, "map: \${MAP_DONE}\n\n\n");
 
     #b PAR
-    fwrite( $file, "\${PAR_OBJ}/$toplevel.par:\${MAP_DONE} \${MAP_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
-    fwrite( $file, "\tmkdir -p \${PAR_OBJ}\n");
-    fwrite( $file, "\trm -f \${PAR_DONE}\n");
-    fwrite( $file, "\tpar -w -ol med -t 1 \${MAP_OBJ}/$toplevel.ncd \${PAR_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
-    fwrite( $file, "\${PAR_DONE}: \${PAR_OBJ}/$toplevel.par\n");
+    fwrite( $file, "\${PAR_OBJ}/$toplevel_model.par:\${MAP_DONE} \${MAP_OBJ}/$toplevel_model.ncd \${MAP_OBJ}/$toplevel_model.pcf\n");
+    fwrite( $file, "\t@mkdir -p \${PAR_OBJ}\n");
+    fwrite( $file, "\t@rm -f \${PAR_DONE}\n");
+    fwrite( $file, "\t@echo \"\"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\t@echo \"                               Place and route                              \"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\tpar -w -ol med -t 1 \${MAP_OBJ}/$toplevel_model.ncd \${PAR_OBJ}/$toplevel_model.ncd \${MAP_OBJ}/$toplevel_model.pcf\n");
+    fwrite( $file, "\${PAR_DONE}: \${PAR_OBJ}/$toplevel_model.par\n");
     fwrite( $file, "\ttouch \${PAR_DONE}\n");
     fwrite( $file, "par: \${PAR_DONE}\n\n\n");
 
     #b Trace (timing analysis)
-    fwrite( $file, "obj/trace/.built: \${PAR_DONE} \${PAR_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
-    fwrite( $file, "\tmkdir -p obj/trace\n");
-    #fwrite( $file, "\trm -f obj/trace/.built\n");
-    fwrite( $file, "\ttrce -e 3 -l 3 -s 12 -xml $toplevel \${PAR_OBJ}/$toplevel.ncd -o obj/trace/$toplevel.twr \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "obj/trace/.built: \${PAR_DONE} \${PAR_OBJ}/$toplevel_model.ncd \${MAP_OBJ}/$toplevel_model.pcf\n");
+    fwrite( $file, "\t@mkdir -p obj/trace\n");
+    #fwrite( $file, "\t@rm -f obj/trace/.built\n");
+    fwrite( $file, "\t@echo \"\"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\t@echo \"                               Timing analysis                              \"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\ttrce -e 3 -l 3 -s 12 -xml $toplevel_model \${PAR_OBJ}/$toplevel_model.ncd -o obj/trace/$toplevel_model.twr \${MAP_OBJ}/$toplevel_model.pcf\n");
     fwrite( $file, "\ttouch obj/trace/.built\n");
     fwrite( $file, "\n");
     fwrite( $file, "trace: obj/trace/.built\n\n\n");
 
     #b Bit file generation
-    fwrite( $file, "\${BIT_DONE}: \${PAR_DONE} \${PAR_OBJ}/$toplevel.ncd \${MAP_OBJ}/$toplevel.pcf\n");
-    fwrite( $file, "\tmkdir -p \${BIT_OBJ}\n");
-    #fwrite( $file, "\trm -f \${BIT_DONE}\n");
-    fwrite( $file, "\tbitgen -f build/$toplevel.ut \${PAR_OBJ}/$toplevel.ncd \${BIT_OBJ}/$toplevel.bit \${MAP_OBJ}/$toplevel.pcf\n");
+    fwrite( $file, "\${BIT_DONE}: \${PAR_DONE} \${PAR_OBJ}/$toplevel_model.ncd \${MAP_OBJ}/$toplevel_model.pcf\n");
+    fwrite( $file, "\t@mkdir -p \${BIT_OBJ}\n");
+    #fwrite( $file, "\t@rm -f \${BIT_DONE}\n");
+    fwrite( $file, "\t@echo \"\"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\t@echo \"                               Bitfile generation                           \"\n");
+    fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+    fwrite( $file, "\tbitgen -f build/$toplevel_model.ut \${PAR_OBJ}/$toplevel_model.ncd \${BIT_OBJ}/$toplevel_model.bit \${MAP_OBJ}/$toplevel_model.pcf\n");
     fwrite( $file, "\ttouch \${BIT_DONE}\n");
     fwrite( $file, "bit: \${BIT_DONE}\n\n\n");
 }
@@ -822,8 +843,20 @@ if (isset($options["m"]))
 
 if (isset($options["x"]))
 {
+    if (!isset($options["t"]))
+    {
+        echo "For a Xilinx build you must specify a xilinx_toplevel to build from\n";
+        exit(4);
+    }
+    $toplevel = $options["t"];
+    if (!$xilinx["toplevels"][$toplevel])
+    {
+        echo "xilinx_toplevel '$toplevel' not found in model list when building Xilinx makefile\n";
+        exit(4);
+    }
+
     $file = fopen( $options["x"], 'w' );
-    output_xilinx_makefile( $file );
+    output_xilinx_makefile( $file, $toplevel );
     fclose($file);
 }
 

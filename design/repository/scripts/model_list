@@ -13,6 +13,7 @@ c_model test_benches/uart     c_uart_testbench inc:headers/c
 c_model models/memories c_memory inc:headers/c
 c_model models/memories c_rf inc:headers/c
 c_model models/memories c_ddr inc:headers/c
+c_model models/memories c_ddr_pins inc:headers/c
 
 c_model models/dsp c_adc_frontend inc:headers/c
 c_model models/dsp c_sample_memory inc:headers/c
@@ -93,8 +94,11 @@ cdl units/io          io_block                    inc:headers/cdl
 cdl units/io          io_slot_head                inc:headers/cdl
 cdl units/io          io_parallel                 inc:headers/cdl
 
+xilinx_src counter
 xilinx_src fpga_wrapper
 xilinx_src clock_generator
+xilinx_src gip_core_wrapper
+xilinx_src gip_alu_wrapper
 xilinx_ram boot.coe
 xilinx_macro memory_s_dp_2048_x_32
 xilinx_macro memory_s_sp_2048_x_32
@@ -104,6 +108,8 @@ xilinx_macro memory_s_sp_4096_x_8
 xilinx_macro rf_2r_1w_32_32
 xilinx_macro gip_simple_boot_rom
 
+xilinx_core dp_32_32_core
+
 xilinx_macro rf_1r_1w_32_32
 xilinx_core rf_1r_1w_32_32_core
 xilinx_macro rf_1r_1w_16_32
@@ -112,7 +118,7 @@ xilinx_macro rf_1r_1w_8_32
 xilinx_macro rf_1r_1w_16_4
 xilinx_core boot_rom boot.coe
 
-# We need anything we are going to place to be a component
+# We need anything we are going to be allowed to place to be a component; 
 xilinx_subcomponent gip_decode  gip_decode_native gip_decode_arm
 xilinx_subcomponent gip_alu     gip_alu_arith_op gip_alu_barrel_shift gip_alu_logical_op
 
@@ -142,8 +148,12 @@ xilinx_subcomponent ddr_dram_as_sram
 xilinx_subcomponent postbus_simple_router
 xilinx_subcomponent gip_system     boot_rom rf_1r_1w_32_32_core    ddr_dram_as_sram apb_devices io_block io_slots_eth_ss_par analyzer gip_core_plus postbus_simple_router memory_s_sp_4096_x_4b8  memory_s_sp_4096_x_8 gip_simple_boot_rom
 
+
 xilinx_component  fpga_wrapper   clock_generator gip_system
-#xilinx_toplevel  fpga_wrapper   xc4vlx60-ff668-12 fpga_wrapper_lx60.ucf
+xilinx_component  gip_core_wrapper gip_core dp_32_32_core
+xilinx_component  gip_alu_wrapper  gip_alu
+xilinx_component  counter
+
 #We can try the xc3s1500, xc3s1500l
 # 1500 has packages of fg320, fg456, fg676
 # 1500 has 32 block rams, each of 18kbit (2kB).
@@ -155,7 +165,13 @@ xilinx_component  fpga_wrapper   clock_generator gip_system
 # 4000 has 96 block rams... so that will do for now
 # speed grades of -4 
 #xilinx_toplevel  fpga_wrapper   xc3s1500-fg676-4 fpga_wrapper_spartan.ucf
-xilinx_toplevel  fpga_wrapper   xc3s4000-fg676-4 fpga_wrapper_spartan.ucf
+xilinx_toplevel  fpga_wrapper__spartan3_4000 fpga_wrapper   xc3s4000-fg676-4 fpga_wrapper_spartan.ucf
+xilinx_toplevel  fpga_wrapper__lx60 fpga_wrapper   xc4vlx60-ff668-12 fpga_wrapper_lx60.ucf
+xilinx_toplevel gip_core__spartan3_4000 gip_core_wrapper xc3s4000-fg676-4 gip_core__spartan3_4000.ucf
+xilinx_toplevel gip_core__spartan3_400 gip_core_wrapper xc3s400-fg456-5 gip_core__spartan3_400.ucf
+xilinx_toplevel gip_alu__spartan3_4000 gip_alu_wrapper xc3s4000-fg676-4 gip_alu__spartan3_4000.ucf
+xilinx_toplevel counter__spartan3_4000 counter xc3s4000-fg676-4 counter__spartan3_4000.ucf
+
 
 # gip_rf          uses rf_2r_1w_32_32
 # gip_postbus     uses rf_1r_1w_32_32

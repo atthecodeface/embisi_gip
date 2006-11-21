@@ -3,27 +3,33 @@ SET flowvendor = Foundation_iSE
 SET vhdlsim = False
 SET verilogsim = True
 SET workingdirectory = ./tmp
-SET speedgrade = -12
 SET simulationfiles = Behavioral
 SET asysymbol = True
 SET addpads = False
 SET outputdirectory = ./obj/coregen
+
+SET devicefamily = virtex4
+SET package = ff668
 SET device = xc4vlx60
+SET speedgrade = -12
+
 # SET projectname = coregen
 SET implementationfiletype = Edif
 SET busformat = BusFormatAngleBracketNotRipped
 SET foundationsym = False
-SET package = ff668
 SET createndf = False
 SET designentry = Verilog
-SET devicefamily = virtex4
 SET formalverification = False
 SET removerpms = False
+
 # END Project Options
+
+
 # BEGIN Select
 SELECT Distributed_Memory family Xilinx,_Inc. 7.1
 # END Select
-# BEGIN Parameters
+
+ # BEGIN Parameters
 CSET create_rpm=true
 CSET reset_qspo=false
 CSET reset_qdpo=false

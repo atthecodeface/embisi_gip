@@ -12,14 +12,23 @@ PREFIX_OBJ_DIR := xilinx/
 #a Include standard build makefile
 CREATE_MAKE := ${SRC_ROOT}/scripts/xcreate_make
 
-xilinx/build/Makefile.xilinx: ${SRC_ROOT}/scripts/model_list ${CREATE_MAKE}
-	${CREATE_MAKE} -x ${SRC_ROOT}/../build/xilinx/build/Makefile.xilinx -f ${SRC_ROOT}/scripts/model_list
+TOPLEVEL := NONE
+ifeq ($(TOPLEVEL),NONE)
+$(error "Use make xilinx TOPLEVEL=<toplevel>...  as an example, make xilinx TOPLEVEL='counter__spartan3_4000'")
+endif
 
-all: xilinx/build/Makefile.xilinx
-	(cd ${SRC_ROOT}/../build/xilinx/ ; 	make -f build/Makefile.xilinx bit )
+xilinx/build/Makefile.xilinx.$(TOPLEVEL): ${SRC_ROOT}/scripts/model_list ${CREATE_MAKE}
+	${CREATE_MAKE} -x ${SRC_ROOT}/../build/xilinx/build/Makefile.xilinx.$(TOPLEVEL) -f ${SRC_ROOT}/scripts/model_list -t ${TOPLEVEL}
+#	touch xilinx/build/.$(TOPLEVEL).Makefile.xilinx
+#	${CREATE_MAKE} -x ${SRC_ROOT}/../build/xilinx/build/Makefile.xilinx -f ${SRC_ROOT}/scripts/model_list -t 'fpga_wrapper__spartan3_4000'
+#	${CREATE_MAKE} -x ${SRC_ROOT}/../build/xilinx/build/Makefile.xilinx -f ${SRC_ROOT}/scripts/model_list -t 'gip_core__spartan3_4000'
+#	${CREATE_MAKE} -x ${SRC_ROOT}/../build/xilinx/build/Makefile.xilinx -f ${SRC_ROOT}/scripts/model_list -t 'counter__spartan3_4000'
+
+all: xilinx/build/Makefile.xilinx.$(TOPLEVEL)
+	(cd ${SRC_ROOT}/../build/xilinx/ ; 	make -f build/Makefile.xilinx.$(TOPLEVEL) bit )
 
 clean:
-	(cd ${SRC_ROOT}/../build/xilinx/ ; 	make -f build/Makefile.xilinx clean )
+	-(cd ${SRC_ROOT}/../build/xilinx/ ; rm -rf tmp xst obj log *prj coregen.log )
 
 #a Editor preferences and notes
 # Local Variables: ***

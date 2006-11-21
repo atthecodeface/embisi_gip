@@ -16,7 +16,7 @@ doc: documentation
 .PHONY: simulation
 
 simulation:
-	$(MAKE) -f Makefile.simulation
+	$(MAKE) -f Makefile.simulation 'BUILD_FLAGS=-O2'
 
 simclean:
 	$(MAKE) -f Makefile.simulation clean

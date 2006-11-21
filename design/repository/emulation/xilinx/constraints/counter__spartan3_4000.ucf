@@ -1,0 +1,30 @@
+NET "counter<0>"  LOC = "N4"  ;
+NET "counter<1>"  LOC = "P4"  ;
+NET "counter<2>"  LOC = "R4"  ;
+NET "counter<3>"  LOC = "T4"  ;
+NET "counter<4>"  LOC = "U4"  ;
+NET "counter<5>"  LOC = "V4"  ;
+NET "counter<6>"  LOC = "W4"  ;
+NET "counter<7>"  LOC = "Y4"  ;
+NET "led"  LOC = "AA4"  ;
+NET "system_clock_in"  LOC = "AC10"  ;
+#####NET "led"  LOC = "AF3" | IOSTANDARD = LVTTL ; 
+##########NET "leds<1>"  LOC = "AF4" | IOSTANDARD = LVTTL ; 
+##########NET "leds<2>"  LOC = "AE4" | IOSTANDARD = LVTTL ; 
+##########NET "leds<3>"  LOC = "AD5" | IOSTANDARD = LVTTL ; 
+##########NET "leds<4>"  LOC = "AE6" | IOSTANDARD = LVTTL ; 
+##########NET "leds<5>"  LOC = "AF6" | IOSTANDARD = LVTTL ; 
+##########NET "leds<6>"  LOC = "AD6" | IOSTANDARD = LVTTL ; 
+##########NET "leds<7>"  LOC = "AC6" | IOSTANDARD = LVTTL ; 
+#####NET "counter[0]"  LOC = "R7" | IOSTANDARD = LVCMOS25 ; 
+#####NET "counter<1>"  LOC = "T6" | IOSTANDARD = LVCMOS25 ; 
+#####NET "counter<2>"  LOC = "U3" | IOSTANDARD = LVCMOS25 ; 
+#####NET "counter<3>"  LOC = "U4" | IOSTANDARD = LVCMOS25 ; 
+#####NET "counter<4>"  LOC = "V4" | IOSTANDARD = LVCMOS25 ; 
+#####NET "counter<5>"  LOC = "M8" | IOSTANDARD = LVCMOS25 ; 
+#####NET "counter<6>"  LOC = "L8" | IOSTANDARD = LVCMOS25 ; 
+#####NET "counter<7>"  LOC = "H20" | IOSTANDARD = LVCMOS25 ; 
+#####NET "system_clock_in"  LOC = "C13" | IOSTANDARD = LVCMOS33 ; 
+#####NET "system_reset"  LOC = "AB22" | IOSTANDARD = LVCMOS33 ; 
+#####
+#####

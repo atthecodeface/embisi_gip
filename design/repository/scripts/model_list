@@ -107,6 +107,9 @@ xilinx_macro memory_s_sp_4096_x_4b8
 xilinx_macro memory_s_sp_4096_x_8
 xilinx_macro rf_2r_1w_32_32
 xilinx_macro gip_simple_boot_rom
+xilinx_macro barrel_shift_32
+xilinx_component barrel_shift_32
+xilinx_rpm barrel_shift_32
 
 xilinx_core dp_32_32_core
 
@@ -120,7 +123,7 @@ xilinx_core boot_rom boot.coe
 
 # We need anything we are going to be allowed to place to be a component; 
 xilinx_subcomponent gip_decode  gip_decode_native gip_decode_arm
-xilinx_subcomponent gip_alu     gip_alu_arith_op gip_alu_barrel_shift gip_alu_logical_op
+xilinx_subcomponent gip_alu     gip_alu_arith_op gip_alu_barrel_shift gip_alu_logical_op barrel_shift_32
 
 xilinx_subcomponent gip_rf       rf_2r_1w_32_32
 xilinx_subcomponent gip_postbus  rf_1r_1w_32_32

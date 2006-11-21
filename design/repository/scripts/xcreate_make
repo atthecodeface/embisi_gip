@@ -202,6 +202,7 @@ function parse_xilinx_descs( $objs )
 
     $xilinx["srcs"] = array();
     $xilinx["macros"] = array();
+    $xilinx["rpms"] = array();
     $xilinx["rams"] = array();
     $xilinx["cores"] = array();
     $xilinx["subs"] = array();
@@ -284,6 +285,16 @@ function parse_xilinx_descs( $objs )
         $xilinx["comps"][$src] = $obj;
         $xilinx["type"][$src] = "comp";
     }
+    # A Xilinx RPM converts a component into a relationally-placed macro; it needs a floorplanner file as well as the component
+    # It requires some offline work to create a .ngc file from the floorplanner file and the synthesized ngc file.
+    foreach (objs_of_type($objs,"/^xilinx_rpm/") as $sel)
+    {
+        $src = $sel["args"][0];
+        $obj = array();
+        $obj["model"] = $src;
+        $xilinx["rpms"][$src] = $obj;
+        $xilinx["type"][$src] = "rpm";
+    }
     # toplevels are built (if components...) with IOBs
     foreach (objs_of_type($objs,"/^xilinx_toplevel/") as $sel)
     {
@@ -297,6 +308,8 @@ function parse_xilinx_descs( $objs )
 }
 
 #f find_xilinx_source
+# Find the source of a model
+# Look first in $xilinx["type"][$model]
 function find_xilinx_source( $model )
 {
     global $models, $xilinx;
@@ -339,21 +352,24 @@ function build_xilinx_hierarchy()
     $done = 0;
     while (!$done)
     {
+        #b Stop us going round forever!
         $iter++;
         if ($iter>50)
         {
             echo "Too many iterations in subcomponent hierarchy examination - probably a loop in the Xilinx components; check '$last_model'\n";
             exit(4);
         }
+        #b Run through all xilinx_subcomponents
         $done = 1;
         foreach ($xilinx["subs"] as $key=>$obj)
         {
-            # the subcomponent must be a xilinx source or model
+            #b the subcomponent must be a xilinx source or model
             # we expect to find its source and type in the source list
             $src_models = $obj["src_models"];
             $srcs = $obj["srcs"];
             $model = $obj["model"];
             #echo "Model $model now has source ";print_r($src_models);echo"\n";
+            #b Ensure the source for the subcomponent is in its own list
             if (!in_array($model, $src_models))
             {
                 $type = find_xilinx_source( $model );
@@ -368,8 +384,10 @@ function build_xilinx_hierarchy()
                 $done = 0;
                 $last_model = $model;
             }
+            #b Run through all of the subcomponent ($obj)'s subs 
             foreach ($obj["subs"] as $model)
             {
+                #b Find the type of the subcomponent's sub ($model)
                 $type = find_xilinx_source( $model );
                 #echo "Sub $model type ";print_r($type);
                 if (!$type)
@@ -377,6 +395,7 @@ function build_xilinx_hierarchy()
                     echo "Subcomponent constituent $model has no associated source file\n";
                     exit(4);
                 }
+                #b Add its source to the list for the subcomponent if not already present
                 if (!array_search($model, $src_models))
                 {
                     $src_models[] = $model;
@@ -384,8 +403,7 @@ function build_xilinx_hierarchy()
                     $last_model = $model;
                     $done = 0;
                 }
-                # $obj is a subcomponent; $model is now running through each of its components
-                # If $model is a subcomponent, then add all its source models!
+                #b If $model is a xilinx_subcomponent, then add all its source models to the set (if not already there)!
                 if ( ($type[0]=="xmodel") &&
                      ($type[1]=="sub") )
                 {
@@ -402,6 +420,7 @@ function build_xilinx_hierarchy()
                     }
                 }
             }
+            #b Set the sources for the subcomponent $obj
             $xilinx["subs"][$key]["src_models"] = $src_models;
             $xilinx["subs"][$key]["srcs"] = $srcs;
             #print_r($src_models);
@@ -411,9 +430,10 @@ function build_xilinx_hierarchy()
     #b Now build components down to their base constituents
     foreach ($xilinx["comps"] as $key=>$obj)
     {
-        # the component must be a xilinx source or model
+        #b Clear arrys of sources and source models
         $src_models = array();
         $srcs = array();
+        #b the component must be a xilinx source or model
         $model = $obj["model"];
         $type = find_xilinx_source( $model );
         if (!$type)
@@ -421,24 +441,30 @@ function build_xilinx_hierarchy()
             echo "Component $model has no associated source file\n";
             exit(4);
         }
+        #b Okay, so we have a source model - it may be a xilinx_src, xilinx_macro, or CDL source
         $src_models[] = $model;
         $srcs[] = array( $type, $model );
+        #b Now run through all the subcomponents
         foreach ($obj["subs"] as $model)
         {
+            #b Find type of subcomponent of our component
             $type = find_xilinx_source( $model );
             if (!$type)
             {
                 echo "Component constituent $model has no associated source file\n";
                 exit(4);
             }
+            #b Add it to the source models and sources, if it is not already there
             if (!array_search($model, $src_models))
             {
                 $src_models[] = $model;
                 $srcs[] = array( $type, $model );
             }
+            #b If it is a xilinx_subcomponent, then push down in to that to add its sources also
             if ( ($type[0]=="xmodel") &&
                  ($type[1]=="sub") )
             {
+                #b Add each source of our component's subs
                 foreach ($xilinx["subs"][$model]["src_models"] as $submodel)
                 {
                     if (!in_array($submodel, $src_models))
@@ -449,9 +475,12 @@ function build_xilinx_hierarchy()
                     }
                 }
             }
+            #b Done that subcomponent
         }
+        #b Set the sources and source models for the component to be the lists generated
         $xilinx["comps"][$key]["src_models"] = $src_models;
         $xilinx["comps"][$key]["srcs"] = $srcs;
+        #b Done that component
     }
 }
 
@@ -564,11 +593,24 @@ function output_xilinx_makefile( $file, $toplevel )
     fwrite( $file, "REPOSITORY = ../../repository/emulation/xilinx\n");
     fwrite( $file, "XMACRO = \${REPOSITORY}/macros\n");
     fwrite( $file, "XSRC = \${REPOSITORY}/src\n");
+    fwrite( $file, "XRPM = \${REPOSITORY}/rpm\n");
     fwrite( $file, "RAMS = \${REPOSITORY}/rams\n");
     fwrite( $file, "CORES = \${REPOSITORY}/cores\n");
     fwrite( $file, "CONSTRAINTS = \${REPOSITORY}/constraints\n");
     fwrite( $file, "SRC = ../../build/emulation/linux\n");
     fwrite( $file, "COREGEN_OBJ = obj/coregen\n");
+    fwrite( $file, "RPM_OBJ = obj/rpm\n");
+    fwrite( $file, "XST_OBJ = obj/xst\n");
+    fwrite( $file, "XST_TMP = tmp/xst\n");
+    fwrite( $file, "XST_DONE = obj/xst/.built\n");
+    fwrite( $file, "NGD_OBJ = obj/ngd\n");
+    fwrite( $file, "NGD_DONE = obj/ngd/.built\n");
+    fwrite( $file, "MAP_OBJ = obj/map\n");
+    fwrite( $file, "MAP_DONE = obj/map/.built\n");
+    fwrite( $file, "PAR_OBJ = obj/par\n");
+    fwrite( $file, "PAR_DONE = obj/par/.built\n");
+    fwrite( $file, "BIT_OBJ = obj/bit\n");
+    fwrite( $file, "BIT_DONE = obj/bit/.built\n");
     fwrite( $file, "LOG = log\n");
     fwrite( $file, "XST_OPTIONS = -p $device\n");
     fwrite( $file, "XST_OPTIONS += -opt_mode Speed\n");
@@ -615,19 +657,9 @@ function output_xilinx_makefile( $file, $toplevel )
     fwrite( $file, "XST_OPTIONS += -iob auto\n");
     fwrite( $file, "XST_OPTIONS += -slice_utilization_ratio_maxmargin 5\n");
     fwrite( $file, "\n");
+    fwrite( $file, "XST_RPM_OPTIONS = \${XST_OPTIONS} -iobuf no -ofmt ngc\n");
     fwrite( $file, "XST_COMP_OPTIONS = \${XST_OPTIONS} -iobuf no -ofmt ngc\n");
     fwrite( $file, "XST_TOP_OPTIONS = \${XST_OPTIONS} -keep_hierarchy yes -iobuf yes -ofmt ngc\n");
-    fwrite( $file, "XST_OBJ = obj/xst\n");
-    fwrite( $file, "XST_TMP = tmp/xst\n");
-    fwrite( $file, "XST_DONE = obj/xst/.built\n");
-    fwrite( $file, "NGD_OBJ = obj/ngd\n");
-    fwrite( $file, "NGD_DONE = obj/ngd/.built\n");
-    fwrite( $file, "MAP_OBJ = obj/map\n");
-    fwrite( $file, "MAP_DONE = obj/map/.built\n");
-    fwrite( $file, "PAR_OBJ = obj/par\n");
-    fwrite( $file, "PAR_DONE = obj/par/.built\n");
-    fwrite( $file, "BIT_OBJ = obj/bit\n");
-    fwrite( $file, "BIT_DONE = obj/bit/.built\n");
     fwrite( $file, "\n");
 
     #b Core generation
@@ -656,14 +688,49 @@ function output_xilinx_makefile( $file, $toplevel )
     }
     fwrite( $file, "\n\n" );
 
-    #b NGC generation (synthesis)
+    #b RPM generation
+    foreach ($xilinx["rpms"] as $model=>$obj)
+    {
+        #b $obj["model"] is the source ngc and fnf file, and there should be a macro .v file too
+        if (!isset($xilinx["macros"][$obj["model"]]))
+        {
+            echo "For a Xilinx RPM there should be an associated macro verilog file\n";
+            exit(4);
+        }
+        #b Dependencies - basically the macro and the fnf
+        fwrite( $file, "\${RPM_OBJ}/$model.ngc: \\\n" );
+        fwrite( $file, "\t\${XMACRO}/".$obj["model"].".v \\\n");
+        fwrite( $file, "\t\${XST_OBJ}/".$obj["model"].".rpm.ngc \\\n");
+        fwrite( $file, "\t\${XRPM}/$model.ucf \n");
+        fwrite( $file, "\t@mkdir -p \${RPM_OBJ}\n");
+        fwrite( $file, "\tngcbuild -p xc3s4000 -uc \${XRPM}/$model.ucf \${XST_OBJ}/$model.rpm.ngc \${RPM_OBJ}/$model.ngc\n" );
+        fwrite( $file, "\n" );
+        #b Now we also need an ngdbuild if the RPM is to be able to be built...
+        fwrite( $file, "\${NGD_OBJ}/$model.rpm.ngd: \${XST_OBJ}/$model.rpm.ngc\n");
+        fwrite( $file, "\t@mkdir -p \${NGD_OBJ}\n");
+        fwrite( $file, "\t@echo \"\"\n");
+        fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+        fwrite( $file, "\t@echo \"                               NGD Build for RPM $model                     \"\n");
+        fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
+        fwrite( $file, "\tngdbuild -aul -insert_keep_hierarchy -dd ./tmp -nt timestamp \${XST_OBJ}/$model.rpm.ngc \${NGD_OBJ}/$model.rpm.ngd\n");
+        fwrite( $file, "$model.rpm: \${NGD_OBJ/$model.ngd}\n\n\n");
+    }
+    
+    #b NGC generation (synthesis of components)
     foreach ($xilinx["comps"] as $model=>$obj)
     {
+        #b Find all the verilog sources and hierarchical models that make the component, and output these as dependencies
         $v_files = array();
         $hier_models = array();
-        fwrite( $file, "\${XST_OBJ}/$model.ngc: \\\n" );
+        $target_ngc = "\${XST_OBJ}/$model";
+        if (isset($xilinx["rpms"][$model]))
+        {
+            $target_ngc = "\${XST_OBJ}/$model.rpm";
+        }
+        fwrite( $file, "$target_ngc.ngc: \\\n" );
         foreach ($obj["srcs"] as $src)
         {
+            #b First, if it is a core, then dependency is the .ngo, and there is a verilog source from the coregen
             $handled = 0;
             if ( ($src[0][0]=="xmodel") && ($src[0][1]=="core") )
             {
@@ -673,12 +740,14 @@ function output_xilinx_makefile( $file, $toplevel )
                 $hier_models[] = $src[1];
                 $v_files[] = $v;
             }
+            #b Else if it is a component (hierarchical build :-), then the dependency is xst's .ngc, no source required
             if ( ($model!=$src[1]) && (($src[0][0]=="xmodel") && ($src[0][1]=="comp") ))
             {
                 $handled = 1;
                 fwrite( $file, "\t\${XST_OBJ}/".$src[1].".ngc \\\n");
                 $hier_models[] = $src[1];
             }
+            #b Else if it is a xilinx_src, then the dependency is the verilog source, and that is needed in the .prj
             if (!$handled && isset($xilinx["srcs"][$src[1]]))
             {
                 $v = "\${XSRC}/".$src[1].".v";
@@ -686,6 +755,15 @@ function output_xilinx_makefile( $file, $toplevel )
                 $v_files[] = $v;
                 $handled = 1;
             }
+            #b Else if it is a xilinx_rpm, then the dependency is the RPM ngc, and a black box wrapper is needed in the .prj
+            if (!$handled && ($model!=$src[1]) && isset($xilinx["rpms"][$src[1]]))
+            {
+                $v = "\${XRPM}/".$src[1].".v";
+                fwrite( $file, "\t\${XRPM}/".$src[1].".ngc \\\n");
+                $v_files[] = $v;
+                $handled = 1;
+            }
+            #b Else if it is a xilinx_macro, then the dependency is the macro .v, and that is needed in the .prj
             if (!$handled && isset($xilinx["macros"][$src[1]]))
             {
                 $v = "\${XMACRO}/".$src[1].".v";
@@ -693,6 +771,7 @@ function output_xilinx_makefile( $file, $toplevel )
                 $v_files[] = $v;
                 $handled = 1;
             }
+            #b Else we had better have some CDL source... the dependency is the emulation source .v, and that is needed in the .prj
             if (!$handled && isset($models["hash"][$src[1]]))
             {
                 $v = "\${SRC}/".$src[1].".v";
@@ -706,62 +785,92 @@ function output_xilinx_makefile( $file, $toplevel )
             }
         }
         fwrite( $file, "\n" );
+        #b Routine housekeping for directories
+        fwrite( $file, "\t@mkdir -p \${LOG}\n" );
         fwrite( $file, "\t@mkdir -p \${XST_OBJ}\n" );
         fwrite( $file, "\t@mkdir -p \${XST_TMP}\n" );
-        fwrite( $file, "\t@rm -f \${XST_OBJ}/$model.ngc\n" );
+        fwrite( $file, "\t@rm -f $target_ngc.ngc\n" );
         fwrite( $file, "\t@rm -f \${XST_DONE}\n" );
+        #b Set filenames
         $xst_file = "\${XST_TMP}/$model.xst";
         $prj_file = "\${XST_TMP}/$model.prj";
         $xcf_file = "\${XST_TMP}/$model.xcf";
         $lso_file = "\${XST_TMP}/$model.lso";
+        #b Create LSO file - library search order; this is probably unnecessary, but it works
         fwrite( $file, "\t@echo \"work\" > $lso_file\n");
+        #b Create xcf file - basically we would want to handle hierarchical builds here, but we cannot as the Xilinx tools don't work
         fwrite( $file, "\t@echo \"\" > $xcf_file\n");
         foreach ($xilinx["comps"] as $submodel=>$dummy)
-        #foreach ($hier_models as $submodel)
         {
-            if ($submodel!=$model) # Don't include itself, that messes up xst
-            {
-                fwrite( $file, "\t@echo \"MODEL \\\"$submodel\\\" incremental_synthesis=yes;\" >> $xcf_file\n");
-            }
+            #if ($submodel!=$model) # Don't include itself, that messes up xst
+            #{
+            #    fwrite( $file, "\t@echo \"MODEL \\\"$submodel\\\" incremental_synthesis=yes;\" >> $xcf_file\n");
+            #}
         }
+        #b Create prj file - all the submodules that are needed as verilog
         fwrite( $file, "\t@echo \"\" > $prj_file\n");
         foreach ($v_files as $v)
         {
             fwrite( $file, "\t@echo \"verilog work $v\" >> $prj_file\n");
         }
+        #b Create xst file - the build options required for XST to run
         fwrite( $file, "\t@echo \"set -tmpdir ./tmp\" > $xst_file\n");
         fwrite( $file, "\t@echo \"set -xsthdpdir ./xst\" >> $xst_file\n");
         fwrite( $file, "\t@echo \"run\" >> $xst_file\n");
         #if (isset($xilinx["toplevels"][$model]))
         if ($model==$toplevel_model)
         {
-            fwrite( $file, "\t@echo \"\${XST_TOP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn \${XST_OBJ}/$model -top $model\" >> $xst_file\n" );
+            fwrite( $file, "\t@echo \"\${XST_TOP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn $target_ngc.ngc -top $model\" >> $xst_file\n" );
+        }
+        else if (isset($xilinx["rpms"][$model]))
+        {
+            fwrite( $file, "\t@echo \"\${XST_RPM_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn $target_ngc.ngc -top $model\" >> $xst_file\n" );
         }
         else
         {
-            fwrite( $file, "\t@echo \"\${XST_COMP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn \${XST_OBJ}/$model -top $model\" >> $xst_file\n" );
+            fwrite( $file, "\t@echo \"\${XST_COMP_OPTIONS} -lso $lso_file -uc $xcf_file -ifmt mixed -ifn $prj_file -ofn $target_ngc.ngc -top $model\" >> $xst_file\n" );
         }
+        #b Add the xst line to the makefile with a message
         fwrite( $file, "\t@echo \"\"\n");
         fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
         fwrite( $file, "\t@echo \"                               Synthesizing $model                          \"\n");
         fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
         fwrite( $file, "\txst -ifn $xst_file -ofn \${LOG}/$model.syr" );
         fwrite( $file, "\n\n" );
+        #b Done that xst
     }
 
+    #b Mark NGC as done when the toplevel NGC file is ready
     fwrite( $file, "\${XST_DONE}: \${XST_OBJ}/$toplevel_model.ngc\n" );
     fwrite( $file, "\ttouch \${XST_DONE}\n" );
     fwrite( $file, "synth: \${XST_DONE}\n\n" );
 
     #b NGDbuild
-    fwrite( $file, "\${NGD_OBJ}/$toplevel_model.ngd: \${XST_OBJ}/boot_rom.ngo \${XST_OBJ}/.built $constraints \${XST_OBJ}/$toplevel_model.ngc\n");
+    fwrite( $file, "\${NGD_OBJ}/$toplevel_model.ngd: \${XST_OBJ}/$toplevel_model.ngc\\\n");
+    $obj = $xilinx["comps"][$toplevel_model];
+    $ngos = array();
+    foreach ($obj["srcs"] as $src)
+    {
+        #b First, if it is a core, then dependency is the .ngo, and there is a verilog source from the coregen
+        if ( ($src[0][0]=="xmodel") && ($src[0][1]=="core") )
+        {
+            fwrite( $file, "\t\${XST_OBJ}/".$src[1].".ngo \\\n");
+        }
+        #b Else if it is a xilinx_rpm, then the dependency is the RPM ngc, and a black box wrapper is needed in the .prj
+        if (isset($xilinx["rpms"][$src[1]]))
+        {
+            fwrite( $file, "\t\${RPM_OBJ}/".$src[1].".ngc \\\n");
+        }
+    }
+    fwrite( $file, "\t\${XST_OBJ}/.built $constraints\n" );
+    #fwrite( $file, "\${NGD_OBJ}/$toplevel_model.ngd: \${XST_OBJ}/boot_rom.ngo \${XST_OBJ}/.built $constraints \${XST_OBJ}/$toplevel_model.ngc\n");
     fwrite( $file, "\t@mkdir -p \${NGD_OBJ}\n");
     fwrite( $file, "\t@rm -f \${NGD_DONE}\n");
     fwrite( $file, "\t@echo \"\"\n");
     fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
     fwrite( $file, "\t@echo \"                               NGD Build                                    \"\n");
     fwrite( $file, "\t@echo \"----------------------------------------------------------------------------\"\n");
-    fwrite( $file, "\tngdbuild -aul -insert_keep_hierarchy -dd ./tmp -nt timestamp -uc $constraints -p $device \${XST_OBJ}/$toplevel_model.ngc \${NGD_OBJ}/$toplevel_model.ngd\n");
+    fwrite( $file, "\tngdbuild -aul -insert_keep_hierarchy -dd ./tmp -nt timestamp -sd \${RPM_OBJ} -uc $constraints -p $device \${XST_OBJ}/$toplevel_model.ngc \${NGD_OBJ}/$toplevel_model.ngd\n");
     fwrite( $file, "\${NGD_DONE}: \${NGD_OBJ}/$toplevel_model.ngd\n" );
     fwrite( $file, "\ttouch \${NGD_DONE}\n" );
     fwrite( $file, "ngd: \${NGD_DONE}\n\n\n");
@@ -843,9 +952,9 @@ if (isset($options["m"]))
 
 if (isset($options["x"]))
 {
-    if (!isset($options["t"]))
+    if (!isset($options["t"]) && !!isset($options["r"]))
     {
-        echo "For a Xilinx build you must specify a xilinx_toplevel to build from\n";
+        echo "For a Xilinx build you must specify a xilinx_toplevel or xilinx_rpm to build\n";
         exit(4);
     }
     $toplevel = $options["t"];

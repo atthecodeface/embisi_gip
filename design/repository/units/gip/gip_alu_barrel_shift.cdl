@@ -45,7 +45,11 @@ Note that RRX is called with amount==32 for ARM instructions
 "
 {
     comb bit[8] rot_amount;
-    comb t_gip_word[5] value_rot_stages;
+    comb t_gip_word value_rot_stage_1;
+    comb t_gip_word value_rot_stage_2;
+    comb t_gip_word value_rot_stage_3;
+    comb t_gip_word value_rot_stage_4;
+    comb t_gip_word value_rot_stage_5;
     comb t_gip_word barrel_shift_result;
     comb t_gip_word mask;
     comb bit[4] mask_bottom_bits;
@@ -107,43 +111,45 @@ Note that RRX is called with amount==32 for ARM instructions
 
             /*b Barrel shift
              */
-            value_rot_stages[0] = value;
+            value_rot_stage_1 = value;
             if (rot_amount[4])
             {
-                value_rot_stages[0][16; 0] = value[16;16];
-                value_rot_stages[0][16;16] = value[16; 0];
+                value_rot_stage_1[16; 0] = value[16;16];
+                value_rot_stage_1[16;16] = value[16; 0];
             }
-            value_rot_stages[1] = value_rot_stages[0];
+            value_rot_stage_2 = value_rot_stage_1;
             if (rot_amount[3])
             {
-                value_rot_stages[1][24; 0] = value_rot_stages[0][24; 8];
-                value_rot_stages[1][ 8;24] = value_rot_stages[0][ 8; 0];
+                value_rot_stage_2[24; 0] = value_rot_stage_1[24; 8];
+                value_rot_stage_2[ 8;24] = value_rot_stage_1[ 8; 0];
             }
-            value_rot_stages[2] = value_rot_stages[1];
+            value_rot_stage_3 = value_rot_stage_2;
             if (rot_amount[2])
             {
-                value_rot_stages[2][28; 0] = value_rot_stages[1][28; 4];
-                value_rot_stages[2][ 4;28] = value_rot_stages[1][ 4; 0];
+                value_rot_stage_3[28; 0] = value_rot_stage_2[28; 4];
+                value_rot_stage_3[ 4;28] = value_rot_stage_2[ 4; 0];
             }
-            value_rot_stages[3] = value_rot_stages[2];
+            value_rot_stage_4 = value_rot_stage_3;
             if (rot_amount[1])
             {
-                value_rot_stages[3][30; 0] = value_rot_stages[2][30; 2];
-                value_rot_stages[3][ 2;30] = value_rot_stages[2][ 2; 0];
+                value_rot_stage_4[30; 0] = value_rot_stage_3[30; 2];
+                value_rot_stage_4[ 2;30] = value_rot_stage_3[ 2; 0];
             }
-            value_rot_stages[4] = value_rot_stages[3];
+            value_rot_stage_5 = value_rot_stage_4;
             if (rot_amount[0])
             {
-                value_rot_stages[4][31; 0] = value_rot_stages[3][31; 1];
-                value_rot_stages[4][ 1;31] = value_rot_stages[3][ 1; 0];
+                value_rot_stage_5[31; 0] = value_rot_stage_4[31; 1];
+                value_rot_stage_5[ 1;31] = value_rot_stage_4[ 1; 0];
             }
-            barrel_shift_result = value_rot_stages[4];
+            barrel_shift_result = value_rot_stage_5;
         }
 
     /*b result and carry out
      */
     result_and_carry_out "Result and carry out determination":
         {
+            result = barrel_shift_result;
+            carry_out = barrel_shift_result[31];
             full_switch (gip_shift_op)
             {
             case gip_shift_op_lsl:

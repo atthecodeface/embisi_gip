@@ -1,0 +1,70 @@
+/*a Includes
+ */
+include "gip.h"
+include "gip_internal.h"
+
+/*a Modules
+ */
+module gip_alu_arith_op_data_path( input t_gip_word op_a,
+                                   input bit zero_a,
+                                   input bit negate_a,
+                                   input t_gip_word op_b,
+                                   input bit zero_b,
+                                   input bit negate_b,
+                                   input bit use_shifted_b,
+                                   input bit c_in,
+                                   output t_gip_word sum,
+                                   output bit z_out,
+                                   output bit n_out,
+                                   output bit c_out,
+                                   output bit v_out )
+
+"
+This module implements the data path for the arithmetic operations for the GIP
+
+Note that with an 8-bit add, of 2's complement numbers:
+ 0xxxxxxx + 0xxxxxxx == 0xxxxxxx => V clear (and no carry to top bit)
+ 0xxxxxxx + 0xxxxxxx == 1xxxxxxx => V set (and carry to top bit)
+ 1xxxxxxx + 0xxxxxxx == 0xxxxxxx => V clear (and carry to top bit)
+ 1xxxxxxx + 0xxxxxxx == 1xxxxxxx => V clear (and no carry to top bit)
+ 0xxxxxxx + 1xxxxxxx == 0xxxxxxx => V clear (and carry to top bit)
+ 0xxxxxxx + 1xxxxxxx == 1xxxxxxx => V clear (and no carry to top bit)
+ 1xxxxxxx + 1xxxxxxx == 0xxxxxxx => V set (and no carry to top bit)
+ 1xxxxxxx + 1xxxxxxx == 1xxxxxxx => V clear (and carry to top bit)
+So V is set if both positive and result negative, or if both negative and result positive
+
+For carry out...
+ a is 0.00 to 0.49, b is 0.00 to 0.49, c_in = 0.00/0.01, sum <=0.99; carry out is 0
+ a is 0.50 to 0.99, b is 0.00 to 0.49, c_in = 0.00/0.01, sum =0.50 to 1.49; carry out is (result fraction<0.5), i.e. top bit clear
+ a is 0.00 to 0.49, b is 0.50 to 0.99, c_in = 0.00/0.01, sum =0.50 to 1.49; carry out is (result fraction<0.5), i.e. top bit clear
+ a is 0.50 to 0.99, b is 0.50 to 0.99, c_in = 0.00/0.01, sum =1.00 to 1.99; carry out is 1
+ 
+"
+{
+    comb t_gip_word adder_op_a;
+    comb t_gip_word adder_op_b;
+   
+    /*b Adder inputs
+     */
+    adder_inputs "Adder input preconditioning":
+        {
+            adder_op_a = negate_a?(zero_a?1:~op_a):(zero_a?0:op_a);
+            adder_op_b = 0;
+            adder_op_b[0] = use_shifted_b?0:(negate_b?(zero_b?1:~op_b[0]):(zero_b?0:op_b[0]));
+            adder_op_b[31;1] = use_shifted_b?op_b[31;0]:(negate_b?(zero_b?1:~op_b[31;1]):(zero_b?0:op_b[31;1]));
+        }
+
+    /*b Adder
+     */
+    adder "32+32 adder with carry in, carry out, and overflow detection":
+        {
+            sum = adder_op_a + adder_op_b + (c_in?1:0);
+            z_out = (sum==0);
+            n_out = sum[31];
+            c_out = (adder_op_a[31] && adder_op_b[31]) || (adder_op_a[31] && !adder_op_b[31] && !sum[31])  || (!adder_op_a[31] && adder_op_b[31] && !sum[31]);
+            v_out = (adder_op_a[31] && adder_op_b[31] && !sum[31]) || (!adder_op_a[31] && !adder_op_b[31] && sum[31]);
+        }
+
+    /*b Done
+     */
+}

@@ -89,6 +89,9 @@ module gip_alu( clock gip_clock,
     net bit shf_carry;
     net t_gip_word shf_result;
 
+    //net bit shf_carry_2;
+    //net t_gip_word shf_result_2;
+
     net bit arith_z;
     net bit arith_n;
     net bit arith_c;
@@ -97,6 +100,14 @@ module gip_alu( clock gip_clock,
     net bit shf_carry_override_value;
     net bit shf_carry_override;
     comb bit shf_carry_overridden;
+
+//    net bit arith_z_2;
+//    net bit arith_n_2;
+//    net bit arith_c_2;
+//    net bit arith_v_2;
+//    net t_gip_word arith_result_2;
+//    net bit shf_carry_override_value_2;
+//    net bit shf_carry_override_2;
 
     net bit logic_z;
     net bit logic_n;
@@ -363,12 +374,22 @@ module gip_alu( clock gip_clock,
      */
     shifter "Perform shifter operation - operates on C, ALU A in, ALU B in: what about accumulator?":
     {
-        gip_alu_barrel_shift shift_op( carry_in <= shf_carry_in,
-                           gip_shift_op <= gip_shift_op,
-                           value <= shf_value_in,
-                           amount <= shf_amount_in,
-                           result => shf_result,
-                           carry_out => shf_carry );
+        gip_alu_barrel_shift shift_op( gip_clock <= gip_clock,
+                                       gip_reset <= gip_reset,
+                                       carry_in <= shf_carry_in,
+                                       gip_shift_op <= gip_shift_op,
+                                       value <= shf_value_in,
+                                       amount <= shf_amount_in,
+                                       result => shf_result,
+                                       carry_out => shf_carry );
+//        gip_alu_barrel_shift_2 shift2_op( carry_in <= shf_carry_in,
+//                                       gip_shift_op <= gip_shift_op,
+//                                       value <= shf_value_in,
+//                                       amount <= shf_amount_in,
+//                                       result => shf_result_2,
+//                                       carry_out => shf_carry_2 );
+//        assert( shf_carry_2==shf_carry, "Barrel shift carrys differ" );
+//        assert( shf_result_2==shf_result, "Barrel shift results differ" );
     }
 
     /*b Perform logical operation - operates on ALU op 1 and ALU op 2
@@ -404,6 +425,24 @@ module gip_alu( clock gip_clock,
                                    c => arith_c,
                                    shf_carry_override => shf_carry_override,
                                    shf_carry_out => shf_carry_override_value );
+
+//        gip_alu_arith_op_slow arith2_op( op_a <= alu_op1,
+//                                         op_b <= alu_op2,
+//                                         c_in <= flags.c,
+//                                         p_in <= flags.p,
+//                                         shf <= shf[2;0],
+//                                         arith_op <= gip_arith_op,
+//                                         result => arith_result_2,
+//                                         z => arith_z_2,
+//                                         n => arith_n_2,
+//                                         v => arith_v_2,
+//                                         c => arith_c_2,
+//                                         shf_carry_override => shf_carry_override_2,
+//                                         shf_carry_out => shf_carry_override_value_2 );
+//
+//        assert( arith_result_2==arith_result, "Arith results differ" );
+//        assert( (arith_z_2==arith_z) && (arith_n_2==arith_n) && (arith_c_2==arith_c) && (arith_v_2==arith_v), "Arith flags differ" );
+//        assert( (shf_carry_override_value_2==shf_carry_override_value) && (shf_carry_override_2==shf_carry_override), "Arith shift carry override differ" );
     }
 
     /*b Determine how to set 'cp' and 'old_cp'

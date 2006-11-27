@@ -1,0 +1,160 @@
+/*a Includes
+ */
+include "gip.h"
+include "gip_internal.h"
+
+/*a Modules
+ */
+module gip_alu_arith_op_slow( input t_gip_word op_a,
+                         input t_gip_word op_b,
+                         input bit c_in,
+                         input bit p_in,
+                         input bit[2] shf,
+                         input t_gip_arith_op arith_op,
+                         output t_gip_word result,
+                         output bit z,
+                         output bit n,
+                         output bit v,
+                         output bit c,
+                         output bit shf_carry_override,
+                         output bit shf_carry_out )
+"
+This module implements the arithmetic operations for the GIP
+
+adder_op_a can be 0, op_a, or ~op_a
+adder_op_b can be 0, op_b, ~op_b, op_b<<1
+carry_in can be 0, 1, or c_in
+"
+{
+    comb t_gip_word adder_op_a;
+    comb t_gip_word adder_op_b;
+    comb bit carry_in;
+    comb bit[32] a_l;
+    comb bit[32] b_l;
+    comb bit[32] sum_l;
+    comb bit[2] a_h;
+    comb bit[2] b_h;
+    comb bit[2] sum_h;
+    comb bit[3] amount;
+   
+    /*b Adder
+     */
+    adder "32+32 adder with carry in, carry out, and overflow detection":
+        {
+            a_l = 0;
+            b_l = 0;
+            a_l[31;0] = adder_op_a[31;0];
+            b_l[31;0] = adder_op_b[31;0];
+            sum_l = a_l + b_l; // sum_l is sum of bottom 31 bits with carry - its top bit is carry in to bit 31 add
+            if (carry_in) {sum_l = sum_l + 1;}
+
+            a_h = 0;
+            a_h[0] = adder_op_a[31];
+            b_h = 0;
+            b_h[0] = adder_op_b[31];
+            sum_h = a_h + b_h;
+            if (sum_l[31]) { sum_h = sum_h + 1;}
+
+            result = sum_l;
+            result[31] = sum_h[0];
+            v = ( (adder_op_a[31] && adder_op_b[31] && !result[31]) ||
+                  (!adder_op_a[31] && !adder_op_b[31] && result[31]));
+            c = sum_h[1];
+            if (arith_op==gip_arith_op_write_flags)
+            {
+                c = op_b[2];
+                v = op_b[3];
+            }
+        }
+
+    /*b Final result
+     */
+    final_result "Final result selection/operation":
+        {
+            z = (result==0);
+            n = result[31];
+            if (arith_op==gip_arith_op_write_flags)
+            {
+                z = op_b[0];
+                n = op_b[1];
+            }
+        }
+
+    /*b Determine adder inputs
+     */
+    adder_inputs "Determine adder inputs from instruction and multiply state":
+        {
+            shf_carry_override = 0;
+            shf_carry_out = 0;
+            adder_op_a = op_a;
+            adder_op_b = op_b;
+            carry_in = 0;
+
+            part_switch (arith_op)
+            {
+            case gip_arith_op_add:
+            {
+                adder_op_a = op_a;
+                adder_op_b = op_b;
+                carry_in = 0;
+            }
+            case gip_arith_op_adc:
+            {
+                adder_op_a = op_a;
+                adder_op_b = op_b;
+                carry_in = c_in;
+            }
+            case gip_arith_op_sub:
+            {
+                adder_op_a = op_a;
+                adder_op_b = ~op_b;
+                carry_in = 1;
+            }
+            case gip_arith_op_sbc:
+            {
+                adder_op_a = op_a;
+                adder_op_b = ~op_b;
+                carry_in = c_in;
+            }
+            case gip_arith_op_rsub:
+            {
+                adder_op_a = ~op_a;
+                adder_op_b = op_b;
+                carry_in = 1;
+            }
+            case gip_arith_op_rsbc:
+            {
+                adder_op_a = ~op_a;
+                adder_op_b = op_b;
+                carry_in = c_in;
+            }
+            case gip_arith_op_init:
+            {
+                adder_op_a = 0;
+                adder_op_b = op_b;
+                carry_in = 0;
+            }
+            case gip_arith_op_mla:
+            case gip_arith_op_mlb:
+            {
+                adder_op_a = op_a;
+                adder_op_b = 0;
+                shf_carry_override = 1;
+                amount = 0;
+                amount[2;0] = shf;
+                if (p_in) { amount[3;0] = amount[3;0] + 1; }
+                full_switch (amount)
+                    {
+                    case 0:{ adder_op_b=0;                carry_in=0; shf_carry_out=0; }
+                    case 1:{ adder_op_b=op_b;             carry_in=0; shf_carry_out=0; }
+                    case 2:{ adder_op_b[31;1]=op_b[31;0]; carry_in=0; shf_carry_out=0; }
+                    case 3:{ adder_op_b=~op_b;            carry_in=1; shf_carry_out=1; }
+                    case 4:{ adder_op_b=0;                carry_in=0; shf_carry_out=1; }
+                    }
+            }
+            }
+        }
+
+    /*b Done
+     */
+}

@@ -1,0 +1,195 @@
+/*a Includes
+ */
+include "gip.h"
+include "gip_internal.h"
+
+/*a Types
+ */
+
+/*a Module
+ */
+module gip_alu_barrel_shift_data_path( clock gip_clock,
+                                       input bit gip_reset,
+                                       input t_gip_word value,
+                                       input bit[5] rotate_amount,
+                                       input bit zero_mask, // if 1, zero the mask, else use top 'rotate_amount' bits of 0
+                                       input bit negate_mask, // if 1,
+                                       input bit and_mask, // if 0, OR the (negated) (zeroed) mask
+                                       output t_gip_word result,
+                                       output bit barrel_shift_bit_31,
+                                       output bit barrel_shift_bit_0 )
+    "
+This module implements the datapath for the barrel shifter.
+
+It takes a 32-bit data input and rotates it by 32-bits.
+This rotated value is then masked in some manner with a mask generated either as all zeros or as the top 'n' bits of 0, where 'n' is the rotation amount (0-31)
+
+LSL is rotate &~ mask
+LSR is rotate & mask
+ASR is rotate | ~mask, if negative, or rotate&mask, if positive
+ROR is rotate (i.e. &~zero(mask))
+RRX is rotate (by 1) (i.e. &~zero(mask))
+
+LSL by >=32 is rotate & (zero(mask))
+LSR by >=32 is rotate & (zero(mask))
+ASR by >=32 is either rotate | ~(zero(mask)) OR rotate & (zero(mask)), depending on top bit
+
+We can use three bottom bits of rotate amount to generate 8 bottom bits of mask, with an optional zeroing too.
+This is eight 4-input gates.
+
+Then we can use two top bits of rotate amount with one of the bottom bits of mask 4 times over to generate the 32 mask bits, again optionally zeroing
+
+Then mask use is accomplished with a 4-input LUT; one bit of mask, one bit to negate the mask, one bit of barrel shifter, and one bit of masking type (and or OR)
+
+"
+{
+    default clock gip_clock;
+    default reset gip_reset;
+    comb t_gip_word value_rot_stage_1;
+    comb t_gip_word value_rot_stage_2;
+    comb t_gip_word value_rot_stage_3;
+    comb t_gip_word value_rot_stage_4;
+    comb t_gip_word value_rot_stage_5;
+    comb t_gip_word barrel_shift_result;
+    comb bit[8] mask_bottom_bits;
+    comb t_gip_word mask;
+    comb t_gip_word masked_barrel_shift;
+
+    /*b Bottom bits of mask
+     */
+    bottom_bits_of_mask "Calculate the bottom 8 bits of the (possibly zeroed) mask":
+    {
+        mask_bottom_bits = 0;
+        mask_bottom_bits[7] = zero_mask ? 0 : (rotate_amount[3;0] <= 0);
+        mask_bottom_bits[6] = zero_mask ? 0 : (rotate_amount[3;0] <= 1);
+        mask_bottom_bits[5] = zero_mask ? 0 : (rotate_amount[3;0] <= 2);
+        mask_bottom_bits[4] = zero_mask ? 0 : (rotate_amount[3;0] <= 3);
+        mask_bottom_bits[3] = zero_mask ? 0 : (rotate_amount[3;0] <= 4);
+        mask_bottom_bits[2] = zero_mask ? 0 : (rotate_amount[3;0] <= 5);
+        mask_bottom_bits[1] = zero_mask ? 0 : (rotate_amount[3;0] <= 6);
+        mask_bottom_bits[0] = zero_mask ? 0 : (rotate_amount[3;0] <= 7);
+
+    }
+
+    /*b Full mask
+     */
+    full_mask "Generate the full 32-bit mask (possibly zeroed)":
+    {
+        mask = 0;
+        mask[31] = zero_mask?0:((rotate_amount[2;3]>0)?0:(((rotate_amount[2;3]==0)?mask_bottom_bits[7]:1)));
+        mask[30] = zero_mask?0:((rotate_amount[2;3]>0)?0:(((rotate_amount[2;3]==0)?mask_bottom_bits[6]:1)));
+        mask[29] = zero_mask?0:((rotate_amount[2;3]>0)?0:(((rotate_amount[2;3]==0)?mask_bottom_bits[5]:1)));
+        mask[28] = zero_mask?0:((rotate_amount[2;3]>0)?0:(((rotate_amount[2;3]==0)?mask_bottom_bits[4]:1)));
+        mask[27] = zero_mask?0:((rotate_amount[2;3]>0)?0:(((rotate_amount[2;3]==0)?mask_bottom_bits[3]:1)));
+        mask[26] = zero_mask?0:((rotate_amount[2;3]>0)?0:(((rotate_amount[2;3]==0)?mask_bottom_bits[2]:1)));
+        mask[25] = zero_mask?0:((rotate_amount[2;3]>0)?0:(((rotate_amount[2;3]==0)?mask_bottom_bits[1]:1)));
+        mask[24] = zero_mask?0:((rotate_amount[2;3]>0)?0:(((rotate_amount[2;3]==0)?mask_bottom_bits[0]:1)));
+        mask[23] = zero_mask?0:((rotate_amount[2;3]>1)?0:(((rotate_amount[2;3]==1)?mask_bottom_bits[7]:1)));
+        mask[22] = zero_mask?0:((rotate_amount[2;3]>1)?0:(((rotate_amount[2;3]==1)?mask_bottom_bits[6]:1)));
+        mask[21] = zero_mask?0:((rotate_amount[2;3]>1)?0:(((rotate_amount[2;3]==1)?mask_bottom_bits[5]:1)));
+        mask[20] = zero_mask?0:((rotate_amount[2;3]>1)?0:(((rotate_amount[2;3]==1)?mask_bottom_bits[4]:1)));
+        mask[19] = zero_mask?0:((rotate_amount[2;3]>1)?0:(((rotate_amount[2;3]==1)?mask_bottom_bits[3]:1)));
+        mask[18] = zero_mask?0:((rotate_amount[2;3]>1)?0:(((rotate_amount[2;3]==1)?mask_bottom_bits[2]:1)));
+        mask[17] = zero_mask?0:((rotate_amount[2;3]>1)?0:(((rotate_amount[2;3]==1)?mask_bottom_bits[1]:1)));
+        mask[16] = zero_mask?0:((rotate_amount[2;3]>1)?0:(((rotate_amount[2;3]==1)?mask_bottom_bits[0]:1)));
+        mask[15] = zero_mask?0:((rotate_amount[2;3]>2)?0:(((rotate_amount[2;3]==2)?mask_bottom_bits[7]:1)));
+        mask[14] = zero_mask?0:((rotate_amount[2;3]>2)?0:(((rotate_amount[2;3]==2)?mask_bottom_bits[6]:1)));
+        mask[13] = zero_mask?0:((rotate_amount[2;3]>2)?0:(((rotate_amount[2;3]==2)?mask_bottom_bits[5]:1)));
+        mask[12] = zero_mask?0:((rotate_amount[2;3]>2)?0:(((rotate_amount[2;3]==2)?mask_bottom_bits[4]:1)));
+        mask[11] = zero_mask?0:((rotate_amount[2;3]>2)?0:(((rotate_amount[2;3]==2)?mask_bottom_bits[3]:1)));
+        mask[10] = zero_mask?0:((rotate_amount[2;3]>2)?0:(((rotate_amount[2;3]==2)?mask_bottom_bits[2]:1)));
+        mask[ 9] = zero_mask?0:((rotate_amount[2;3]>2)?0:(((rotate_amount[2;3]==2)?mask_bottom_bits[1]:1)));
+        mask[ 8] = zero_mask?0:((rotate_amount[2;3]>2)?0:(((rotate_amount[2;3]==2)?mask_bottom_bits[0]:1)));
+        mask[ 7] = zero_mask?0:((rotate_amount[2;3]>3)?0:(((rotate_amount[2;3]==3)?mask_bottom_bits[7]:1)));
+        mask[ 6] = zero_mask?0:((rotate_amount[2;3]>3)?0:(((rotate_amount[2;3]==3)?mask_bottom_bits[6]:1)));
+        mask[ 5] = zero_mask?0:((rotate_amount[2;3]>3)?0:(((rotate_amount[2;3]==3)?mask_bottom_bits[5]:1)));
+        mask[ 4] = zero_mask?0:((rotate_amount[2;3]>3)?0:(((rotate_amount[2;3]==3)?mask_bottom_bits[4]:1)));
+        mask[ 3] = zero_mask?0:((rotate_amount[2;3]>3)?0:(((rotate_amount[2;3]==3)?mask_bottom_bits[3]:1)));
+        mask[ 2] = zero_mask?0:((rotate_amount[2;3]>3)?0:(((rotate_amount[2;3]==3)?mask_bottom_bits[2]:1)));
+        mask[ 1] = zero_mask?0:((rotate_amount[2;3]>3)?0:(((rotate_amount[2;3]==3)?mask_bottom_bits[1]:1)));
+        mask[ 0] = zero_mask?0:((rotate_amount[2;3]>3)?0:(((rotate_amount[2;3]==3)?mask_bottom_bits[0]:1)));
+
+    }
+
+    /*b Barrel shift
+     */
+    barrel_shift "Barrel shifter":
+        {
+            /*b Barrel shift
+             */
+            value_rot_stage_1 = value;
+            if (rotate_amount[4])
+            {
+                value_rot_stage_1[16; 0] = value[16;16];
+                value_rot_stage_1[16;16] = value[16; 0];
+            }
+            value_rot_stage_2 = value_rot_stage_1;
+            if (rotate_amount[3])
+            {
+                value_rot_stage_2[24; 0] = value_rot_stage_1[24; 8];
+                value_rot_stage_2[ 8;24] = value_rot_stage_1[ 8; 0];
+            }
+            value_rot_stage_3 = value_rot_stage_2;
+            if (rotate_amount[2])
+            {
+                value_rot_stage_3[28; 0] = value_rot_stage_2[28; 4];
+                value_rot_stage_3[ 4;28] = value_rot_stage_2[ 4; 0];
+            }
+            value_rot_stage_4 = value_rot_stage_3;
+            if (rotate_amount[1])
+            {
+                value_rot_stage_4[30; 0] = value_rot_stage_3[30; 2];
+                value_rot_stage_4[ 2;30] = value_rot_stage_3[ 2; 0];
+            }
+            value_rot_stage_5 = value_rot_stage_4;
+            if (rotate_amount[0])
+            {
+                value_rot_stage_5[31; 0] = value_rot_stage_4[31; 1];
+                value_rot_stage_5[ 1;31] = value_rot_stage_4[ 1; 0];
+            }
+            barrel_shift_result = value_rot_stage_5;
+        }
+
+    /*b Masked barrel shift - the result
+     */
+    masked_barrel_shift "Masked barrel shift, the result":
+        {
+            masked_barrel_shift=0;
+            masked_barrel_shift[31] = and_mask ? (barrel_shift_result[31]&(mask[31]^negate_mask)) : (barrel_shift_result[31]|(mask[31]^negate_mask));
+            masked_barrel_shift[30] = and_mask ? (barrel_shift_result[30]&(mask[30]^negate_mask)) : (barrel_shift_result[30]|(mask[30]^negate_mask));
+            masked_barrel_shift[29] = and_mask ? (barrel_shift_result[29]&(mask[29]^negate_mask)) : (barrel_shift_result[29]|(mask[29]^negate_mask));
+            masked_barrel_shift[28] = and_mask ? (barrel_shift_result[28]&(mask[28]^negate_mask)) : (barrel_shift_result[28]|(mask[28]^negate_mask));
+            masked_barrel_shift[27] = and_mask ? (barrel_shift_result[27]&(mask[27]^negate_mask)) : (barrel_shift_result[27]|(mask[27]^negate_mask));
+            masked_barrel_shift[26] = and_mask ? (barrel_shift_result[26]&(mask[26]^negate_mask)) : (barrel_shift_result[26]|(mask[26]^negate_mask));
+            masked_barrel_shift[25] = and_mask ? (barrel_shift_result[25]&(mask[25]^negate_mask)) : (barrel_shift_result[25]|(mask[25]^negate_mask));
+            masked_barrel_shift[24] = and_mask ? (barrel_shift_result[24]&(mask[24]^negate_mask)) : (barrel_shift_result[24]|(mask[24]^negate_mask));
+            masked_barrel_shift[23] = and_mask ? (barrel_shift_result[23]&(mask[23]^negate_mask)) : (barrel_shift_result[23]|(mask[23]^negate_mask));
+            masked_barrel_shift[22] = and_mask ? (barrel_shift_result[22]&(mask[22]^negate_mask)) : (barrel_shift_result[22]|(mask[22]^negate_mask));
+            masked_barrel_shift[21] = and_mask ? (barrel_shift_result[21]&(mask[21]^negate_mask)) : (barrel_shift_result[21]|(mask[21]^negate_mask));
+            masked_barrel_shift[20] = and_mask ? (barrel_shift_result[20]&(mask[20]^negate_mask)) : (barrel_shift_result[20]|(mask[20]^negate_mask));
+            masked_barrel_shift[19] = and_mask ? (barrel_shift_result[19]&(mask[19]^negate_mask)) : (barrel_shift_result[19]|(mask[19]^negate_mask));
+            masked_barrel_shift[18] = and_mask ? (barrel_shift_result[18]&(mask[18]^negate_mask)) : (barrel_shift_result[18]|(mask[18]^negate_mask));
+            masked_barrel_shift[17] = and_mask ? (barrel_shift_result[17]&(mask[17]^negate_mask)) : (barrel_shift_result[17]|(mask[17]^negate_mask));
+            masked_barrel_shift[16] = and_mask ? (barrel_shift_result[16]&(mask[16]^negate_mask)) : (barrel_shift_result[16]|(mask[16]^negate_mask));
+            masked_barrel_shift[15] = and_mask ? (barrel_shift_result[15]&(mask[15]^negate_mask)) : (barrel_shift_result[15]|(mask[15]^negate_mask));
+            masked_barrel_shift[14] = and_mask ? (barrel_shift_result[14]&(mask[14]^negate_mask)) : (barrel_shift_result[14]|(mask[14]^negate_mask));
+            masked_barrel_shift[13] = and_mask ? (barrel_shift_result[13]&(mask[13]^negate_mask)) : (barrel_shift_result[13]|(mask[13]^negate_mask));
+            masked_barrel_shift[12] = and_mask ? (barrel_shift_result[12]&(mask[12]^negate_mask)) : (barrel_shift_result[12]|(mask[12]^negate_mask));
+            masked_barrel_shift[11] = and_mask ? (barrel_shift_result[11]&(mask[11]^negate_mask)) : (barrel_shift_result[11]|(mask[11]^negate_mask));
+            masked_barrel_shift[10] = and_mask ? (barrel_shift_result[10]&(mask[10]^negate_mask)) : (barrel_shift_result[10]|(mask[10]^negate_mask));
+            masked_barrel_shift[ 9] = and_mask ? (barrel_shift_result[ 9]&(mask[ 9]^negate_mask)) : (barrel_shift_result[ 9]|(mask[ 9]^negate_mask));
+            masked_barrel_shift[ 8] = and_mask ? (barrel_shift_result[ 8]&(mask[ 8]^negate_mask)) : (barrel_shift_result[ 8]|(mask[ 8]^negate_mask));
+            masked_barrel_shift[ 7] = and_mask ? (barrel_shift_result[ 7]&(mask[ 7]^negate_mask)) : (barrel_shift_result[ 7]|(mask[ 7]^negate_mask));
+            masked_barrel_shift[ 6] = and_mask ? (barrel_shift_result[ 6]&(mask[ 6]^negate_mask)) : (barrel_shift_result[ 6]|(mask[ 6]^negate_mask));
+            masked_barrel_shift[ 5] = and_mask ? (barrel_shift_result[ 5]&(mask[ 5]^negate_mask)) : (barrel_shift_result[ 5]|(mask[ 5]^negate_mask));
+            masked_barrel_shift[ 4] = and_mask ? (barrel_shift_result[ 4]&(mask[ 4]^negate_mask)) : (barrel_shift_result[ 4]|(mask[ 4]^negate_mask));
+            masked_barrel_shift[ 3] = and_mask ? (barrel_shift_result[ 3]&(mask[ 3]^negate_mask)) : (barrel_shift_result[ 3]|(mask[ 3]^negate_mask));
+            masked_barrel_shift[ 2] = and_mask ? (barrel_shift_result[ 2]&(mask[ 2]^negate_mask)) : (barrel_shift_result[ 2]|(mask[ 2]^negate_mask));
+            masked_barrel_shift[ 1] = and_mask ? (barrel_shift_result[ 1]&(mask[ 1]^negate_mask)) : (barrel_shift_result[ 1]|(mask[ 1]^negate_mask));
+            masked_barrel_shift[ 0] = and_mask ? (barrel_shift_result[ 0]&(mask[ 0]^negate_mask)) : (barrel_shift_result[ 0]|(mask[ 0]^negate_mask));
+
+            result = masked_barrel_shift;
+            barrel_shift_bit_31 = barrel_shift_result[31];
+            barrel_shift_bit_0 = barrel_shift_result[0];
+        }
+}

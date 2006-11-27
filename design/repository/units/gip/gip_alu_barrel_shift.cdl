@@ -6,9 +6,31 @@ include "gip_internal.h"
 /*a Types
  */
 
+/*a Submodules
+ */
+/*m gip_alu_barrel_shift_data_path
+ */
+extern module gip_alu_barrel_shift_data_path( clock gip_clock,
+                                              input bit gip_reset,
+                                              input t_gip_word value,
+                                              input bit[5] rotate_amount,
+                                              input bit zero_mask, // if 1, zero the mask, else use top 'rotate_amount' bits of 0
+                                              input bit negate_mask, // if 1,
+                                              input bit and_mask, // if 0, OR the (negated) (zeroed) mask
+                                              output t_gip_word result,
+                                              output bit barrel_shift_bit_31,
+                                              output bit barrel_shift_bit_0 )
+{
+    timing comb input value, rotate_amount, zero_mask, negate_mask, and_mask;
+    timing comb output result, barrel_shift_bit_31, barrel_shift_bit_0;
+}
+
+
 /*a Module
  */
-module gip_alu_barrel_shift( input bit carry_in,
+module gip_alu_barrel_shift( clock gip_clock,
+                             input bit gip_reset,
+                             input bit carry_in,
                              input t_gip_shift_op gip_shift_op,
                              input t_gip_word value,
                              input bit[8] amount,
@@ -45,14 +67,13 @@ Note that RRX is called with amount==32 for ARM instructions
 "
 {
     comb bit[8] rot_amount;
-    comb t_gip_word value_rot_stage_1;
-    comb t_gip_word value_rot_stage_2;
-    comb t_gip_word value_rot_stage_3;
-    comb t_gip_word value_rot_stage_4;
-    comb t_gip_word value_rot_stage_5;
-    comb t_gip_word barrel_shift_result;
-    comb t_gip_word mask;
-    comb bit[4] mask_bottom_bits;
+
+    comb bit zero_mask; // if 1, zero the mask, else use top 'rotate_amount' bits of 0
+    comb bit negate_mask; // if 1,
+    comb bit and_mask; // if 0, OR the (negated) (zeroed) mask
+    net t_gip_word masked_barrel_shift;
+    net bit barrel_shift_bit_31;
+    net bit barrel_shift_bit_0;
 
     /*b rot_amount
      */
@@ -80,122 +101,163 @@ Note that RRX is called with amount==32 for ARM instructions
             }
         }
 
-    /*b Barrel shift and mask
+    /*b data path controls
      */
-    barrel_shift_and_mask "Barrel shifter and mask generation":
+    data_path_control "Data path controls":
         {
-            /*b Mask - set bottom (31-rot_amount) bits, or rather clear top rot_amount bits
+            /*b Defaults for ROR
              */
-            full_switch(rot_amount[2;0])
-            {
-            case 0: {mask_bottom_bits = 4b1111;}
-            case 1: {mask_bottom_bits = 4b0111;}
-            case 2: {mask_bottom_bits = 4b0011;}
-            case 3: {mask_bottom_bits = 4b0001;}
-            }
-            full_switch(rot_amount[3;2])
-            {
-            case 0: {mask = 32h0fffffff; mask[4;28]=mask_bottom_bits; }
-            case 1: {mask = 32h00ffffff; mask[4;24]=mask_bottom_bits; }
-            case 2: {mask = 32h000fffff; mask[4;20]=mask_bottom_bits; }
-            case 3: {mask = 32h0000ffff; mask[4;16]=mask_bottom_bits; }
-            case 4: {mask = 32h00000fff; mask[4;12]=mask_bottom_bits; }
-            case 5: {mask = 32h000000ff; mask[4; 8]=mask_bottom_bits; }
-            case 6: {mask = 32h0000000f; mask[4; 4]=mask_bottom_bits; }
-            case 7: {mask = 32h00000000; mask[4; 0]=mask_bottom_bits; }
-            }
-            if (rot_amount[3;5])
-            {
-                mask=0;
-            }
+            zero_mask = 1;
+            negate_mask = 0;
+            and_mask = 0;
 
-            /*b Barrel shift
+            /*b Choose based on op
              */
-            value_rot_stage_1 = value;
-            if (rot_amount[4])
+            full_switch (gip_shift_op)
             {
-                value_rot_stage_1[16; 0] = value[16;16];
-                value_rot_stage_1[16;16] = value[16; 0];
-            }
-            value_rot_stage_2 = value_rot_stage_1;
-            if (rot_amount[3])
+            case gip_shift_op_lsl: // output = barrel & ~mask
             {
-                value_rot_stage_2[24; 0] = value_rot_stage_1[24; 8];
-                value_rot_stage_2[ 8;24] = value_rot_stage_1[ 8; 0];
+                zero_mask = 0;
+                negate_mask = 1;
+                and_mask = 1;
+                if (amount==0) // == 0, LSL is barrel & ~0
+                {
+                    zero_mask = 1;
+                    negate_mask = 1;
+                    and_mask = 1;
+                }
+                if (amount[3;5]!=0) // >= 32, LSL is zero = barrel & 0
+                {
+                    zero_mask = 1;
+                    negate_mask = 0;
+                    and_mask = 1;
+                }
             }
-            value_rot_stage_3 = value_rot_stage_2;
-            if (rot_amount[2])
+            case gip_shift_op_lsr:
             {
-                value_rot_stage_3[28; 0] = value_rot_stage_2[28; 4];
-                value_rot_stage_3[ 4;28] = value_rot_stage_2[ 4; 0];
+                zero_mask = 0;
+                negate_mask = 0;
+                and_mask = 1;
+                if (amount==0) // == 0, LSR is barrel & ~0
+                {
+                    zero_mask = 1;
+                    negate_mask = 1;
+                    and_mask = 1;
+                }
+                if (amount[3;5]!=0) // >= 32, LSR is zero = barrel & 0
+                {
+                    zero_mask = 1;
+                    negate_mask = 0;
+                    and_mask = 1;
+                }
             }
-            value_rot_stage_4 = value_rot_stage_3;
-            if (rot_amount[1])
+            case gip_shift_op_asr:
             {
-                value_rot_stage_4[30; 0] = value_rot_stage_3[30; 2];
-                value_rot_stage_4[ 2;30] = value_rot_stage_3[ 2; 0];
+                if (value[31]==0) // ASR of +ve is same as LSR
+                {
+                    zero_mask = 0;
+                    negate_mask = 0;
+                    and_mask = 1;
+                    if (amount==0) // == 0, ASR is barrel & ~0
+                    {
+                        zero_mask = 1;
+                        negate_mask = 1;
+                        and_mask = 1;
+                    }
+                    if (amount[3;5]!=0) // >= 32, ASR of +ve is zero = barrel & 0
+                    {
+                        zero_mask = 1;
+                        negate_mask = 0;
+                        and_mask = 1;
+                    }
+                }
+                else // ASR of -ve is barrel | ~mask
+                {
+                    zero_mask = 0;
+                    negate_mask = 1;
+                    and_mask = 0;
+                    if (amount==0) // == 0, ASR is barrel & ~0
+                    {
+                        zero_mask = 1;
+                        negate_mask = 1;
+                        and_mask = 1;
+                    }
+                    if (amount[3;5]!=0) // >= 32, ASR -ve is all 1s = barrel | 1
+                    {
+                        zero_mask = 1;
+                        negate_mask = 1;
+                        and_mask = 0;
+                    }
+                }
             }
-            value_rot_stage_5 = value_rot_stage_4;
-            if (rot_amount[0])
+            case gip_shift_op_ror:
             {
-                value_rot_stage_5[31; 0] = value_rot_stage_4[31; 1];
-                value_rot_stage_5[ 1;31] = value_rot_stage_4[ 1; 0];
+                // use barrel | 0
+                zero_mask = 1;
+                negate_mask = 0;
+                and_mask = 0;
             }
-            barrel_shift_result = value_rot_stage_5;
+            case gip_shift_op_rrx:
+            {
+                // use barrel | 0
+                zero_mask = 1;
+                negate_mask = 0;
+                and_mask = 0;
+            }
+            }
+        }
+
+    /*b Data path
+     */
+    data_path "Data path instantiation":
+        {
+            gip_alu_barrel_shift_data_path data_path( gip_clock <- gip_clock,
+                                                      gip_reset <= gip_reset,
+                                                      value <= value,
+                                                      rotate_amount <= rot_amount[5;0],
+                                                      zero_mask <= zero_mask,
+                                                      negate_mask <= negate_mask,
+                                                      and_mask <= and_mask,
+                                                      result => masked_barrel_shift,
+                                                      barrel_shift_bit_31 => barrel_shift_bit_31,
+                                                      barrel_shift_bit_0 => barrel_shift_bit_0 );
         }
 
     /*b result and carry out
      */
     result_and_carry_out "Result and carry out determination":
         {
-            result = barrel_shift_result;
-            carry_out = barrel_shift_result[31];
-            full_switch (gip_shift_op)
+            result = masked_barrel_shift;
+            carry_out = barrel_shift_bit_31;
+            part_switch (gip_shift_op)
             {
             case gip_shift_op_lsl:
             {
-                result = barrel_shift_result & ~mask;
-                carry_out = barrel_shift_result[0];
-            }
-            case gip_shift_op_lsr:
-            {
-                result = barrel_shift_result & mask;
-                carry_out = barrel_shift_result[31];
-            }
-            case gip_shift_op_asr:
-            {
-                result = value[31] ? (barrel_shift_result | ~mask) : (barrel_shift_result & mask);
-                carry_out = barrel_shift_result[31];
-            }
-            case gip_shift_op_ror:
-            {
-                result = barrel_shift_result;
-                carry_out = barrel_shift_result[31];
+                carry_out = barrel_shift_bit_0;
             }
             case gip_shift_op_rrx:
             {
-                result = barrel_shift_result;
                 result[31] = carry_in;
-                carry_out = barrel_shift_result[31];
             }
             }
-            if (amount==32) // ror,rrx normal; lsl=0 (already, as rot_amt==0, mask=1s); lsr=0 (already, as mask=0s); asr=all top bit (already, as mask=0s)
+            if (amount==0) // ALWAYS PASS C and value through untouched
             {
-                result=result;
-            }
-            elsif (amount==0) // ALWAYS PASS C and value through untouched
-            {
-                result = value;
                 carry_out = carry_in;
             }
-            elsif (amount[3;5]!=0) // 33 to 255 - override carry for lsl, lsr, asr; ror and rrx are already okay
+            if ((amount[3;5]!=0) && (amount!=32))
+            {
+                part_switch (gip_shift_op)
                 {
-                    part_switch (gip_shift_op)
-                        {
-                        case gip_shift_op_lsl: {carry_out = 0; result=0;}
-                        case gip_shift_op_lsr: {carry_out = 0; result=0;}
-                        case gip_shift_op_asr: {carry_out = value[31]; result=value[31]?32hffffffff:0;}
-                        }
+                case gip_shift_op_lsl:
+                case gip_shift_op_lsr:
+                {
+                    carry_out = 0;
                 }
+                case gip_shift_op_asr:
+                {
+                    carry_out = value[31];
+                }
+                }
+            }
         }
 }

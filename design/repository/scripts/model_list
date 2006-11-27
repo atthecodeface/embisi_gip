@@ -43,9 +43,13 @@ cdl units/analyzer    analyzer                    inc:headers/cdl
 cdl units/ddr         ddr_dram_as_sram            inc:headers/cdl
 cdl units/ddr         ddr_dram_postbus            inc:headers/cdl
 
+cdl units/gip         gip_alu_arith_op_slow       inc:units/gip inc:headers/cdl
+cdl units/gip         gip_alu_arith_op_data_path  inc:units/gip inc:headers/cdl
 cdl units/gip         gip_alu_arith_op            inc:units/gip inc:headers/cdl
 cdl units/gip         gip_alu_logical_op          inc:units/gip inc:headers/cdl
 cdl units/gip         gip_alu_barrel_shift        inc:units/gip inc:headers/cdl
+cdl units/gip         gip_alu_barrel_shift_2        inc:units/gip inc:headers/cdl
+cdl units/gip         gip_alu_barrel_shift_data_path   inc:units/gip inc:headers/cdl
 cdl units/gip         gip_alu                     inc:units/gip inc:headers/cdl
 cdl units/gip         gip_special                 inc:units/gip inc:headers/cdl
 cdl units/gip         gip_decode_native           inc:units/gip inc:headers/cdl
@@ -123,7 +127,7 @@ xilinx_core boot_rom boot.coe
 
 # We need anything we are going to be allowed to place to be a component; 
 xilinx_subcomponent gip_decode  gip_decode_native gip_decode_arm
-xilinx_subcomponent gip_alu     gip_alu_arith_op gip_alu_barrel_shift gip_alu_logical_op barrel_shift_32
+xilinx_subcomponent gip_alu     gip_alu_arith_op gip_alu_arith_op_data_path gip_alu_barrel_shift gip_alu_barrel_shift_data_path gip_alu_logical_op barrel_shift_32
 
 xilinx_subcomponent gip_rf       rf_2r_1w_32_32
 xilinx_subcomponent gip_postbus  rf_1r_1w_32_32

@@ -759,7 +759,7 @@ function output_xilinx_makefile( $file, $toplevel )
             if (!$handled && ($model!=$src[1]) && isset($xilinx["rpms"][$src[1]]))
             {
                 $v = "\${XRPM}/".$src[1].".v";
-                fwrite( $file, "\t\${XRPM}/".$src[1].".ngc \\\n");
+                fwrite( $file, "\t\${RPM_OBJ}/".$src[1].".ngc \\\n");
                 $v_files[] = $v;
                 $handled = 1;
             }
